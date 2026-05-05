@@ -1,0 +1,25 @@
+{
+  "GIII": {
+    "name": "GIII",
+    "display_name": "G-III Apparel Group",
+    "file_types": [
+      "pdf"
+    ],
+    "formats": [
+      "infor_nexus",
+      "legacy_giii"
+    ],
+    "excel_sheet": null,
+    "color": "#1f77b4",
+    "active": true
+  },
+  "Sky East": {
+    "name": "Sky East",
+    "display_name": "Sky East",
+    "file_types": [],
+    "formats": [],
+    "excel_sheet": null,
+    "color": "#2ca02c",
+    "active": true
+  }
+}

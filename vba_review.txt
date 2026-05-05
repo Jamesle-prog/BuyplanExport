@@ -1,0 +1,3282 @@
+=== MODULE: ThisWorkbook.cls ===
+Attribute VB_Name = "ThisWorkbook"
+Attribute VB_Base = "0{00020819-0000-0000-C000-000000000046}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = True
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = True
+
+
+=== MODULE: Sheet1.cls ===
+Attribute VB_Name = "Sheet1"
+Attribute VB_Base = "0{00020820-0000-0000-C000-000000000046}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = True
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = True
+
+
+=== MODULE: Module1.bas ===
+Attribute VB_Name = "Module1"
+Option Explicit
+
+'==============================
+' Module-Level Constants
+'==============================
+Const SOURCE_SHEET_NAME As String = "1.PO_Client"
+Const TEMPLATE_SHEET_NAME As String = "Template"
+Const TEMPLATE_P_SHEET_NAME As String = "Template_P"
+Const CONTROL_SHEET_NAME As String = "0.Control"
+Const OUTPUT_FILENAME_PREFIX As String = "BuyPlan_"
+Const OUTPUT_FILENAME_EXTENSION As String = ".xlsx"
+Const FOLDER_核料 As String = "核料"
+Const 核料_FILE_PREFIX As String = "Zalando_核料_"
+Const ERROR_LOG_SHEET_NAME As String = "Error Log"
+
+' Layout (1-based)
+Const HEADER_ROW As Long = 3                ' Header row in source
+Const DATA_START_ROW As Long = HEADER_ROW + 1 ' Data starts below header
+Const FIXED_SIZE_HEADER_ROW As Long = 7       ' Row in Template for size headers
+Const GROUP_START_ROW As Long = 8             ' Row in Template for group data
+
+' Template positions (buy plan)
+Const FIXED_SIZE_COL_START As Long = 10       ' Column J for allowed size sums
+Const TOTAL_LABEL_COL As Long = 16            ' Column P for "Total:" label
+Const TOTAL_FORMULA_COL As Long = 17          ' Column Q for row total formulas
+Const OUTPUT_DATE_CELL As String = "L1"       ' Date cell in Template
+
+Const DATE_FORMAT As String = "mm/dd/yyyy"
+Const MAX_DISTINCT_SIZES As Long = 6
+
+'==============================
+' Global Variables
+'==============================
+Dim gFixedSizes As Variant   ' Allowed sizes from source (sorted into "XS, S, M, L, XL")
+Dim gStartTime As Double     ' Overall start time
+
+' For cross comparison:
+' gComparisonDataTemplate: key = style; value = Array(aggregated colors from Template, sizes string, total quantity)
+' gComparisonDataTemplateP: key = "style_color" from Template_P; value = Array(color, sizes string)
+' gTemplatePTotals: key = style; value = total quantity from Template_P
+Public gComparisonDataTemplate As Object
+Public gComparisonDataTemplateP As Object
+Public gTemplatePTotals As Object
+
+Const EXPIRY_DATE As Date = #7/23/2026#
+Const OVERRIDE_CODE As String = "MyHiddenOverride"  ' Set your hidden override code here
+
+'==============================
+' Helper Functions
+'==============================
+
+' Sort allowed sizes in the desired order "XS, S, M, L, XL"
+Function SortAllowedSizes(sizes As Variant) As Variant
+    Dim orderMapping As Object
+    Set orderMapping = CreateObject("Scripting.Dictionary")
+    orderMapping.Add "XS", 1
+    orderMapping.Add "S", 2
+    orderMapping.Add "M", 3
+    orderMapping.Add "L", 4
+    orderMapping.Add "XL", 5
+    Dim i As Long, j As Long, temp As String
+    For i = LBound(sizes) To UBound(sizes) - 1
+        For j = i + 1 To UBound(sizes)
+            If orderMapping.Exists(sizes(i)) And orderMapping.Exists(sizes(j)) Then
+                If orderMapping(sizes(i)) > orderMapping(sizes(j)) Then
+                    temp = sizes(i)
+                    sizes(i) = sizes(j)
+                    sizes(j) = temp
+                End If
+            ElseIf orderMapping.Exists(sizes(i)) And Not orderMapping.Exists(sizes(j)) Then
+                ' sizes(i) remains before sizes(j)
+            ElseIf Not orderMapping.Exists(sizes(i)) And orderMapping.Exists(sizes(j)) Then
+                temp = sizes(i)
+                sizes(i) = sizes(j)
+                sizes(j) = temp
+            Else
+                If sizes(i) > sizes(j) Then
+                    temp = sizes(i)
+                    sizes(i) = sizes(j)
+                    sizes(j) = temp
+                End If
+            End If
+        Next j
+    Next i
+    SortAllowedSizes = sizes
+End Function
+
+' Aggregate distinct colors from a collection of row numbers.
+Function AggregateColors(rowsColl As Collection, ws As Worksheet, colMap As Object) As String
+    Dim dictColors As Object, r As Variant, colorVal As String
+    Set dictColors = CreateObject("Scripting.Dictionary")
+    For Each r In rowsColl
+        colorVal = Trim(ws.Cells(r, colMap("颜色")).Value)
+        If colorVal <> "" Then
+            If Not dictColors.Exists(colorVal) Then dictColors.Add colorVal, True
+        End If
+    Next r
+    AggregateColors = Join(dictColors.Keys, ",")
+End Function
+
+'==============================
+' Main Entry Point
+'==============================
+Sub CreateBuyPlan()
+    Dim wsControl As Worksheet, wsSource As Worksheet, wsTemplate As Worksheet
+    Dim lastRow As Long, colMap As Object, dictMainSKU As Object
+    Dim wbOut As Workbook, skuKey As Variant
+    Dim totalSKUs As Long, currentSKUIndex As Long
+    Dim avgTimePerSKU As Double, estRemaining As Double, tempMsg As String
+    Dim tempSizes As Variant, i As Long
+    
+    If Date > EXPIRY_DATE Then
+        ' Check the override code in a hidden cell (e.g., Z1 in the control sheet).
+        If ThisWorkbook.Sheets(CONTROL_SHEET_NAME).Range("Z1").Value <> OVERRIDE_CODE Then
+            ' Write the expiry warning to cell D7 on the control sheet.
+            ThisWorkbook.Sheets(CONTROL_SHEET_NAME).Range("D7").Value = _
+                "This macro has expired as of " & Format(EXPIRY_DATE, "yyyy/mm/dd") & ". Please contact support."
+            ' Log the expiry error.
+            LogError "Macro expired on " & Format(EXPIRY_DATE, "yyyy/mm/dd") & " and no valid override was provided."
+            Exit Sub
+        End If
+    End If
+    
+    Set gComparisonDataTemplate = CreateObject("Scripting.Dictionary")
+    Set gComparisonDataTemplateP = CreateObject("Scripting.Dictionary")
+    Set gTemplatePTotals = CreateObject("Scripting.Dictionary")
+    
+    Set wsControl = ThisWorkbook.Sheets(CONTROL_SHEET_NAME)
+    Set wsSource = ThisWorkbook.Sheets(SOURCE_SHEET_NAME)
+    Set wsTemplate = ThisWorkbook.Sheets(TEMPLATE_SHEET_NAME)
+    
+    With Application
+        .DisplayStatusBar = True
+        .ScreenUpdating = False
+        .EnableEvents = False
+    End With
+    
+    gStartTime = Timer
+    lastRow = wsSource.Cells(wsSource.Rows.Count, "A").End(xlUp).Row
+    Set colMap = GetColumnMapping(wsSource, HEADER_ROW)
+    
+    ' Read allowed sizes from source and sort them.
+    gFixedSizes = GetAllowedSizesFromSource(wsSource, colMap)
+    gFixedSizes = SortAllowedSizes(gFixedSizes)
+    If UBound(gFixedSizes) - LBound(gFixedSizes) + 1 > MAX_DISTINCT_SIZES Then
+        LogError "Overall source contains " & (UBound(gFixedSizes) - LBound(gFixedSizes) + 1) & _
+                 " distinct sizes. Capping to " & MAX_DISTINCT_SIZES & " allowed sizes."
+        tempSizes = gFixedSizes
+        ReDim gFixedSizes(0 To MAX_DISTINCT_SIZES - 1)
+        For i = 0 To MAX_DISTINCT_SIZES - 1
+            gFixedSizes(i) = tempSizes(i)
+        Next i
+    End If
+    
+    Set dictMainSKU = BuildDictionary(wsSource, colMap("MainSKU"), DATA_START_ROW, lastRow)
+    
+    ' Create buy plan workbook.
+    Set wbOut = Workbooks.Add
+    DeleteAllSheets wbOut
+    
+    totalSKUs = dictMainSKU.Count
+    currentSKUIndex = 0
+    Dim wsOut As Worksheet
+    For Each skuKey In dictMainSKU.Keys
+        currentSKUIndex = currentSKUIndex + 1
+        avgTimePerSKU = (Timer - gStartTime) / currentSKUIndex
+        estRemaining = avgTimePerSKU * (totalSKUs - currentSKUIndex)
+        tempMsg = "Processing SKU " & currentSKUIndex & " of " & totalSKUs & " (" & skuKey & ")... Est. remaining: " & _
+                  Format(estRemaining, "0.0") & " sec"
+        UpdateControl wsControl, "E7", tempMsg
+        
+        ProcessSKU CStr(skuKey), dictMainSKU(skuKey), wsSource, wsTemplate, colMap, wbOut
+    Next skuKey
+    
+    UpdateControl wsControl, "D7", "Creating Index sheet..."
+    CreateIndexSheet wbOut
+    UpdateControl wsControl, "D7", "Finalizing and saving output..."
+    
+    Dim filePath As String
+    filePath = GenerateUniqueFilePath(ThisWorkbook.Path, OUTPUT_FILENAME_PREFIX & Format(Date, "yyyymmdd"), OUTPUT_FILENAME_EXTENSION)
+    wbOut.SaveAs Filename:=filePath, FileFormat:=51
+    wsControl.Hyperlinks.Add Anchor:=wsControl.Range("D8"), Address:=filePath, TextToDisplay:=Dir(filePath)
+    
+    ' Create fabric-specific workbooks.
+    CreateZalando核料Workbooks
+    
+    ' Create cross comparison sheet.
+    CreateCrossComparisonSheet ThisWorkbook
+    
+    MsgBox "BuyPlan has been created and saved as:" & vbCrLf & filePath, vbInformation
+    
+CleanExit:
+    UpdateControl wsControl, "D7", "Process complete " & Now()
+    With Application
+        .StatusBar = False
+        .ScreenUpdating = True
+        .EnableEvents = True
+        .Calculation = xlCalculationAutomatic
+    End With
+    Exit Sub
+    
+ErrHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+    Resume CleanExit
+End Sub
+
+'==============================
+' Process a single style (MainSKU) in Template (buy plan)
+'==============================
+Sub ProcessSKU(ByVal skuKey As String, rowsColl As Collection, wsSource As Worksheet, wsTemplate As Worksheet, colMap As Object, wbOut As Workbook)
+    Dim wsOut As Worksheet
+    wsTemplate.Copy After:=wbOut.Sheets(wbOut.Sheets.Count)
+    Set wsOut = wbOut.Sheets(wbOut.Sheets.Count)
+    wsOut.Name = CleanSheetName(CStr(skuKey))
+    
+    PopulateFabricDetails wsOut, wsSource, rowsColl(1), colMap
+    InsertPhotos wsOut, wsSource, rowsColl(1), colMap
+    ProcessDataGrouping wsOut, wsSource, rowsColl, colMap
+    wsOut.Range(OUTPUT_DATE_CELL).Value = Format(Date, DATE_FORMAT)
+    
+    Dim aggColors As String, styleTotal As Double, r As Variant
+    aggColors = AggregateColors(rowsColl, wsSource, colMap)
+    styleTotal = 0
+    For Each r In rowsColl
+        styleTotal = styleTotal + Val(wsSource.Cells(r, colMap("Qty")).Value)
+    Next r
+    If Not gComparisonDataTemplate.Exists(skuKey) Then
+        gComparisonDataTemplate.Add skuKey, Array(aggColors, Join(gFixedSizes, ","), styleTotal)
+    End If
+End Sub
+
+'==============================
+' Populate fabric details (buy plan)
+'==============================
+Sub PopulateFabricDetails(wsOut As Worksheet, wsSource As Worksheet, rowIndex As Long, colMap As Object)
+    With wsOut
+        
+        .Range("B2").Value = wsSource.Cells(rowIndex, colMap("Fabric1_BodyPart")).Value
+        .Range("B3").Value = wsSource.Cells(rowIndex, colMap("Fabric2_BodyPart")).Value
+        .Range("B4").Value = wsSource.Cells(rowIndex, colMap("Fabric3_BodyPart")).Value
+    
+        .Range("C2").Value = wsSource.Cells(rowIndex, colMap("Fabric1_Code")).Value
+        .Range("C3").Value = wsSource.Cells(rowIndex, colMap("Fabric2_Code")).Value
+        .Range("C4").Value = wsSource.Cells(rowIndex, colMap("Fabric3_Code")).Value
+        
+        .Range("E2").Value = wsSource.Cells(rowIndex, colMap("Fabric1")).Value
+        .Range("E3").Value = wsSource.Cells(rowIndex, colMap("Fabric2")).Value
+        .Range("E4").Value = wsSource.Cells(rowIndex, colMap("Fabric3")).Value
+        
+        .Range("B10").Value = wsSource.Cells(rowIndex, colMap("备注1")).Value
+        .Range("B11").Value = wsSource.Cells(rowIndex, colMap("备注2")).Value
+        .Range("B12").Value = wsSource.Cells(rowIndex, colMap("备注3")).Value
+        .Range("B13").Value = wsSource.Cells(rowIndex, colMap("备注4")).Value
+    End With
+End Sub
+
+'==============================
+' Insert photos (buy plan)
+'==============================
+Sub InsertPhotos(wsOut As Worksheet, wsSource As Worksheet, firstRowIndex As Long, colMap As Object)
+    Dim photoPath1 As String, photoPath2 As String
+    Dim rngPhoto1 As Range, rngPhoto2 As Range
+    photoPath1 = wsSource.Cells(firstRowIndex, colMap("Photo1")).Value
+    photoPath2 = wsSource.Cells(firstRowIndex, colMap("Photo2")).Value
+    Set rngPhoto1 = wsOut.Range("J3:L5")
+    Set rngPhoto2 = wsOut.Range("M3:O5")
+    
+    If photoPath1 <> "" And Dir(photoPath1) <> "" Then
+        With wsOut.Shapes.AddPicture(Filename:=photoPath1, LinkToFile:=msoFalse, SaveWithDocument:=msoTrue, _
+            Left:=rngPhoto1.Left, Top:=rngPhoto1.Top, Width:=rngPhoto1.Width, Height:=rngPhoto1.Height)
+            .LockAspectRatio = msoFalse
+        End With
+    Else
+        wsOut.Range("J3").Value = "No valid photos found"
+    End If
+    
+    If photoPath2 <> "" And Dir(photoPath2) <> "" Then
+        With wsOut.Shapes.AddPicture(Filename:=photoPath2, LinkToFile:=msoFalse, SaveWithDocument:=msoTrue, _
+            Left:=rngPhoto2.Left, Top:=rngPhoto2.Top, Width:=rngPhoto2.Width, Height:=rngPhoto2.Height)
+            .LockAspectRatio = msoFalse
+        End With
+    End If
+End Sub
+
+'==============================
+' Process grouping and summary (buy plan)
+'==============================
+Sub ProcessDataGrouping(wsOut As Worksheet, wsSource As Worksheet, rowsColl As Collection, colMap As Object)
+    Dim i As Long, sizeIndex As Long, sumQty As Double, fixedSizes As Variant
+    fixedSizes = gFixedSizes
+    
+    ' Write size headers in row FIXED_SIZE_HEADER_ROW starting from FIXED_SIZE_COL_START.
+    For i = 0 To UBound(fixedSizes)
+        wsOut.Cells(FIXED_SIZE_HEADER_ROW, FIXED_SIZE_COL_START + i).Value = fixedSizes(i)
+    Next i
+    
+    Dim dictGroup As Object, rIdx As Variant, grpKey As String
+    Set dictGroup = CreateObject("Scripting.Dictionary")
+    For Each rIdx In rowsColl
+        grpKey = wsSource.Cells(rIdx, colMap("PONo")).Value & "|" & _
+                 wsSource.Cells(rIdx, colMap("ConfigSKU")).Value & "|" & _
+                 wsSource.Cells(rIdx, colMap("ColorDesc")).Value
+        If Not dictGroup.Exists(grpKey) Then
+            Set dictGroup(grpKey) = New Collection
+        End If
+        dictGroup(grpKey).Add rIdx
+    Next rIdx
+    
+    Dim groupCount As Long, groupIndex As Long, outRow As Long
+    groupCount = dictGroup.Count
+    If groupCount > 1 Then
+        wsOut.Rows(GROUP_START_ROW & ":" & GROUP_START_ROW).Resize(groupCount - 1).Insert Shift:=xlDown
+    End If
+    
+    groupIndex = 0
+    Dim grp As Variant
+    For Each grp In dictGroup.Keys
+        groupIndex = groupIndex + 1
+        outRow = GROUP_START_ROW + (groupIndex - 1)
+        UpdateControl ThisWorkbook.Sheets(CONTROL_SHEET_NAME), "D7", "Processing group " & groupIndex & " of " & groupCount
+        
+        Dim collGroup As Collection
+        Set collGroup = dictGroup(grp)
+        Dim groupFirstRow As Long
+        groupFirstRow = collGroup(1)
+        
+        Dim distinctSizes As Object, r As Variant, rawSize As String
+        Set distinctSizes = CreateObject("Scripting.Dictionary")
+        For Each r In collGroup
+            rawSize = wsSource.Cells(r, colMap("EUSize")).Value
+            If rawSize <> "" Then
+                If Not distinctSizes.Exists(rawSize) Then distinctSizes.Add rawSize, 1
+            End If
+        Next r
+        
+        If distinctSizes.Count > MAX_DISTINCT_SIZES Then
+            Dim errMsg As String
+            errMsg = "Warning: Group with PO Number " & wsSource.Cells(groupFirstRow, colMap("PONo")).Value & _
+                     " has " & distinctSizes.Count & " distinct sizes. Capping to " & MAX_DISTINCT_SIZES & "."
+            LogError errMsg
+        End If
+        
+        With wsOut
+            .Cells(outRow, 2).Value = wsSource.Cells(groupFirstRow, colMap("MainSKU")).Value
+            .Cells(outRow, 3).Value = wsSource.Cells(groupFirstRow, colMap("Brand")).Value
+            .Cells(outRow, 4).Value = wsSource.Cells(groupFirstRow, colMap("ArticleName")).Value
+            .Cells(outRow, 5).Value = wsSource.Cells(groupFirstRow, colMap("PONo")).Value
+            .Cells(outRow, 6).Value = wsSource.Cells(groupFirstRow, colMap("ConfigSKU")).Value
+            .Cells(outRow, 7).Value = wsSource.Cells(groupFirstRow, colMap("ColorDesc")).Value
+            .Cells(outRow, 8).Value = wsSource.Cells(groupFirstRow, colMap("颜色")).Value
+            .Cells(outRow, 9).Value = wsSource.Cells(groupFirstRow, colMap("主标色")).Value
+            .Cells(outRow, 1).Value = wsSource.Cells(groupFirstRow, colMap("合同号")).Value
+            .Cells(outRow, 18).Value = wsSource.Cells(groupFirstRow, colMap("离厂时间")).Value
+            .Cells(outRow, 16).Value = wsSource.Cells(groupFirstRow, colMap("船样要求")).Value
+        End With
+        
+        For sizeIndex = 0 To UBound(fixedSizes)
+            sumQty = 0
+            For Each r In collGroup
+                rawSize = wsSource.Cells(r, colMap("EUSize")).Value
+                Dim effectiveSize As String
+                If IsInArray(rawSize, fixedSizes) Then
+                    effectiveSize = rawSize
+                Else
+                    effectiveSize = "XXL"
+                End If
+                If fixedSizes(sizeIndex) = effectiveSize Then
+                    sumQty = sumQty + Val(wsSource.Cells(r, colMap("Qty")).Value)
+                End If
+            Next r
+            wsOut.Cells(outRow, FIXED_SIZE_COL_START + sizeIndex).Value = sumQty
+        Next sizeIndex
+        
+        wsOut.Cells(outRow, TOTAL_FORMULA_COL).Formula = "=SUM(" & wsOut.Cells(outRow, FIXED_SIZE_COL_START).Address(False, False) & ":" & _
+                                                        wsOut.Cells(outRow, FIXED_SIZE_COL_START + UBound(fixedSizes)).Address(False, False) & ")"
+    Next grp
+    
+    Dim lastGroupRow As Long, overallRow As Long
+    lastGroupRow = FIXED_SIZE_HEADER_ROW + groupCount
+    overallRow = lastGroupRow + 1
+    wsOut.Cells(overallRow, TOTAL_LABEL_COL).Value = "Total:"
+    wsOut.Cells(overallRow, TOTAL_FORMULA_COL).Formula = "=SUM(" & wsOut.Cells(GROUP_START_ROW, TOTAL_FORMULA_COL).Address(False, False) & ":" & _
+                                                        wsOut.Cells(lastGroupRow, TOTAL_FORMULA_COL).Address(False, False) & ")"
+    wsOut.Range("Q5").Formula = "=SUM(" & wsOut.Cells(GROUP_START_ROW, TOTAL_FORMULA_COL).Address(False, False) & ":" & _
+                                wsOut.Cells(lastGroupRow, TOTAL_FORMULA_COL).Address(False, False) & ")"
+    
+    UpdateControl ThisWorkbook.Sheets(CONTROL_SHEET_NAME), "D7", "Completed processing groups."
+End Sub
+
+'==============================
+' Check if a value exists in an array
+'==============================
+Function IsInArray(valToFind As String, arr As Variant) As Boolean
+    Dim element As Variant
+    For Each element In arr
+        If element = valToFind Then
+            IsInArray = True
+            Exit Function
+        End If
+    Next element
+    IsInArray = False
+End Function
+
+'==============================
+' Clean sheet name by replacing invalid characters and truncating length
+'==============================
+Function CleanSheetName(sName As String) As String
+    Dim invalidChars As Variant, i As Long
+    invalidChars = Array("/", "\", "[", "]", "*", "?", ":")
+    For i = LBound(invalidChars) To UBound(invalidChars)
+        sName = Replace(sName, invalidChars(i), "_")
+    Next i
+    If Len(sName) > 31 Then sName = Left(sName, 31)
+    CleanSheetName = sName
+End Function
+
+'==============================
+' Create fabric-specific workbooks using Template_P.
+' In each workbook, each style gets one sheet. In that sheet:
+'   - Row 2: Size headers (columns B onward) from gFixedSizes.
+'   - Row 3 and below: Column A lists distinct colors, columns B onward list corresponding quantities.
+'   - Total quantity for the style is computed and stored.
+'==============================
+Sub CreateZalando核料Workbooks()
+    Dim wsControl As Worksheet, wsSource As Worksheet
+    Dim lastRow As Long, colMap As Object, dictFabric As Object
+    Dim fabricKey As Variant, newFolderPath As String, fullFilePath As String
+    Dim nextRow As Long
+    Dim wb核料 As Workbook, dictMainSKU As Object, rowColl As Collection
+    Dim i As Long, r As Long, thisMainSKU As String
+    
+    On Error GoTo ErrHandler
+    Set wsControl = ThisWorkbook.Sheets(CONTROL_SHEET_NAME)
+    Set wsSource = ThisWorkbook.Sheets(SOURCE_SHEET_NAME)
+    lastRow = wsSource.Cells(wsSource.Rows.Count, "A").End(xlUp).Row
+    Set colMap = GetColumnMapping(wsSource, HEADER_ROW)
+    
+    ' Group by Fabric1_Code.
+    Set dictFabric = BuildDictionary(wsSource, colMap("Fabric1_Code"), DATA_START_ROW, lastRow)
+    
+    ' Clear existing hyperlinks in control sheet (column D, from row 11).
+    wsControl.Range("D11:D" & wsControl.Rows.Count).ClearContents
+    
+    For Each fabricKey In dictFabric.Keys
+        newFolderPath = ThisWorkbook.Path & "\" & FOLDER_核料
+        If Dir(newFolderPath, vbDirectory) = "" Then MkDir newFolderPath
+        
+        fullFilePath = GenerateUniqueFilePath(newFolderPath, 核料_FILE_PREFIX & CStr(fabricKey), ".xlsx")
+        UpdateControl wsControl, "D10", "Creating workbook for Fabric: " & fabricKey
+        
+        Set wb核料 = Workbooks.Add
+        DeleteAllSheets wb核料
+        
+        ' Group rows by MainSKU for this fabric.
+        Set dictMainSKU = CreateObject("Scripting.Dictionary")
+        Set rowColl = dictFabric(fabricKey)
+        For i = 1 To rowColl.Count
+            r = rowColl(i)
+            thisMainSKU = wsSource.Cells(r, colMap("MainSKU")).Value
+            If thisMainSKU <> "" Then
+                If Not dictMainSKU.Exists(thisMainSKU) Then
+                    Set dictMainSKU(thisMainSKU) = New Collection
+                End If
+                dictMainSKU(thisMainSKU).Add r
+            End If
+        Next i
+        
+        Dim skuKey As Variant
+        For Each skuKey In dictMainSKU.Keys
+            ' Create one sheet per style from Template_P.
+            ThisWorkbook.Sheets(TEMPLATE_P_SHEET_NAME).Copy After:=wb核料.Sheets(wb核料.Sheets.Count)
+            Dim wsNew As Worksheet
+            Set wsNew = wb核料.Sheets(wb核料.Sheets.Count)
+            wsNew.Name = CleanSheetName(CStr(skuKey))
+            
+            ' Group rows for this style by color.
+            Dim colorDict As Object, eachRow As Variant, colorVal As Variant
+            Set colorDict = CreateObject("Scripting.Dictionary")
+            For Each eachRow In dictMainSKU(skuKey)
+                colorVal = Trim(wsSource.Cells(eachRow, colMap("颜色")).Value)
+                If colorVal <> "" Then
+                    If Not colorDict.Exists(colorVal) Then
+                        Set colorDict(colorVal) = New Collection
+                    End If
+                    colorDict(colorVal).Add eachRow
+                End If
+            Next eachRow
+            
+            ' Layout for Template_P:
+            ' Row 2: Size headers (columns B onward) from gFixedSizes.
+            Dim colPos As Long, s As Variant
+            colPos = 2
+            For Each s In gFixedSizes
+                wsNew.Cells(2, colPos).Value = s
+                colPos = colPos + 1
+            Next s
+            
+            ' Row 3 and below: Column A lists colors; columns B onward list quantities.
+            Dim outputRow As Long: outputRow = 3
+            Dim dictSizeQty As Object
+            For Each colorVal In colorDict.Keys
+                Set dictSizeQty = CreateObject("Scripting.Dictionary")
+                For Each eachRow In colorDict(colorVal)
+                    Dim currentSize As String, currentQty As Double
+                    currentSize = Trim(wsSource.Cells(eachRow, colMap("EUSize")).Value)
+                    If currentSize <> "" Then
+                        currentQty = Val(wsSource.Cells(eachRow, colMap("Qty")).Value)
+                        If dictSizeQty.Exists(currentSize) Then
+                            dictSizeQty(currentSize) = dictSizeQty(currentSize) + currentQty
+                        Else
+                            dictSizeQty.Add currentSize, currentQty
+                        End If
+                    End If
+                Next eachRow
+                
+                wsNew.Cells(outputRow, 1).Value = colorVal
+                colPos = 2
+                For Each s In gFixedSizes
+                    If dictSizeQty.Exists(s) Then
+                        wsNew.Cells(outputRow, colPos).Value = dictSizeQty(s)
+                    Else
+                        wsNew.Cells(outputRow, colPos).Value = 0
+                    End If
+                    colPos = colPos + 1
+                Next s
+                
+                ' Record Template_P data for cross comparison.
+                If Not gComparisonDataTemplateP.Exists(skuKey & "_" & colorVal) Then
+                    gComparisonDataTemplateP.Add skuKey & "_" & colorVal, Array(colorVal, Join(gFixedSizes, ","))
+                End If
+                
+                outputRow = outputRow + 1
+            Next colorVal
+            
+            ' Compute total quantity for this style from Template_P sheet.
+            Dim styleTotal As Double: styleTotal = 0
+            Dim rRow As Long, colSum As Double
+            For rRow = 3 To outputRow - 1
+                colSum = 0
+                For colPos = 2 To 1 + (UBound(gFixedSizes) - LBound(gFixedSizes) + 1)
+                    colSum = colSum + wsNew.Cells(rRow, colPos).Value
+                Next colPos
+                styleTotal = styleTotal + colSum
+            Next rRow
+            gTemplatePTotals.Add skuKey, styleTotal
+        Next skuKey
+        
+        wb核料.SaveAs Filename:=fullFilePath, FileFormat:=51
+        wb核料.Close SaveChanges:=False
+        
+        nextRow = 11
+        Do While wsControl.Cells(nextRow, "D").Value <> ""
+            nextRow = nextRow + 1
+        Loop
+        wsControl.Hyperlinks.Add Anchor:=wsControl.Cells(nextRow, "D"), _
+            Address:=fullFilePath, TextToDisplay:=Dir(fullFilePath)
+    Next fabricKey
+    
+    UpdateControl wsControl, "D10", "All 核料 workbooks created."
+    Exit Sub
+    
+ErrHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+    UpdateControl wsControl, "D10", "Error occurred in CreateZalando核料Workbooks."
+End Sub
+
+'==============================
+' Create Cross Comparison Sheet in master workbook.
+' This sheet compares aggregated data from Template (buy plan) and Template_P.
+' Columns:
+'   A: Style (SKU)
+'   B: Colors (Template)
+'   C: Sizes (Template)
+'   D: Total (Template)
+'   E: Colors (Template_P)
+'   F: Sizes (Template_P)
+'   G: Total (Template_P)
+'   H: Consistency Check
+'   I: Comparison Time
+'==============================
+Sub CreateCrossComparisonSheet(masterWB As Workbook)
+    Dim wsCompare As Worksheet
+    On Error Resume Next
+    Set wsCompare = masterWB.Sheets("Cross Comparison")
+    On Error GoTo 0
+    If Not wsCompare Is Nothing Then
+        Application.DisplayAlerts = False
+        wsCompare.Delete
+        Application.DisplayAlerts = True
+    End If
+    
+    Set wsCompare = masterWB.Sheets.Add(After:=masterWB.Sheets(masterWB.Sheets.Count))
+    wsCompare.Name = "Cross Comparison"
+    
+    With wsCompare
+        .Range("A1").Value = "Style (SKU)"
+        .Range("B1").Value = "Colors (Template)"
+        .Range("C1").Value = "Sizes (Template)"
+        .Range("D1").Value = "Total (Template)"
+        .Range("E1").Value = "Colors (Template_P)"
+        .Range("F1").Value = "Sizes (Template_P)"
+        .Range("G1").Value = "Total (Template_P)"
+        .Range("H1").Value = "Consistency Check"
+        .Range("I1").Value = "Comparison Time"
+    End With
+    
+    ' For Template_P, aggregate colors by style.
+    Dim aggTemplateP As Object
+    Set aggTemplateP = CreateObject("Scripting.Dictionary")
+    Dim k As Variant, styleKey As String, colorPart As String
+    For Each k In gComparisonDataTemplateP.Keys
+        styleKey = Split(k, "_")(0)
+        colorPart = gComparisonDataTemplateP(k)(0)
+        If Not aggTemplateP.Exists(styleKey) Then
+            aggTemplateP.Add styleKey, colorPart
+        Else
+            Dim existing As String, arr() As String, found As Boolean, v As Variant
+            existing = aggTemplateP(styleKey)
+            arr = Split(existing, ",")
+            found = False
+            For Each v In arr
+                If Trim(v) = colorPart Then
+                    found = True
+                    Exit For
+                End If
+            Next v
+            If Not found Then
+                aggTemplateP(styleKey) = existing & "," & colorPart
+            End If
+        End If
+    Next k
+    
+    Dim rowCounter As Long: rowCounter = 2
+    Dim templateSizes As String: templateSizes = Join(gFixedSizes, ",")
+    Dim tmplColors As String, tplpColors As String
+    Dim style As Variant, totalTemplate As Double, totalTemplateP As Double
+    
+    For Each style In gComparisonDataTemplate.Keys
+        wsCompare.Cells(rowCounter, "A").Value = style
+        wsCompare.Cells(rowCounter, "B").Value = gComparisonDataTemplate(style)(0)
+        wsCompare.Cells(rowCounter, "C").Value = gComparisonDataTemplate(style)(1)
+        wsCompare.Cells(rowCounter, "D").Value = gComparisonDataTemplate(style)(2)
+        
+        If aggTemplateP.Exists(style) Then
+            wsCompare.Cells(rowCounter, "E").Value = aggTemplateP(style)
+            wsCompare.Cells(rowCounter, "F").Value = templateSizes
+            If gTemplatePTotals.Exists(style) Then
+                totalTemplateP = gTemplatePTotals(style)
+            Else
+                totalTemplateP = 0
+            End If
+            wsCompare.Cells(rowCounter, "G").Value = totalTemplateP
+            
+            tmplColors = gComparisonDataTemplate(style)(0)
+            tplpColors = aggTemplateP(style)
+            totalTemplate = gComparisonDataTemplate(style)(2)
+            
+            Dim consistency As String
+            If StrComp(tmplColors, tplpColors, vbTextCompare) = 0 And _
+               gComparisonDataTemplate(style)(1) = templateSizes And _
+               totalTemplate = totalTemplateP Then
+                consistency = "OK"
+            Else
+                consistency = "Mismatch"
+                LogError "Cross comparison error for SKU " & style & ". Template colors: " & tmplColors & "; Template_P colors: " & tplpColors
+            End If
+            
+            wsCompare.Cells(rowCounter, "H").Value = consistency
+            wsCompare.Cells(rowCounter, "I").Value = Now()
+        Else
+            wsCompare.Cells(rowCounter, "E").Value = "Not Found"
+            wsCompare.Cells(rowCounter, "H").Value = "Missing Template_P Data"
+            wsCompare.Cells(rowCounter, "I").Value = Now()
+            LogError "Missing Template_P data for SKU " & style & "."
+        End If
+        rowCounter = rowCounter + 1
+    Next style
+    
+    wsCompare.Columns.AutoFit
+End Sub
+
+
+
+
+'==============================
+' Get allowed sizes from source (unique values from EU size column)
+'==============================
+Function GetAllowedSizesFromSource(ws As Worksheet, colMap As Object) As Variant
+    Dim sizeDict As Object, r As Long, lastRow As Long, sizeVal As String
+    Set sizeDict = CreateObject("Scripting.Dictionary")
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    For r = DATA_START_ROW To lastRow
+        sizeVal = Trim(ws.Cells(r, colMap("EUSize")).Value)
+        If sizeVal <> "" Then
+            If Not sizeDict.Exists(sizeVal) Then sizeDict.Add sizeVal, 1
+        End If
+    Next r
+    GetAllowedSizesFromSource = sizeDict.Keys
+End Function
+
+'==============================
+' Get Column Mapping from header row in source sheet
+'==============================
+Function GetColumnMapping(ws As Worksheet, headerRow As Long) As Object
+    Dim mapping As Object, c As Range
+    Set mapping = CreateObject("Scripting.Dictionary")
+    For Each c In ws.Rows(headerRow).Cells
+        Select Case Trim(c.Value)
+            Case "Main Supplier Config SKU": mapping("MainSKU") = c.Column
+            Case "Article Name": mapping("ArticleName") = c.Column
+            Case "Purchase Order Number": mapping("PONo") = c.Column
+            Case "Config SKU": mapping("ConfigSKU") = c.Column
+            Case "Brand": mapping("Brand") = c.Column
+            Case "Main Supplier Color Description": mapping("ColorDesc") = c.Column
+            Case "EU size": mapping("EUSize") = c.Column
+            Case "Qty Ordered aCanc & aClosing (PO)": mapping("Qty") = c.Column
+            Case "Photo1": mapping("Photo1") = c.Column
+            Case "Photo2": mapping("Photo2") = c.Column
+            Case "面料_大身": mapping("Fabric1") = c.Column
+            Case "面料_其他1": mapping("Fabric2") = c.Column
+            Case "面料_其他2": mapping("Fabric3") = c.Column
+            Case "面料_大身_编号": mapping("Fabric1_Code") = c.Column
+            Case "面料_其他1_编号": mapping("Fabric2_Code") = c.Column
+            Case "面料_其他2_编号": mapping("Fabric3_Code") = c.Column
+            Case "面料_大身_部位": mapping("Fabric1_BodyPart") = c.Column
+            Case "面料_其他1_部位": mapping("Fabric2_BodyPart") = c.Column
+            Case "面料_其他2_部位": mapping("Fabric3_BodyPart") = c.Column
+            Case "颜色": mapping("颜色") = c.Column
+            Case "主标色": mapping("主标色") = c.Column
+            Case "合同号": mapping("合同号") = c.Column
+            Case "离厂时间": mapping("离厂时间") = c.Column
+            Case "船样要求": mapping("船样要求") = c.Column
+            Case "备注1": mapping("备注1") = c.Column
+            Case "备注2": mapping("备注2") = c.Column
+            Case "备注3": mapping("备注3") = c.Column
+            Case "备注4": mapping("备注4") = c.Column
+        End Select
+    Next c
+    Set GetColumnMapping = mapping
+End Function
+
+'==============================
+' Build a dictionary grouping rows by a key (e.g., MainSKU)
+'==============================
+Function BuildDictionary(ws As Worksheet, keyCol As Long, startRow As Long, lastRow As Long) As Object
+    Dim dict As Object, i As Long, keyVal As String
+    Set dict = CreateObject("Scripting.Dictionary")
+    For i = startRow To lastRow
+        keyVal = ws.Cells(i, keyCol).Value
+        If keyVal <> "" Then
+            If Not dict.Exists(keyVal) Then Set dict(keyVal) = New Collection
+            dict(keyVal).Add i
+        End If
+    Next i
+    Set BuildDictionary = dict
+End Function
+
+'==============================
+' Delete all sheets in a workbook except a new Index sheet
+'==============================
+Sub DeleteAllSheets(wb As Workbook)
+    Dim sh As Worksheet
+    Application.DisplayAlerts = False
+    wb.Sheets.Add Before:=wb.Sheets(1)
+    wb.Sheets(1).Name = "Index"
+    For Each sh In wb.Worksheets
+        If sh.Name <> "Index" Then sh.Delete
+    Next sh
+    Application.DisplayAlerts = True
+End Sub
+
+'==============================
+' Generate a unique file path based on existing files
+'==============================
+Function GenerateUniqueFilePath(folderPath As String, baseName As String, extension As String) As String
+    Dim filePath As String, versionNum As Long
+    filePath = folderPath & "\" & baseName & extension
+    versionNum = 1
+    Do While Dir(filePath) <> ""
+        filePath = folderPath & "\" & baseName & "_v" & versionNum & extension
+        versionNum = versionNum + 1
+    Loop
+    GenerateUniqueFilePath = filePath
+End Function
+
+'==============================
+' Log error or warning messages to an Error Log sheet
+'==============================
+Sub LogError(errorMsg As String)
+    Dim wsError As Worksheet
+    On Error Resume Next
+    Set wsError = ThisWorkbook.Sheets(ERROR_LOG_SHEET_NAME)
+    If wsError Is Nothing Then
+        Set wsError = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        wsError.Name = ERROR_LOG_SHEET_NAME
+        With wsError
+            .Range("A1").Value = "Timestamp"
+            .Range("B1").Value = "Error Message"
+        End With
+    End If
+    On Error GoTo 0
+    Dim lastRow As Long
+    lastRow = wsError.Cells(wsError.Rows.Count, "A").End(xlUp).Row + 1
+    wsError.Cells(lastRow, "A").Value = Now()
+    wsError.Cells(lastRow, "B").Value = errorMsg
+End Sub
+
+Sub UpdateControl(ws As Worksheet, cellRef As String, message As String)
+    Application.ScreenUpdating = True
+    ws.Range(cellRef).Value = message
+    Application.ScreenUpdating = False
+End Sub
+Sub CreateIndexSheet(wbOut As Workbook)
+    Dim wsIndex As Worksheet, ws As Worksheet, indexRow As Long
+    On Error Resume Next
+    Set wsIndex = wbOut.Sheets("Index")
+    On Error GoTo 0
+    If Not wsIndex Is Nothing Then
+        Application.DisplayAlerts = False
+        wsIndex.Delete
+        Application.DisplayAlerts = True
+    End If
+    Set wsIndex = wbOut.Sheets.Add(Before:=wbOut.Sheets(1))
+    wsIndex.Name = "Index"
+    
+   With wsIndex
+        .Cells(1, 1).Value = "No."
+        .Cells(1, 2).Value = "款号"
+        .Cells(1, 3).Value = "面料_大身"
+        .Cells(1, 4).Value = "面料_大身_编号"
+        .Cells(1, 5).Value = "订单数合计"
+        .Cells(1, 6).Value = "离厂时间"
+        .Cells(1, 7).Value = "生产工厂"
+        .Cells(1, 8).Value = "工厂交期"
+        
+         .Cells(1, 9).Value = "面料（计划）到厂时间"
+         .Cells(1, 10).Value = "辅料（计划）到厂时间"
+         .Cells(1, 11).Value = "样衣（计划）确认时间"
+         .Cells(1, 12).Value = "大货版（计划）完成时间"
+         .Cells(1, 13).Value = "全码版（计划）完成时间"
+         .Cells(1, 14).Value = "裁剪计划（计划）完成时间"
+         .Cells(1, 15).Value = "裁剪（计划）完成时间"
+         .Cells(1, 16).Value = "裁剪数"
+         .Cells(1, 17).Value = "车位（计划）完成时间"
+         .Cells(1, 18).Value = "后道（计划）完成时间"
+         .Cells(1, 19).Value = "出货数"
+        
+    End With
+    
+    indexRow = 2
+    For Each ws In wbOut.Worksheets
+        If ws.Name <> "Index" And ws.Name <> ERROR_LOG_SHEET_NAME And ws.Name <> "Cross Comparison" Then
+            wsIndex.Cells(indexRow, 1).Value = indexRow - 1
+            wsIndex.Hyperlinks.Add Anchor:=wsIndex.Cells(indexRow, 2), Address:="", _
+                SubAddress:="'" & ws.Name & "'!A1", TextToDisplay:=ws.Name
+            wsIndex.Cells(indexRow, 3).Value = ws.Range("D2").Value
+            wsIndex.Cells(indexRow, 4).Value = ws.Range("B2").Value
+            wsIndex.Cells(indexRow, 5).Formula = "='" & ws.Name & "'!Q5"
+            wsIndex.Cells(indexRow, 6).Value = ws.Cells(GROUP_START_ROW, 18).Value
+            indexRow = indexRow + 1
+        End If
+    Next ws
+    wsIndex.Columns.AutoFit
+End Sub
+
+
+
+=== MODULE: Sheet7.cls ===
+Attribute VB_Name = "Sheet7"
+Attribute VB_Base = "0{00020820-0000-0000-C000-000000000046}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = True
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = True
+
+
+=== MODULE: Sheet4.cls ===
+Attribute VB_Name = "Sheet4"
+Attribute VB_Base = "0{00020820-0000-0000-C000-000000000046}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = True
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = True
+
+
+=== MODULE: Sheet5.cls ===
+Attribute VB_Name = "Sheet5"
+Attribute VB_Base = "0{00020820-0000-0000-C000-000000000046}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = True
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = True
+
+
+=== MODULE: Sheet6.cls ===
+Attribute VB_Name = "Sheet6"
+Attribute VB_Base = "0{00020820-0000-0000-C000-000000000046}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = True
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = True
+
+
+=== MODULE: Module2.bas ===
+Attribute VB_Name = "Module2"
+Option Explicit
+
+'==================================================
+' Module-Level Constants
+'==================================================
+Const SOURCE_SHEET_NAME As String = "1.PO_Client"
+Const TEMPLATE_SHEET_NAME As String = "Template"
+Const TEMPLATE_P_SHEET_NAME As String = "Template_P"
+Const CONTROL_SHEET_NAME As String = "0.Control"
+Const OUTPUT_FILENAME_PREFIX As String = "BuyPlan_"
+Const OUTPUT_FILENAME_EXTENSION As String = ".xlsx"
+Const FOLDER_核料 As String = "核料"
+Const 核料_FILE_PREFIX As String = "Zalando_核料_"
+Const ERROR_LOG_SHEET_NAME As String = "Error Log"
+
+' Layout (all row/column numbers are 1–based)
+Const HEADER_ROW As Long = 3                ' PO tab header row
+Const DATA_START_ROW As Long = HEADER_ROW + 1 ' Data starts after header
+Const FIXED_SIZE_HEADER_ROW As Long = 7       ' Row in Template for fixed-size headers
+Const GROUP_START_ROW As Long = 8             ' Row in Template where group data starts
+
+' Template column positions
+Const FIXED_SIZE_COL_START As Long = 10       ' Column J for allowed size sums
+Const TOTAL_LABEL_COL As Long = 16            ' Column P for "Total:" label
+Const TOTAL_FORMULA_COL As Long = 17          ' Column Q for row total formulas
+Const OUTPUT_DATE_CELL As String = "L1"       ' Cell in Template for current date
+
+' Date format for output date
+Const DATE_FORMAT As String = "mm/dd/yyyy"
+
+' Maximum distinct sizes allowed per group
+Const MAX_DISTINCT_SIZES As Long = 6
+
+'==================================================
+' Global Variables
+'==================================================
+Dim gFixedSizes As Variant   ' Allowed sizes derived from source (sorted in order "XS, S, M, L, XL")
+Dim gStartTime As Double     ' Overall start time
+
+' Global dictionaries for cross comparison (Template vs Template_P)
+Public gComparisonDataTemplate As Object  ' key: style; value: Array(aggregatedColors, sizes)
+Public gComparisonDataTemplateP As Object ' key: style; will be built by aggregating all Template_P color data
+
+'==================================================
+' Helper: Sort allowed sizes in the order "XS, S, M, L, XL"
+'==================================================
+Function SortAllowedSizes(sizes As Variant) As Variant
+    Dim orderMapping As Object
+    Set orderMapping = CreateObject("Scripting.Dictionary")
+    orderMapping.Add "XS", 1
+    orderMapping.Add "S", 2
+    orderMapping.Add "M", 3
+    orderMapping.Add "L", 4
+    orderMapping.Add "XL", 5
+    Dim i As Long, j As Long, temp As String
+    For i = LBound(sizes) To UBound(sizes) - 1
+        For j = i + 1 To UBound(sizes)
+            If orderMapping.Exists(sizes(i)) And orderMapping.Exists(sizes(j)) Then
+                If orderMapping(sizes(i)) > orderMapping(sizes(j)) Then
+                    temp = sizes(i)
+                    sizes(i) = sizes(j)
+                    sizes(j) = temp
+                End If
+            ElseIf orderMapping.Exists(sizes(i)) And Not orderMapping.Exists(sizes(j)) Then
+                ' sizes(i) remains before sizes(j)
+            ElseIf Not orderMapping.Exists(sizes(i)) And orderMapping.Exists(sizes(j)) Then
+                temp = sizes(i)
+                sizes(i) = sizes(j)
+                sizes(j) = temp
+            Else
+                If sizes(i) > sizes(j) Then
+                    temp = sizes(i)
+                    sizes(i) = sizes(j)
+                    sizes(j) = temp
+                End If
+            End If
+        Next j
+    Next i
+    SortAllowedSizes = sizes
+End Function
+
+'==================================================
+' Helper: Aggregate distinct colors from a collection of rows
+'==================================================
+Function AggregateColors(rowsColl As Collection, ws As Worksheet, colMap As Object) As String
+    Dim dictColors As Object, r As Variant, colorVal As String
+    Set dictColors = CreateObject("Scripting.Dictionary")
+    For Each r In rowsColl
+        colorVal = Trim(ws.Cells(r, colMap("颜色")).Value)
+        If colorVal <> "" Then
+            If Not dictColors.Exists(colorVal) Then dictColors.Add colorVal, True
+        End If
+    Next r
+    AggregateColors = Join(dictColors.Keys, ",")
+End Function
+
+'==================================================
+' Main Entry Point
+'==================================================
+Sub CreateBuyPlan()
+    Dim wsControl As Worksheet, wsSource As Worksheet, wsTemplate As Worksheet
+    Dim lastRow As Long, colMap As Object, dictMainSKU As Object
+    Dim wbOut As Workbook, skuKey As Variant
+    Dim totalSKUs As Long, currentSKUIndex As Long
+    Dim avgTimePerSKU As Double, estRemaining As Double, tempMsg As String
+    Dim tempSizes As Variant, i As Long
+    
+    Set gComparisonDataTemplate = CreateObject("Scripting.Dictionary")
+    Set gComparisonDataTemplateP = CreateObject("Scripting.Dictionary")
+    
+    Set wsControl = ThisWorkbook.Sheets(CONTROL_SHEET_NAME)
+    Set wsSource = ThisWorkbook.Sheets(SOURCE_SHEET_NAME)
+    Set wsTemplate = ThisWorkbook.Sheets(TEMPLATE_SHEET_NAME)
+    
+    With Application
+        .DisplayStatusBar = True
+        .ScreenUpdating = False
+        .EnableEvents = False
+    End With
+    
+    gStartTime = Timer
+    lastRow = wsSource.Cells(wsSource.Rows.Count, "A").End(xlUp).Row
+    Set colMap = GetColumnMapping(wsSource, HEADER_ROW)
+    
+    ' Get allowed sizes from source then sort them in desired order
+    gFixedSizes = GetAllowedSizesFromSource(wsSource, colMap)
+    gFixedSizes = SortAllowedSizes(gFixedSizes)
+    
+    ' Cap allowed sizes if necessary.
+    If UBound(gFixedSizes) - LBound(gFixedSizes) + 1 > MAX_DISTINCT_SIZES Then
+        LogError "Overall source contains " & (UBound(gFixedSizes) - LBound(gFixedSizes) + 1) & _
+                 " distinct sizes. Capping to " & MAX_DISTINCT_SIZES & " allowed sizes."
+        tempSizes = gFixedSizes
+        ReDim gFixedSizes(0 To MAX_DISTINCT_SIZES - 1)
+        For i = 0 To MAX_DISTINCT_SIZES - 1
+            gFixedSizes(i) = tempSizes(i)
+        Next i
+    End If
+    
+    Set dictMainSKU = BuildDictionary(wsSource, colMap("MainSKU"), DATA_START_ROW, lastRow)
+    
+    Set wbOut = Workbooks.Add
+    DeleteAllSheets wbOut
+    
+    totalSKUs = dictMainSKU.Count
+    currentSKUIndex = 0
+    
+    Dim wsOut As Worksheet
+    For Each skuKey In dictMainSKU.Keys
+        currentSKUIndex = currentSKUIndex + 1
+        avgTimePerSKU = (Timer - gStartTime) / currentSKUIndex
+        estRemaining = avgTimePerSKU * (totalSKUs - currentSKUIndex)
+        tempMsg = "Processing SKU " & currentSKUIndex & " of " & totalSKUs & " (" & skuKey & ")... Est. remaining: " & _
+                  Format(estRemaining, "0.0") & " sec"
+        UpdateControl wsControl, "D7", tempMsg
+        
+        ProcessSKU CStr(skuKey), dictMainSKU(skuKey), wsSource, wsTemplate, colMap, wbOut
+    Next skuKey
+    
+    UpdateControl wsControl, "D7", "Creating Index sheet..."
+    CreateIndexSheet wbOut
+    UpdateControl wsControl, "D7", "Finalizing and saving output..."
+    
+    Dim filePath As String
+    filePath = GenerateUniqueFilePath(ThisWorkbook.Path, OUTPUT_FILENAME_PREFIX & Format(Date, "yyyymmdd"), OUTPUT_FILENAME_EXTENSION)
+    wbOut.SaveAs Filename:=filePath, FileFormat:=51
+    wsControl.Hyperlinks.Add Anchor:=wsControl.Range("D8"), Address:=filePath, TextToDisplay:=Dir(filePath)
+    
+    CreateZalando核料Workbooks
+    CreateCrossComparisonSheet ThisWorkbook
+    
+    MsgBox "BuyPlan has been created and saved as:" & vbCrLf & filePath, vbInformation
+    
+CleanExit:
+    UpdateControl wsControl, "D7", "Process complete " & Now()
+    With Application
+        .StatusBar = False
+        .ScreenUpdating = True
+        .EnableEvents = True
+        .Calculation = xlCalculationAutomatic
+    End With
+    Exit Sub
+    
+ErrHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+    Resume CleanExit
+End Sub
+
+'==================================================
+' Process a single MainSKU group using Template (buy plan)
+'==================================================
+Sub ProcessSKU(ByVal skuKey As String, rowsColl As Collection, wsSource As Worksheet, wsTemplate As Worksheet, colMap As Object, wbOut As Workbook)
+    Dim wsOut As Worksheet
+    wsTemplate.Copy After:=wbOut.Sheets(wbOut.Sheets.Count)
+    Set wsOut = wbOut.Sheets(wbOut.Sheets.Count)
+    wsOut.Name = CleanSheetName(CStr(skuKey))
+    
+    PopulateFabricDetails wsOut, wsSource, rowsColl(1), colMap
+    InsertPhotos wsOut, wsSource, rowsColl(1), colMap
+    ProcessDataGrouping wsOut, wsSource, rowsColl, colMap
+    
+    wsOut.Range(OUTPUT_DATE_CELL).Value = Format(Date, DATE_FORMAT)
+    
+    ' Aggregate colors from all rows for this style.
+    Dim aggColors As String
+    aggColors = AggregateColors(rowsColl, wsSource, colMap)
+    If Not gComparisonDataTemplate.Exists(skuKey) Then
+        gComparisonDataTemplate.Add skuKey, Array(aggColors, Join(gFixedSizes, ","))
+    End If
+End Sub
+
+'==================================================
+' Populate fabric details into output sheet
+'==================================================
+Sub PopulateFabricDetails(wsOut As Worksheet, wsSource As Worksheet, rowIndex As Long, colMap As Object)
+    With wsOut
+        .Range("B2").Value = wsSource.Cells(rowIndex, colMap("Fabric1_Code")).Value
+        .Range("B3").Value = wsSource.Cells(rowIndex, colMap("Fabric2_Code")).Value
+        .Range("B4").Value = wsSource.Cells(rowIndex, colMap("Fabric3_Code")).Value
+        .Range("D2").Value = wsSource.Cells(rowIndex, colMap("Fabric1")).Value
+        .Range("D3").Value = wsSource.Cells(rowIndex, colMap("Fabric2")).Value
+        .Range("D4").Value = wsSource.Cells(rowIndex, colMap("Fabric3")).Value
+        .Range("B10").Value = wsSource.Cells(rowIndex, colMap("备注1")).Value
+        .Range("B11").Value = wsSource.Cells(rowIndex, colMap("备注2")).Value
+        .Range("B12").Value = wsSource.Cells(rowIndex, colMap("备注3")).Value
+        .Range("B13").Value = wsSource.Cells(rowIndex, colMap("备注4")).Value
+    End With
+End Sub
+
+'==================================================
+' Insert photos into output sheet using the first row
+'==================================================
+Sub InsertPhotos(wsOut As Worksheet, wsSource As Worksheet, firstRowIndex As Long, colMap As Object)
+    Dim photoPath1 As String, photoPath2 As String
+    Dim rngPhoto1 As Range, rngPhoto2 As Range
+    photoPath1 = wsSource.Cells(firstRowIndex, colMap("Photo1")).Value
+    photoPath2 = wsSource.Cells(firstRowIndex, colMap("Photo2")).Value
+    Set rngPhoto1 = wsOut.Range("J3:L5")
+    Set rngPhoto2 = wsOut.Range("M3:O5")
+    
+    If photoPath1 <> "" And Dir(photoPath1) <> "" Then
+        With wsOut.Shapes.AddPicture(Filename:=photoPath1, LinkToFile:=msoFalse, SaveWithDocument:=msoTrue, _
+            Left:=rngPhoto1.Left, Top:=rngPhoto1.Top, Width:=rngPhoto1.Width, Height:=rngPhoto1.Height)
+            .LockAspectRatio = msoFalse
+        End With
+    Else
+        wsOut.Range("J3").Value = "No valid photos found"
+    End If
+    
+    If photoPath2 <> "" And Dir(photoPath2) <> "" Then
+        With wsOut.Shapes.AddPicture(Filename:=photoPath2, LinkToFile:=msoFalse, SaveWithDocument:=msoTrue, _
+            Left:=rngPhoto2.Left, Top:=rngPhoto2.Top, Width:=rngPhoto2.Width, Height:=rngPhoto2.Height)
+            .LockAspectRatio = msoFalse
+        End With
+    End If
+End Sub
+
+'==================================================
+' Process data grouping and summary in output sheet (buy plan)
+'==================================================
+Sub ProcessDataGrouping(wsOut As Worksheet, wsSource As Worksheet, rowsColl As Collection, colMap As Object)
+    Dim i As Long, sizeIndex As Long, sumQty As Double, fixedSizes As Variant
+    fixedSizes = gFixedSizes
+    
+    For i = 0 To UBound(fixedSizes)
+        wsOut.Cells(FIXED_SIZE_HEADER_ROW, FIXED_SIZE_COL_START + i).Value = fixedSizes(i)
+    Next i
+    
+    Dim dictGroup As Object, rIdx As Variant, grpKey As String
+    Set dictGroup = CreateObject("Scripting.Dictionary")
+    
+    For Each rIdx In rowsColl
+        grpKey = wsSource.Cells(rIdx, colMap("PONo")).Value & "|" & _
+                 wsSource.Cells(rIdx, colMap("ConfigSKU")).Value & "|" & _
+                 wsSource.Cells(rIdx, colMap("ColorDesc")).Value
+        If Not dictGroup.Exists(grpKey) Then
+            Set dictGroup(grpKey) = New Collection
+        End If
+        dictGroup(grpKey).Add rIdx
+    Next rIdx
+    
+    Dim groupCount As Long, groupIndex As Long, outRow As Long
+    groupCount = dictGroup.Count
+    If groupCount > 1 Then
+        wsOut.Rows(GROUP_START_ROW & ":" & GROUP_START_ROW).Resize(groupCount - 1).Insert Shift:=xlDown
+    End If
+    
+    groupIndex = 0
+    Dim grp As Variant
+    For Each grp In dictGroup.Keys
+        groupIndex = groupIndex + 1
+        outRow = GROUP_START_ROW + (groupIndex - 1)
+        UpdateControl ThisWorkbook.Sheets(CONTROL_SHEET_NAME), "D7", "Processing group " & groupIndex & " of " & groupCount
+        
+        Dim collGroup As Collection
+        Set collGroup = dictGroup(grp)
+        Dim groupFirstRow As Long
+        groupFirstRow = collGroup(1)
+        
+        Dim distinctSizes As Object, r As Variant, rawSize As String
+        Set distinctSizes = CreateObject("Scripting.Dictionary")
+        For Each r In collGroup
+            rawSize = wsSource.Cells(r, colMap("EUSize")).Value
+            If rawSize <> "" Then
+                If Not distinctSizes.Exists(rawSize) Then distinctSizes.Add rawSize, 1
+            End If
+        Next r
+        
+        If distinctSizes.Count > MAX_DISTINCT_SIZES Then
+            Dim errMsg As String
+            errMsg = "Warning: Group with Purchase Order Number " & wsSource.Cells(groupFirstRow, colMap("PONo")).Value & _
+                     " has " & distinctSizes.Count & " distinct sizes. Capping to " & MAX_DISTINCT_SIZES & " sizes."
+            LogError errMsg
+        End If
+        
+        With wsOut
+            .Cells(outRow, 2).Value = wsSource.Cells(groupFirstRow, colMap("MainSKU")).Value
+            .Cells(outRow, 3).Value = wsSource.Cells(groupFirstRow, colMap("Brand")).Value
+            .Cells(outRow, 4).Value = wsSource.Cells(groupFirstRow, colMap("ArticleName")).Value
+            .Cells(outRow, 5).Value = wsSource.Cells(groupFirstRow, colMap("PONo")).Value
+            .Cells(outRow, 6).Value = wsSource.Cells(groupFirstRow, colMap("ConfigSKU")).Value
+            .Cells(outRow, 7).Value = wsSource.Cells(groupFirstRow, colMap("ColorDesc")).Value
+            .Cells(outRow, 8).Value = wsSource.Cells(groupFirstRow, colMap("颜色")).Value
+            .Cells(outRow, 9).Value = wsSource.Cells(groupFirstRow, colMap("主标色")).Value
+            .Cells(outRow, 1).Value = wsSource.Cells(groupFirstRow, colMap("合同号")).Value
+            .Cells(outRow, 18).Value = wsSource.Cells(groupFirstRow, colMap("离厂时间")).Value
+            .Cells(outRow, 16).Value = wsSource.Cells(groupFirstRow, colMap("船样要求")).Value
+        End With
+        
+        For sizeIndex = 0 To UBound(fixedSizes)
+            sumQty = 0
+            For Each r In collGroup
+                rawSize = wsSource.Cells(r, colMap("EUSize")).Value
+                Dim effectiveSize As String
+                If IsInArray(rawSize, fixedSizes) Then
+                    effectiveSize = rawSize
+                Else
+                    effectiveSize = "XXL"
+                End If
+                If fixedSizes(sizeIndex) = effectiveSize Then
+                    sumQty = sumQty + Val(wsSource.Cells(r, colMap("Qty")).Value)
+                End If
+            Next r
+            wsOut.Cells(outRow, FIXED_SIZE_COL_START + sizeIndex).Value = sumQty
+        Next sizeIndex
+        
+        wsOut.Cells(outRow, TOTAL_FORMULA_COL).Formula = "=SUM(" & wsOut.Cells(outRow, FIXED_SIZE_COL_START).Address(False, False) & ":" & _
+                                                        wsOut.Cells(outRow, FIXED_SIZE_COL_START + UBound(fixedSizes)).Address(False, False) & ")"
+    Next grp
+    
+    Dim lastGroupRow As Long, overallRow As Long
+    lastGroupRow = FIXED_SIZE_HEADER_ROW + groupCount
+    overallRow = lastGroupRow + 1
+    wsOut.Cells(overallRow, TOTAL_LABEL_COL).Value = "Total:"
+    wsOut.Cells(overallRow, TOTAL_FORMULA_COL).Formula = "=SUM(" & wsOut.Cells(GROUP_START_ROW, TOTAL_FORMULA_COL).Address(False, False) & ":" & _
+                                                        wsOut.Cells(lastGroupRow, TOTAL_FORMULA_COL).Address(False, False) & ")"
+    wsOut.Range("Q5").Formula = "=SUM(" & wsOut.Cells(GROUP_START_ROW, TOTAL_FORMULA_COL).Address(False, False) & ":" & _
+                                wsOut.Cells(lastGroupRow, TOTAL_FORMULA_COL).Address(False, False) & ")"
+    
+    UpdateControl ThisWorkbook.Sheets(CONTROL_SHEET_NAME), "D7", "Completed processing groups."
+End Sub
+
+'==================================================
+' Check if a value exists in an array
+'==================================================
+Function IsInArray(valToFind As String, arr As Variant) As Boolean
+    Dim element As Variant
+    For Each element In arr
+        If element = valToFind Then
+            IsInArray = True
+            Exit Function
+        End If
+    Next element
+    IsInArray = False
+End Function
+
+
+
+'==================================================
+' Create fabric-specific workbooks (Template_P)
+' Each style (MainSKU) gets a single tab; in that tab, row 2 contains size headers (starting from column B)
+' and from row 3 downward, each distinct color is listed in column A with its corresponding size quantities.
+'==================================================
+Sub CreateZalando核料Workbooks()
+    Dim wsControl As Worksheet, wsSource As Worksheet
+    Dim lastRow As Long, colMap As Object, dictFabric As Object
+    Dim fabricKey As Variant, newFolderPath As String, fullFilePath As String
+    Dim nextRow As Long
+    Dim wb核料 As Workbook, dictMainSKU As Object, rowColl As Collection
+    Dim i As Long, r As Long, thisMainSKU As String
+    
+    On Error GoTo ErrHandler
+    Set wsControl = ThisWorkbook.Sheets(CONTROL_SHEET_NAME)
+    Set wsSource = ThisWorkbook.Sheets(SOURCE_SHEET_NAME)
+    lastRow = wsSource.Cells(wsSource.Rows.Count, "A").End(xlUp).Row
+    Set colMap = GetColumnMapping(wsSource, HEADER_ROW)
+    
+    ' Group by Fabric1_Code
+    Set dictFabric = BuildDictionary(wsSource, colMap("Fabric1_Code"), DATA_START_ROW, lastRow)
+    
+    ' Clear existing records in column D from row 11 on 0.Control
+    wsControl.Range("D11:D" & wsControl.Rows.Count).ClearContents
+    
+    For Each fabricKey In dictFabric.Keys
+        newFolderPath = ThisWorkbook.Path & "\" & FOLDER_核料
+        If Dir(newFolderPath, vbDirectory) = "" Then MkDir newFolderPath
+        
+        fullFilePath = GenerateUniqueFilePath(newFolderPath, 核料_FILE_PREFIX & CStr(fabricKey), ".xlsx")
+        UpdateControl wsControl, "D10", "Creating workbook for Fabric: " & fabricKey
+        
+        Set wb核料 = Workbooks.Add
+        DeleteAllSheets wb核料
+        
+        ' Group rows by MainSKU for this fabric.
+        Set dictMainSKU = CreateObject("Scripting.Dictionary")
+        Set rowColl = dictFabric(fabricKey)
+        For i = 1 To rowColl.Count
+            r = rowColl(i)
+            thisMainSKU = wsSource.Cells(r, colMap("MainSKU")).Value
+            If thisMainSKU <> "" Then
+                If Not dictMainSKU.Exists(thisMainSKU) Then
+                    Set dictMainSKU(thisMainSKU) = New Collection
+                End If
+                dictMainSKU(thisMainSKU).Add r
+            End If
+        Next i
+        
+        Dim skuKey As Variant
+        For Each skuKey In dictMainSKU.Keys
+            ' Copy Template_P sheet.
+            ThisWorkbook.Sheets(TEMPLATE_P_SHEET_NAME).Copy After:=wb核料.Sheets(wb核料.Sheets.Count)
+            Dim wsNew As Worksheet
+            Set wsNew = wb核料.Sheets(wb核料.Sheets.Count)
+            wsNew.Name = CleanSheetName(CStr(skuKey))
+            
+            ' Group the rows for this style by color.
+            Dim colorDict As Object, eachRow As Variant, colorVal As Variant
+            Set colorDict = CreateObject("Scripting.Dictionary")
+            For Each eachRow In dictMainSKU(skuKey)
+                colorVal = Trim(wsSource.Cells(eachRow, colMap("颜色")).Value)
+                If colorVal <> "" Then
+                    If Not colorDict.Exists(colorVal) Then
+                        Set colorDict(colorVal) = New Collection
+                    End If
+                    colorDict(colorVal).Add eachRow
+                End If
+            Next eachRow
+            
+            ' Layout:
+            ' Row 2: size headers (columns B onward) using gFixedSizes.
+            Dim colPos As Long, s As Variant
+            colPos = 2
+            For Each s In gFixedSizes
+                wsNew.Cells(2, colPos).Value = s
+                colPos = colPos + 1
+            Next s
+            
+            ' Row 3 and below: in Column A list each color; in columns B onward list corresponding quantities.
+            Dim outputRow As Long
+            outputRow = 3
+            Dim dictSizeQty As Object
+            For Each colorVal In colorDict.Keys
+                Set dictSizeQty = CreateObject("Scripting.Dictionary")
+                For Each eachRow In colorDict(colorVal)
+                    Dim currentSize As String, currentQty As Double
+                    currentSize = Trim(wsSource.Cells(eachRow, colMap("EUSize")).Value)
+                    If currentSize <> "" Then
+                        currentQty = Val(wsSource.Cells(eachRow, colMap("Qty")).Value)
+                        If dictSizeQty.Exists(currentSize) Then
+                            dictSizeQty(currentSize) = dictSizeQty(currentSize) + currentQty
+                        Else
+                            dictSizeQty.Add currentSize, currentQty
+                        End If
+                    End If
+                Next eachRow
+                
+                wsNew.Cells(outputRow, 1).Value = colorVal
+                colPos = 2
+                For Each s In gFixedSizes
+                    If dictSizeQty.Exists(s) Then
+                        wsNew.Cells(outputRow, colPos).Value = dictSizeQty(s)
+                    Else
+                        wsNew.Cells(outputRow, colPos).Value = 0
+                    End If
+                    colPos = colPos + 1
+                Next s
+                
+                ' For Template_P cross comparison, we will aggregate later.
+                If Not gComparisonDataTemplateP.Exists(skuKey & "_" & colorVal) Then
+                    gComparisonDataTemplateP.Add skuKey & "_" & colorVal, Array(colorVal, Join(gFixedSizes, ","))
+                End If
+                
+                outputRow = outputRow + 1
+            Next colorVal
+        Next skuKey
+        
+        wb核料.SaveAs Filename:=fullFilePath, FileFormat:=51
+        wb核料.Close SaveChanges:=False
+        
+        nextRow = 11
+        Do While wsControl.Cells(nextRow, "D").Value <> ""
+            nextRow = nextRow + 1
+        Loop
+        wsControl.Hyperlinks.Add Anchor:=wsControl.Cells(nextRow, "D"), _
+                                 Address:=fullFilePath, TextToDisplay:=Dir(fullFilePath)
+    Next fabricKey
+    
+    UpdateControl wsControl, "D10", "All 核料 workbooks created."
+    Exit Sub
+    
+ErrHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+    UpdateControl wsControl, "D10", "Error occurred in CreateZalando核料Workbooks."
+End Sub
+
+'==================================================
+' Create Cross Comparison Sheet in the master workbook (ThisWorkbook)
+' This routine aggregates Template_P data by style and compares it to the Template (buy plan) data.
+'==================================================
+Sub CreateCrossComparisonSheet(masterWB As Workbook)
+    Dim wsCompare As Worksheet
+    On Error Resume Next
+    Set wsCompare = masterWB.Sheets("Cross Comparison")
+    On Error GoTo 0
+    If Not wsCompare Is Nothing Then
+        Application.DisplayAlerts = False
+        wsCompare.Delete
+        Application.DisplayAlerts = True
+    End If
+    
+    Set wsCompare = masterWB.Sheets.Add(After:=masterWB.Sheets(masterWB.Sheets.Count))
+    wsCompare.Name = "Cross Comparison"
+    
+    With wsCompare
+        .Range("A1").Value = "Style (SKU)"
+        .Range("B1").Value = "Colors (Template)"
+        .Range("C1").Value = "Sizes (Template)"
+        .Range("D1").Value = "Colors (Template_P)"
+        .Range("E1").Value = "Sizes (Template_P)"
+        .Range("F1").Value = "Consistency Check"
+    End With
+    
+    ' Aggregate Template_P data by style.
+    Dim aggTemplateP As Object
+    Set aggTemplateP = CreateObject("Scripting.Dictionary")
+    Dim k As Variant, styleKey As String, colorPart As String
+    For Each k In gComparisonDataTemplateP.Keys
+        styleKey = Split(k, "_")(0)
+        colorPart = gComparisonDataTemplateP(k)(0)
+        If Not aggTemplateP.Exists(styleKey) Then
+            aggTemplateP.Add styleKey, colorPart
+        Else
+            Dim existing As String
+            existing = aggTemplateP(styleKey)
+            Dim arr() As String, found As Boolean, v As Variant
+            arr = Split(existing, ",")
+            found = False
+            For Each v In arr
+                If Trim(v) = colorPart Then
+                    found = True
+                    Exit For
+                End If
+            Next v
+            If Not found Then
+                aggTemplateP(styleKey) = existing & "," & colorPart
+            End If
+        End If
+    Next k
+    
+    Dim rowCounter As Long
+    rowCounter = 2
+    Dim templateSizes As String
+    templateSizes = Join(gFixedSizes, ",")
+    
+    Dim style As Variant
+    For Each style In gComparisonDataTemplate.Keys
+        wsCompare.Cells(rowCounter, "A").Value = style
+        wsCompare.Cells(rowCounter, "B").Value = gComparisonDataTemplate(style)(0)
+        wsCompare.Cells(rowCounter, "C").Value = gComparisonDataTemplate(style)(1)
+        
+        If aggTemplateP.Exists(style) Then
+            wsCompare.Cells(rowCounter, "D").Value = aggTemplateP(style)
+            wsCompare.Cells(rowCounter, "E").Value = templateSizes
+            ' Compare aggregated colors (after trimming and sorting alphabetically)
+            Dim tmplColors As String, tplpColors As String
+            tmplColors = gComparisonDataTemplate(style)(0)
+            tplpColors = aggTemplateP(style)
+            If StrComp(tmplColors, tplpColors, vbTextCompare) = 0 And _
+               gComparisonDataTemplate(style)(1) = templateSizes Then
+                wsCompare.Cells(rowCounter, "F").Value = "OK"
+            Else
+                wsCompare.Cells(rowCounter, "F").Value = "Mismatch"
+                LogError "Cross comparison error for SKU " & style & ". Template colors: " & tmplColors & "; Template_P colors: " & tplpColors
+            End If
+        Else
+            wsCompare.Cells(rowCounter, "D").Value = "Not Found"
+            wsCompare.Cells(rowCounter, "F").Value = "Missing Template_P Data"
+            LogError "Missing Template_P data for SKU " & style & "."
+        End If
+        rowCounter = rowCounter + 1
+    Next style
+    wsCompare.Columns.AutoFit
+End Sub
+
+
+
+'==================================================
+' Clean sheet name to remove invalid characters and trim length
+'==================================================
+Function CleanSheetName(sName As String) As String
+    Dim invalidChars As Variant, i As Long
+    invalidChars = Array("/", "\", "[", "]", "*", "?", ":")
+    For i = LBound(invalidChars) To UBound(invalidChars)
+        sName = Replace(sName, invalidChars(i), "_")
+    Next i
+    If Len(sName) > 31 Then sName = Left(sName, 31)
+    CleanSheetName = sName
+End Function
+
+'==================================================
+' Create dictionary of allowed sizes from source "1.PO_Client"
+'==================================================
+Function GetAllowedSizesFromSource(ws As Worksheet, colMap As Object) As Variant
+    Dim sizeDict As Object, r As Long, lastRow As Long, sizeVal As String
+    Set sizeDict = CreateObject("Scripting.Dictionary")
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    For r = DATA_START_ROW To lastRow
+        sizeVal = Trim(ws.Cells(r, colMap("EUSize")).Value)
+        If sizeVal <> "" Then
+            If Not sizeDict.Exists(sizeVal) Then sizeDict.Add sizeVal, 1
+        End If
+    Next r
+    GetAllowedSizesFromSource = sizeDict.Keys
+End Function
+
+'==================================================
+' Create dictionary mapping from header row
+'==================================================
+Function GetColumnMapping(ws As Worksheet, headerRow As Long) As Object
+    Dim mapping As Object, c As Range
+    Set mapping = CreateObject("Scripting.Dictionary")
+    For Each c In ws.Rows(headerRow).Cells
+        Select Case Trim(c.Value)
+            Case "Main Supplier Config SKU": mapping("MainSKU") = c.Column
+            Case "Article Name": mapping("ArticleName") = c.Column
+            Case "Purchase Order Number": mapping("PONo") = c.Column
+            Case "Config SKU": mapping("ConfigSKU") = c.Column
+            Case "Brand": mapping("Brand") = c.Column
+            Case "Main Supplier Color Description": mapping("ColorDesc") = c.Column
+            Case "EU size": mapping("EUSize") = c.Column
+            Case "Qty Ordered aCanc & aClosing (PO)": mapping("Qty") = c.Column
+            Case "Photo1": mapping("Photo1") = c.Column
+            Case "Photo2": mapping("Photo2") = c.Column
+            Case "面料_大身": mapping("Fabric1") = c.Column
+            Case "面料_其他1": mapping("Fabric2") = c.Column
+            Case "面料_其他2": mapping("Fabric3") = c.Column
+            Case "面料_大身_编号": mapping("Fabric1_Code") = c.Column
+            Case "面料_其他1_编号": mapping("Fabric2_Code") = c.Column
+            Case "面料_其他2_编号": mapping("Fabric3_Code") = c.Column
+            Case "颜色": mapping("颜色") = c.Column
+            Case "主标色": mapping("主标色") = c.Column
+            Case "合同号": mapping("合同号") = c.Column
+            Case "离厂时间": mapping("离厂时间") = c.Column
+            Case "船样要求": mapping("船样要求") = c.Column
+            Case "备注1": mapping("备注1") = c.Column
+            Case "备注2": mapping("备注2") = c.Column
+            Case "备注3": mapping("备注3") = c.Column
+            Case "备注4": mapping("备注4") = c.Column
+        End Select
+    Next c
+    Set GetColumnMapping = mapping
+End Function
+
+'==================================================
+' Build dictionary for grouping rows by a key (e.g., MainSKU)
+'==================================================
+Function BuildDictionary(ws As Worksheet, keyCol As Long, startRow As Long, lastRow As Long) As Object
+    Dim dict As Object, i As Long, keyVal As String
+    Set dict = CreateObject("Scripting.Dictionary")
+    For i = startRow To lastRow
+        keyVal = ws.Cells(i, keyCol).Value
+        If keyVal <> "" Then
+            If Not dict.Exists(keyVal) Then Set dict(keyVal) = New Collection
+            dict(keyVal).Add i
+        End If
+    Next i
+    Set BuildDictionary = dict
+End Function
+
+'==================================================
+' Delete all sheets in workbook except a newly added Index sheet
+'==================================================
+Sub DeleteAllSheets(wb As Workbook)
+    Dim sh As Worksheet
+    Application.DisplayAlerts = False
+    wb.Sheets.Add Before:=wb.Sheets(1)
+    wb.Sheets(1).Name = "Index"
+    For Each sh In wb.Worksheets
+        If sh.Name <> "Index" Then sh.Delete
+    Next sh
+    Application.DisplayAlerts = True
+End Sub
+
+'==================================================
+' Generate a unique file path based on existing files
+'==================================================
+Function GenerateUniqueFilePath(folderPath As String, baseName As String, extension As String) As String
+    Dim filePath As String, versionNum As Long
+    filePath = folderPath & "\" & baseName & extension
+    versionNum = 1
+    Do While Dir(filePath) <> ""
+        filePath = folderPath & "\" & baseName & "_v" & versionNum & extension
+        versionNum = versionNum + 1
+    Loop
+    GenerateUniqueFilePath = filePath
+End Function
+
+'==================================================
+' Log error or warning messages to an Error Log sheet
+'==================================================
+Sub LogError(errorMsg As String)
+    Dim wsError As Worksheet
+    On Error Resume Next
+    Set wsError = ThisWorkbook.Sheets(ERROR_LOG_SHEET_NAME)
+    If wsError Is Nothing Then
+        Set wsError = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        wsError.Name = ERROR_LOG_SHEET_NAME
+        With wsError
+            .Range("A1").Value = "Timestamp"
+            .Range("B1").Value = "Error Message"
+        End With
+    End If
+    On Error GoTo 0
+    Dim lastRow As Long
+    lastRow = wsError.Cells(wsError.Rows.Count, "A").End(xlUp).Row + 1
+    wsError.Cells(lastRow, "A").Value = Now()
+    wsError.Cells(lastRow, "B").Value = errorMsg
+End Sub
+
+
+
+
+=== MODULE: GlobalVariables.bas ===
+Attribute VB_Name = "GlobalVariables"
+Option Explicit
+
+'==============================
+' Module-Level Constants
+'==============================
+' Sheet & File Names
+Const CONST_SOURCE_SHEET_NAME As String = "1.PO_Client"
+Const CONST_TEMPLATE_SHEET_NAME As String = "Template"
+Const CONST_OUTPUT_FILENAME_PREFIX As String = "BuyPlan_v_"
+Const CONST_OUTPUT_FILENAME_EXTENSION As String = ".xlsx"
+
+' Layout (all row/column numbers are 1–based)
+Const CONST_HEADER_ROW As Long = 3                   ' PO tab header row
+Const CONST_DATA_START_ROW As Long = CONST_HEADER_ROW + 1 ' Data starts after header
+Const CONST_FIXED_SIZE_HEADER_ROW As Long = 7          ' Row in template for fixed size headers
+Const CONST_GROUP_START_ROW As Long = 8              ' Row in template where group data starts
+
+' Template column positions
+Const CONST_FIXED_SIZE_COL_START As Long = 10        ' Column J for allowed size sums
+Const CONST_TOTAL_LABEL_COL As Long = 16             ' Column P for "Total:" label
+Const CONST_TOTAL_FORMULA_COL As Long = 17           ' Column Q for row total formulas
+Const CONST_OUTPUT_DATE_CELL As String = "L1"        ' Cell in template for current date
+
+' Date format for output date
+Const CONST_DATE_FORMAT As String = "mm/dd/yyyy"
+
+' Allowed sizes and maximum distinct sizes per group
+Const ALLOWED_SIZES As String = "XS,S,M,L,XL,XXL"     ' Comma–separated allowed sizes
+Const CONST_MAX_DISTINCT_SIZES As Long = 6           ' Maximum distinct sizes allowed
+
+'==============================
+' Global Variables
+'==============================
+Dim gFixedSizes As Variant   ' Array for allowed sizes
+Dim gStartTime As Double     ' Overall start time
+
+'===============================
+' ADDITIONAL CONSTANTS
+'===============================
+Const CONST_TEMPLATE_P_SHEET_NAME As String = "Template_P"
+Const CONST_FOLDER_核料 As String = "核料"
+Const CONST_核料_FILE_PREFIX As String = "Zalando_核料_"
+
+
+=== MODULE: Sheet2.cls ===
+Attribute VB_Name = "Sheet2"
+Attribute VB_Base = "0{00020820-0000-0000-C000-000000000046}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = True
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = True
+
+
+=== MODULE: Production_M.bas ===
+Attribute VB_Name = "Production_M"
+Option Explicit
+
+'==============================
+' (GLOBAL SWITCH) Debug & Error Handling Toggles
+'==============================
+Public Const DEBUG_MODE As Boolean = False      ' Turn debug prints on (True) or off (False).
+Public Const ERROR_HANDLE As Boolean = False    ' Use robust error handler (True) or resume next (False).
+
+'==============================
+' Module-Level Constants
+'==============================
+Const SOURCE_SHEET_NAME As String = "1.1.PO_Client"
+Const TEMPLATE_SHEET_NAME As String = "Template"
+Const TEMPLATE_P_SHEET_NAME As String = "Template_P"
+Const CONTROL_SHEET_NAME As String = "0.Control"
+Const OUTPUT_FILENAME_PREFIX As String = "BuyPlan_"
+Const OUTPUT_FILENAME_EXTENSION As String = ".xlsx"
+Const FOLDER_核料 As String = ""
+Const 核料_FILE_PREFIX As String = "Zalando_核料_"
+Const ERROR_LOG_SHEET_NAME As String = "Error Log"
+
+' Layout (1-based)
+Const HEADER_ROW As Long = 1
+Const DATA_START_ROW As Long = HEADER_ROW + 2
+Const FIXED_SIZE_HEADER_ROW As Long = 7
+Const GROUP_START_ROW As Long = 8
+
+' Template positions (buy plan)
+Const FIXED_SIZE_COL_START As Long = 10
+Const TOTAL_LABEL_COL As Long = 16
+Const TOTAL_FORMULA_COL As Long = 17
+Const OUTPUT_DATE_CELL As String = "L1"
+
+Const DATE_FORMAT As String = "mm/dd/yyyy"
+
+'==============================
+' Global Variables
+'==============================
+Public gFixedSizes As Variant
+Public gComparisonDataTemplate As Object
+Public gComparisonDataTemplateP As Object
+Public gTemplatePTotals As Object
+
+' Optional expiry logic
+Const EXPIRY_DATE As Date = #7/23/2026#
+Const OVERRIDE_CODE As String = "MyHiddenOverride"
+
+Dim gStartTime As Double
+
+'==============================
+' Main Entry Point
+'==============================
+Sub CreateBuyPlan_template2()
+
+    ' (GLOBAL SWITCH) error handling
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    If DEBUG_MODE Then Debug.Print "==== Entering CreateBuyPlan_template2 ===="
+
+    Dim wsControl As Worksheet, wsSource As Worksheet, wsTemplate As Worksheet
+    Dim lastRow As Long, colMap As Object, dictMainSKU As Object
+    Dim wbOut As Workbook, skuKey As Variant
+    Dim totalSKUs As Long, currentSKUIndex As Long
+    Dim avgTimePerSKU As Double, estRemaining As Double, tempMsg As String
+
+    ' ===== Expiry check (optional) =====
+    If Date > EXPIRY_DATE Then
+        If DEBUG_MODE Then Debug.Print "Date has passed expiry, checking override code..."
+        If ThisWorkbook.Sheets(CONTROL_SHEET_NAME).Range("Z1").Value <> OVERRIDE_CODE Then
+            ThisWorkbook.Sheets(CONTROL_SHEET_NAME).Range("D7").Value = _
+                "Macro expired on " & Format(EXPIRY_DATE, "yyyy/mm/dd") & ". No override."
+            LogError "Macro expired " & Format(EXPIRY_DATE, "yyyy/mm/dd") & ". No override."
+            Exit Sub
+        End If
+    End If
+
+    If DEBUG_MODE Then Debug.Print "Initializing dictionaries..."
+    Set gComparisonDataTemplate = CreateObject("Scripting.Dictionary")
+    Set gComparisonDataTemplateP = CreateObject("Scripting.Dictionary")
+    Set gTemplatePTotals = CreateObject("Scripting.Dictionary")
+
+    gFixedSizes = Array("XS", "S", "M", "L", "XL", "XXL")
+
+    Set wsControl = ThisWorkbook.Sheets(CONTROL_SHEET_NAME)
+    Set wsSource = ThisWorkbook.Sheets(SOURCE_SHEET_NAME)
+    Set wsTemplate = ThisWorkbook.Sheets(TEMPLATE_SHEET_NAME)
+
+    With Application
+        .DisplayStatusBar = True
+        .ScreenUpdating = False
+        .EnableEvents = False
+    End With
+
+    gStartTime = Timer
+
+    lastRow = wsSource.Cells(wsSource.Rows.Count, "A").End(xlUp).Row
+    If DEBUG_MODE Then Debug.Print "Source last row: " & lastRow
+
+    ' Build the column mapping
+    Set colMap = GetColumnMapping(wsSource, HEADER_ROW)
+    If DEBUG_MODE Then Debug.Print "Built colMap. 'MainSKU' = column " & colMap("MainSKU")
+
+    ' Build dictionary grouping rows by MainSKU
+    Set dictMainSKU = BuildDictionary(wsSource, colMap("MainSKU"), DATA_START_ROW, lastRow)
+    If DEBUG_MODE Then Debug.Print "dictMainSKU has " & dictMainSKU.Count & " unique SKUs"
+
+    ' Create the output workbook
+    Set wbOut = Workbooks.Add
+    DeleteAllSheets wbOut
+
+    totalSKUs = dictMainSKU.Count
+    currentSKUIndex = 0
+
+    Dim wsOut As Worksheet
+    For Each skuKey In dictMainSKU.Keys
+        currentSKUIndex = currentSKUIndex + 1
+        avgTimePerSKU = (Timer - gStartTime) / currentSKUIndex
+        estRemaining = avgTimePerSKU * (totalSKUs - currentSKUIndex)
+        tempMsg = "Processing SKU " & currentSKUIndex & " of " & totalSKUs & " (" & skuKey & ")... ~" & _
+                  Format(estRemaining, "0.0") & "s left"
+        If DEBUG_MODE Then Debug.Print tempMsg
+        UpdateControl wsControl, "E7", tempMsg
+
+        ' Create a sheet for this SKU in the new workbook
+        ProcessSKU CStr(skuKey), dictMainSKU(skuKey), wsSource, wsTemplate, colMap, wbOut
+    Next skuKey
+
+    UpdateControl wsControl, "D7", "Creating Index sheet..."
+    CreateIndexSheet wbOut
+    If DEBUG_MODE Then Debug.Print "Index sheet created."
+
+    UpdateControl wsControl, "D7", "Finalizing and saving output..."
+    Dim filePath As String
+    filePath = GenerateUniqueFilePath(ThisWorkbook.Path, OUTPUT_FILENAME_PREFIX & Format(Date, "yyyymmdd"), OUTPUT_FILENAME_EXTENSION)
+    wbOut.SaveAs Filename:=filePath, FileFormat:=51
+    If DEBUG_MODE Then Debug.Print "Saved main output as: " & filePath
+
+    wsControl.Hyperlinks.Add Anchor:=wsControl.Range("D8"), Address:=filePath, TextToDisplay:=Dir(filePath)
+
+    ' Create the fabric-specific "核料" workbooks
+    CreateZalando核料Workbooks
+
+    ' Create cross comparison sheet
+    CreateCrossComparisonSheet
+
+    MsgBox "BuyPlan has been created and saved as:" & vbCrLf & filePath, vbInformation
+
+CleanExit:
+    If DEBUG_MODE Then Debug.Print "==== Exiting CreateBuyPlan_template2 (cleanup) ===="
+    UpdateControl wsControl, "D7", "Process complete " & Now()
+    With Application
+        .StatusBar = False
+        .ScreenUpdating = True
+        .EnableEvents = True
+        .Calculation = xlCalculationAutomatic
+    End With
+    Exit Sub
+
+ErrHandler:
+    If ERROR_HANDLE Then
+        MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+        If DEBUG_MODE Then Debug.Print "Error " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Sub
+
+'==============================
+' Process a single style (MainSKU) in Template (buy plan)
+'==============================
+Sub ProcessSKU(ByVal skuKey As String, rowsColl As Collection, wsSource As Worksheet, _
+               wsTemplate As Worksheet, colMap As Object, wbOut As Workbook)
+
+    ' (GLOBAL SWITCH) error handling
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    If DEBUG_MODE Then Debug.Print "  -> ProcessSKU: " & skuKey & ", #rows= " & rowsColl.Count
+
+    wsTemplate.Copy After:=wbOut.Sheets(wbOut.Sheets.Count)
+    Dim wsOut As Worksheet
+    Set wsOut = wbOut.Sheets(wbOut.Sheets.Count)
+    wsOut.Name = CleanSheetName(CStr(skuKey))
+
+    PopulateFabricDetails wsOut, wsSource, rowsColl(1), colMap
+    InsertPhotos wsOut, wsSource, rowsColl(1), colMap
+    ProcessDataGrouping wsOut, wsSource, rowsColl, colMap
+
+    wsOut.Range(OUTPUT_DATE_CELL).Value = Format(Date, DATE_FORMAT)
+
+    ' Aggregate color info + total for cross-comparison
+    Dim aggColors As String, styleTotal As Double
+    aggColors = AggregateColors(rowsColl, wsSource, colMap)
+    styleTotal = 0
+
+    Dim r As Variant
+    For Each r In rowsColl
+        styleTotal = styleTotal + _
+                     Val(wsSource.Cells(r, colMap("XS")).Value) + _
+                     Val(wsSource.Cells(r, colMap("S")).Value) + _
+                     Val(wsSource.Cells(r, colMap("M")).Value) + _
+                     Val(wsSource.Cells(r, colMap("L")).Value) + _
+                     Val(wsSource.Cells(r, colMap("XL")).Value) + _
+                     Val(wsSource.Cells(r, colMap("XXL")).Value)
+    Next r
+
+    If Not gComparisonDataTemplate.Exists(skuKey) Then
+        gComparisonDataTemplate.Add skuKey, Array(aggColors, Join(gFixedSizes, ","), styleTotal)
+    End If
+
+    If DEBUG_MODE Then Debug.Print "    => style=" & skuKey & ", colors=" & aggColors & ", total=" & styleTotal
+
+CleanExit:
+    Exit Sub
+ErrHandler:
+    If ERROR_HANDLE Then
+        MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+        If DEBUG_MODE Then Debug.Print "Error in ProcessSKU: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Sub
+
+'==============================
+' Populate fabric details
+'==============================
+Sub PopulateFabricDetails(wsOut As Worksheet, wsSource As Worksheet, rowIndex As Long, colMap As Object)
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    If DEBUG_MODE Then Debug.Print "    PopulateFabricDetails at row " & rowIndex
+
+    With wsOut
+        .Range("B2").Value = wsSource.Cells(rowIndex, colMap("Fabric1_BodyPart")).Value
+        .Range("B3").Value = wsSource.Cells(rowIndex, colMap("Fabric2_BodyPart")).Value
+        .Range("B4").Value = wsSource.Cells(rowIndex, colMap("Fabric3_BodyPart")).Value
+
+        .Range("C2").Value = wsSource.Cells(rowIndex, colMap("Fabric1_Code")).Value
+        .Range("C3").Value = wsSource.Cells(rowIndex, colMap("Fabric2_Code")).Value
+        .Range("C4").Value = wsSource.Cells(rowIndex, colMap("Fabric3_Code")).Value
+
+        .Range("E2").Value = wsSource.Cells(rowIndex, colMap("Fabric1")).Value
+        .Range("E3").Value = wsSource.Cells(rowIndex, colMap("Fabric2")).Value
+        .Range("E4").Value = wsSource.Cells(rowIndex, colMap("Fabric3")).Value
+
+        .Range("B10").Value = wsSource.Cells(rowIndex, colMap("备注1")).Value
+        .Range("B11").Value = wsSource.Cells(rowIndex, colMap("备注2")).Value
+        .Range("B12").Value = wsSource.Cells(rowIndex, colMap("备注3")).Value
+        .Range("B13").Value = wsSource.Cells(rowIndex, colMap("备注4")).Value
+    End With
+
+CleanExit:
+    Exit Sub
+ErrHandler:
+    If ERROR_HANDLE Then
+        MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+        If DEBUG_MODE Then Debug.Print "Error in PopulateFabricDetails: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Sub
+
+'==============================
+' Insert photos
+'==============================
+Sub InsertPhotos(wsOut As Worksheet, wsSource As Worksheet, firstRowIndex As Long, colMap As Object)
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    If DEBUG_MODE Then Debug.Print "    InsertPhotos at row " & firstRowIndex
+
+    Dim photoPath1 As String, photoPath2 As String
+    photoPath1 = wsSource.Cells(firstRowIndex, colMap("Photo1")).Value
+    photoPath2 = wsSource.Cells(firstRowIndex, colMap("Photo2")).Value
+
+    Dim rngPhoto1 As Range, rngPhoto2 As Range
+    Set rngPhoto1 = wsOut.Range("J3:L5")
+    Set rngPhoto2 = wsOut.Range("M3:O5")
+
+    If photoPath1 <> "" And Dir(photoPath1) <> "" Then
+        wsOut.Shapes.AddPicture photoPath1, msoFalse, msoTrue, rngPhoto1.Left, rngPhoto1.Top, rngPhoto1.Width, rngPhoto1.Height
+        If DEBUG_MODE Then Debug.Print "      Inserted Photo1: " & photoPath1
+    End If
+
+    If photoPath2 <> "" And Dir(photoPath2) <> "" Then
+        wsOut.Shapes.AddPicture photoPath2, msoFalse, msoTrue, rngPhoto2.Left, rngPhoto2.Top, rngPhoto2.Width, rngPhoto2.Height
+        If DEBUG_MODE Then Debug.Print "      Inserted Photo2: " & photoPath2
+    End If
+
+CleanExit:
+    Exit Sub
+ErrHandler:
+    If ERROR_HANDLE Then
+        MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+        If DEBUG_MODE Then Debug.Print "Error in InsertPhotos: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Sub
+
+'==============================
+' Process grouping and summary (buy plan)
+'==============================
+Sub ProcessDataGrouping(wsOut As Worksheet, wsSource As Worksheet, rowsColl As Collection, colMap As Object)
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    If DEBUG_MODE Then Debug.Print "      ProcessDataGrouping (#rows = " & rowsColl.Count & ")"
+
+    Dim fixedSizes As Variant
+    fixedSizes = gFixedSizes
+
+    ' Write size headers
+    Dim i As Long
+    For i = LBound(fixedSizes) To UBound(fixedSizes)
+        wsOut.Cells(FIXED_SIZE_HEADER_ROW, FIXED_SIZE_COL_START + i).Value = fixedSizes(i)
+    Next i
+
+    ' Group by PONo + ConfigSKU + colorDesc
+    Dim dictGroup As Object, rIdx As Variant
+    Set dictGroup = CreateObject("Scripting.Dictionary")
+
+    For Each rIdx In rowsColl
+        Dim grpKey As String
+        grpKey = wsSource.Cells(rIdx, colMap("PONo")).Value & "|" & _
+                 wsSource.Cells(rIdx, colMap("ConfigSKU")).Value & "|" & _
+                 wsSource.Cells(rIdx, colMap("ColorDesc")).Value
+        If Not dictGroup.Exists(grpKey) Then
+            Set dictGroup(grpKey) = New Collection
+        End If
+        dictGroup(grpKey).Add rIdx
+    Next rIdx
+
+    If DEBUG_MODE Then Debug.Print "       => Found " & dictGroup.Count & " group(s)."
+    Dim groupCount As Long: groupCount = dictGroup.Count
+
+    If groupCount > 1 Then
+        Dim newRowsCount As Long
+        newRowsCount = groupCount - 1
+    
+        ' 1. Insert the extra rows (same logic as before)
+        wsOut.Rows(GROUP_START_ROW & ":" & GROUP_START_ROW).Resize(newRowsCount).Insert Shift:=xlDown
+    
+        ' 2. Force correct formatting:
+        '    Copy the format of the first data row (GROUP_START_ROW)
+        '    onto ALL data rows we now have.
+        wsOut.Rows(GROUP_START_ROW + 1).Copy
+        wsOut.Rows(GROUP_START_ROW & ":" & (GROUP_START_ROW + newRowsCount)).PasteSpecial xlPasteFormats
+        Application.CutCopyMode = False
+    End If
+
+
+    Dim groupIndex As Long, outRow As Long
+    groupIndex = 0
+
+    Dim grp As Variant
+    For Each grp In dictGroup.Keys
+        groupIndex = groupIndex + 1
+        outRow = GROUP_START_ROW + (groupIndex - 1)
+
+        If DEBUG_MODE Then Debug.Print "         Group " & groupIndex & " / " & groupCount & ": " & grp
+        UpdateControl ThisWorkbook.Sheets(CONTROL_SHEET_NAME), "D7", "Processing group " & groupIndex
+
+        Dim collGroup As Collection
+        Set collGroup = dictGroup(grp)
+
+        Dim groupFirstRow As Long
+        groupFirstRow = collGroup(1)
+
+        ' Basic info from first row
+        With wsOut
+            .Cells(outRow, 2).Value = wsSource.Cells(groupFirstRow, colMap("MainSKU")).Value
+            .Cells(outRow, 3).Value = wsSource.Cells(groupFirstRow, colMap("Brand")).Value
+            .Cells(outRow, 4).Value = wsSource.Cells(groupFirstRow, colMap("ArticleName")).Value
+            .Cells(outRow, 5).Value = wsSource.Cells(groupFirstRow, colMap("PONo")).Value
+            .Cells(outRow, 6).Value = wsSource.Cells(groupFirstRow, colMap("ConfigSKU")).Value
+            .Cells(outRow, 7).Value = wsSource.Cells(groupFirstRow, colMap("ColorDesc")).Value
+            .Cells(outRow, 8).Value = wsSource.Cells(groupFirstRow, colMap("颜色")).Value
+            .Cells(outRow, 9).Value = wsSource.Cells(groupFirstRow, colMap("主标色")).Value
+            .Cells(outRow, 1).Value = wsSource.Cells(groupFirstRow, colMap("合同号")).Value
+            .Cells(outRow, 18).Value = wsSource.Cells(groupFirstRow, colMap("离厂时间")).Value
+            .Cells(outRow, 16).Value = wsSource.Cells(groupFirstRow, colMap("船样要求")).Value
+        End With
+
+        ' Re-initialize the sums for each group
+        Dim sumXS As Long, sumS As Long, sumM As Long, sumL As Long, sumXL As Long, sumXXL As Long
+        sumXS = 0: sumS = 0: sumM = 0: sumL = 0: sumXL = 0: sumXXL = 0
+
+        Dim totalQuantity As Long
+        totalQuantity = Val(wsSource.Cells(groupFirstRow, colMap("TOTAL")).Value)
+        If DEBUG_MODE Then Debug.Print "            totalQuantity from source: " & totalQuantity
+
+        Dim rowNum As Variant
+        For Each rowNum In collGroup
+            sumXS = sumXS + Val(wsSource.Cells(rowNum, colMap("XS")).Value)
+            sumS = sumS + Val(wsSource.Cells(rowNum, colMap("S")).Value)
+            sumM = sumM + Val(wsSource.Cells(rowNum, colMap("M")).Value)
+            sumL = sumL + Val(wsSource.Cells(rowNum, colMap("L")).Value)
+            sumXL = sumXL + Val(wsSource.Cells(rowNum, colMap("XL")).Value)
+            sumXXL = sumXXL + Val(wsSource.Cells(rowNum, colMap("XXL")).Value)
+        Next rowNum
+
+        Dim summed As Long
+        summed = sumXS + sumS + sumM + sumL + sumXL + sumXXL
+
+        ' Check mismatch
+        If summed <> totalQuantity Then
+            LogError "Mismatch for PONo: " & wsSource.Cells(groupFirstRow, colMap("PONo")).Value & _
+                     " expected " & totalQuantity & ", got " & summed
+            If DEBUG_MODE Then Debug.Print "            => MISMATCH: expected " & totalQuantity & ", got " & summed
+        Else
+            If DEBUG_MODE Then Debug.Print "            => Sums match: " & summed
+        End If
+
+        ' Put sums
+        wsOut.Cells(outRow, FIXED_SIZE_COL_START).Value = sumXS
+        wsOut.Cells(outRow, FIXED_SIZE_COL_START + 1).Value = sumS
+        wsOut.Cells(outRow, FIXED_SIZE_COL_START + 2).Value = sumM
+        wsOut.Cells(outRow, FIXED_SIZE_COL_START + 3).Value = sumL
+        wsOut.Cells(outRow, FIXED_SIZE_COL_START + 4).Value = sumXL
+        wsOut.Cells(outRow, FIXED_SIZE_COL_START + 5).Value = sumXXL
+
+        wsOut.Cells(outRow, TOTAL_FORMULA_COL).Formula = "=SUM(" & _
+            wsOut.Cells(outRow, FIXED_SIZE_COL_START).Address(False, False) & ":" & _
+            wsOut.Cells(outRow, FIXED_SIZE_COL_START + 5).Address(False, False) & ")"
+    Next grp
+
+    Dim lastGroupRow As Long, overallRow As Long
+    lastGroupRow = GROUP_START_ROW + groupCount - 1
+    overallRow = lastGroupRow + 1
+
+    wsOut.Cells(overallRow, TOTAL_LABEL_COL).Value = "Total:"
+    wsOut.Cells(overallRow, TOTAL_FORMULA_COL).Formula = "=SUM(" & _
+        wsOut.Cells(GROUP_START_ROW, TOTAL_FORMULA_COL).Address(False, False) & ":" & _
+        wsOut.Cells(lastGroupRow, TOTAL_FORMULA_COL).Address(False, False) & ")"
+
+    wsOut.Range("Q5").Formula = "=SUM(" & _
+        wsOut.Cells(GROUP_START_ROW, TOTAL_FORMULA_COL).Address(False, False) & ":" & _
+        wsOut.Cells(lastGroupRow, TOTAL_FORMULA_COL).Address(False, False) & ")"
+
+    UpdateControl ThisWorkbook.Sheets(CONTROL_SHEET_NAME), "D7", "Completed processing groups."
+    If DEBUG_MODE Then Debug.Print "      Done with ProcessDataGrouping."
+
+CleanExit:
+    Exit Sub
+ErrHandler:
+    If ERROR_HANDLE Then
+        MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+        If DEBUG_MODE Then Debug.Print "Error in ProcessDataGrouping: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Sub
+
+'==============================
+' Aggregate distinct colors ...
+'==============================
+Function AggregateColors(rowsColl As Collection, ws As Worksheet, colMap As Object) As String
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Dim dictColors As Object
+    Set dictColors = CreateObject("Scripting.Dictionary")
+
+    Dim r As Variant, colorVal As String
+    For Each r In rowsColl
+        colorVal = Trim(ws.Cells(r, colMap("颜色")).Value)
+        If colorVal <> "" Then
+            If Not dictColors.Exists(colorVal) Then dictColors.Add colorVal, True
+        End If
+    Next r
+
+    AggregateColors = Join(dictColors.Keys, ",")
+    If DEBUG_MODE Then Debug.Print "      AggregateColors => " & AggregateColors
+
+CleanExit:
+    Exit Function
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in AggregateColors: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Function
+
+'==============================
+' Helper: Check if a sheet exists
+'==============================
+Function SheetExists(wb As Workbook, sheetName As String) As Boolean
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Dim ws As Worksheet
+    Set ws = wb.Sheets(sheetName)
+    SheetExists = Not ws Is Nothing
+
+CleanExit:
+    Exit Function
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in SheetExists: " & Err.Number & ": " & Err.Description
+        SheetExists = False
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Function
+
+'==============================
+' DeleteAllSheetsNoIndex ...
+'==============================
+Sub DeleteAllSheetsNoIndex(wb As Workbook)
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Application.DisplayAlerts = False
+    Do While wb.Worksheets.Count > 1
+        wb.Worksheets(1).Delete
+    Loop
+    wb.Worksheets(1).Cells.Clear
+    Application.DisplayAlerts = True
+
+CleanExit:
+    Exit Sub
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in DeleteAllSheetsNoIndex: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Sub
+
+'==============================
+' Resolve base path for OrderNoForMarker / 核料 output
+'==============================
+Private Function GetOrderNoForMarkerBasePath() As String
+    Dim basePath As String
+    Dim resolvedPath As String
+    Dim usedFallback As Boolean
+
+    usedFallback = False
+    basePath = ""
+
+    ' Try read named range OutputRoot_OrderNoForMarker
+    On Error Resume Next
+    basePath = CStr(ThisWorkbook.Names("OutputRoot_OrderNoForMarker").RefersToRange.Value)
+    On Error GoTo 0
+
+    basePath = Trim(basePath) & "\" & FOLDER_核料
+
+    If basePath = "" Then
+        usedFallback = True
+        basePath = ThisWorkbook.Path
+    End If
+
+    ' trim any trailing slash
+    Do While Len(basePath) > 0 And (Right(basePath, 1) = "\" Or Right(basePath, 1) = "/")
+        basePath = Left(basePath, Len(basePath) - 1)
+    Loop
+
+    resolvedPath = basePath
+
+    If usedFallback Then
+        LogError "? OutputRoot_OrderNoForMarker not found or empty. Using workbook folder instead: " & resolvedPath
+    End If
+
+    GetOrderNoForMarkerBasePath = resolvedPath
+End Function
+
+'==============================
+' NormalizePath
+' - Removes any trailing "\" or "/" (but keeps "C:\" intact)
+'==============================
+Private Function NormalizePath(ByVal p As String) As String
+    Dim orig As String
+    orig = p
+
+    ' replace "/" with "\" first
+    p = Replace(p, "/", "\")
+
+    ' special case: if it's just like "C:\" then leave it
+    If Len(p) = 3 And Mid$(p, 2, 2) = ":\\" Then
+        NormalizePath = p
+        Exit Function
+    End If
+
+    ' otherwise trim any trailing "\" characters
+    Do While Len(p) > 0 And Right$(p, 1) = "\"
+        p = Left$(p, Len(p) - 1)
+    Loop
+
+    NormalizePath = p
+End Function
+
+'==============================
+' EnsureFolderExistsRecursive
+' - Creates the entire folder chain, like mkdir -p
+'==============================
+Private Sub EnsureFolderExistsRecursive(ByVal fullPath As String)
+    Dim parts() As String
+    Dim buildPath As String
+    Dim i As Long
+
+    ' normalise slashes
+    fullPath = Replace(fullPath, "/", "\")
+
+    ' trim trailing "\" unless it's just "C:\"
+    If Not (Len(fullPath) = 3 And Mid$(fullPath, 2, 2) = ":\") Then
+        Do While Len(fullPath) > 0 And Right$(fullPath, 1) = "\"
+            fullPath = Left$(fullPath, Len(fullPath) - 1)
+        Loop
+    End If
+
+    parts = Split(fullPath, "\")
+
+    If UBound(parts) < 0 Then Exit Sub
+
+    ' handle drive root
+    buildPath = parts(0)
+    If InStr(buildPath, ":") > 0 And Right$(buildPath, 1) <> "\" Then
+        buildPath = buildPath & "\"
+    End If
+
+    ' walk down each segment and create if missing
+    For i = 1 To UBound(parts)
+        If Right$(buildPath, 1) = "\" Then
+            buildPath = buildPath & parts(i)
+        Else
+            buildPath = buildPath & "\" & parts(i)
+        End If
+
+        If Dir(buildPath, vbDirectory) = "" Then
+            MkDir buildPath
+        End If
+    Next i
+End Sub
+
+'==============================
+' Create fabric-specific Template_P workbooks
+'==============================
+Sub CreateZalando核料Workbooks()
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    If DEBUG_MODE Then Debug.Print "==== Entering CreateZalando核料Workbooks ===="
+
+    If Not SheetExists(ThisWorkbook, TEMPLATE_P_SHEET_NAME) Then
+        LogError "Template_P missing, cannot create fabric-specific workbooks."
+        If DEBUG_MODE Then Debug.Print "Template_P is missing. Exiting."
+        Exit Sub
+    End If
+
+    Dim wsControl As Worksheet, wsSource As Worksheet
+    Dim lastRow As Long, colMap As Object, dictFabric As Object
+    Dim fabricKey As Variant, newFolderPath As String, fullFilePath As String
+    Dim nextRow As Long
+    Dim wb核料 As Workbook, dictMainSKU As Object, rowColl As Collection
+
+    Set wsControl = ThisWorkbook.Sheets(CONTROL_SHEET_NAME)
+    Set wsSource = ThisWorkbook.Sheets(SOURCE_SHEET_NAME)
+    lastRow = wsSource.Cells(wsSource.Rows.Count, "A").End(xlUp).Row
+    Set colMap = GetColumnMapping(wsSource, HEADER_ROW)
+
+    ' Group by Fabric1_Code
+    Set dictFabric = BuildDictionary(wsSource, colMap("Fabric1_Code"), DATA_START_ROW, lastRow)
+    If DEBUG_MODE Then Debug.Print "Fabric dictionary has " & dictFabric.Count & " distinct fabrics."
+
+    ' Clear existing hyperlinks
+    wsControl.Range("D11:E" & wsControl.Rows.Count).ClearContents
+
+    ' --- determine/save location for 核料 output
+    Dim basePath As String
+    basePath = NormalizePath(GetOrderNoForMarkerBasePath())
+
+    'newFolderPath = basePath & "\" & FOLDER_核料
+    newFolderPath = basePath
+
+    ' make sure the full folder chain exists
+    EnsureFolderExistsRecursive newFolderPath
+
+    ' Tell control sheet where we're dropping files
+    UpdateControl wsControl, "D10", "Saving fabric workbooks to: " & newFolderPath
+
+    For Each fabricKey In dictFabric.Keys
+
+        fullFilePath = GenerateUniqueFilePath(newFolderPath, 核料_FILE_PREFIX & CStr(fabricKey), ".xlsx")
+        If DEBUG_MODE Then Debug.Print "Creating workbook for Fabric: " & fabricKey & " => " & fullFilePath
+        UpdateControl wsControl, "D10", "Creating workbook for Fabric: " & fabricKey
+
+        Set wb核料 = Workbooks.Add
+        DeleteAllSheetsNoIndex wb核料
+
+        Dim i As Long, r As Long, thisMainSKU As String
+        Set rowColl = dictFabric(fabricKey)
+
+        Set dictMainSKU = CreateObject("Scripting.Dictionary")
+
+        For i = 1 To rowColl.Count
+            r = rowColl(i)
+            thisMainSKU = wsSource.Cells(r, colMap("MainSKU")).Value
+            If thisMainSKU <> "" Then
+                If Not dictMainSKU.Exists(thisMainSKU) Then
+                    Set dictMainSKU(thisMainSKU) = New Collection
+                End If
+                dictMainSKU(thisMainSKU).Add r
+            End If
+        Next i
+
+        Dim styleSheetNames As Object
+        Set styleSheetNames = CreateObject("Scripting.Dictionary")
+
+        If DEBUG_MODE Then Debug.Print "  => Creating style sheets for " & dictMainSKU.Count & " SKUs in fabric " & fabricKey
+
+        Dim skuKey As Variant
+        For Each skuKey In dictMainSKU.Keys
+            ThisWorkbook.Sheets(TEMPLATE_P_SHEET_NAME).Copy After:=wb核料.Sheets(wb核料.Sheets.Count)
+            Dim wsNew As Worksheet
+            Set wsNew = wb核料.Sheets(wb核料.Sheets.Count)
+
+            Dim newSheetName As String
+            newSheetName = CleanSheetName(CStr(skuKey))
+            Do While SheetExists(wb核料, newSheetName)
+                newSheetName = newSheetName & "_v"
+            Loop
+            wsNew.Name = newSheetName
+            styleSheetNames.Add newSheetName, True
+
+            ' Group by color
+            Dim colorDict As Object
+            Set colorDict = CreateObject("Scripting.Dictionary")
+
+            Dim eachRow As Variant, colorVal As Variant
+            For Each eachRow In dictMainSKU(skuKey)
+                colorVal = Trim(wsSource.Cells(eachRow, colMap("颜色")).Value)
+                If colorVal <> "" Then
+                    If Not colorDict.Exists(colorVal) Then
+                        Dim sizeDict As Object
+                        Set sizeDict = CreateObject("Scripting.Dictionary")
+                        sizeDict("XS") = 0
+                        sizeDict("S") = 0
+                        sizeDict("M") = 0
+                        sizeDict("L") = 0
+                        sizeDict("XL") = 0
+                        sizeDict("XXL") = 0
+                        colorDict.Add colorVal, sizeDict
+                    End If
+                    colorDict(colorVal)("XS") = colorDict(colorVal)("XS") + Val(wsSource.Cells(eachRow, colMap("XS")).Value)
+                    colorDict(colorVal)("S") = colorDict(colorVal)("S") + Val(wsSource.Cells(eachRow, colMap("S")).Value)
+                    colorDict(colorVal)("M") = colorDict(colorVal)("M") + Val(wsSource.Cells(eachRow, colMap("M")).Value)
+                    colorDict(colorVal)("L") = colorDict(colorVal)("L") + Val(wsSource.Cells(eachRow, colMap("L")).Value)
+                    colorDict(colorVal)("XL") = colorDict(colorVal)("XL") + Val(wsSource.Cells(eachRow, colMap("XL")).Value)
+                    colorDict(colorVal)("XXL") = colorDict(colorVal)("XXL") + Val(wsSource.Cells(eachRow, colMap("XXL")).Value)
+                End If
+            Next eachRow
+
+            ' Write size headers
+            Dim colPos As Long, s As Variant
+            colPos = 2
+            For Each s In gFixedSizes
+                wsNew.Cells(2, colPos).Value = s
+                colPos = colPos + 1
+            Next s
+
+            ' Write color lines
+            Dim outputRow As Long: outputRow = 3
+            For Each colorVal In colorDict.Keys
+                wsNew.Cells(outputRow, 1).Value = colorVal
+                colPos = 2
+                For Each s In gFixedSizes
+                    wsNew.Cells(outputRow, colPos).Value = colorDict(colorVal)(s)
+                    colPos = colPos + 1
+                Next s
+                outputRow = outputRow + 1
+            Next colorVal
+
+            ' Compute total for cross comparison
+            Dim styleTotal As Double: styleTotal = 0
+            Dim rRow As Long, colSum As Double
+            For rRow = 3 To outputRow - 1
+                colSum = 0
+                For colPos = 2 To 2 + (UBound(gFixedSizes) - LBound(gFixedSizes))
+                    colSum = colSum + wsNew.Cells(rRow, colPos).Value
+                Next colPos
+                styleTotal = styleTotal + colSum
+            Next rRow
+
+            '*** New code to populate gComparisonDataTemplateP ***
+            Dim pAggColors As String
+            pAggColors = Join(colorDict.Keys, ",")
+            If Not gComparisonDataTemplateP.Exists(skuKey) Then
+                gComparisonDataTemplateP.Add skuKey, Array(pAggColors, Join(gFixedSizes, ","), styleTotal)
+            End If
+
+            If Not gTemplatePTotals.Exists(skuKey) Then
+                gTemplatePTotals.Add skuKey, styleTotal
+            Else
+                gTemplatePTotals(skuKey) = gTemplatePTotals(skuKey) + styleTotal
+            End If
+
+            If DEBUG_MODE Then Debug.Print "   Fabric=" & fabricKey & ", style=" & skuKey & ", total from Template_P=" & styleTotal
+        Next skuKey
+
+        ' Delete leftover sheets
+        Dim wsTemp As Worksheet
+        Dim j As Long
+        For j = wb核料.Worksheets.Count To 1 Step -1
+            Set wsTemp = wb核料.Worksheets(j)
+            If Not styleSheetNames.Exists(wsTemp.Name) Then
+                Application.DisplayAlerts = False
+                wsTemp.Delete
+                Application.DisplayAlerts = True
+            End If
+        Next j
+
+        Dim styleCount As Long
+        styleCount = wb核料.Worksheets.Count
+
+        wb核料.SaveAs Filename:=fullFilePath, FileFormat:=51
+        wb核料.Close SaveChanges:=False
+
+        nextRow = 11
+        Do While wsControl.Cells(nextRow, "D").Value <> ""
+            nextRow = nextRow + 1
+        Loop
+        wsControl.Hyperlinks.Add Anchor:=wsControl.Cells(nextRow, "D"), _
+            Address:=fullFilePath, TextToDisplay:=Dir(fullFilePath)
+        wsControl.Cells(nextRow, "E").Value = styleCount
+    Next fabricKey
+
+    UpdateControl wsControl, "D10", "All 核料 workbooks created."
+    If DEBUG_MODE Then Debug.Print "==== Exiting CreateZalando核料Workbooks ===="
+    Exit Sub
+
+ErrHandler:
+    If ERROR_HANDLE Then
+        MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+        If DEBUG_MODE Then Debug.Print "Error in CreateZalando核料Workbooks: " & Err.Number & " => " & Err.Description
+        UpdateControl wsControl, "D10", "Error in CreateZalando核料Workbooks."
+        Resume Next
+    Else
+        Resume Next
+    End If
+End Sub
+
+'==============================
+' CreateCrossComparisonSheet
+'==============================
+Sub CreateCrossComparisonSheet()
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    If DEBUG_MODE Then Debug.Print "==== Entering CreateCrossComparisonSheet ===="
+
+    Dim wsCompare As Worksheet
+    On Error Resume Next
+    Set wsCompare = ThisWorkbook.Sheets("Cross Comparison")
+    On Error GoTo 0
+
+    If Not wsCompare Is Nothing Then
+        Application.DisplayAlerts = False
+        wsCompare.Delete
+        Application.DisplayAlerts = True
+    End If
+
+    Set wsCompare = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+    wsCompare.Name = "Cross Comparison"
+
+    With wsCompare
+        .Range("A1").Value = "Style (SKU)"
+        .Range("B1").Value = "Colors (Template)"
+        .Range("C1").Value = "Sizes (Template)"
+        .Range("D1").Value = "Total (Template)"
+        .Range("E1").Value = "Colors (Template_P)"
+        .Range("F1").Value = "Sizes (Template_P)"
+        .Range("G1").Value = "Total (Template_P)"
+        .Range("H1").Value = "Consistency Check"
+        .Range("I1").Value = "Comparison Time"
+    End With
+
+    If DEBUG_MODE Then Debug.Print "Re‐aggregating color sets from Template_P..."
+    Dim aggColorsP As Object
+    Set aggColorsP = CreateObject("Scripting.Dictionary")
+
+    Dim pKey As Variant
+    For Each pKey In gComparisonDataTemplateP.Keys
+        Dim style As String, color As String
+        style = Split(pKey, "_")(0)
+        color = gComparisonDataTemplateP(pKey)(0)
+
+        If Not aggColorsP.Exists(style) Then
+            aggColorsP.Add style, color
+        Else
+            Dim existingStr As String, arr() As String, found As Boolean, x As Variant
+            existingStr = aggColorsP(style)
+            arr = Split(existingStr, ",")
+            found = False
+            For Each x In arr
+                If Trim(x) = Trim(color) Then
+                    found = True
+                    Exit For
+                End If
+            Next x
+            If Not found Then
+                aggColorsP(style) = existingStr & "," & color
+            End If
+        End If
+    Next pKey
+
+    Dim rowCounter As Long: rowCounter = 2
+    Dim styleKey As Variant
+
+    If DEBUG_MODE Then Debug.Print "Looping through gComparisonDataTemplate..."
+    For Each styleKey In gComparisonDataTemplate.Keys
+        Dim tmplColors As String, tmplSizes As String, tmplTotal As Double
+        tmplColors = gComparisonDataTemplate(styleKey)(0)
+        tmplSizes = gComparisonDataTemplate(styleKey)(1)
+        tmplTotal = gComparisonDataTemplate(styleKey)(2)
+
+        wsCompare.Cells(rowCounter, "A").Value = styleKey
+        wsCompare.Cells(rowCounter, "B").Value = tmplColors
+        wsCompare.Cells(rowCounter, "C").Value = tmplSizes
+        wsCompare.Cells(rowCounter, "D").Value = tmplTotal
+
+        Dim pColors As String, pSizes As String, pTotal As Double
+        pColors = ""
+        pSizes = Join(gFixedSizes, ",")
+        If gTemplatePTotals.Exists(styleKey) Then
+            pTotal = gTemplatePTotals(styleKey)
+        Else
+            pTotal = 0
+        End If
+
+        If aggColorsP.Exists(styleKey) Then
+            pColors = aggColorsP(styleKey)
+        End If
+
+        wsCompare.Cells(rowCounter, "E").Value = pColors
+        wsCompare.Cells(rowCounter, "F").Value = pSizes
+        wsCompare.Cells(rowCounter, "G").Value = pTotal
+
+        If DEBUG_MODE Then
+            Debug.Print "   Checking style: " & styleKey & _
+                        ", Template total=" & tmplTotal & _
+                        ", Template_P total=" & pTotal
+            Debug.Print "     Colors(Template)=" & tmplColors & _
+                        " vs. Colors(Template_P)=" & pColors
+        End If
+
+        Dim colorCheck As Boolean
+        colorCheck = CompareColorSets(tmplColors, pColors)
+
+        Dim consistency As String
+        If colorCheck And (Abs(tmplTotal - pTotal) < 0.0001) Then
+            consistency = "OK"
+        Else
+            consistency = "Mismatch"
+            Dim errMsg As String
+            errMsg = "Cross comparison mismatch for SKU " & styleKey & vbCrLf & _
+                     "Template colors: " & tmplColors & vbCrLf & _
+                     "Template_P colors: " & pColors & vbCrLf & _
+                     "Template total: " & tmplTotal & vbCrLf & _
+                     "Template_P total: " & pTotal
+            LogError errMsg
+            If DEBUG_MODE Then Debug.Print "     => MISMATCH: " & errMsg
+        End If
+
+        wsCompare.Cells(rowCounter, "H").Value = consistency
+        wsCompare.Cells(rowCounter, "I").Value = Now()
+
+        rowCounter = rowCounter + 1
+    Next styleKey
+
+    wsCompare.Columns.AutoFit
+    If DEBUG_MODE Then Debug.Print "==== Exiting CreateCrossComparisonSheet ===="
+    Exit Sub
+
+ErrHandler:
+    If ERROR_HANDLE Then
+        MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+        If DEBUG_MODE Then Debug.Print "Error in CreateCrossComparisonSheet: " & Err.Number & ": " & Err.Description
+        Resume Next
+    Else
+        Resume Next
+    End If
+End Sub
+
+'==============================
+' CompareColorSets
+'==============================
+Function CompareColorSets(str1 As String, str2 As String) As Boolean
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Dim arr1() As String, arr2() As String
+    arr1 = Split(Replace(Replace(str1, " ", ""), ",,", ","), ",")
+    arr2 = Split(Replace(Replace(str2, " ", ""), ",,", ","), ",")
+
+    QuickSort arr1, LBound(arr1), UBound(arr1)
+    QuickSort arr2, LBound(arr2), UBound(arr2)
+
+    Dim joined1 As String, joined2 As String
+    joined1 = Join(arr1, ",")
+    joined2 = Join(arr2, ",")
+
+    CompareColorSets = (StrComp(joined1, joined2, vbTextCompare) = 0)
+
+CleanExit:
+    Exit Function
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in CompareColorSets: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Function
+
+'==============================
+' QuickSort for color sets
+'==============================
+Sub QuickSort(arr() As String, ByVal first As Long, ByVal last As Long)
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Dim pivot As String, tmp As String
+    Dim i As Long, j As Long
+
+    If first >= last Then GoTo CleanExit
+    pivot = arr((first + last) \ 2)
+    i = first
+    j = last
+    Do While i <= j
+        Do While StrComp(arr(i), pivot, vbTextCompare) < 0
+            i = i + 1
+        Loop
+        Do While StrComp(arr(j), pivot, vbTextCompare) > 0
+            j = j - 1
+        Loop
+        If i <= j Then
+            tmp = arr(i)
+            arr(i) = arr(j)
+            arr(j) = tmp
+            i = i + 1
+            j = j - 1
+        End If
+    Loop
+    If first < j Then QuickSort arr, first, j
+    If i < last Then QuickSort arr, i, last
+
+CleanExit:
+    Exit Sub
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in QuickSort: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Sub
+
+'==============================
+' Get Column Mapping
+'==============================
+Function GetColumnMapping(ws As Worksheet, headerRow As Long) As Object
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Dim mapping As Object, c As Range
+    Set mapping = CreateObject("Scripting.Dictionary")
+
+    For Each c In ws.Rows(headerRow).Cells
+        Select Case Trim(c.Value)
+            Case "Main Supplier Config SKU":   mapping("MainSKU") = c.Column
+            Case "Article Name":               mapping("ArticleName") = c.Column
+            Case "Purchase Order Number":      mapping("PONo") = c.Column
+            Case "Config SKU":                 mapping("ConfigSKU") = c.Column
+            Case "Brand":                      mapping("Brand") = c.Column
+
+            Case "XS":  mapping("XS") = c.Column
+            Case "S":   mapping("S") = c.Column
+            Case "M":   mapping("M") = c.Column
+            Case "L":   mapping("L") = c.Column
+            Case "XL":  mapping("XL") = c.Column
+            Case "XXL": mapping("XXL") = c.Column
+            Case "TOTAL QUANTITY": mapping("TOTAL") = c.Column
+
+            Case "面料_大身":        mapping("Fabric1") = c.Column
+            Case "面料_其他1":       mapping("Fabric2") = c.Column
+            Case "面料_其他2":       mapping("Fabric3") = c.Column
+            Case "面料_大身_编号":   mapping("Fabric1_Code") = c.Column
+            Case "面料_其他1_编号":  mapping("Fabric2_Code") = c.Column
+            Case "面料_其他2_编号":  mapping("Fabric3_Code") = c.Column
+            Case "面料_大身_部位": mapping("Fabric1_BodyPart") = c.Column
+            Case "面料_其他1_部位": mapping("Fabric2_BodyPart") = c.Column
+            Case "面料_其他2_部位": mapping("Fabric3_BodyPart") = c.Column
+
+            Case "颜色":             mapping("颜色") = c.Column
+            Case "主标色":           mapping("主标色") = c.Column
+            Case "Main Supplier Color Description": mapping("ColorDesc") = c.Column
+
+            Case "合同号":           mapping("合同号") = c.Column
+            Case "离厂时间":         mapping("离厂时间") = c.Column
+            Case "船样要求":         mapping("船样要求") = c.Column
+            Case "备注1":           mapping("备注1") = c.Column
+            Case "备注2":           mapping("备注2") = c.Column
+            Case "备注3":           mapping("备注3") = c.Column
+            Case "备注4":           mapping("备注4") = c.Column
+
+            Case "Photo1":          mapping("Photo1") = c.Column
+            Case "Photo2":          mapping("Photo2") = c.Column
+        End Select
+    Next c
+
+    Set GetColumnMapping = mapping
+
+CleanExit:
+    Exit Function
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in GetColumnMapping: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Function
+
+'==============================
+' Build Dictionary of row indexes
+'==============================
+Function BuildDictionary(ws As Worksheet, keyCol As Long, startRow As Long, lastRow As Long) As Object
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Dim dict As Object
+    Set dict = CreateObject("Scripting.Dictionary")
+
+    Dim i As Long, keyVal As String
+    For i = startRow To lastRow
+        keyVal = ws.Cells(i, keyCol).Value
+        If keyVal <> "" Then
+            If Not dict.Exists(keyVal) Then Set dict(keyVal) = New Collection
+            dict(keyVal).Add i
+        End If
+    Next i
+    Set BuildDictionary = dict
+
+CleanExit:
+    Exit Function
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in BuildDictionary: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Function
+
+'==============================
+' Delete all sheets except new "Index"
+'==============================
+Sub DeleteAllSheets(wb As Workbook)
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Dim sh As Worksheet
+    Application.DisplayAlerts = False
+    wb.Sheets.Add Before:=wb.Sheets(1)
+    wb.Sheets(1).Name = "Index"
+    For Each sh In wb.Worksheets
+        If sh.Name <> "Index" Then sh.Delete
+    Next sh
+    Application.DisplayAlerts = True
+
+CleanExit:
+    Exit Sub
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in DeleteAllSheets: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Sub
+
+'==============================
+' Generate Unique File Path
+'==============================
+Function GenerateUniqueFilePath1(folderPath As String, baseName As String, extension As String) As String
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Dim filePath As String, versionNum As Long
+    filePath = folderPath & "\" & baseName & extension
+    versionNum = 1
+    Do While Dir(filePath) <> ""
+        filePath = folderPath & "\" & baseName & "_v" & versionNum & extension
+        versionNum = versionNum + 1
+    Loop
+    GenerateUniqueFilePath = filePath
+
+CleanExit:
+    Exit Function
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in GenerateUniqueFilePath: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Function
+Function GenerateUniqueFilePath(ByVal folderPath As String, _
+                                ByVal baseName As String, _
+                                ByVal extension As String) As String
+    Dim filePath As String
+    Dim versionNum As Long
+    Dim test As String
+
+    folderPath = Trim$(folderPath)
+    baseName = Trim$(baseName)
+    extension = Trim$(extension)
+
+    ' Basic guardrails
+    If folderPath = "" Then Err.Raise vbObjectError + 200, , "folderPath is empty."
+    If baseName = "" Then Err.Raise vbObjectError + 201, , "baseName is empty."
+    If Left$(extension, 1) <> "." Then extension = "." & extension
+
+    ' Ensure folderPath has no trailing "\" (avoid double slashes)
+    Do While Right$(folderPath, 1) = "\" Or Right$(folderPath, 1) = "/"
+        folderPath = Left$(folderPath, Len(folderPath) - 1)
+    Loop
+
+    filePath = folderPath & "\" & baseName & extension
+    versionNum = 1
+
+    Do
+        On Error GoTo DirErr
+        test = Dir$(filePath)
+        On Error GoTo 0
+
+        If test = "" Then Exit Do  ' file does not exist -> OK
+
+        versionNum = versionNum + 1
+        If versionNum > 9999 Then Err.Raise vbObjectError + 202, , "Too many versions. Check folder/path."
+
+        filePath = folderPath & "\" & baseName & "_v" & (versionNum - 1) & extension
+    Loop
+
+    GenerateUniqueFilePath = filePath
+    Exit Function
+
+DirErr:
+    ' If Dir fails, fail fast with a useful message instead of looping forever
+    Err.Raise vbObjectError + 203, , "Dir() failed for path: " & filePath & " | " & Err.Description
+End Function
+
+'==============================
+' LogError
+'==============================
+Sub LogError(errorMsg As String)
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Dim wsError As Worksheet
+    Set wsError = ThisWorkbook.Sheets(ERROR_LOG_SHEET_NAME)
+    If wsError Is Nothing Then
+        Set wsError = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        wsError.Name = ERROR_LOG_SHEET_NAME
+        With wsError
+            .Range("A1").Value = "Timestamp"
+            .Range("B1").Value = "Error Message"
+        End With
+    End If
+
+    Dim lastRow As Long
+    lastRow = wsError.Cells(wsError.Rows.Count, "A").End(xlUp).Row + 1
+    wsError.Cells(lastRow, "A").Value = Now()
+    wsError.Cells(lastRow, "B").Value = errorMsg
+
+    If DEBUG_MODE Then Debug.Print "[ERROR LOG] " & errorMsg
+
+CleanExit:
+    Exit Sub
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in LogError: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Sub
+
+'==============================
+' Update a cell on control sheet
+'==============================
+Sub UpdateControl(ws As Worksheet, cellRef As String, message As String)
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Application.ScreenUpdating = True
+    ws.Range(cellRef).Value = message
+    Application.ScreenUpdating = False
+
+CleanExit:
+    Exit Sub
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in UpdateControl: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Sub
+
+'==============================
+' CreateIndexSheet
+'==============================
+Sub CreateIndexSheet(wbOut As Workbook)
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Dim wsIndex As Worksheet, ws As Worksheet, indexRow As Long
+
+    ' Delete old Index if it exists
+    Set wsIndex = wbOut.Sheets("Index")
+    If Not wsIndex Is Nothing Then
+        Application.DisplayAlerts = False
+        wsIndex.Delete
+        Application.DisplayAlerts = True
+    End If
+
+    ' Create fresh Index
+    Set wsIndex = wbOut.Sheets.Add(Before:=wbOut.Sheets(1))
+    wsIndex.Name = "Index"
+
+    '==============================
+    ' HEADERS
+    '==============================
+    With wsIndex
+        .Cells(1, 1).Value = "No."
+        .Cells(1, 2).Value = "款号"
+        .Cells(1, 3).Value = "客户品牌"                   ' <-- NEW COLUMN after 款号
+        .Cells(1, 4).Value = "面料_大身"
+        .Cells(1, 5).Value = "面料_大身_编号"
+        .Cells(1, 6).Value = "订单数合计"
+        .Cells(1, 7).Value = "离厂时间"
+        .Cells(1, 8).Value = "生产工厂"
+        .Cells(1, 9).Value = "工厂交期"
+
+        .Cells(1, 10).Value = "面料（计划）到厂时间"
+        .Cells(1, 11).Value = "辅料（计划）到厂时间"
+        .Cells(1, 12).Value = "样衣（计划）确认时间"
+        .Cells(1, 13).Value = "大货版（计划）完成时间"
+        .Cells(1, 14).Value = "全码版（计划）完成时间"
+        .Cells(1, 15).Value = "裁剪计划（计划）完成时间"
+        .Cells(1, 16).Value = "裁剪（计划）完成时间"
+        .Cells(1, 17).Value = "裁剪数"
+        .Cells(1, 18).Value = "车位（计划）完成时间"
+        .Cells(1, 19).Value = "后道（计划）完成时间"
+        .Cells(1, 20).Value = "出货数"
+    End With
+
+    '==============================
+    ' BODY ROWS
+    '==============================
+    indexRow = 2
+    For Each ws In wbOut.Worksheets
+        If ws.Name <> "Index" And ws.Name <> ERROR_LOG_SHEET_NAME And ws.Name <> "Cross Comparison" Then
+
+            ' No.
+            wsIndex.Cells(indexRow, 1).Value = indexRow - 1
+
+            ' 款号 (sheet name with link)
+            wsIndex.Hyperlinks.Add _
+                Anchor:=wsIndex.Cells(indexRow, 2), _
+                Address:="", _
+                SubAddress:="'" & ws.Name & "'!A1", _
+                TextToDisplay:=ws.Name
+
+            ' 客户品牌 = value from GROUP_START_ROW row, column 3 on that style sheet
+            ' (your sheet layout: col 3 is Brand in ProcessDataGrouping)
+            wsIndex.Cells(indexRow, 3).Value = ws.Cells(GROUP_START_ROW, 3).Value   ' <-- NEW
+
+            ' 面料_大身 (Template puts Fabric1 / 面料_大身 in E2)
+            wsIndex.Cells(indexRow, 4).Value = ws.Range("E2").Value
+
+            ' 面料_大身_编号 (Template puts Fabric1_Code / 面料_大身_编号 in C2)
+            wsIndex.Cells(indexRow, 5).Value = ws.Range("C2").Value
+
+            ' 订单数合计 (Q5 holds total for the style)
+            wsIndex.Cells(indexRow, 6).Formula = "='" & ws.Name & "'!Q5"
+
+            ' 离厂时间 (from first data row’s column 18 on that sheet)
+            wsIndex.Cells(indexRow, 7).Value = ws.Cells(GROUP_START_ROW, 18).Value
+
+            ' 生产工厂 / 工厂交期 / timeline columns:
+            ' leave blank here; they are for manual fill-in by planning / factory later.
+            ' That means columns 8~20 stay empty for now unless you want defaults.
+
+            indexRow = indexRow + 1
+        End If
+    Next ws
+
+    wsIndex.Columns.AutoFit
+
+CleanExit:
+    Exit Sub
+
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in CreateIndexSheet: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+
+End Sub
+
+'==============================
+' CleanSheetName
+'==============================
+Function CleanSheetName(sName As String) As String
+
+    If ERROR_HANDLE Then
+        On Error GoTo ErrHandler
+    Else
+        On Error Resume Next
+    End If
+
+    Dim invalidChars As Variant, i As Long
+    invalidChars = Array("/", "\", "[", "]", "*", "?", ":")
+    For i = LBound(invalidChars) To UBound(invalidChars)
+        sName = Replace(sName, invalidChars(i), "_")
+    Next i
+    If Len(sName) > 31 Then sName = Left(sName, 31)
+    CleanSheetName = sName
+
+CleanExit:
+    Exit Function
+ErrHandler:
+    If ERROR_HANDLE Then
+        If DEBUG_MODE Then Debug.Print "Error in CleanSheetName: " & Err.Number & ": " & Err.Description
+        Resume CleanExit
+    Else
+        Resume Next
+    End If
+End Function
+
+
+
+
+
+
+=== MODULE: Sheet3.cls ===
+Attribute VB_Name = "Sheet3"
+Attribute VB_Base = "0{00020820-0000-0000-C000-000000000046}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = True
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = True
+
+

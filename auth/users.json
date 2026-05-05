@@ -1,0 +1,36 @@
+{
+  "james": {
+    "password": "$2b$12$q.g3W3krJLwFMYs8pp6SveeKa1wVAX5/055oYfS9goQfbY0LRvd6C",
+    "role": "admin",
+    "companies": []
+  },
+  "user2": {
+    "password": "$2b$12$W5PhrOwVNeaDsqef2DAgbOmrZ9er3M9qwQS271GH7q.Jc5Knt8YXu",
+    "role": "admin",
+    "companies": []
+  },
+  "user3": {
+    "password": "$2b$12$lQD8h9Ur8mG4j185vXX1/OFOB6NvOmVjpBNsUBa1Y0ICu2odNuS.K",
+    "role": "admin",
+    "companies": []
+  },
+  "alice": {
+    "password": "$2b$12$r3Ch5jBCtJJZ9AaML2Y6f.f.K6WM2x7AZrIYEdS0s0A01OISisSxC",
+    "role": "user",
+    "companies": [
+      "GIII"
+    ]
+  },
+  "bob": {
+    "password": "$2b$12$n8OEVLT7KHbbWkqHudNILu9QiRkrTMAnemJTiGTgw0ipakHJGR7qy",
+    "role": "user",
+    "companies": [
+      "BrandB"
+    ]
+  },
+  "admin_user": {
+    "password": "$2b$12$7h234Lkw6PHjW0gck2lIL.aMnvN6jM0SB0lTm1.uTR.89fmzPGIrC",
+    "role": "admin",
+    "companies": []
+  }
+}

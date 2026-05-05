@@ -1,0 +1,27 @@
+{
+  "header_row": 8,
+  "data_start_row": null,
+  "write_headers": false,
+  "column_map": {
+    "Style": "B",
+    "Color": "G",
+    "Color (CN)": "H",
+    "PO Number": "E",
+    "Total": "Q"
+  },
+  "size_column_map": {
+    "XS": "J",
+    "S": "K",
+    "M": "L",
+    "L": "M",
+    "XL": "N",
+    "XXL": "O"
+  },
+  "meta_column_map": {
+    "xfactory_date": "R"
+  },
+  "fabric_slots": [],
+  "fabric_key_field": "display_key",
+  "placeholders": [],
+  "notes": ""
+}

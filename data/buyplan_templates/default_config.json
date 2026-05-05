@@ -1,0 +1,23 @@
+{
+  "header_row": 9,
+  "write_headers": false,
+  "column_map": {
+    "PO Number": "E",
+    "Style": "B",
+    "Color": "G",
+    "Color (CN)": "H",
+    "Total": "Q"
+  },
+  "size_column_map": {
+    "XS": "J",
+    "S": "K",
+    "M": "L",
+    "L": "M",
+    "XL": "N",
+    "XXL": "O"
+  },
+  "meta_column_map": {
+    "xport_date": "R"
+  },
+  "_photo_regions_comment": "0-based, to_col/to_row are exclusive (OOXML drawingML). Default is J3:L6 / M3:O6, omit to use the built-in default."
+}

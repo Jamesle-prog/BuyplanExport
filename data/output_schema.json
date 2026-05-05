@@ -1,0 +1,272 @@
+[
+  {
+    "db_col": "company",
+    "label": "Company",
+    "sky_east": "Brand",
+    "infor": "Company",
+    "legacy": "Company",
+    "required": true,
+    "notes": "Trading company or brand name."
+  },
+  {
+    "db_col": "pc_no",
+    "label": "Contract No.",
+    "sky_east": "PC No.",
+    "infor": "",
+    "legacy": "",
+    "required": false,
+    "notes": "Sky East purchase contract number. Not present in other clients."
+  },
+  {
+    "db_col": "po_number",
+    "label": "PO No.",
+    "sky_east": "Purchase Order Number",
+    "infor": "PO Number",
+    "legacy": "PO Number",
+    "required": true,
+    "notes": "Client-issued purchase order number."
+  },
+  {
+    "db_col": "config_sku",
+    "label": "Config SKU",
+    "sky_east": "Config SKU",
+    "infor": "",
+    "legacy": "",
+    "required": false,
+    "notes": "Zalando-specific product configuration code."
+  },
+  {
+    "db_col": "style",
+    "label": "Style No.",
+    "sky_east": "Main Supplier Config SKU",
+    "infor": "Style",
+    "legacy": "Style",
+    "required": true,
+    "notes": "HHN / supplier style number."
+  },
+  {
+    "db_col": "article_name",
+    "label": "Article Name",
+    "sky_east": "Supplier Article Name",
+    "infor": "Style Description",
+    "legacy": "Description",
+    "required": false,
+    "notes": "Product description / article name from client."
+  },
+  {
+    "db_col": "brand",
+    "label": "Brand",
+    "sky_east": "Brand",
+    "infor": "Division Name",
+    "legacy": "Brand",
+    "required": false,
+    "notes": "End-consumer brand (e.g. Anna Field, Only & Sons)."
+  },
+  {
+    "db_col": "color_name",
+    "label": "Color",
+    "sky_east": "Main Supplier Color Description",
+    "infor": "Color",
+    "legacy": "Color",
+    "required": true,
+    "notes": "Color description as supplied by client."
+  },
+  {
+    "db_col": "colour_code",
+    "label": "Color Code",
+    "sky_east": "Colour Code",
+    "infor": "",
+    "legacy": "",
+    "required": false,
+    "notes": "Numeric or alphanumeric color code (client-specific)."
+  },
+  {
+    "db_col": "launch_date",
+    "label": "Launch Date",
+    "sky_east": "Launch Date",
+    "infor": "",
+    "legacy": "",
+    "required": false,
+    "notes": "Target market launch / sell-in month."
+  },
+  {
+    "db_col": "xs",
+    "label": "XS",
+    "sky_east": "XS",
+    "infor": "XS",
+    "legacy": "XS",
+    "required": false,
+    "notes": "Units ordered in size XS."
+  },
+  {
+    "db_col": "s",
+    "label": "S",
+    "sky_east": "S",
+    "infor": "S",
+    "legacy": "S",
+    "required": false,
+    "notes": "Units ordered in size S."
+  },
+  {
+    "db_col": "m",
+    "label": "M",
+    "sky_east": "M",
+    "infor": "M",
+    "legacy": "M",
+    "required": false,
+    "notes": "Units ordered in size M."
+  },
+  {
+    "db_col": "l",
+    "label": "L",
+    "sky_east": "L",
+    "infor": "L",
+    "legacy": "L",
+    "required": false,
+    "notes": "Units ordered in size L."
+  },
+  {
+    "db_col": "xl",
+    "label": "XL",
+    "sky_east": "XL",
+    "infor": "XL",
+    "legacy": "XL",
+    "required": false,
+    "notes": "Units ordered in size XL."
+  },
+  {
+    "db_col": "xxl",
+    "label": "XXL",
+    "sky_east": "2XL",
+    "infor": "XXL",
+    "legacy": "XXL",
+    "required": false,
+    "notes": "Units ordered in size XXL. Sky East uses '2XL' as their label."
+  },
+  {
+    "db_col": "total_qty",
+    "label": "Total Qty",
+    "sky_east": "TOTAL QUANTITY",
+    "infor": "Total Units",
+    "legacy": "Total Qty",
+    "required": true,
+    "notes": "Total units across all sizes for this line."
+  },
+  {
+    "db_col": "country_of_origin",
+    "label": "COO",
+    "sky_east": "",
+    "infor": "Country of Origin",
+    "legacy": "COO",
+    "required": true,
+    "notes": "Country of manufacture. Not supplied by Sky East in PO file."
+  },
+  {
+    "db_col": "factory",
+    "label": "Factory",
+    "sky_east": "",
+    "infor": "Factory",
+    "legacy": "Factory",
+    "required": false,
+    "notes": "Production factory name. Not present in Sky East PO files."
+  },
+  {
+    "db_col": "ex_fty_date",
+    "label": "Ex-Factory Date",
+    "sky_east": "EX-FTY",
+    "infor": "Factory Ship Date",
+    "legacy": "X-Port Date",
+    "required": true,
+    "notes": "Date goods leave the factory. Each client uses a different name."
+  },
+  {
+    "db_col": "trade_term",
+    "label": "Trade Terms",
+    "sky_east": "Trade Term",
+    "infor": "Incoterm",
+    "legacy": "",
+    "required": false,
+    "notes": "Incoterms (e.g. FOB, CIF)."
+  },
+  {
+    "db_col": "fob_usd",
+    "label": "FOB (USD)",
+    "sky_east": "FOB\nUSD",
+    "infor": "Unit Cost",
+    "legacy": "FOB USD",
+    "required": false,
+    "notes": "Unit FOB price in USD."
+  },
+  {
+    "db_col": "total_cost_usd",
+    "label": "Total Cost (USD)",
+    "sky_east": "Total Cost\nUSD",
+    "infor": "Line Extended Cost",
+    "legacy": "Total Cost USD",
+    "required": false,
+    "notes": "Total line value = FOB × Total Qty."
+  },
+  {
+    "db_col": "fabric_item_no",
+    "label": "Fabric No.",
+    "sky_east": "Fabric Item Number",
+    "infor": "",
+    "legacy": "",
+    "required": false,
+    "notes": "HHN internal fabric reference number."
+  },
+  {
+    "db_col": "fabric_display_key",
+    "label": "Fabric Code",
+    "sky_east": "",
+    "infor": "",
+    "legacy": "",
+    "required": false,
+    "notes": "Fabric master display key (from Fabric DB)."
+  },
+  {
+    "db_col": "composition_en",
+    "label": "Composition",
+    "sky_east": "国标_大身_成分",
+    "infor": "",
+    "legacy": "",
+    "required": false,
+    "notes": "Fibre composition in English (from Fabric DB)."
+  },
+  {
+    "db_col": "shrinkage_rate",
+    "label": "Shrinkage Rate",
+    "sky_east": "国标_大身_烫缩",
+    "infor": "",
+    "legacy": "",
+    "required": false,
+    "notes": "Shrinkage % from Fabric DB."
+  },
+  {
+    "db_col": "short_rate",
+    "label": "Short Rate",
+    "sky_east": "国标_大身_短码",
+    "infor": "",
+    "legacy": "",
+    "required": false,
+    "notes": "Short-size rate % from Fabric DB."
+  },
+  {
+    "db_col": "extracted_at",
+    "label": "Extracted At",
+    "sky_east": "",
+    "infor": "",
+    "legacy": "",
+    "required": false,
+    "notes": "Timestamp when this record was extracted by the system."
+  },
+  {
+    "db_col": "source_file",
+    "label": "Source File",
+    "sky_east": "",
+    "infor": "",
+    "legacy": "",
+    "required": false,
+    "notes": "Original filename from which this PO was parsed."
+  }
+]

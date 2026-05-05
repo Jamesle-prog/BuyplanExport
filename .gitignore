@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Generated / runtime data
+data/po_history.db
+data/po_history.db-journal
+data/po_history.db-wal
+data/po_history.db-shm
+data/output/
+data/images/
+data/image_folder_history.json
+
+# Sample / input documents at project root (not source code)
+/*.pdf
+/*.xlsx
+/*.xlsm
+/*.zip
+
+# Local logs and temp
+*.log
+tmp/
+temp/
+.codex_tmp/
+.claude/
+
+# Generated test/build outputs at project root
+/output/
+/test_output/
+/test_mask/
+/zalandoFile/
+
+# Auth / license artifacts (keep code, exclude installed keys)
+auth/license_key.txt
+auth/users.db
+auth/users.db-*
