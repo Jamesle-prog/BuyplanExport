@@ -15,10 +15,6 @@ _PROVIDERS: list[dict] = [
         "host": "smtp-mail.outlook.com",
         "port": 587,
         "use_tls": True,
-        "help": "Works for @outlook.com, @hotmail.com, @live.com accounts.\n"
-                "Use your full email address as Username and your normal password.\n"
-                "If 2FA is on, create an App Password at "
-                "https://account.microsoft.com/security → Advanced Security → App Passwords.",
     },
     {
         "label": "Office 365 (work)",
@@ -26,9 +22,6 @@ _PROVIDERS: list[dict] = [
         "host": "smtp.office365.com",
         "port": 587,
         "use_tls": True,
-        "help": "For corporate Microsoft 365 accounts (@yourdomain.com).\n"
-                "SMTP AUTH must be enabled for the mailbox by your IT admin.\n"
-                "Username = full email address.",
     },
     {
         "label": "Gmail",
@@ -36,21 +29,60 @@ _PROVIDERS: list[dict] = [
         "host": "smtp.gmail.com",
         "port": 587,
         "use_tls": True,
-        "help": "Gmail requires an App Password — your normal password will not work.\n"
-                "Go to https://myaccount.google.com/apppasswords, generate a password,\n"
-                "paste it in the Password field below.",
     },
     {
         "label": "Custom",
         "icon": "⚙️",
-        "host": None,   # don't overwrite
+        "host": None,
         "port": None,
         "use_tls": None,
-        "help": "Enter your server details manually.",
     },
 ]
 
 _SK_PRESET = "smtp_admin_preset"
+
+# Error substrings → actionable fix guidance
+_ERROR_HINTS: list[tuple[str, str]] = [
+    (
+        "535",  # SMTP 535 = auth failed
+        "**Authentication failed.** Microsoft has disabled basic (password) login for "
+        "Outlook/Hotmail SMTP. You must use an **App Password** instead:\n\n"
+        "1. Go to 🔗 https://account.microsoft.com/security\n"
+        "2. Click **Advanced security options**\n"
+        "3. Under *App passwords* click **Create a new app password**\n"
+        "4. Copy the generated password and paste it in the **Password** field above, then Save.\n\n"
+        "Also ensure SMTP AUTH is enabled for your mailbox:\n"
+        "https://outlook.live.com/mail/0/options/mail/accounts/popImap "
+        "→ turn on *Let devices and apps use POP* and *SMTP AUTH*.",
+    ),
+    (
+        "authentication unsuccessful",
+        "**Authentication unsuccessful.** Use an App Password — your normal Microsoft "
+        "account password will not work for SMTP.\n\n"
+        "Generate one at: https://account.microsoft.com/security → "
+        "Advanced security options → App passwords.",
+    ),
+    (
+        "smtp auth extension not supported",
+        "**SMTP AUTH is disabled** on this mailbox. For Office 365 work accounts, "
+        "ask your IT admin to enable SMTP AUTH for your account in the Microsoft 365 admin centre.",
+    ),
+    (
+        "username and password not accepted",
+        "**Credentials rejected.** For Gmail, you must use an App Password:\n\n"
+        "1. Enable 2-Step Verification at https://myaccount.google.com/security\n"
+        "2. Then create an App Password at https://myaccount.google.com/apppasswords\n"
+        "3. Use that 16-character password in the Password field.",
+    ),
+]
+
+
+def _smtp_error_hint(exc: EmailError) -> str | None:
+    msg = str(exc).lower()
+    for keyword, hint in _ERROR_HINTS:
+        if keyword.lower() in msg:
+            return hint
+    return None
 
 
 def show_smtp_admin() -> None:
@@ -69,26 +101,51 @@ def show_smtp_admin() -> None:
                 f"{p['icon']} {p['label']}",
                 key=f"smtp_preset_{i}",
                 use_container_width=True,
-                help=p["help"],
             ):
                 st.session_state[_SK_PRESET] = i
                 st.rerun()
 
-    # Which preset is active?
     active_idx = st.session_state.get(_SK_PRESET)
     active = _PROVIDERS[active_idx] if active_idx is not None else None
-    if active and active["label"] != "Custom":
-        st.info(
-            f"{active['icon']} **{active['label']}** selected — "
-            f"`{active['host']}:{active['port']}` (STARTTLS). "
-            f"{active['help']}",
-            icon="ℹ️",
-        )
+
+    # Show provider-specific instructions
+    if active:
+        label = active["label"]
+        if label == "Outlook / Hotmail":
+            st.info(
+                "**🔵 Outlook / Hotmail setup**\n\n"
+                "Microsoft has **disabled basic password login** for SMTP. "
+                "You must use an **App Password**:\n\n"
+                "1. Go to 🔗 https://account.microsoft.com/security\n"
+                "2. Click **Advanced security options**\n"
+                "3. Under *App passwords* → **Create a new app password**\n"
+                "4. Paste the generated password below (not your normal password)\n\n"
+                "Also enable SMTP in your Outlook settings:  \n"
+                "https://outlook.live.com/mail/0/options/mail/accounts/popImap  \n"
+                "→ Turn on **Let devices and apps use POP** and **SMTP AUTH**",
+                icon="ℹ️",
+            )
+        elif label == "Office 365 (work)":
+            st.info(
+                "**🏢 Office 365 setup**\n\n"
+                "- Use your full work email as Username\n"
+                "- Password: your normal Microsoft 365 password (or App Password if MFA is on)\n"
+                "- Your IT admin must have **SMTP AUTH enabled** for your mailbox in the "
+                "Microsoft 365 admin centre",
+                icon="ℹ️",
+            )
+        elif label == "Gmail":
+            st.info(
+                "**🔴 Gmail setup**\n\n"
+                "Gmail requires an **App Password** — your normal password will not work:\n\n"
+                "1. Enable 2-Step Verification: https://myaccount.google.com/security\n"
+                "2. Create App Password: https://myaccount.google.com/apppasswords\n"
+                "3. Paste the 16-character password in the Password field below",
+                icon="ℹ️",
+            )
 
     cur = smtp_settings.load()
 
-    # Compute field defaults: preset overrides saved config for host/port/tls;
-    # user/password/sender always come from saved config so editing isn't lost.
     def _host_default() -> str:
         if active and active["host"]:
             return active["host"]
@@ -105,7 +162,6 @@ def show_smtp_admin() -> None:
         return cur["use_tls"]
 
     # ── Settings form ─────────────────────────────────────────────────────────
-    st.markdown("**Server details:**")
     with st.form("smtp_form"):
         c1, c2 = st.columns([3, 1])
         with c1:
@@ -117,18 +173,17 @@ def show_smtp_admin() -> None:
 
         c3, c4 = st.columns(2)
         with c3:
-            user = st.text_input(
-                "Username (your email address)", value=cur["user"],
-                placeholder="you@outlook.com",
-            )
+            user = st.text_input("Username (your full email address)", value=cur["user"],
+                                 placeholder="you@outlook.com")
         with c4:
             password = st.text_input(
-                "Password / App Password", value=cur["password"], type="password",
+                "App Password", value=cur["password"], type="password",
+                help="Use an App Password generated from your account security settings, "
+                     "not your regular login password.",
             )
 
         sender = st.text_input(
-            "Sender name (optional)",
-            value=cur["sender"],
+            "Sender name (optional)", value=cur["sender"],
             placeholder="PO Extractor <you@outlook.com>",
             help="How the From address appears. Defaults to Username when empty.",
         )
@@ -142,7 +197,6 @@ def show_smtp_admin() -> None:
             "host": host, "port": int(port), "user": user,
             "password": password, "sender": sender, "use_tls": bool(use_tls),
         })
-        # Clear preset so next open shows saved values, not preset overrides.
         st.session_state.pop(_SK_PRESET, None)
         st.success("✅ Saved.")
         st.rerun()
@@ -152,7 +206,7 @@ def show_smtp_admin() -> None:
     st.markdown("**Test connection**")
     if not smtp_settings.is_configured():
         st.info(
-            "Fill in Host, Username (and Password), then click **Save** before testing.",
+            "Fill in Host, Username and App Password, then click **Save** before testing.",
             icon="ℹ️",
         )
         return
@@ -172,10 +226,14 @@ def show_smtp_admin() -> None:
         st.write("")
         clicked = st.button("▶ Send test", use_container_width=True,
                             disabled=not to.strip(), key="smtp_test_btn")
+
     if clicked:
         try:
             with st.spinner(f"Connecting to {configured['host']}…"):
                 send_test_email(to)
             st.success(f"✅ Test email delivered to **{to}**.")
         except EmailError as exc:
+            hint = _smtp_error_hint(exc)
             st.error(f"❌ {exc}")
+            if hint:
+                st.warning(hint)

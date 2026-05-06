@@ -995,7 +995,11 @@ def _se_hist_email_section() -> None:
             send_email_with_attachments(recipient, subject, body, attachments)
         st.success(f"Sent {len(attachments)} attachment(s) to {recipient}.")
     except EmailError as exc:
+        from ui.admin_smtp import _smtp_error_hint
         st.error(f"Email failed: {exc}")
+        hint = _smtp_error_hint(exc)
+        if hint:
+            st.warning(hint + "\n\nFix settings in **⚙️ Admin → 📧 Email**.")
 
 
 def _show_se_history_section():
