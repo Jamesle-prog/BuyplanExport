@@ -31,6 +31,27 @@ _PROVIDERS: list[dict] = [
         "use_tls": True,
     },
     {
+        "label": "SendGrid",
+        "icon": "📨",
+        "host": "smtp.sendgrid.net",
+        "port": 587,
+        "use_tls": True,
+    },
+    {
+        "label": "Brevo",
+        "icon": "💌",
+        "host": "smtp-relay.brevo.com",
+        "port": 587,
+        "use_tls": True,
+    },
+    {
+        "label": "Resend",
+        "icon": "⚡",
+        "host": "smtp.resend.com",
+        "port": 465,
+        "use_tls": False,  # Resend uses SSL on 465, not STARTTLS
+    },
+    {
         "label": "Custom",
         "icon": "⚙️",
         "host": None,
@@ -44,35 +65,37 @@ _SK_PRESET = "smtp_admin_preset"
 # Error substrings → actionable fix guidance
 _ERROR_HINTS: list[tuple[str, str]] = [
     (
-        "535",  # SMTP 535 = auth failed
-        "**Authentication failed.** Microsoft has disabled basic (password) login for "
-        "Outlook/Hotmail SMTP. You must use an **App Password** instead:\n\n"
-        "1. Go to 🔗 https://account.microsoft.com/security\n"
-        "2. Click **Advanced security options**\n"
-        "3. Under *App passwords* click **Create a new app password**\n"
-        "4. Copy the generated password and paste it in the **Password** field above, then Save.\n\n"
-        "Also ensure SMTP AUTH is enabled for your mailbox:\n"
-        "https://outlook.live.com/mail/0/options/mail/accounts/popImap "
-        "→ turn on *Let devices and apps use POP* and *SMTP AUTH*.",
+        "535",
+        "**Authentication failed — Microsoft has blocked basic SMTP auth for this account.**\n\n"
+        "Even App Passwords are blocked on some personal Outlook/Hotmail accounts. "
+        "The most reliable fix is to use **SendGrid** as a free relay:\n\n"
+        "1. Sign up free at https://sendgrid.com (100 emails/day free)\n"
+        "2. Go to **Settings → API Keys → Create API Key** (Full Access)\n"
+        "3. In PO Extractor → Admin → 📧 Email → click **📨 SendGrid** preset\n"
+        "4. **Username:** `apikey` (literally type: apikey)\n"
+        "5. **App Password:** paste your SendGrid API key\n"
+        "6. **Sender:** your verified email address\n\n"
+        "Alternatively, if you have a Gmail account, the **🔴 Gmail** preset "
+        "with an App Password works reliably.",
     ),
     (
         "authentication unsuccessful",
-        "**Authentication unsuccessful.** Use an App Password — your normal Microsoft "
-        "account password will not work for SMTP.\n\n"
-        "Generate one at: https://account.microsoft.com/security → "
-        "Advanced security options → App passwords.",
+        "**Authentication unsuccessful.** Microsoft has blocked basic SMTP auth on this account.\n\n"
+        "Switch to **📨 SendGrid** (free) or **🔴 Gmail** — both work reliably. "
+        "See the SendGrid setup guide above.",
     ),
     (
         "smtp auth extension not supported",
         "**SMTP AUTH is disabled** on this mailbox. For Office 365 work accounts, "
-        "ask your IT admin to enable SMTP AUTH for your account in the Microsoft 365 admin centre.",
+        "ask your IT admin to enable SMTP AUTH in the Microsoft 365 admin centre, "
+        "or use **📨 SendGrid** as a relay instead.",
     ),
     (
         "username and password not accepted",
-        "**Credentials rejected.** For Gmail, you must use an App Password:\n\n"
-        "1. Enable 2-Step Verification at https://myaccount.google.com/security\n"
-        "2. Then create an App Password at https://myaccount.google.com/apppasswords\n"
-        "3. Use that 16-character password in the Password field.",
+        "**Credentials rejected.** For Gmail, use an App Password:\n\n"
+        "1. Enable 2-Step Verification: https://myaccount.google.com/security\n"
+        "2. Create App Password: https://myaccount.google.com/apppasswords\n"
+        "3. Use the 16-character password in the Password field.",
     ),
 ]
 
@@ -108,40 +131,69 @@ def show_smtp_admin() -> None:
     active_idx = st.session_state.get(_SK_PRESET)
     active = _PROVIDERS[active_idx] if active_idx is not None else None
 
-    # Show provider-specific instructions
+    # Provider-specific instructions
     if active:
         label = active["label"]
         if label == "Outlook / Hotmail":
+            st.warning(
+                "⚠️ **Microsoft has disabled basic SMTP auth for most personal Outlook/Hotmail "
+                "accounts** — even App Passwords are blocked in many regions.\n\n"
+                "If you keep getting error 535, switch to **📨 SendGrid** (free) or **🔴 Gmail** instead.",
+            )
             st.info(
-                "**🔵 Outlook / Hotmail setup**\n\n"
-                "Microsoft has **disabled basic password login** for SMTP. "
-                "You must use an **App Password**:\n\n"
-                "1. Go to 🔗 https://account.microsoft.com/security\n"
-                "2. Click **Advanced security options**\n"
-                "3. Under *App passwords* → **Create a new app password**\n"
-                "4. Paste the generated password below (not your normal password)\n\n"
-                "Also enable SMTP in your Outlook settings:  \n"
-                "https://outlook.live.com/mail/0/options/mail/accounts/popImap  \n"
-                "→ Turn on **Let devices and apps use POP** and **SMTP AUTH**",
+                "**If you still want to try Outlook:**\n\n"
+                "1. Enable 2FA at https://account.microsoft.com/security\n"
+                "2. Create App Password → Advanced security options → App passwords\n"
+                "3. Enable POP/IMAP at https://outlook.live.com/mail/0/options/mail/accounts/popImap\n"
+                "4. Use your full email as Username and the App Password below",
                 icon="ℹ️",
             )
         elif label == "Office 365 (work)":
             st.info(
                 "**🏢 Office 365 setup**\n\n"
-                "- Use your full work email as Username\n"
-                "- Password: your normal Microsoft 365 password (or App Password if MFA is on)\n"
-                "- Your IT admin must have **SMTP AUTH enabled** for your mailbox in the "
-                "Microsoft 365 admin centre",
+                "- Username: your full work email address\n"
+                "- Password: your Microsoft 365 password (or App Password if MFA is on)\n"
+                "- Your IT admin must have **SMTP AUTH enabled** for your mailbox",
                 icon="ℹ️",
             )
         elif label == "Gmail":
             st.info(
                 "**🔴 Gmail setup**\n\n"
-                "Gmail requires an **App Password** — your normal password will not work:\n\n"
                 "1. Enable 2-Step Verification: https://myaccount.google.com/security\n"
                 "2. Create App Password: https://myaccount.google.com/apppasswords\n"
-                "3. Paste the 16-character password in the Password field below",
+                "3. Username: your Gmail address\n"
+                "4. Password: the 16-character App Password (not your normal password)",
                 icon="ℹ️",
+            )
+        elif label == "SendGrid":
+            st.success(
+                "**📨 SendGrid — 100 emails/day free**\n\n"
+                "1. Sign up at https://sendgrid.com\n"
+                "2. **Settings → API Keys → Create API Key** → Full Access → Create\n"
+                "3. **Username:** `apikey` (literally)\n"
+                "4. **Password:** paste your API key\n"
+                "5. **Sender:** verify at https://app.sendgrid.com/settings/sender_auth",
+            )
+        elif label == "Brevo":
+            st.success(
+                "**💌 Brevo — 300 emails/day free (best free tier)**\n\n"
+                "1. Sign up at https://brevo.com\n"
+                "2. Go to **Settings → SMTP & API → Generate a new SMTP key**\n"
+                "3. **Username:** your Brevo account email address\n"
+                "4. **Password:** paste the SMTP key (not your login password)\n"
+                "5. **Sender:** any address you've verified in Brevo\n\n"
+                "300 emails/day free — 3× more than SendGrid.",
+            )
+        elif label == "Resend":
+            st.success(
+                "**⚡ Resend — 100 emails/day free, 3,000/month**\n\n"
+                "1. Sign up at https://resend.com\n"
+                "2. Go to **API Keys → Create API Key**\n"
+                "3. **Username:** `resend` (literally)\n"
+                "4. **Password:** paste your API key\n"
+                "5. **Sender:** must use a verified domain (e.g. `you@yourdomain.com`)\n"
+                "   — free accounts can also use `onboarding@resend.dev` for testing\n\n"
+                "Uses SSL on port 465 (configured automatically).",
             )
 
     cur = smtp_settings.load()
@@ -166,25 +218,29 @@ def show_smtp_admin() -> None:
         c1, c2 = st.columns([3, 1])
         with c1:
             host = st.text_input("SMTP Host", value=_host_default(),
-                                 placeholder="smtp-mail.outlook.com")
+                                 placeholder="smtp.sendgrid.net")
         with c2:
             port = st.number_input("Port", min_value=1, max_value=65535,
                                    value=_port_default(), step=1)
 
         c3, c4 = st.columns(2)
         with c3:
-            user = st.text_input("Username (your full email address)", value=cur["user"],
-                                 placeholder="you@outlook.com")
+            user = st.text_input(
+                "Username",
+                value=cur["user"],
+                placeholder="apikey  (for SendGrid) / you@gmail.com",
+            )
         with c4:
             password = st.text_input(
-                "App Password", value=cur["password"], type="password",
-                help="Use an App Password generated from your account security settings, "
-                     "not your regular login password.",
+                "Password / API Key / App Password",
+                value=cur["password"],
+                type="password",
             )
 
         sender = st.text_input(
-            "Sender name (optional)", value=cur["sender"],
-            placeholder="PO Extractor <you@outlook.com>",
+            "Sender (From address)",
+            value=cur["sender"],
+            placeholder="PO Extractor <you@example.com>",
             help="How the From address appears. Defaults to Username when empty.",
         )
         use_tls = st.checkbox("Use STARTTLS (recommended)", value=_tls_default())
@@ -206,7 +262,7 @@ def show_smtp_admin() -> None:
     st.markdown("**Test connection**")
     if not smtp_settings.is_configured():
         st.info(
-            "Fill in Host, Username and App Password, then click **Save** before testing.",
+            "Fill in Host, Username and Password/API Key, then click **Save** before testing.",
             icon="ℹ️",
         )
         return
