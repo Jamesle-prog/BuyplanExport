@@ -65,11 +65,15 @@ def enrich_hhp_colors(
     company: str,
     label_lookup: dict[tuple[str, str, str], str],
     cn_code_lookup: dict[tuple[str, str, str], str],
+    cn_color_lookup: dict[tuple[str, str, str], str] | None = None,
 ) -> pd.DataFrame:
-    """Add '主标颜色' and '中文颜色代码' columns to an HHP/Zalando DataFrame.
+    """Add '主标颜色', '中文颜色代码', and '中文颜色' columns to an HHP/Zalando DataFrame.
 
     Resolves via (company, brand, en_color) with a brand-agnostic fallback.
     EN colour from 'Main Supplier Color Description'; brand from 'Brand'.
+
+    *cn_color_lookup* populates '中文颜色' (the Chinese name).  When omitted
+    the existing '颜色' source column is used as-is for that field.
 
     Returns a copy; the input is not mutated.
     """
@@ -85,6 +89,8 @@ def enrich_hhp_colors(
             val = lkp.get((company, "", en), "")
         return val
 
-    df["主标颜色"] = df.apply(lambda r: _resolve(r, label_lookup), axis=1)
+    df["主标颜色"]   = df.apply(lambda r: _resolve(r, label_lookup), axis=1)
     df["中文颜色代码"] = df.apply(lambda r: _resolve(r, cn_code_lookup), axis=1)
+    if cn_color_lookup is not None:
+        df["中文颜色"] = df.apply(lambda r: _resolve(r, cn_color_lookup), axis=1)
     return df

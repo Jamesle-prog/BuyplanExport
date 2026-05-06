@@ -105,12 +105,14 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
     # Photo-match diagnostic — visible to the user via the log on the page
     _log_photo_matches(result.df, photo_map, log)
 
-    # Enrich with 主标颜色 + 中文颜色代码 from the color-translation store
+    # Enrich with 主标颜色 / 中文颜色 / 中文颜色代码 from the color-translation store
     try:
-        ct_store = get_color_translation_store()
+        ct_store    = get_color_translation_store()
         label_lkp   = ct_store.build_label_lookup_dict()
         cn_code_lkp = ct_store.build_cn_code_lookup_dict()
-        enriched_df = enrich_hhp_colors(result.df, company, label_lkp, cn_code_lkp)
+        cn_lkp      = ct_store.build_lookup_dict()
+        enriched_df = enrich_hhp_colors(result.df, company,
+                                        label_lkp, cn_code_lkp, cn_lkp)
     except Exception:
         enriched_df = result.df
 
@@ -223,13 +225,15 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
         # Photo-match diagnostic — visible on the page
         _log_photo_matches(result.df, photo_map, log)
 
-        # Enrich with 主标颜色 + 中文颜色代码 from the color-translation store
+        # Enrich with 主标颜色 / 中文颜色 / 中文颜色代码 from the color-translation store
         try:
             from auth.companies import COMPANY_GIII
-            ct_store = get_color_translation_store()
-            _label_lkp   = ct_store.build_label_lookup_dict()
-            _cn_code_lkp = ct_store.build_cn_code_lookup_dict()
-            _enriched_df = enrich_hhp_colors(result.df, COMPANY_GIII, _label_lkp, _cn_code_lkp)
+            _ct_store    = get_color_translation_store()
+            _label_lkp   = _ct_store.build_label_lookup_dict()
+            _cn_code_lkp = _ct_store.build_cn_code_lookup_dict()
+            _cn_lkp      = _ct_store.build_lookup_dict()
+            _enriched_df = enrich_hhp_colors(result.df, COMPANY_GIII,
+                                             _label_lkp, _cn_code_lkp, _cn_lkp)
         except Exception:
             _enriched_df = result.df
 

@@ -375,9 +375,17 @@ def _write_data_row(ws, out_row: int, style: str, grp: pd.DataFrame) -> None:
     ws.cell(out_row, 5).value  = cell_value(g_first, "Purchase Order Number")
     ws.cell(out_row, 6).value  = cell_value(g_first, "Config SKU")
     ws.cell(out_row, 7).value  = cell_value(g_first, "Main Supplier Color Description")  # 英文颜色
+
     ws.cell(out_row, 8).value  = cell_value(g_first, "主标颜色")                           # H: label color
-    ws.cell(out_row, 9).value  = cell_value(g_first, "颜色")                               # I: 中文颜色
-    ws.cell(out_row, 10).value = cell_value(g_first, "中文颜色代码")                        # J: CN color code
+
+    # I: 中文颜色 — combine as  #中文颜色代码|中文颜色  when both are present.
+    # Fall back to the source '颜色' field (pre-filled in some Zalando sheets).
+    _cn_name = cell_value(g_first, "中文颜色") or cell_value(g_first, "颜色") or ""
+    _cn_code = cell_value(g_first, "中文颜色代码") or ""
+    ws.cell(out_row, 9).value  = f"#{_cn_code}|{_cn_name}" if (_cn_code and _cn_name) \
+                                 else (_cn_name or None)
+
+    ws.cell(out_row, 10).value = _cn_code or None                                        # J: 中文颜色代码 (standalone)
 
     # Sizes J-O
     for s_idx, sz in enumerate(SIZES):
