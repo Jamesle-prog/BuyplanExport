@@ -32,7 +32,7 @@ _CT_COL_CFG = {
              "to the same row (stored as title case).",
     ),
     "Chinese Color": st.column_config.TextColumn("Chinese Color (中文颜色)", width="medium"),
-    "Color Code":    st.column_config.TextColumn("Color Code", width="small"),
+    "中文颜色代码":   st.column_config.TextColumn("中文颜色代码", width="small"),
     "Light/Dark":    st.column_config.SelectboxColumn(
         "Light/Dark (深浅)",
         width="small",
@@ -53,7 +53,7 @@ _CT_COL_CFG = {
 }
 
 _CT_DISPLAY_COLS = ["Delete", "Client", "Brand", "English Color", "Chinese Color",
-                    "Color Code", "Light/Dark", "Label Color", "Notes"]
+                    "中文颜色代码", "Light/Dark", "Label Color", "Notes"]
 
 
 # ---------------------------------------------------------------------------

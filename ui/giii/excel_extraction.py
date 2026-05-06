@@ -10,9 +10,10 @@ import streamlit as st
 
 from po_extractor.exporters import export_hhp_buyplan, export_hhp_template_p
 from po_extractor.parsers.client_excel_multi import combine_excel_files, repeat_order_summary
+from po_extractor.ui_helpers.color_enrichment import enrich_hhp_colors
 from po_extractor.utils.price_mask import mask_prices_excel_batch
 from auth.companies import get_company
-from ui.stores import get_store
+from ui.stores import get_store, get_color_translation_store
 from ui.giii.extraction import _save_fabric_parts_from_df
 
 
@@ -104,7 +105,16 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
     # Photo-match diagnostic — visible to the user via the log on the page
     _log_photo_matches(result.df, photo_map, log)
 
-    bp  = export_hhp_buyplan(result.df, out_dir, photo_map=photo_map)
+    # Enrich with 主标颜色 + 中文颜色代码 from the color-translation store
+    try:
+        ct_store = get_color_translation_store()
+        label_lkp   = ct_store.build_label_lookup_dict()
+        cn_code_lkp = ct_store.build_cn_code_lookup_dict()
+        enriched_df = enrich_hhp_colors(result.df, company, label_lkp, cn_code_lkp)
+    except Exception:
+        enriched_df = result.df
+
+    bp  = export_hhp_buyplan(enriched_df, out_dir, photo_map=photo_map)
     tps = export_hhp_template_p(result.df, out_dir)
 
     out: dict = {}
@@ -213,7 +223,17 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
         # Photo-match diagnostic — visible on the page
         _log_photo_matches(result.df, photo_map, log)
 
-        buyplan_path = export_hhp_buyplan(result.df, out_dir, photo_map=photo_map)
+        # Enrich with 主标颜色 + 中文颜色代码 from the color-translation store
+        try:
+            from auth.companies import COMPANY_GIII
+            ct_store = get_color_translation_store()
+            _label_lkp   = ct_store.build_label_lookup_dict()
+            _cn_code_lkp = ct_store.build_cn_code_lookup_dict()
+            _enriched_df = enrich_hhp_colors(result.df, COMPANY_GIII, _label_lkp, _cn_code_lkp)
+        except Exception:
+            _enriched_df = result.df
+
+        buyplan_path = export_hhp_buyplan(_enriched_df, out_dir, photo_map=photo_map)
         st.write(f"  → {os.path.basename(buyplan_path)}")
 
         # 8. Generate Template_P workbooks

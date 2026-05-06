@@ -427,7 +427,7 @@ class ColorTranslationStore(BaseSQLiteStore):
                 if not client or not en_color:
                     continue
                 cn_color   = _v(row.get("Chinese Color"))
-                color_code = _v(row.get("Color Code"))
+                color_code = _v(row.get("中文颜色代码") or row.get("Color Code"))
                 shade      = _v(row.get("Light/Dark")).lower()
                 label      = _v(row.get("Label Color"))
                 notes      = _v(row.get("Notes"))
@@ -775,6 +775,20 @@ class ColorTranslationStore(BaseSQLiteStore):
             for r in rows
         }
 
+    def build_cn_code_lookup_dict(self) -> dict[tuple, str]:
+        """Return {(client, brand, normalised_en_color): color_code} (中文颜色代码).
+        Same case-insensitive keying as :py:meth:`build_lookup_dict`.
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT client, brand, en_color, color_code FROM color_translations"
+            ).fetchall()
+        return {
+            (r["client"], r["brand"], _normalize_color_name(r["en_color"])):
+                r["color_code"] or ""
+            for r in rows
+        }
+
     def lookup_label_color(self, client: str, brand: str, en_color: str) -> str:
         """Return label_color for (client, brand, en_color), or '' if unset.
 
@@ -869,7 +883,7 @@ class ColorTranslationStore(BaseSQLiteStore):
 
     def to_dataframe(self, client: str = "", brand: str = "") -> pd.DataFrame:
         cols = ["Client", "Brand", "English Color", "Chinese Color",
-                "Color Code", "Light/Dark", "Label Color", "Notes"]
+                "中文颜色代码", "Light/Dark", "Label Color", "Notes"]
         rows = self.get_by_client(client, brand) if client else self.get_all()
         if not rows:
             return pd.DataFrame(columns=cols)
@@ -878,7 +892,7 @@ class ColorTranslationStore(BaseSQLiteStore):
             "Brand":         r.get("brand") or "",
             "English Color": r["en_color"],
             "Chinese Color": r.get("cn_color") or "",
-            "Color Code":    r.get("color_code") or "",
+            "中文颜色代码":    r.get("color_code") or "",
             "Light/Dark":    r.get("light_or_dark") or "",
             "Label Color":   r.get("label_color") or "",
             "Notes":         r.get("notes") or "",
