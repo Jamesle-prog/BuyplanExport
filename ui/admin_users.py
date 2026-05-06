@@ -6,7 +6,7 @@ import streamlit as st
 from auth.companies import list_company_names
 from auth.users import (
     ROLE_ADMIN, create_user, delete_user, get_user, list_users,
-    set_user_companies, set_user_role,
+    set_user_companies, set_user_email, set_user_role,
 )
 
 
@@ -19,9 +19,11 @@ def show_user_admin() -> None:
         info = get_user(uname) or {}
         role = info.get("role", "user")
         cos = info.get("companies", [])
+        email = info.get("email", "")
         with st.expander(
             f"{'👑' if role == ROLE_ADMIN else '👤'} {uname}  |  {role}  |  "
             f"companies: {', '.join(cos) or 'all (admin)'}"
+            + (f"  |  ✉ {email}" if email else "")
         ):
             c1, c2, c3 = st.columns([1, 2, 1])
             with c1:
@@ -51,10 +53,19 @@ def show_user_admin() -> None:
                         delete_user(uname)
                         st.success(f"Deleted {uname}.")
                         st.rerun()
+            new_email = st.text_input(
+                "Email (used for sending generated files)",
+                value=email, key=f"email_{uname}",
+                placeholder="user@example.com",
+            )
+            if st.button("Set email", key=f"setemail_{uname}"):
+                set_user_email(uname, new_email)
+                st.success("Email updated.")
+                st.rerun()
 
     st.divider()
     st.markdown("**Create new user**")
-    nc1, nc2, nc3, nc4 = st.columns([1, 1, 1, 1])
+    nc1, nc2, nc3, nc4, nc5 = st.columns([1, 1, 1, 1, 1.4])
     with nc1:
         new_uname = st.text_input("Username", key="new_uname")
     with nc2:
@@ -63,9 +74,13 @@ def show_user_admin() -> None:
         new_role = st.selectbox("Role", ["user", "admin"], key="new_role")
     with nc4:
         new_cos = st.multiselect("Companies", all_companies, key="new_cos")
+    with nc5:
+        new_email = st.text_input("Email (optional)", key="new_email",
+                                  placeholder="user@example.com")
     if st.button("➕ Create user", type="primary"):
         if new_uname and new_pw:
-            create_user(new_uname, new_pw, role=new_role, companies=new_cos)
+            create_user(new_uname, new_pw, role=new_role,
+                        companies=new_cos, email=new_email)
             st.success(f"User '{new_uname}' created.")
             st.rerun()
         else:

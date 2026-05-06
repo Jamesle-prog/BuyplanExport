@@ -38,7 +38,8 @@ def _save(users: dict) -> None:
 
 def create_user(username: str, password: str,
                 role: str = ROLE_USER,
-                companies: list[str] | None = None) -> None:
+                companies: list[str] | None = None,
+                email: str | None = None) -> None:
     if not username or not password:
         raise ValueError("Username and password are required")
     users = _load()
@@ -48,6 +49,7 @@ def create_user(username: str, password: str,
         "password": hashed,
         "role": role,
         "companies": companies if companies is not None else existing.get("companies", []),
+        "email": (email if email is not None else existing.get("email", "")) or "",
     }
     _save(users)
 
@@ -86,12 +88,28 @@ def list_users() -> list[str]:
 
 
 def get_user(username: str) -> dict | None:
-    """Return {role, companies} or None."""
+    """Return {role, companies, email} or None."""
     rec = _load().get(username)
     if not rec:
         return None
     return {"role": rec.get("role", ROLE_USER),
-            "companies": rec.get("companies", [])}
+            "companies": rec.get("companies", []),
+            "email": rec.get("email", "") or ""}
+
+
+def get_user_email(username: str) -> str:
+    """Return the user's email or empty string."""
+    u = get_user(username)
+    return (u or {}).get("email", "")
+
+
+def set_user_email(username: str, email: str) -> bool:
+    users = _load()
+    if username not in users:
+        return False
+    users[username]["email"] = (email or "").strip()
+    _save(users)
+    return True
 
 
 def is_admin(username: str) -> bool:
