@@ -260,6 +260,9 @@ def show_color_translation_tab() -> None:
         # Add the Delete checkbox column (default False) and reorder to the
         # canonical display layout.
         df_view = df_view.copy()
+        # Compat: older cached store versions return "Color Code"; rename on the fly.
+        if "Color Code" in df_view.columns and "中文颜色代码" not in df_view.columns:
+            df_view = df_view.rename(columns={"Color Code": "中文颜色代码"})
         df_view["Delete"] = False
         display_df = df_view[_CT_DISPLAY_COLS]
         _ids_in_view = df_view["_id"].tolist() if "_id" in df_view.columns else []
