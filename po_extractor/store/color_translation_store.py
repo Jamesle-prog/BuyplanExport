@@ -638,10 +638,13 @@ class ColorTranslationStore(BaseSQLiteStore):
                     shade_final = derived_shade
                     label_final = label or derived_label
 
+                    # Use COLLATE NOCASE so "NAVY" in DB matches normalised
+                    # "Navy" from the importer; also match the exact-case form.
                     existing = conn.execute(
-                        "SELECT id, cn_color, color_code, light_or_dark, "
-                        "label_color, notes FROM color_translations "
-                        "WHERE client=? AND brand=? AND en_color=?",
+                        "SELECT id, en_color, cn_color, color_code, "
+                        "light_or_dark, label_color, notes "
+                        "FROM color_translations "
+                        "WHERE client=? AND brand=? AND en_color=? COLLATE NOCASE",
                         key,
                     ).fetchone()
                     if existing:
@@ -657,8 +660,8 @@ class ColorTranslationStore(BaseSQLiteStore):
                                   cn_color=?, color_code=?, light_or_dark=?,
                                   label_color=?, updated_at=?
                                WHERE id=?""",
-                            (new_cn, new_code, shade_final, new_label, now,
-                             existing["id"]),
+                            (new_cn, new_code, shade_final, new_label,
+                             now, existing["id"]),
                         )
                         updated += 1
                         _audit_diff(
