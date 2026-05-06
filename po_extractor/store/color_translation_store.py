@@ -360,12 +360,15 @@ class ColorTranslationStore(BaseSQLiteStore):
                     skipped += 1
 
             # ── Sky East: sky_east_items ──────────────────────────────────────
+            # NOTE: sky_east_items.colour_code is the buyer's PO color reference
+            # (e.g. "503", "302") — a completely different concept from the
+            # factory's Chinese dye-lot code (中文颜色代码, e.g. "52#").
+            # We intentionally do NOT carry it into color_translations.color_code.
             se_rows = conn.execute(
                 """SELECT DISTINCT
                        ? AS client,
                        COALESCE(brand, '') AS brand,
-                       color_name AS en_color,
-                       COALESCE(colour_code, '') AS color_code
+                       color_name AS en_color
                    FROM sky_east_items
                    WHERE color_name IS NOT NULL AND trim(color_name) != ''
                    ORDER BY brand, color_name""",
@@ -373,11 +376,9 @@ class ColorTranslationStore(BaseSQLiteStore):
             ).fetchall()
 
             for row in se_rows:
-                client     = COMPANY_SKY_EAST
-                # BUG-36 defensive: same coercion as GIII branch above
-                brand      = str(row["brand"] or "").strip()
-                en_color   = str(row["en_color"] or "").strip()
-                color_code = str(row["color_code"] or "").strip()
+                client   = COMPANY_SKY_EAST
+                brand    = str(row["brand"] or "").strip()
+                en_color = str(row["en_color"] or "").strip()
                 if not en_color:
                     skipped += 1
                     continue
@@ -394,18 +395,11 @@ class ColorTranslationStore(BaseSQLiteStore):
                         """INSERT OR IGNORE INTO color_translations
                            (client, brand, en_color, cn_color, color_code, notes, updated_at)
                            VALUES (?,?,?,?,?,?,?)""",
-                        (client, brand, en_color, "", color_code, "", now)
+                        (client, brand, en_color, "", "", "", now)
                     )
                     inserted += 1
                     se_n += 1
                 else:
-                    if color_code:
-                        conn.execute(
-                            """UPDATE color_translations SET color_code=?, updated_at=?
-                               WHERE client=? AND brand=? AND en_color=?
-                               AND (color_code IS NULL OR color_code='')""",
-                            (color_code, now, client, brand, en_color)
-                        )
                     skipped += 1
 
         return {
