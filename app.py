@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "1.61.0"
+APP_VERSION = "1.62.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -252,9 +252,9 @@ def _show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
 
 def _show_admin_panel():
     (admin_tab_users, admin_tab_cos, admin_tab_schema, admin_tab_sizes,
-     admin_tab_tpl, admin_tab_pipe, admin_tab_bsr) = st.tabs(
+     admin_tab_tpl, admin_tab_pipe, admin_tab_bsr, admin_tab_smtp) = st.tabs(
         ["👤 Users", "🏢 Companies", "📋 Column Mapping", "📐 Size Order",
-         "📄 Templates", "🧩 Pipeline Layouts", "🚢 船样要求"]
+         "📄 Templates", "🧩 Pipeline Layouts", "🚢 船样要求", "📧 Email"]
     )
 
     with admin_tab_cos:
@@ -277,6 +277,10 @@ def _show_admin_panel():
 
     with admin_tab_bsr:
         _show_boat_sample_admin()
+
+    with admin_tab_smtp:
+        from ui.admin_smtp import show_smtp_admin
+        show_smtp_admin()
 
 
 # ---------------------------------------------------------------------------

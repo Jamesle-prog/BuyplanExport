@@ -59,3 +59,4 @@ temp/
 auth/license_key.txt
 auth/users.db
 auth/users.db-*
+auth/smtp_settings.json

@@ -39,16 +39,8 @@ DB_PATH     = str(_ROOT / "data" / "po_history.db")
 # ── Cache TTL ─────────────────────────────────────────────────────────────────
 CACHE_TTL_SECONDS = 60   # @st.cache_data TTL used by schema loaders
 
-# ── SMTP (configure via environment) ─────────────────────────────────────────
-# Set these in the OS env or in .streamlit/secrets.toml. Empty SMTP_HOST disables
-# the email feature gracefully (UI shows a hint instead of failing).
-import os as _os
-SMTP_HOST     = _os.environ.get("PO_SMTP_HOST", "")
-SMTP_PORT     = int(_os.environ.get("PO_SMTP_PORT", "587") or "587")
-SMTP_USER     = _os.environ.get("PO_SMTP_USER", "")
-SMTP_PASSWORD = _os.environ.get("PO_SMTP_PASSWORD", "")
-SMTP_FROM     = _os.environ.get("PO_SMTP_FROM", "") or SMTP_USER
-SMTP_USE_TLS  = _os.environ.get("PO_SMTP_USE_TLS", "1") not in ("0", "false", "False", "")
+# SMTP settings live in auth.smtp_settings (admin-editable from the UI,
+# persisted to auth/smtp_settings.json, with PO_SMTP_* env-var fallback).
 
 # ── Excel colour palette (6-char RGB; openpyxl prepends FF alpha) ─────────────
 EXCEL_PALETTE: dict[str, str] = {
