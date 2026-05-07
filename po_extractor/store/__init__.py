@@ -17,6 +17,7 @@ from .fabric_master_store import FabricMasterStore
 from .color_translation_store import ColorTranslationStore
 from .boat_sample_store import BoatSampleStore
 from .ui_translation_store import UITranslationStore
+from .app_settings_store import AppSettingsStore
 
 
 def _db_path() -> str:
@@ -66,6 +67,11 @@ def get_ui_translation_store() -> UITranslationStore:
     return UITranslationStore(_db_path())
 
 
+def get_app_settings_store() -> AppSettingsStore:
+    """Return a fresh AppSettingsStore wired to the canonical DB."""
+    return AppSettingsStore(_db_path())
+
+
 # ── Cross-store helpers ──────────────────────────────────────────────────────
 
 def list_all_brands(company: str) -> list[str]:
@@ -92,8 +98,9 @@ def list_all_brands(company: str) -> list[str]:
 __all__ = [
     "POStore", "SkyEastStore", "FabricMasterStore",
     "ColorTranslationStore", "BoatSampleStore", "UITranslationStore",
+    "AppSettingsStore",
     "get_po_store", "get_sky_east_store", "get_fabric_master_store",
     "get_color_translation_store", "get_boat_sample_store",
-    "get_ui_translation_store",
+    "get_ui_translation_store", "get_app_settings_store",
     "list_all_brands",
 ]

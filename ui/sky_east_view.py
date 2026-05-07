@@ -43,7 +43,13 @@ _COLOR_SOURCE_CAPTIONS: dict[str, str] = {
 
 def _show_color_source_radio() -> None:
     """Render the Chinese-colour-source radio + per-option lookup-key caption."""
-    cur = st.session_state.get(SK.SE_COLOR_SOURCE, COLOR_SOURCE_DB)
+    cur = st.session_state.get(SK.SE_COLOR_SOURCE)
+    if cur is None:
+        # First render in this session — resolve the admin-configured default.
+        from ui.stores import get_app_settings_store
+        cur = get_app_settings_store().get("default_color_source", COLOR_SOURCE_DB)
+        st.session_state[SK.SE_COLOR_SOURCE] = cur
+
     # Build translated labels at render time so they reflect the active language.
     labels = [t(_COLOR_SOURCE_EN[k]) for k in _COLOR_SOURCE_KEYS]
     chosen = st.radio(
