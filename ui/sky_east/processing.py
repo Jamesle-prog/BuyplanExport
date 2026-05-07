@@ -112,10 +112,38 @@ def _se_init_lookups(ref_info: dict, tracker, log: list[str]):
     return config_sku_lookup, fabric_lookup, progress_lookup
 
 
-def _se_enrich_items(contracts, config_sku_lookup, fabric_lookup, progress_lookup) -> None:
+def _se_log_color_cleanups(contracts, log: list[str]) -> None:
+    """Show one cleanup line per unique colour value before contract lookup."""
+    from po_extractor.lookups.progress_lookup import clean_color_for_lookup
+
+    seen: set[str] = set()
+    cleanup_lines: list[str] = []
+    for contract in contracts:
+        for item in contract.items:
+            raw = str(item.color_name or "")
+            if not raw or raw in seen:
+                continue
+            seen.add(raw)
+            cleaned, steps = clean_color_for_lookup(raw)
+            if steps and cleaned != raw:
+                cleanup_lines.append(
+                    f"  '{raw}' -> '{cleaned}'  ({'; '.join(steps)})"
+                )
+    if cleanup_lines:
+        st.write(f"Color cleanup ({len(cleanup_lines)} value(s)):")
+        for line in cleanup_lines:
+            st.write(line)
+        log.append(f"Color cleanup ({len(cleanup_lines)} value(s)):")
+        log.extend(cleanup_lines)
+
+
+def _se_enrich_items(contracts, config_sku_lookup, fabric_lookup, progress_lookup,
+                     log: list[str] | None = None) -> None:
     """Fill missing item fields from the three lookup tables (in-place)."""
     if not (config_sku_lookup or progress_lookup or fabric_lookup):
         return
+    if progress_lookup and log is not None:
+        _se_log_color_cleanups(contracts, log)
     for contract in contracts:
         for item in contract.items:
             if config_sku_lookup:
@@ -124,11 +152,15 @@ def _se_enrich_items(contracts, config_sku_lookup, fabric_lookup, progress_looku
                     item.config_sku = found
             if progress_lookup:
                 if not item.picture_id:
-                    img_id = progress_lookup.get_image_id(item.style, item.color_name)
+                    img_id = progress_lookup.get_image_id(
+                        item.style, item.color_name, item.zalando_po,
+                        pc_no=item.pc_no)
                     if img_id:
                         item.picture_id = img_id
                 if not item.contract_no:
-                    cno = progress_lookup.get_contract_no(item.style, item.color_name)
+                    cno = progress_lookup.get_contract_no(
+                        item.style, item.color_name, item.zalando_po,
+                        pc_no=item.pc_no)
                     if cno:
                         item.contract_no = cno
             if fabric_lookup:
@@ -179,7 +211,9 @@ def _se_patch_contract_numbers(store, contracts, progress_lookup, log: list[str]
     patched = 0
     for contract in contracts:
         for item in contract.items:
-            cno = progress_lookup.get_contract_no(item.style, item.color_name)
+            cno = progress_lookup.get_contract_no(
+                item.style, item.color_name, item.zalando_po,
+                pc_no=item.pc_no)
             if cno:
                 # BUG-35 fix: was update_item_fields with empty fabric_item_no,
                 # which wiped existing fabric_item_no values in the DB.
@@ -292,7 +326,7 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
         )
 
         tracker.step("Enriching items")
-        _se_enrich_items(contracts, config_sku_lookup, fabric_lookup, progress_lookup)
+        _se_enrich_items(contracts, config_sku_lookup, fabric_lookup, progress_lookup, log)
 
         _se_report_sku_conflicts(config_sku_lookup, log)
 

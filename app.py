@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "1.63.4"
+APP_VERSION = "1.7.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -16,7 +16,7 @@ from auth.users import (
 )
 from po_extractor.ui_helpers import load_live_schema as _load_live_schema_impl
 from po_extractor.config import SCHEMA_PATH as _SCHEMA_PATH_CFG, CACHE_TTL_SECONDS
-from ui.session_keys import SK
+from ui.session_keys import SK, COLOR_SOURCE_DB
 
 # Seed default companies on startup (idempotent)
 ensure_defaults_seeded()
@@ -106,6 +106,8 @@ for key, default in [
     (SK.UI_LANG,         "en"),    # "en" | "zh"
     # GIII reference data panel
     (SK.GIII_MAPPING,    None),    # result of last mapping import
+    # Sky East — color mapping source
+    (SK.SE_COLOR_SOURCE, COLOR_SOURCE_DB),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -213,7 +215,12 @@ def show_main():
         _lang_now = st.session_state.get(SK.UI_LANG, "en")
         _lang_label = "🌐 切换中文" if _lang_now == "en" else "🌐 Switch to EN"
         if st.button(_lang_label, use_container_width=True, key="lang_toggle"):
-            st.session_state[SK.UI_LANG] = "zh" if _lang_now == "en" else "en"
+            _new_lang = "zh" if _lang_now == "en" else "en"
+            st.session_state[SK.UI_LANG] = _new_lang
+            # Invalidate the i18n cache for the new language so it is
+            # rebuilt from DB on first render after the toggle.
+            from ui.i18n import clear_cache as _clear_i18n
+            _clear_i18n(_new_lang)
             st.rerun()
         st.caption("中文" if _lang_now == "zh" else "English")
 
@@ -252,9 +259,11 @@ def _show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
 
 def _show_admin_panel():
     (admin_tab_users, admin_tab_cos, admin_tab_schema, admin_tab_sizes,
-     admin_tab_tpl, admin_tab_pipe, admin_tab_bsr, admin_tab_smtp) = st.tabs(
+     admin_tab_tpl, admin_tab_pipe, admin_tab_bsr, admin_tab_smtp,
+     admin_tab_i18n) = st.tabs(
         ["👤 Users", "🏢 Companies", "📋 Column Mapping", "📐 Size Order",
-         "📄 Templates", "🧩 Pipeline Layouts", "🚢 船样要求", "📧 Email"]
+         "📄 Templates", "🧩 Pipeline Layouts", "🚢 船样要求", "📧 Email",
+         "🌐 Translations"]
     )
 
     with admin_tab_cos:
@@ -281,6 +290,10 @@ def _show_admin_panel():
     with admin_tab_smtp:
         from ui.admin_smtp import show_smtp_admin
         show_smtp_admin()
+
+    with admin_tab_i18n:
+        from ui.admin_i18n import show_i18n_admin
+        show_i18n_admin()
 
 
 # ---------------------------------------------------------------------------

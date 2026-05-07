@@ -18,6 +18,7 @@ to exist.
 """
 from __future__ import annotations
 
+import functools
 import os
 
 import streamlit as st
@@ -28,11 +29,13 @@ from po_extractor.store import (
     FabricMasterStore,
     ColorTranslationStore,
     BoatSampleStore,
+    UITranslationStore,
     get_po_store as _get_po_store,
     get_sky_east_store as _get_sky_east_store,
     get_fabric_master_store as _get_fabric_master_store,
     get_color_translation_store as _get_color_translation_store,
     get_boat_sample_store as _get_boat_sample_store,
+    get_ui_translation_store as _get_ui_translation_store,
     list_all_brands as _list_all_brands,
 )
 from po_extractor.config import DATA_DIR, DB_PATH   # canonical path constants
@@ -58,15 +61,35 @@ def get_fabric_master_store() -> FabricMasterStore:
     return _get_fabric_master_store()
 
 
-@st.cache_resource
+@functools.cache
 def get_color_translation_store() -> ColorTranslationStore:
-    """Return the cached ColorTranslationStore."""
+    """Return the cached ColorTranslationStore.
+
+    Cached with ``functools.cache`` (not ``st.cache_resource``) on purpose:
+    ``__init__`` opens a SQLite connection and runs ``_ensure_schema()``, so
+    repeated construction on every Streamlit render is genuinely expensive.
+
+    ``functools.cache`` ties the cached instance to *this function object*.
+    When Streamlit hot-reloads the module after a code change, the function
+    is recreated and its cache is empty, so a fresh instance is built from
+    the current class definition — avoiding the stale-class AttributeError
+    that ``st.cache_resource`` caused (it preserves the cached object across
+    reloads, leaving its ``__class__`` pointing at the pre-reload class).
+    """
     return _get_color_translation_store()
 
 
 def get_boat_sample_store() -> BoatSampleStore:
     """Return a fresh BoatSampleStore (not cached — lightweight wrapper)."""
     return _get_boat_sample_store()
+
+
+@st.cache_resource
+def get_ui_translation_store() -> UITranslationStore:
+    """Return the cached UITranslationStore (seeds defaults on first access)."""
+    store = _get_ui_translation_store()
+    store.seed_defaults(skip_existing=True)
+    return store
 
 
 # ── Convenience helpers exported for UI code ────────────────────────────────

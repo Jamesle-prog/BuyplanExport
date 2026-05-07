@@ -100,8 +100,20 @@ _ERROR_HINTS: list[tuple[str, str]] = [
 ]
 
 
-def _smtp_error_hint(exc: EmailError) -> str | None:
+def _smtp_error_hint(exc: EmailError, host: str = "") -> str | None:
     msg = str(exc).lower()
+    h = (host or "").lower()
+
+    # Brevo-specific: 535 means wrong username (must be Brevo account email)
+    if "brevo" in h and "535" in msg:
+        return (
+            "**Brevo: wrong username.**\n\n"
+            "For Brevo the **Username** must be the email address you used to "
+            "register on brevo.com — NOT your hotmail/gmail address.\n\n"
+            "Find it at https://app.brevo.com/settings/keys/smtp → "
+            "the login shown next to your SMTP key is your Brevo username."
+        )
+
     for keyword, hint in _ERROR_HINTS:
         if keyword.lower() in msg:
             return hint
@@ -289,7 +301,7 @@ def show_smtp_admin() -> None:
                 send_test_email(to)
             st.success(f"✅ Test email delivered to **{to}**.")
         except EmailError as exc:
-            hint = _smtp_error_hint(exc)
+            hint = _smtp_error_hint(exc, host=configured["host"])
             st.error(f"❌ {exc}")
             if hint:
                 st.warning(hint)

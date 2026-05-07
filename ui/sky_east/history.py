@@ -7,12 +7,13 @@ import tempfile
 import zipfile
 import pandas as pd
 import streamlit as st
+from ui.i18n import t
 from auth.companies import SOURCE_SKY_EAST, COMPANY_SKY_EAST
 from po_extractor.exporters import (
     export_sky_east_buyplan, export_sky_east_nukuryou,
     check_nukuryou_ready, build_cross_comparison,
 )
-from ui.session_keys import SK
+from ui.session_keys import SK, COLOR_SOURCE_PROGRESS
 from ui.shared import (
     XLSX_MIME, ZIP_MIME,
     _th, _tr,
@@ -27,18 +28,86 @@ from ui.sky_east.items_view import _enrich_items_df, _build_items_display_df
 
 
 # ---------------------------------------------------------------------------
+# Module-level constants
+# ---------------------------------------------------------------------------
+
+# Excel file extensions accepted by uploaders in this module.  Centralised so
+# adding (e.g.) ``"xlsm"`` only needs one edit.
+_EXCEL_FILE_TYPES   = ["xlsx", "xls"]
+_DEFAULT_XLSX_EXT   = ".xlsx"
+
+# 大货进度表 uploader UI strings — kept inline below so they remain searchable
+# alongside the widget that renders them; no constants extracted unless reused.
+
+
+# ---------------------------------------------------------------------------
 # History section helpers
 # ---------------------------------------------------------------------------
 
+
+def _build_buyplan_color_lookups() -> tuple[dict, dict | None, dict | None, dict | None]:
+    """Build ``(cn_lookup, label_lookup, cn_code_lookup, cn_by_pc_lookup)``
+    honoring the user's color-source choice.
+
+    Always starts from the canonical Color-Translation DB.  When the user has
+    chosen ``COLOR_SOURCE_PROGRESS`` *and* a 大货进度表 is loaded in this session,
+    its entries are merged in on top (progress data wins) for all lookups.
+
+    Returns
+    -------
+    cn_lookup : dict
+        ``{(client, brand, en_color): cn_color}``
+    label_lookup : dict | None
+        ``None`` → exporter auto-fetches from DB.
+    cn_code_lookup : dict | None
+        ``{(client, brand, en_color): color_code}`` (中文颜色代码, e.g. "52#").
+        ``None`` → exporter auto-fetches from DB.
+    cn_by_pc_lookup : dict | None
+        ``{(pc_no_norm, style_norm, en_color_norm): (cn_color, color_code)}`` —
+        used by the exporter for per-row PC-No.-prioritised lookup of both
+        the Chinese color name and code simultaneously.
+        ``None`` when not using progress source (exporter skips this tier).
+    """
+    color_source  = st.session_state.get(SK.SE_COLOR_SOURCE)
+    progress_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
+    cn_store      = get_color_translation_store()
+    cn_lookup     = cn_store.build_lookup_dict()
+
+    if color_source != COLOR_SOURCE_PROGRESS:
+        return cn_lookup, None, None, None
+
+    if progress_lkup is None:
+        # The buyplan section shows an inline uploader when this happens,
+        # so no extra warning needed here — just fall back silently.
+        return cn_lookup, None, None, None
+
+    # Merge: progress data wins, DB fills gaps for colours not in the progress file.
+    # build_all_color_lookups iterates the progress data ONCE and returns all
+    # four dicts (cn, code, label, pc-keyed) — replaces three separate passes.
+    _cn_upd, _code_upd, _label_upd, cn_by_pc_lookup = (
+        progress_lkup.build_all_color_lookups(COMPANY_SKY_EAST)
+    )
+    cn_lookup.update(_cn_upd)
+    label_lookup = cn_store.build_label_lookup_dict()
+    label_lookup.update(_label_upd)
+    cn_code_lookup = cn_store.build_cn_code_lookup_dict()
+    cn_code_lookup.update(_code_upd)
+    st.caption("🗂 Chinese colors sourced from 大货进度表 (overrides Internal DB).")
+    return cn_lookup, label_lookup, cn_code_lookup, cn_by_pc_lookup
+
+
 def _se_hist_summary_table(df_contracts) -> None:
-    """Render the contract-summary dataframe."""
+    """Render the contract-summary dataframe (sorted by PC No.)."""
     display_cols = [c for c in
                     ["pc_no", "pc_date", "buyer", "seller", "total_styles",
                      "total_qty", "currency", "trade_term", "extracted_at",
                      "source_file"]
                     if c in df_contracts.columns]
+    df_view = df_contracts[display_cols]
+    if "pc_no" in df_view.columns:
+        df_view = df_view.sort_values("pc_no", kind="stable").reset_index(drop=True)
     st.dataframe(
-        df_contracts[display_cols].rename(columns=_tr({
+        df_view.rename(columns=_tr({
             "pc_no": "PC No.", "pc_date": "PC Date", "buyer": "Buyer",
             "seller": "Seller", "total_styles": "Styles",
             "total_qty": "Total Qty", "currency": "Currency",
@@ -52,11 +121,11 @@ def _se_hist_summary_table(df_contracts) -> None:
 
 def _se_hist_multi_pc_download(store, pc_options: list[str]) -> None:
     """Multi-PC items download section (Excel or CSV)."""
-    st.markdown("**Download items by PC No.**")
+    st.markdown(f"**{t('Download items by PC No.')}**")
     dl_col1, dl_col2 = st.columns([3, 1])
     with dl_col1:
         sel_dl_pcs = st.multiselect(
-            "Select PC No.(s) to download:",
+            t("Select PC No.(s) to download:"),
             pc_options,
             placeholder="Choose one or more PC No.(s)...",
             key="se_dl_pcs",
@@ -64,7 +133,7 @@ def _se_hist_multi_pc_download(store, pc_options: list[str]) -> None:
     with dl_col2:
         st.markdown("<br>", unsafe_allow_html=True)
         st.button(
-            "Select all", key="se_dl_all",
+            t("Select all"), key="se_dl_all",
             on_click=lambda: st.session_state.update({"se_dl_pcs": pc_options}),
         )
 
@@ -72,12 +141,12 @@ def _se_hist_multi_pc_download(store, pc_options: list[str]) -> None:
         fmt_col, btn_col = st.columns([1, 2])
         with fmt_col:
             dl_fmt = st.radio(
-                "Format", ["Excel (.xlsx)", "CSV (.csv)"],
+                t("Format"), ["Excel (.xlsx)", "CSV (.csv)"],
                 horizontal=True, key="se_dl_fmt",
             )
         with btn_col:
             st.markdown("<br>", unsafe_allow_html=True)
-            generate = st.button("Generate", type="primary", key="se_dl_gen")
+            generate = st.button(t("Generate"), type="primary", key="se_dl_gen")
 
         if generate:
             pcs_label = "_".join(sel_dl_pcs) if len(sel_dl_pcs) <= 3 else f"{len(sel_dl_pcs)}PCs"
@@ -231,12 +300,12 @@ def _enrich_parts_from_fabric_master(fabric_parts_by_style: dict) -> dict:
 
 def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
     """Wash-label download section — select by PC No., stored Fabric Mapping, or uploaded file."""
-    st.markdown("**Download Wash Label Content**")
+    st.markdown(f"**{t('Download Wash Label Content')}**")
     st.caption("Style · Photo · Seq · Body Part · Fabric Code · Composition — up to 4 rows per style")
 
     # ── Selection mode toggle ─────────────────────────────────────────────────
     sel_mode = st.radio(
-        "Select by",
+        t("Select by"),
         ["PC No.", "Style (Fabric Mapping)", "Upload Mapping File"],
         horizontal=True,
         key="se_wl_sel_mode",
@@ -250,7 +319,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
         wl_col1, wl_col2 = st.columns([3, 1])
         with wl_col1:
             sel_wl_pcs = st.multiselect(
-                "Select PC No.(s) for wash label:",
+                t("Select PC No.(s) for wash label:"),
                 pc_options,
                 placeholder="Choose one or more PC No.(s)...",
                 key="se_wl_pcs",
@@ -258,7 +327,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
         with wl_col2:
             st.markdown("<br>", unsafe_allow_html=True)
             st.button(
-                "Select all", key="se_wl_all",
+                t("Select all"), key="se_wl_all",
                 on_click=lambda: st.session_state.update({"se_wl_pcs": pc_options}),
             )
         has_selection = bool(sel_wl_pcs)
@@ -277,7 +346,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
             wl_col1, wl_col2 = st.columns([3, 1])
             with wl_col1:
                 sel_wl_styles = st.multiselect(
-                    "Select Style(s) for wash label:",
+                    t("Select Style(s) for wash label:"),
                     mapped_styles,
                     placeholder="Choose one or more styles...",
                     key="se_wl_styles",
@@ -285,7 +354,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
             with wl_col2:
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.button(
-                    "Select all", key="se_wl_styles_all",
+                    t("Select all"), key="se_wl_styles_all",
                     on_click=lambda: st.session_state.update(
                         {"se_wl_styles": mapped_styles}
                     ),
@@ -332,7 +401,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
         return  # Don't show generate button while correction is pending
 
     if has_selection:
-        if st.button("Generate Wash Label", type="primary", key="se_wl_gen"):
+        if st.button(t("Generate Wash Label"), type="primary", key="se_wl_gen"):
             with st.spinner("Building wash label file..."):
                 import pandas as _pd
 
@@ -633,7 +702,7 @@ def _se_hist_inject_photo_col(display_df, col_cfg, df_items) -> None:
 
 def _se_hist_amendment_history(store, df_items, sel_pcs: list[str]) -> None:
     """Amendment-history expander for a single style."""
-    with st.expander("View amendment history for a style"):
+    with st.expander(t("View amendment history for a style")):
         styles_in_pc = df_items["style"].dropna().unique().tolist() if not df_items.empty else []
         sel_style = st.selectbox("Style:", [""] + styles_in_pc, key="se_hist_style")
         if not sel_style:
@@ -665,7 +734,7 @@ def _se_hist_amendment_history(store, df_items, sel_pcs: list[str]) -> None:
 
 def _se_hist_item_browser(store, pc_options: list[str]) -> None:
     """Multi-PC items browser with optional photo column and amendment history."""
-    sel_pcs = st.multiselect("Browse items for PC No.:", pc_options,
+    sel_pcs = st.multiselect(t("Browse items for PC No.:"), pc_options,
                              key="se_hist_pc",
                              placeholder="Select one or more PC Nos.")
     if not sel_pcs:
@@ -684,11 +753,11 @@ def _se_hist_item_browser(store, pc_options: list[str]) -> None:
 
 def _se_hist_delete_section(store, pc_options: list[str]) -> None:
     """Delete-contracts controls."""
-    st.markdown("**Delete contracts from history**")
-    to_del = st.multiselect("Select PC No.(s) to delete:", pc_options,
+    st.markdown(f"**{t('Delete contracts from history')}**")
+    to_del = st.multiselect(t("Select PC No.(s) to delete:"), pc_options,
                             placeholder="Select PC No.(s) to remove...",
                             key="se_del_pcs")
-    if st.button("Delete selected", disabled=not to_del, key="se_del_btn"):
+    if st.button(t("Delete selected"), disabled=not to_del, key="se_del_btn"):
         n = store.delete_contracts(to_del)
         st.success(f"Deleted {n} contract(s).")
         st.rerun()
@@ -697,13 +766,13 @@ def _se_hist_delete_section(store, pc_options: list[str]) -> None:
 def _se_hist_buyplan_section(store, pc_options: list[str],
                               df_contracts=None) -> None:
     """Generate Sky East buy plan + 核料 workbooks for selected contracts."""
-    st.markdown("**Create Buy Plan**")
+    st.markdown(f"**{t('Create Buy Plan')}**")
     st.caption(
         "Generates the main buy plan (Template) and fabric 核料 workbooks (Template_P) "
         "from the selected contracts, matching the VBA output format."
     )
     sel = st.multiselect(
-        "PC No.(s) to include:",
+        t("PC No.(s) to include:"),
         pc_options,
         key="se_bp_sel",
         placeholder="Select one or more PC Nos...",
@@ -715,19 +784,58 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         _total_units  = int(_sel_df["total_qty"].sum())    if "total_qty"    in _sel_df.columns else 0
         _total_styles = int(_sel_df["total_styles"].sum()) if "total_styles" in _sel_df.columns else 0
         _m1, _m2, _m3 = st.columns(3)
-        _m1.metric("PCs selected",   len(sel))
-        _m2.metric("Total Styles",   _total_styles)
-        _m3.metric("Total Units",    f"{_total_units:,}")
+        _m1.metric(t("PCs selected"),   len(sel))
+        _m2.metric(t("Total Styles"),   _total_styles)
+        _m3.metric(t("Total Units"),    f"{_total_units:,}")
 
-    if st.button("Generate Buy Plan + 核料", type="primary",
+    # ── 大货进度表 upload (only needed when COLOR_SOURCE_PROGRESS is chosen) ────
+    if st.session_state.get(SK.SE_COLOR_SOURCE) == COLOR_SOURCE_PROGRESS:
+        _prog_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
+        if _prog_lkup is not None:
+            st.caption(f"✅ 大货进度表 loaded ({len(_prog_lkup)} records).")
+        else:
+            with st.expander("📂 Upload 大货进度表 (HHN Contract No. file)", expanded=True):
+                st.caption(
+                    "Chinese color mapping source is set to **大货进度表** but no file "
+                    "has been loaded yet. Upload it here, or switch to **Internal Database** "
+                    "in the **New Contracts** tab."
+                )
+                _prog_upload = st.file_uploader(
+                    "HHN contract No. file (大货进度表)",
+                    type=_EXCEL_FILE_TYPES,
+                    key="se_bp_progress_uploader",
+                    label_visibility="collapsed",
+                )
+                if _prog_upload is not None:
+                    try:
+                        import tempfile as _tf2
+                        from po_extractor.lookups import ProgressLookup as _PL
+                        # Write to a persistent temp file (ProgressLookup needs a path)
+                        _tmp_fd, _tmp_path = _tf2.mkstemp(
+                            suffix=os.path.splitext(_prog_upload.name)[1] or _DEFAULT_XLSX_EXT
+                        )
+                        with os.fdopen(_tmp_fd, "wb") as _fh:
+                            _fh.write(_prog_upload.getbuffer())
+                        _new_lkup = _PL(_tmp_path)
+                        len(_new_lkup)  # trigger lazy load while file exists
+                        st.session_state[SK.SE_PROGRESS_LKUP] = _new_lkup
+                        st.success(
+                            f"✅ 大货进度表 loaded: {len(_new_lkup)} records from "
+                            f"**{_prog_upload.name}**."
+                        )
+                        st.rerun()
+                    except Exception as _exc:
+                        st.error(f"Could not parse progress file: {_exc}")
+
+    if st.button(t("Generate Buy Plan + 核料"), type="primary",
                  disabled=not sel, key="se_bp_btn"):
 
         df_items = store.list_items(pc_nos=sel)
         if df_items.empty:
-            st.warning("No data found for the selected contracts.")
+            st.warning(t("No data found for the selected contracts."))
         else:
-            cn_lookup = get_color_translation_store().build_lookup_dict()
-            out_dir   = tempfile.mkdtemp()
+            cn_lookup, label_lookup, cn_code_lookup, cn_by_pc_lookup = _build_buyplan_color_lookups()
+            out_dir = tempfile.mkdtemp()
 
             # ── Auto-register new brands in 船样要求 admin ──────────────────────
             # Any brand that appears in the loaded data but isn't yet in the
@@ -829,6 +937,9 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                         df_items, cn_lookup, out_dir,
                         fabric_parts_by_style=fabric_parts_by_style,
                         style_image_map=style_image_map or None,
+                        label_lookup=label_lookup,
+                        cn_code_lookup=cn_code_lookup,
+                        cn_by_pc_lookup=cn_by_pc_lookup,
                     )
                     with open(bp_path, "rb") as f:
                         st.session_state[SK.SE_BP_BYTES] = f.read()
@@ -841,7 +952,11 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
 
                 st.write("Building 核料 workbooks (Template_P)...")
                 try:
-                    nk_paths = export_sky_east_nukuryou(df_items, cn_lookup, out_dir)
+                    nk_paths = export_sky_east_nukuryou(
+                        df_items, cn_lookup, out_dir,
+                        cn_code_lookup=cn_code_lookup,
+                        cn_by_pc_lookup=cn_by_pc_lookup,
+                    )
                     if nk_paths:
                         nk_buf = io.BytesIO()
                         with zipfile.ZipFile(nk_buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -996,8 +1111,9 @@ def _se_hist_email_section() -> None:
         st.success(f"Sent {len(attachments)} attachment(s) to {recipient}.")
     except EmailError as exc:
         from ui.admin_smtp import _smtp_error_hint
+        from auth import smtp_settings as _smtp_cfg
         st.error(f"Email failed: {exc}")
-        hint = _smtp_error_hint(exc)
+        hint = _smtp_error_hint(exc, host=_smtp_cfg.load()["host"])
         if hint:
             st.warning(hint + "\n\nFix settings in **⚙️ Admin → 📧 Email**.")
 
@@ -1008,10 +1124,10 @@ def _show_se_history_section():
     df_contracts = store.list_contracts()
 
     total = len(df_contracts)
-    st.subheader(f"Saved Contracts -- {total} PC No.(s)")
+    st.subheader(f"{t('Saved Contracts')} — {total} PC No.(s)")
 
     if df_contracts.empty:
-        st.info("No Sky East contracts saved yet.")
+        st.info(t("No Sky East contracts saved yet."))
         return
 
     _se_hist_summary_table(df_contracts)

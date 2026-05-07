@@ -44,7 +44,9 @@ def _se_missing_apply_auto_fill(df_a, fl, pl):
                 if parts:
                     df_a.at[idx, "fabric_item_no"] = parts[0][1]
         if pl and not str(row.get("contract_no", "") or "").strip():
-            cno = pl.get_contract_no(style, color)
+            cno = pl.get_contract_no(
+                style, color, str(row.get("zalando_po", "") or "").strip(),
+                pc_no=str(row.get("pc_no", "") or "").strip())
             if cno:
                 df_a.at[idx, "contract_no"] = cno
     af_mask = (
