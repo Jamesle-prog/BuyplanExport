@@ -37,7 +37,92 @@ from openpyxl import load_workbook
 from ._sky_east_helpers import *  # noqa: F401,F403
 from ..utils.file_utils import versioned_path
 from ..store.color_translation_store import _normalize_color_name as _nz_color
+from ..lookups.progress_lookup import _norm_key
 from auth.companies import COMPANY_SKY_EAST
+
+
+# ── Display-formatting parameters ────────────────────────────────────────────
+# Separator joining 中文颜色代码 and 中文颜色 in the BODY COLOR-CN cell, e.g.
+# ``"52#|黑色"``.  Edit here to change the format everywhere.
+_CN_DISPLAY_SEP = "|"
+
+# Template for the per-colour row label in 核料 workbooks, e.g.
+# ``"Black(52#|黑色)"``.  Variables: ``{en}`` (English colour) and ``{cn}``
+# (the formatted Chinese display string from ``_format_body_color_cn``).
+_NUKURYOU_LABEL_FMT = "{en}({cn})"
+
+# Sentinel used as the "brand" component of brand-agnostic flat lookup keys.
+# Centralised so changes propagate to every dict that follows the convention.
+_BRAND_AGNOSTIC = ""
+
+
+def _format_body_color_cn(
+    cn_code: str, color_cn: str, sep: str = _CN_DISPLAY_SEP,
+) -> str:
+    """Return the BODY COLOR-CN cell text.
+
+    ``"<code><sep><name>"`` when both are present, else whichever side is
+    non-empty, else ``""``.
+    """
+    if cn_code and color_cn:
+        return f"{cn_code}{sep}{color_cn}"
+    return color_cn or cn_code
+
+
+def _brand_keyed_get(
+    lookup: dict | None, company: str, brand: str, norm_en: str,
+    *, default: str = "",
+) -> str:
+    """Two-tier (brand → brand-agnostic) lookup against a flat color dict.
+
+    The buy-plan exporter uses this pattern for ``cn_code_lookup`` and
+    ``label_lookup``: try the brand-specific key first, then fall back to
+    a brand-agnostic key (``brand=""``) before giving up.
+    """
+    if not lookup:
+        return default
+    return (
+        lookup.get((company, brand, norm_en))
+        or lookup.get((company, _BRAND_AGNOSTIC, norm_en))
+        or default
+    )
+
+
+def _resolve_pc_color(
+    row, sty_norm: str, color_en: str, brand: str,
+    cn_lookup: dict, cn_code_lookup: dict | None,
+    cn_by_pc_lookup: dict | None,
+) -> tuple[str, str, str, str]:
+    """Resolve (color_cn, cn_code, label_color, color_cn_display) for one row.
+
+    Priority (most specific first):
+      1. ``cn_by_pc_lookup`` — keyed by (pc_no, style, color); from 大货进度表
+      2. ``cn_code_lookup``  — keyed by (company, brand, color); from DB or progress
+      3. brand-agnostic key in the same dict
+      4. light/dark heuristic at the call site (label only)
+
+    ``label_color`` is non-empty only when tier 1 hits.  The buyplan caller
+    falls back to ``label_lookup`` and ``derive_main_label_color`` when blank;
+    nukuryou ignores ``label_color`` altogether (核料 doesn't render it).
+    """
+    norm_en  = _nz_color(color_en)
+    # Avoid building a throwaway ``{}`` per row when the PC-keyed dict is None.
+    pc_match = (
+        cn_by_pc_lookup.get((_norm_key(row.get("pc_no") or ""), sty_norm, norm_en))
+        if cn_by_pc_lookup else None
+    )
+    if pc_match is not None:
+        # Defer the brand-keyed _cn_color() call: only fall back when the PC
+        # row didn't carry a Chinese name itself (the common case when 大货
+        # 进度表 is populated is that pc_match.cn_color is non-empty).
+        color_cn    = pc_match.cn_color or _cn_color(cn_lookup, brand, color_en)
+        cn_code     = pc_match.color_code
+        label_color = pc_match.label_color
+    else:
+        color_cn    = _cn_color(cn_lookup, brand, color_en)
+        cn_code     = _brand_keyed_get(cn_code_lookup, COMPANY_SKY_EAST, brand, norm_en)
+        label_color = ""
+    return color_cn, cn_code, label_color, _format_body_color_cn(cn_code, color_cn)
 
 
 def _apply_sky_east_compact_layout(ws, *, last_row: int) -> None:
@@ -83,6 +168,8 @@ def export_sky_east_buyplan(
     fabric_parts_by_style: dict | None = None,
     style_image_map: dict | None = None,
     label_lookup: dict | None = None,
+    cn_code_lookup: dict | None = None,
+    cn_by_pc_lookup: dict | None = None,
 ) -> str:
     """Generate the main Sky East buy plan.
 
@@ -107,21 +194,38 @@ def export_sky_east_buyplan(
                            When None, the exporter fetches it from the canonical
                            DB itself.  Pass an explicit empty dict to disable
                            DB-driven label lookup entirely.
+    cn_code_lookup       : optional ``{(client, brand, en_color): color_code}``
+                           (中文颜色代码) returned by
+                           ``ColorTranslationStore.build_cn_code_lookup_dict()``.
+                           When None, fetched automatically from the DB.
+    cn_by_pc_lookup : optional ``{(pc_no_norm, style_norm, en_color_norm): (cn_color, color_code)}``
+                           from ``ProgressLookup.build_pc_style_color_lookups()``.
+                           When provided, both the Chinese color name and code are
+                           resolved in one lookup with PC No. + style + color priority
+                           (more specific than the brand + color flat lookup).
+                           None → skipped.
 
     Returns
     -------
     Absolute path of the saved .xlsx file.
     """
-    # Auto-fetch label_lookup from the canonical store when not provided.
+    # Auto-fetch label_lookup and cn_code_lookup from the canonical store.
     # Single source of truth: the same DB as cn_lookup.
-    if label_lookup is None:
+    if label_lookup is None or cn_code_lookup is None:
         try:
             from ..store import get_color_translation_store
-            label_lookup = get_color_translation_store().build_label_lookup_dict()
+            _cts = get_color_translation_store()
+            if label_lookup is None:
+                label_lookup = _cts.build_label_lookup_dict()
+            if cn_code_lookup is None:
+                cn_code_lookup = _cts.build_cn_code_lookup_dict()
         except Exception as exc:
             import warnings as _w
-            _w.warn(f"[sky_east buyplan] label_color lookup failed: {exc!r}")
-            label_lookup = {}
+            _w.warn(f"[sky_east buyplan] color lookup failed: {exc!r}")
+            if label_lookup is None:
+                label_lookup = {}
+            if cn_code_lookup is None:
+                cn_code_lookup = {}
     if not _SE_TEMPLATE.exists():
         raise FileNotFoundError(f"Sky East template not found: {_SE_TEMPLATE}")
 
@@ -275,6 +379,8 @@ def export_sky_east_buyplan(
         style = str(style or "").strip()
         if not style:
             continue
+        # Style is invariant within this groupby — normalise once, reuse per row.
+        _sty_norm = _norm_key(style)
 
         first = style_df.iloc[0]
         parts = (fabric_parts_by_style or {}).get(style, []) if fabric_parts_by_style else []
@@ -401,9 +507,12 @@ def export_sky_east_buyplan(
             for _key, grp_df in groups:
                 g = grp_df.iloc[0]
 
-                color_en = str(g.get("color_name", "") or "")
-                brand    = str(g.get("brand",       "") or "")
-                color_cn = _cn_color(cn_lookup, brand, color_en)
+                color_en = str(g.get("color_name", "") or "").title()
+                brand    = str(g.get("brand",      "") or "")
+                _, _, _pc_label, color_cn_display = _resolve_pc_color(
+                    g, _sty_norm, color_en, brand,
+                    cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                )
 
                 xs  = int(grp_df["xs"].sum()  if "xs"  in grp_df.columns else 0)
                 s   = int(grp_df["s"].sum()   if "s"   in grp_df.columns else 0)
@@ -421,20 +530,15 @@ def export_sky_east_buyplan(
                 _style_data(ws.cell(out_row, col["po"]),        str(g.get("zalando_po",   "") or ""))
                 _style_data(ws.cell(out_row, col["config"]),    str(g.get("config_sku",   "") or ""))
                 _style_data(ws.cell(out_row, col["color_en"]),  color_en)
-                _style_data(ws.cell(out_row, col["color_cn"]),  color_cn)
-                # 主标颜色 resolution order (single source of truth):
-                #   1. ColorTranslationStore.label_color for (client, brand, en)
-                #   2. Brand-agnostic fallback in the same store
-                #   3. Auto-derive from the English body colour
-                #      (light → 黑色, dark → 白色)
-                _label_clr = ""
-                if label_lookup:
-                    # Same normalisation as build_label_lookup_dict() — case-insensitive.
-                    _norm_en = _nz_color(color_en)
-                    _label_clr = (
-                        label_lookup.get((COMPANY_SKY_EAST, brand, _norm_en))
-                        or label_lookup.get((COMPANY_SKY_EAST, "", _norm_en))
-                        or ""
+                _style_data(ws.cell(out_row, col["color_cn"]),  color_cn_display)
+                # 主标颜色 resolution order:
+                #   1. 大货进度表 PC-keyed (most specific — same contract)
+                #   2. label_lookup (brand-keyed DB or progress fallback)
+                #   3. Auto-derive from the English body colour (light/dark heuristic)
+                _label_clr = _pc_label  # may be "" when no PC-keyed match
+                if not _label_clr:
+                    _label_clr = _brand_keyed_get(
+                        label_lookup, COMPANY_SKY_EAST, brand, _nz_color(color_en),
                     )
                 if not _label_clr:
                     _label_clr = derive_main_label_color(color_en)
@@ -549,6 +653,8 @@ def export_sky_east_nukuryou(
     df_items: pd.DataFrame,
     cn_lookup: dict,
     output_dir: str,
+    cn_code_lookup: dict | None = None,
+    cn_by_pc_lookup: dict | None = None,
 ) -> list[str]:
     """Generate 核料 (material-allocation) workbooks — one per distinct fabric.
 
@@ -557,8 +663,26 @@ def export_sky_east_nukuryou(
       • Row 2 = size headers (B-G → XS-XXL)
       • Row 3+ = one row per color (col A = color name, B-G = XS-XXL quantities)
 
+    Parameters
+    ----------
+    cn_code_lookup  : optional ``{(client, brand, en_color): color_code}``
+                      (中文颜色代码).  When None, fetched automatically from the DB.
+    cn_by_pc_lookup : optional ``{(pc_no_norm, style_norm, en_color_norm): (cn_color, color_code)}``
+                      from ``ProgressLookup.build_pc_style_color_lookups()``.
+                      Both values resolved in one lookup.  None → skipped.
+
     Returns list of saved file paths (empty if Template_P not found or no fabric codes).
     """
+    # Auto-fetch cn_code_lookup from canonical store when not supplied.
+    if cn_code_lookup is None:
+        try:
+            from ..store import get_color_translation_store as _get_cts
+            cn_code_lookup = _get_cts().build_cn_code_lookup_dict()
+        except Exception as _exc:
+            import warnings as _w
+            _w.warn(f"[sky_east nukuryou] cn_code_lookup fetch failed: {_exc!r}")
+            cn_code_lookup = {}
+
     if not _SE_TEMPLATE_P.exists():
         return []
 
@@ -624,13 +748,20 @@ def export_sky_east_nukuryou(
             for sz_key, sz_col in size_col_map.items():
                 ws.cell(nuk_header_row, sz_col).value = sz_key.upper().replace("XXL", "2XL")
 
-            # Aggregate sizes by color
+            # Aggregate sizes by color (style invariant — normalise once).
+            _sty_norm = _norm_key(style)
             color_totals: dict[str, dict[str, int]] = {}
             for _, item in style_df.iterrows():
-                color_en = str(item.get("color_name", "") or "")
-                brand    = str(item.get("brand",       "") or "")
-                color_cn = _cn_color(cn_lookup, brand, color_en)
-                display  = f"{color_en}({color_cn})" if color_cn else color_en
+                color_en = str(item.get("color_name", "") or "").title()
+                brand    = str(item.get("brand",      "") or "")
+                _, _, _, color_cn_display = _resolve_pc_color(
+                    item, _sty_norm, color_en, brand,
+                    cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                )
+                display = (
+                    _NUKURYOU_LABEL_FMT.format(en=color_en, cn=color_cn_display)
+                    if color_cn_display else color_en
+                )
 
                 if display not in color_totals:
                     color_totals[display] = {sz: 0 for sz in _SIZES_LC}

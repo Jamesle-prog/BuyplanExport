@@ -360,12 +360,15 @@ class ColorTranslationStore(BaseSQLiteStore):
                     skipped += 1
 
             # ── Sky East: sky_east_items ──────────────────────────────────────
+            # NOTE: sky_east_items.colour_code is the buyer's PO color reference
+            # (e.g. "503", "302") — a completely different concept from the
+            # factory's Chinese dye-lot code (中文颜色代码, e.g. "52#").
+            # We intentionally do NOT carry it into color_translations.color_code.
             se_rows = conn.execute(
                 """SELECT DISTINCT
                        ? AS client,
                        COALESCE(brand, '') AS brand,
-                       color_name AS en_color,
-                       COALESCE(colour_code, '') AS color_code
+                       color_name AS en_color
                    FROM sky_east_items
                    WHERE color_name IS NOT NULL AND trim(color_name) != ''
                    ORDER BY brand, color_name""",
@@ -373,11 +376,9 @@ class ColorTranslationStore(BaseSQLiteStore):
             ).fetchall()
 
             for row in se_rows:
-                client     = COMPANY_SKY_EAST
-                # BUG-36 defensive: same coercion as GIII branch above
-                brand      = str(row["brand"] or "").strip()
-                en_color   = str(row["en_color"] or "").strip()
-                color_code = str(row["color_code"] or "").strip()
+                client   = COMPANY_SKY_EAST
+                brand    = str(row["brand"] or "").strip()
+                en_color = str(row["en_color"] or "").strip()
                 if not en_color:
                     skipped += 1
                     continue
@@ -394,18 +395,11 @@ class ColorTranslationStore(BaseSQLiteStore):
                         """INSERT OR IGNORE INTO color_translations
                            (client, brand, en_color, cn_color, color_code, notes, updated_at)
                            VALUES (?,?,?,?,?,?,?)""",
-                        (client, brand, en_color, "", color_code, "", now)
+                        (client, brand, en_color, "", "", "", now)
                     )
                     inserted += 1
                     se_n += 1
                 else:
-                    if color_code:
-                        conn.execute(
-                            """UPDATE color_translations SET color_code=?, updated_at=?
-                               WHERE client=? AND brand=? AND en_color=?
-                               AND (color_code IS NULL OR color_code='')""",
-                            (color_code, now, client, brand, en_color)
-                        )
                     skipped += 1
 
         return {
@@ -427,7 +421,7 @@ class ColorTranslationStore(BaseSQLiteStore):
                 if not client or not en_color:
                     continue
                 cn_color   = _v(row.get("Chinese Color"))
-                color_code = _v(row.get("Color Code"))
+                color_code = _v(row.get("中文颜色代码") or row.get("Color Code"))
                 shade      = _v(row.get("Light/Dark")).lower()
                 label      = _v(row.get("Label Color"))
                 notes      = _v(row.get("Notes"))
@@ -569,9 +563,12 @@ class ColorTranslationStore(BaseSQLiteStore):
         wb = _ox.load_workbook(xlsx_path, read_only=True, data_only=True)
 
         BRAND_HEADERS    = {"brand", "客户品牌", "品牌"}
-        EN_HEADERS       = {"颜色", "color", "color (en)"}
+        EN_HEADERS       = {"颜色", "英文颜色", "color", "color (en)", "en color",
+                            "english color", "colour", "colour (en)"}
         MAIN_HEADERS     = {"主标颜色", "main label color", "label color"}
-        CN_HEADERS       = {"中文颜色", "颜色(中文)", "颜色（中文）", "color (cn)"}
+        CN_HEADERS       = {"中文颜色", "颜色(中文)", "颜色（中文）", "color (cn)",
+                            "colour (cn)", "cn color"}
+        CODE_HEADERS     = {"中文颜色代码", "color code", "colour code", "colorcode"}
 
         def _h(v):
             return str(v).strip().lower() if v else ""
@@ -596,7 +593,8 @@ class ColorTranslationStore(BaseSQLiteStore):
                     elif h in EN_HEADERS:     cols.setdefault("en",    ci)
                     elif h in MAIN_HEADERS:   cols.setdefault("main",  ci)
                     elif h in CN_HEADERS:     cols.setdefault("cn",    ci)
-                if "en" in cols and ("cn" in cols or "main" in cols):
+                    elif h in CODE_HEADERS:   cols.setdefault("code",  ci)
+                if "en" in cols and ("cn" in cols or "main" in cols or "code" in cols):
                     header_row = ri
                     break
             if not header_row:
@@ -614,15 +612,17 @@ class ColorTranslationStore(BaseSQLiteStore):
                         continue
 
                     en_color = _normalize_color_name(en_raw)
-                    cn_color = (str(row[cols["cn"] - 1]).strip()
-                                if cols.get("cn") and cols["cn"] <= len(row)
-                                and row[cols["cn"] - 1] is not None else "")
-                    label    = (str(row[cols["main"] - 1]).strip()
-                                if cols.get("main") and cols["main"] <= len(row)
-                                and row[cols["main"] - 1] is not None else "")
-                    brand    = (str(row[cols["brand"] - 1]).strip()
-                                if cols.get("brand") and cols["brand"] <= len(row)
-                                and row[cols["brand"] - 1] is not None else "")
+
+                    def _cell(key):
+                        ci = cols.get(key)
+                        if ci and ci <= len(row) and row[ci - 1] is not None:
+                            return str(row[ci - 1]).strip()
+                        return ""
+
+                    cn_color   = _cell("cn")
+                    label      = _cell("main")
+                    brand      = _cell("brand")
+                    color_code = _cell("code")
 
                     key = (client, brand, en_color)
                     if key in seen_keys:
@@ -638,31 +638,37 @@ class ColorTranslationStore(BaseSQLiteStore):
                     shade_final = derived_shade
                     label_final = label or derived_label
 
+                    # Use COLLATE NOCASE so "NAVY" in DB matches normalised
+                    # "Navy" from the importer; also match the exact-case form.
                     existing = conn.execute(
-                        "SELECT id, cn_color, color_code, light_or_dark, "
-                        "label_color, notes FROM color_translations "
-                        "WHERE client=? AND brand=? AND en_color=?",
+                        "SELECT id, en_color, cn_color, color_code, "
+                        "light_or_dark, label_color, notes "
+                        "FROM color_translations "
+                        "WHERE client=? AND brand=? AND en_color=? COLLATE NOCASE",
                         key,
                     ).fetchone()
                     if existing:
                         # Preserve existing manual values when source is blank
                         old_cn    = existing["cn_color"]    or ""
+                        old_code  = existing["color_code"]  or ""
                         old_label = existing["label_color"] or ""
                         new_cn    = cn_color    or old_cn
+                        new_code  = color_code  or old_code
                         new_label = label_final or old_label
                         conn.execute(
                             """UPDATE color_translations SET
-                                  cn_color=?, light_or_dark=?, label_color=?,
-                                  updated_at=?
+                                  cn_color=?, color_code=?, light_or_dark=?,
+                                  label_color=?, updated_at=?
                                WHERE id=?""",
-                            (new_cn, shade_final, new_label, now, existing["id"]),
+                            (new_cn, new_code, shade_final, new_label,
+                             now, existing["id"]),
                         )
                         updated += 1
                         _audit_diff(
                             conn, existing["id"], client, brand, en_color,
                             {f: existing[f] for f in _AUDIT_FIELDS},
                             {"cn_color": new_cn,
-                             "color_code": existing["color_code"] or "",
+                             "color_code": new_code,
                              "light_or_dark": shade_final,
                              "label_color": new_label,
                              "notes": existing["notes"] or ""},
@@ -674,7 +680,7 @@ class ColorTranslationStore(BaseSQLiteStore):
                                    color_code, light_or_dark, label_color,
                                    notes, updated_at)
                                VALUES (?,?,?,?,?,?,?,?,?)""",
-                            (client, brand, en_color, cn_color, "",
+                            (client, brand, en_color, cn_color, color_code,
                              shade_final, label_final, "", now),
                         )
                         inserted += 1
@@ -686,8 +692,9 @@ class ColorTranslationStore(BaseSQLiteStore):
                         _audit_log(
                             conn, "insert", new_id, client, brand, en_color,
                             "*", None,
-                            f"cn={cn_color!r}, shade={shade_final!r}, "
-                            f"label={label_final!r} (progress-xlsx import)",
+                            f"cn={cn_color!r}, code={color_code!r}, "
+                            f"shade={shade_final!r}, label={label_final!r} "
+                            f"(progress-xlsx import)",
                         )
 
         wb.close()
@@ -772,6 +779,20 @@ class ColorTranslationStore(BaseSQLiteStore):
         return {
             (r["client"], r["brand"], _normalize_color_name(r["en_color"])):
                 r["label_color"] or ""
+            for r in rows
+        }
+
+    def build_cn_code_lookup_dict(self) -> dict[tuple, str]:
+        """Return {(client, brand, normalised_en_color): color_code} (中文颜色代码).
+        Same case-insensitive keying as :py:meth:`build_lookup_dict`.
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT client, brand, en_color, color_code FROM color_translations"
+            ).fetchall()
+        return {
+            (r["client"], r["brand"], _normalize_color_name(r["en_color"])):
+                r["color_code"] or ""
             for r in rows
         }
 
@@ -869,7 +890,7 @@ class ColorTranslationStore(BaseSQLiteStore):
 
     def to_dataframe(self, client: str = "", brand: str = "") -> pd.DataFrame:
         cols = ["Client", "Brand", "English Color", "Chinese Color",
-                "Color Code", "Light/Dark", "Label Color", "Notes"]
+                "中文颜色代码", "Light/Dark", "Label Color", "Notes"]
         rows = self.get_by_client(client, brand) if client else self.get_all()
         if not rows:
             return pd.DataFrame(columns=cols)
@@ -878,7 +899,7 @@ class ColorTranslationStore(BaseSQLiteStore):
             "Brand":         r.get("brand") or "",
             "English Color": r["en_color"],
             "Chinese Color": r.get("cn_color") or "",
-            "Color Code":    r.get("color_code") or "",
+            "中文颜色代码":    r.get("color_code") or "",
             "Light/Dark":    r.get("light_or_dark") or "",
             "Label Color":   r.get("label_color") or "",
             "Notes":         r.get("notes") or "",

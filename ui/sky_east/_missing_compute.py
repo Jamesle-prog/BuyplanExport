@@ -29,6 +29,8 @@ def _compute_se_missing_df() -> pd.DataFrame:
             return pl.get_contract_no(
                 str(row.get("style", "")).strip(),
                 str(row.get("color_name", "")).strip(),
+                str(row.get("zalando_po", "")).strip(),
+                pc_no=str(row.get("pc_no", "")).strip(),
             ) or cno
         all_items["contract_no"] = all_items.apply(_fill_cno, axis=1)
 
