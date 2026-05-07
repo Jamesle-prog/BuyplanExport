@@ -383,3 +383,88 @@ class FabricMasterStore(BaseSQLiteStore):
                 "ORDER BY imported_at DESC LIMIT 1"
             ).fetchone()
         return dict(row) if row else None
+
+    # ── Cross-DB migration ─────────────────────────────────────────────────────
+
+    @classmethod
+    def migrate_from_db(cls, src_db_path: str, dst_db_path: str) -> dict:
+        """Copy the fabric_master table from one SQLite database to another.
+
+        Designed for the one-time migration from the legacy shared ``po_history.db``
+        into the dedicated ``fabric_master.db``.  Uses SQLite's ``ATTACH DATABASE``
+        so the copy happens entirely inside SQLite without loading data into Python.
+
+        Existing rows in *dst_db_path* with matching ``quality_no`` are replaced.
+
+        Returns::
+            {
+                "migrated": int,   # rows copied
+                "already_in_dst": int,  # rows that were already in dst before migrate
+                "message": str,    # human-readable summary
+            }
+        """
+        # Ensure destination schema exists.
+        dst_store = cls(dst_db_path)
+
+        with dst_store._conn() as conn:
+            # Check source has the table before attaching.
+            src_has_table = False
+            try:
+                conn.execute("ATTACH DATABASE ? AS _src", (src_db_path,))
+                row = conn.execute(
+                    "SELECT name FROM _src.sqlite_master "
+                    "WHERE type='table' AND name='fabric_master'"
+                ).fetchone()
+                src_has_table = row is not None
+            except Exception as exc:
+                return {"migrated": 0, "already_in_dst": 0,
+                        "message": f"Cannot open source DB: {exc}"}
+
+            if not src_has_table:
+                conn.execute("DETACH DATABASE _src")
+                return {"migrated": 0, "already_in_dst": 0,
+                        "message": "Source DB has no fabric_master table."}
+
+            src_count = conn.execute(
+                "SELECT COUNT(*) FROM _src.fabric_master"
+            ).fetchone()[0]
+
+            if src_count == 0:
+                conn.execute("DETACH DATABASE _src")
+                return {"migrated": 0, "already_in_dst": dst_store.count(),
+                        "message": "Source fabric_master is empty — nothing to migrate."}
+
+            already_in_dst = dst_store.count()
+
+            # INSERT OR REPLACE copies every column; schema must match.
+            # If dst has extra columns they keep their default values.
+            src_cols = [
+                row[1]
+                for row in conn.execute(
+                    "PRAGMA _src.table_info(fabric_master)"
+                ).fetchall()
+            ]
+            dst_cols = {
+                row[1]
+                for row in conn.execute(
+                    "PRAGMA table_info(fabric_master)"
+                ).fetchall()
+            }
+            # Only copy columns that exist in both src and dst.
+            common = [c for c in src_cols if c in dst_cols]
+            col_list = ", ".join(common)
+            conn.execute(
+                f"INSERT OR REPLACE INTO fabric_master ({col_list}) "
+                f"SELECT {col_list} FROM _src.fabric_master"
+            )
+            conn.execute("DETACH DATABASE _src")
+
+        migrated = dst_store.count() - already_in_dst
+        return {
+            "migrated": src_count,
+            "already_in_dst": already_in_dst,
+            "message": (
+                f"Copied {src_count} rows from source DB "
+                f"({already_in_dst} were already present in destination)."
+            ),
+        }

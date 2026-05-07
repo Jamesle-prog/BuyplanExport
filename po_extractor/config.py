@@ -30,11 +30,64 @@ FORMAT_UNKNOWN = "unknown"
 
 # ── Paths (resolved relative to this file: po_extractor/ → project root) ─────
 from pathlib import Path as _Path
+import json as _json
 _ROOT = _Path(__file__).parent.parent   # project root
 
 DATA_DIR    = str(_ROOT / "data")
 SCHEMA_PATH = str(_ROOT / "data" / "output_schema.json")
 DB_PATH     = str(_ROOT / "data" / "po_history.db")
+
+# ── Centralised Fabric Master DB ──────────────────────────────────────────────
+# Resolution order (first non-empty wins):
+#   1. FABRIC_DB_PATH environment variable
+#   2. fabric_db_path key in data/fabric_config.json
+#   3. Default: data/fabric_master.db (sibling to po_history.db)
+#
+# Other applications that want to read the same fabric master just need to
+# point their FabricMasterStore (or FabricMasterClient) at this path.
+_FABRIC_CONFIG_FILE = str(_ROOT / "data" / "fabric_config.json")
+
+
+def get_fabric_db_path() -> str:
+    """Return the fabric master DB path, re-reading fabric_config.json each call.
+
+    Calling this function (rather than reading the module-level constant)
+    means the admin can change the path via the Settings UI and the new path
+    takes effect on the next ``get_fabric_master_store()`` call without an
+    app restart.
+    """
+    import os as _os
+    env = _os.environ.get("FABRIC_DB_PATH", "").strip()
+    if env:
+        return env
+    try:
+        with open(_FABRIC_CONFIG_FILE, encoding="utf-8") as _fh:
+            _cfg = _json.load(_fh)
+        path = (_cfg.get("fabric_db_path") or "").strip()
+        if path:
+            return path
+    except (FileNotFoundError, Exception):
+        pass
+    return str(_ROOT / "data" / "fabric_master.db")
+
+
+def save_fabric_db_path(path: str) -> None:
+    """Persist *path* to fabric_config.json so it survives restarts."""
+    import os as _os
+    _os.makedirs(DATA_DIR, exist_ok=True)
+    try:
+        with open(_FABRIC_CONFIG_FILE, encoding="utf-8") as _fh:
+            cfg = _json.load(_fh)
+    except (FileNotFoundError, Exception):
+        cfg = {}
+    cfg["fabric_db_path"] = path.strip()
+    with open(_FABRIC_CONFIG_FILE, "w", encoding="utf-8") as _fh:
+        _json.dump(cfg, _fh, indent=2, ensure_ascii=False)
+
+
+# Module-level constant for code that needs a fixed import-time path.
+# Most internal code should call get_fabric_db_path() instead.
+FABRIC_DB_PATH: str = get_fabric_db_path()
 
 # ── Cache TTL ─────────────────────────────────────────────────────────────────
 CACHE_TTL_SECONDS = 60   # @st.cache_data TTL used by schema loaders

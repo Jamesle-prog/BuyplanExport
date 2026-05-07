@@ -41,7 +41,16 @@ def get_sky_east_store() -> SkyEastStore:
 
 
 def get_fabric_master_store() -> FabricMasterStore:
-    """Return a fresh FabricMasterStore wired to the canonical DB.
+    """Return a fresh FabricMasterStore wired to the centralised fabric master DB.
+
+    The DB path is resolved fresh on every call via ``get_fabric_db_path()``,
+    so an admin can change it in the Settings UI and the new path takes effect
+    immediately without an app restart.
+
+    The fabric master lives in its own dedicated file (``fabric_master.db`` by
+    default) rather than in ``po_history.db`` so that other applications can
+    point their own ``FabricMasterStore`` — or the standalone
+    ``FabricMasterClient`` — at the same file and share the data.
 
     NOTE: this function previously existed only in ``ui.stores`` —
     importing it from ``po_extractor.store.fabric_master_store`` raised
@@ -49,7 +58,8 @@ def get_fabric_master_store() -> FabricMasterStore:
     fabric_master cache empty (BUG fixed in v1.53.0).  Always import via
     ``from po_extractor.store import get_fabric_master_store``.
     """
-    return FabricMasterStore(_db_path())
+    from ..config import get_fabric_db_path
+    return FabricMasterStore(get_fabric_db_path())
 
 
 def get_color_translation_store() -> ColorTranslationStore:
