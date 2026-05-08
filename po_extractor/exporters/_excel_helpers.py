@@ -41,6 +41,7 @@ def apply_print_settings(wb) -> None:
     percentage scaling and the fit-to-page settings are silently ignored.
     """
     from openpyxl.worksheet.properties import PageSetupProperties
+    from openpyxl.worksheet.page import PageMargins
 
     for ws in wb.worksheets:
         ws.page_setup.orientation = "landscape"
@@ -49,6 +50,13 @@ def apply_print_settings(wb) -> None:
         ws.page_setup.fitToHeight = 0     # unlimited pages tall
         # Switch Excel to fit-to-page scaling mode (the missing piece).
         ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+        # Standard Normal margins: top/bottom 1.91 cm (0.75 in),
+        # left/right 1.78 cm (0.70 in), header/footer 0.76 cm (0.30 in).
+        ws.page_margins = PageMargins(
+            top=0.75, bottom=0.75,
+            left=0.70, right=0.70,
+            header=0.30, footer=0.30,
+        )
 
 
 # ---------------------------------------------------------------------------

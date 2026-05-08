@@ -587,13 +587,23 @@ def export_sky_east_buyplan(
             # ── Collect metadata for Index sheet ─────────────────────────
             # Show the first fabric in the combination as the representative entry.
             _idx_fp = combo_parts[0] if combo_parts else None
+            _idx_hhn  = (str(getattr(_idx_fp, "hhn_no", "") or "") if _idx_fp
+                         else str(first.get("fabric_item_no", "") or ""))
+            _idx_comp = (str(getattr(_idx_fp, "composition", "") or "") if _idx_fp
+                         else str(first.get("fabrication", "") or ""))
+            _idx_dk = _display_key_for(
+                _idx_hhn,
+                fallback_composition=_idx_comp,
+                fallback_gsm  =getattr(_idx_fp, "weight_gsm", None) if _idx_fp else None,
+                fallback_width=getattr(_idx_fp, "width_cm",   None) if _idx_fp else None,
+            )
             _sheet_meta_list.append({
                 "style":       style,
                 "sheet_name":  sheet_title,
                 "brand":       str(first.get("brand",       "") or ""),
                 "body_part":   str(getattr(_idx_fp, "body_part", "") or "") if _idx_fp else "",
-                "hhn_no":      (str(getattr(_idx_fp, "hhn_no", "") or "") if _idx_fp
-                                else str(first.get("fabric_item_no", "") or "")),
+                "hhn_no":      _idx_hhn,
+                "display_key": _idx_dk,
                 "ex_fty_date": str(first.get("ex_fty_date", "") or ""),
             })
 
