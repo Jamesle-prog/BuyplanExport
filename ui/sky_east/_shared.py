@@ -129,7 +129,8 @@ def show_color_source_radio(widget_key: str = "se_color_src_radio") -> None:
     cur = st.session_state.get(SK.SE_COLOR_SOURCE)
     if cur is None:
         from ui.stores import get_app_settings_store
-        cur = get_app_settings_store().get("default_color_source", COLOR_SOURCE_PROGRESS)
+        from po_extractor.store.app_settings_store import KEY_DEFAULT_COLOR_SOURCE
+        cur = get_app_settings_store().get(KEY_DEFAULT_COLOR_SOURCE, COLOR_SOURCE_PROGRESS)
         st.session_state[SK.SE_COLOR_SOURCE] = cur
 
     labels = [_t(_COLOR_SOURCE_EN[k]) for k in COLOR_SOURCE_KEYS]

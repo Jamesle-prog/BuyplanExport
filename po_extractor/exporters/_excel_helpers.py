@@ -9,6 +9,8 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 import pandas as pd
+from openpyxl.worksheet.page import PageMargins
+from openpyxl.worksheet.properties import PageSetupProperties
 
 
 # ---------------------------------------------------------------------------
@@ -40,9 +42,6 @@ def apply_print_settings(wb) -> None:
     Both must be present; missing either one leaves Excel using the default
     percentage scaling and the fit-to-page settings are silently ignored.
     """
-    from openpyxl.worksheet.properties import PageSetupProperties
-    from openpyxl.worksheet.page import PageMargins
-
     for ws in wb.worksheets:
         ws.page_setup.orientation = "landscape"
         ws.page_setup.paperSize   = 9     # A4  (openpyxl PAPERSIZE_A4)

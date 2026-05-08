@@ -206,7 +206,11 @@ def _wl_mapped_styles(source: str = SOURCE_SKY_EAST) -> list[str]:
     return sorted(r["style"] for r in rows)
 
 
-def _warn_missing_color_translations(df_items: pd.DataFrame) -> None:
+def _warn_missing_color_translations(
+    df_items: pd.DataFrame,
+    cn_map: dict | None = None,
+    label_map: dict | None = None,
+) -> None:
     """Surface (brand, en_color) pairs in the buy plan that have no Chinese
     translation or label colour in the DB.
 
@@ -214,6 +218,10 @@ def _warn_missing_color_translations(df_items: pd.DataFrame) -> None:
     ``label_color`` empty → 主标颜色 falls through to the light/dark heuristic,
     which often picks the wrong shade. Either is a data-quality issue worth
     surfacing so the user can fix it in the Color Translation tab.
+
+    Pass *cn_map* / *label_map* when the caller has already built them — the
+    function falls back to the canonical store only when omitted, so the buy
+    plan path doesn't query the color_translation table twice.
     """
     if df_items is None or df_items.empty:
         return
@@ -221,8 +229,10 @@ def _warn_missing_color_translations(df_items: pd.DataFrame) -> None:
         return
     from po_extractor.store.color_translation_store import _normalize_color_name
 
-    cn_map    = get_color_translation_store().build_lookup_dict()
-    label_map = get_color_translation_store().build_label_lookup_dict()
+    if cn_map is None:
+        cn_map = get_color_translation_store().build_lookup_dict()
+    if label_map is None:
+        label_map = get_color_translation_store().build_label_lookup_dict()
 
     missing_cn:    set[tuple[str, str]] = set()
     missing_label: set[tuple[str, str]] = set()
@@ -232,8 +242,9 @@ def _warn_missing_color_translations(df_items: pd.DataFrame) -> None:
         if not en:
             continue
         norm = _normalize_color_name(en)
-        cn = cn_map.get((COMPANY_SKY_EAST, brand, norm)) or cn_map.get((COMPANY_SKY_EAST, "", norm))
-        lb = label_map.get((COMPANY_SKY_EAST, brand, norm)) or label_map.get((COMPANY_SKY_EAST, "", norm))
+        # Brand-specific only — matches the exporter's primary-only lookup.
+        cn = cn_map.get((COMPANY_SKY_EAST, brand, norm))
+        lb = label_map.get((COMPANY_SKY_EAST, brand, norm))
         if not (cn or "").strip():
             missing_cn.add((brand, en))
         if not (lb or "").strip():
@@ -875,15 +886,23 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             # Both export_sky_east_buyplan and export_sky_east_nukuryou group
             # by fabric_item_no, so we must fill it before calling either.
             if fabric_parts_by_style and "style" in df_items.columns:
-                def _fill_fabric_no(row):
-                    existing = str(row.get("fabric_item_no", "") or "").strip()
-                    if existing and existing.lower() not in ("none", "nan"):
-                        return existing
-                    parts = fabric_parts_by_style.get(
-                        str(row.get("style", "")).strip(), [])
-                    return parts[0].hhn_no if parts else existing
+                # Vectorised: build a {style: hhn_no} map from the first part of
+                # each style, then fill missing fabric_item_no values via map().
+                _style_to_hhn = {
+                    s: (parts[0].hhn_no if parts else "")
+                    for s, parts in fabric_parts_by_style.items()
+                }
                 df_items = df_items.copy()
-                df_items["fabric_item_no"] = df_items.apply(_fill_fabric_no, axis=1)
+                _existing = (
+                    df_items.get("fabric_item_no", pd.Series("", index=df_items.index))
+                    .fillna("").astype(str).str.strip()
+                )
+                _is_blank = _existing.str.lower().isin(("", "none", "nan"))
+                _filled = (
+                    df_items["style"].astype(str).str.strip().map(_style_to_hhn)
+                    .fillna(_existing)
+                )
+                df_items["fabric_item_no"] = _existing.where(~_is_blank, _filled)
 
             # ── Build style → [front_bytes, back_bytes] image map ────────────
             # Used for: Index sheet thumbnail (front) + Photo1/Photo2 in each
@@ -891,6 +910,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             # disk first (saved by save_images_to_disk during processing), then
             # falls back to the session picture_id cache for front-only.
             import re as _re2
+            from pathlib import Path as _Path
             _img_folder = (st.session_state.get(SK.SE_IMAGES_DIR) or "").strip() \
                           or IMAGES_DIR_DEFAULT
             style_image_map: dict = {}
@@ -898,11 +918,12 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                 _safe = _re2.sub(r'[\\/:*?"<>|]', '_', _style)
                 _pair: list = []
                 for _pos in ("front", "back"):
-                    _disk_path = os.path.join(_img_folder, f"{_safe}_{_pos}.png")
+                    _disk_path = _Path(_img_folder) / f"{_safe}_{_pos}.png"
                     try:
-                        _pair.append(open(_disk_path, "rb").read()
-                                     if os.path.exists(_disk_path) else None)
-                    except Exception:
+                        # read_bytes() opens, reads, and closes in one call —
+                        # no leaked file handles when missing-file branch fires.
+                        _pair.append(_disk_path.read_bytes() if _disk_path.exists() else None)
+                    except OSError:
                         _pair.append(None)
                 if any(_pair):
                     style_image_map[_style] = _pair
@@ -976,7 +997,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                 else:
                     st.session_state[SK.SE_BP_CMP] = None
 
-                _warn_missing_color_translations(df_items)
+                _warn_missing_color_translations(df_items, cn_map=cn_lookup)
 
                 _status.update(label="Done!", state="complete")
 

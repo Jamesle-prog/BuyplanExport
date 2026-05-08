@@ -40,6 +40,41 @@ def get_sky_east_store() -> SkyEastStore:
     return SkyEastStore(_db_path())
 
 
+def count_fabric_rows(db_path: str) -> int:
+    """Return the row count of the ``fabric_master`` table in *db_path*.
+
+    Returns 0 when the table doesn't exist or the DB can't be opened.
+    Single source of truth — both auto-migration logic and the admin
+    Settings UI ("legacy DB inspector") rely on this helper.
+    """
+    import sqlite3
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            has_table = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='fabric_master'"
+            ).fetchone()
+            if not has_table:
+                return 0
+            return conn.execute("SELECT COUNT(*) FROM fabric_master").fetchone()[0]
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return 0
+
+
+def _legacy_has_fabric_data(db_path: str) -> bool:
+    """Backward-compat shim — prefer :func:`count_fabric_rows` for new code."""
+    return count_fabric_rows(db_path) > 0
+
+
+# Marker key written to the fabric DB after auto-migration so subsequent
+# factory calls skip the legacy probe entirely (saves two SQLite opens
+# per ``get_fabric_master_store()`` on a fresh-but-intentionally-empty DB).
+_FABRIC_MIGRATION_PRAGMA = 1   # PRAGMA user_version value after migration
+
+
 def get_fabric_master_store() -> FabricMasterStore:
     """Return a fresh FabricMasterStore wired to the centralised fabric master DB.
 
@@ -58,45 +93,43 @@ def get_fabric_master_store() -> FabricMasterStore:
     ``fabric_master.db`` is empty but the legacy ``po_history.db`` still holds
     all the fabric records.  This factory detects that condition (new DB empty,
     legacy DB non-empty, different paths) and automatically copies the data
-    so exports continue to work without manual admin intervention.
-
-    NOTE: this function previously existed only in ``ui.stores`` —
-    importing it from ``po_extractor.store.fabric_master_store`` raised
-    ``ImportError`` which was silently swallowed by callers, leaving the
-    fabric_master cache empty (BUG fixed in v1.53.0).  Always import via
-    ``from po_extractor.store import get_fabric_master_store``.
+    so exports continue to work without manual admin intervention.  Once a
+    migration has run, ``PRAGMA user_version`` on the fabric DB is set so
+    later calls skip the check entirely.
     """
+    import sqlite3
     from ..config import get_fabric_db_path
     fabric_path = get_fabric_db_path()
     store = FabricMasterStore(fabric_path)
-    # One-time auto-migration: if the dedicated fabric DB is empty and the
-    # legacy po_history.db still has fabric records, copy them over silently.
-    if fabric_path != _db_path() and store.count() == 0:
-        if _legacy_has_fabric_data(_db_path()):
-            try:
-                FabricMasterStore.migrate_from_db(_db_path(), fabric_path)
-            except Exception:
-                pass  # Never crash the app over a migration failure
-    return store
 
+    if fabric_path == _db_path():
+        return store   # No split — single-DB mode, nothing to migrate.
 
-def _legacy_has_fabric_data(db_path: str) -> bool:
-    """Return True if *db_path* contains a non-empty fabric_master table."""
-    import sqlite3
+    # Fast path: marker already set → migration ran (or wasn't needed).
     try:
-        conn = sqlite3.connect(db_path)
-        has_table = conn.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name='fabric_master'"
-        ).fetchone()
-        if not has_table:
-            conn.close()
-            return False
-        count = conn.execute("SELECT COUNT(*) FROM fabric_master").fetchone()[0]
-        conn.close()
-        return count > 0
-    except Exception:
-        return False
+        with sqlite3.connect(fabric_path) as _probe:
+            uv = _probe.execute("PRAGMA user_version").fetchone()[0]
+    except sqlite3.Error:
+        uv = 0
+    if uv >= _FABRIC_MIGRATION_PRAGMA:
+        return store
+
+    # Slow path: only on first run after the v1.7.2 split.
+    if store.count() == 0 and count_fabric_rows(_db_path()) > 0:
+        try:
+            FabricMasterStore.migrate_from_db(_db_path(), fabric_path)
+        except Exception as _exc:
+            # Surface the cause — silent failure here would leave the buy plan
+            # exporting with empty 综合keys with no signal to the user.
+            import warnings as _w
+            _w.warn(f"[fabric_master] auto-migration failed: {_exc!r}")
+    # Stamp the DB regardless of result so we don't keep retrying.
+    try:
+        with sqlite3.connect(fabric_path) as _stamp:
+            _stamp.execute(f"PRAGMA user_version = {_FABRIC_MIGRATION_PRAGMA}")
+    except sqlite3.Error:
+        pass
+    return store
 
 
 def get_color_translation_store() -> ColorTranslationStore:
@@ -149,5 +182,5 @@ __all__ = [
     "get_po_store", "get_sky_east_store", "get_fabric_master_store",
     "get_color_translation_store", "get_boat_sample_store",
     "get_ui_translation_store", "get_app_settings_store",
-    "list_all_brands",
+    "list_all_brands", "count_fabric_rows",
 ]

@@ -7,12 +7,13 @@ import streamlit as st
 
 from ui.session_keys import SK, COLOR_SOURCE_DB, COLOR_SOURCE_PROGRESS
 from ui.stores import get_app_settings_store
+from po_extractor.store.app_settings_store import KEY_DEFAULT_COLOR_SOURCE
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-_SETTING_COLOR_SOURCE = "default_color_source"
+_SETTING_COLOR_SOURCE = KEY_DEFAULT_COLOR_SOURCE
 
 _COLOR_SOURCE_OPTIONS: dict[str, str] = {
     COLOR_SOURCE_DB:       "🗄 Internal Database (Colors tab)",
@@ -214,19 +215,5 @@ def _show_fabric_db_settings() -> None:
         )
 
 
-def _count_fabric_in_db(db_path: str) -> int:
-    """Count fabric_master rows in *db_path* without creating a FabricMasterStore."""
-    import sqlite3
-    try:
-        conn = sqlite3.connect(db_path)
-        has = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='fabric_master'"
-        ).fetchone()
-        if not has:
-            conn.close()
-            return 0
-        count = conn.execute("SELECT COUNT(*) FROM fabric_master").fetchone()[0]
-        conn.close()
-        return count
-    except Exception:
-        return 0
+# _count_fabric_in_db replaced by po_extractor.store.count_fabric_rows
+from po_extractor.store import count_fabric_rows as _count_fabric_in_db  # noqa: E402

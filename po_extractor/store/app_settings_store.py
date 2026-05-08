@@ -16,6 +16,13 @@ from datetime import datetime, timezone
 from .base_store import BaseSQLiteStore
 
 # ---------------------------------------------------------------------------
+# Setting keys (single source of truth — import from here, never re-type)
+# ---------------------------------------------------------------------------
+
+KEY_DEFAULT_COLOR_SOURCE = "default_color_source"
+
+
+# ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
 
@@ -39,14 +46,14 @@ CREATE TABLE IF NOT EXISTS app_settings_migrations (
 _ONE_TIME_MIGRATIONS: list[tuple[str, str]] = [
     (
         "color_default_to_progress",
-        "INSERT OR REPLACE INTO app_settings (key, value) "
-        "VALUES ('default_color_source', 'progress')",
+        f"INSERT OR REPLACE INTO app_settings (key, value) "
+        f"VALUES ('{KEY_DEFAULT_COLOR_SOURCE}', 'progress')",
     ),
 ]
 
 # Hard-coded fallback used when no DB row exists for a key.
 _DEFAULTS: dict[str, str] = {
-    "default_color_source": "progress",   # "db" | "progress"
+    KEY_DEFAULT_COLOR_SOURCE: "progress",   # "db" | "progress"
 }
 
 
@@ -59,16 +66,20 @@ class AppSettingsStore(BaseSQLiteStore):
         self.db_path = db_path
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
-            # Run any pending one-time migrations.
+            # Run any pending one-time migrations.  Single SELECT to fetch all
+            # already-applied names — avoids one SQL call per migration entry.
+            done = {
+                row[0] for row in conn.execute(
+                    "SELECT name FROM app_settings_migrations"
+                ).fetchall()
+            }
             for name, sql in _ONE_TIME_MIGRATIONS:
-                already = conn.execute(
-                    "SELECT 1 FROM app_settings_migrations WHERE name = ?", (name,)
-                ).fetchone()
-                if not already:
-                    conn.execute(sql)
-                    conn.execute(
-                        "INSERT INTO app_settings_migrations (name) VALUES (?)", (name,)
-                    )
+                if name in done:
+                    continue
+                conn.execute(sql)
+                conn.execute(
+                    "INSERT INTO app_settings_migrations (name) VALUES (?)", (name,)
+                )
 
     # ── Read ────────────────────────────────────────────────────────────────
 

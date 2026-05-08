@@ -399,9 +399,11 @@ class FabricMasterStore(BaseSQLiteStore):
 
         Returns::
             {
-                "migrated": int,   # rows copied from source
-                "already_in_dst": int,  # rows in dst before migration
-                "message": str,    # human-readable summary
+                "rows_read":      int,   # rows read from source
+                "net_added":      int,   # net new rows in destination
+                                          # (= dst_count_after - dst_count_before)
+                "already_in_dst": int,   # rows in dst before migration
+                "message":        str,   # human-readable summary
             }
         """
         import sqlite3 as _sqlite3
@@ -416,13 +418,13 @@ class FabricMasterStore(BaseSQLiteStore):
             ).fetchone()
             if not has_table:
                 src_conn.close()
-                return {"migrated": 0, "already_in_dst": 0,
+                return {"rows_read": 0, "net_added": 0, "already_in_dst": 0,
                         "message": "Source DB has no fabric_master table."}
 
             src_rows = src_conn.execute("SELECT * FROM fabric_master").fetchall()
             if not src_rows:
                 src_conn.close()
-                return {"migrated": 0, "already_in_dst": 0,
+                return {"rows_read": 0, "net_added": 0, "already_in_dst": 0,
                         "message": "Source fabric_master is empty — nothing to migrate."}
 
             # Column names from the source
@@ -431,7 +433,7 @@ class FabricMasterStore(BaseSQLiteStore):
             ).description]
             src_conn.close()
         except Exception as exc:
-            return {"migrated": 0, "already_in_dst": 0,
+            return {"rows_read": 0, "net_added": 0, "already_in_dst": 0,
                     "message": f"Cannot read source DB: {exc}"}
 
         # ── Ensure destination schema, then write ───────────────────────────
@@ -457,12 +459,14 @@ class FabricMasterStore(BaseSQLiteStore):
                 rows_to_insert,
             )
 
-        migrated = dst_store.count() - already_in_dst
+        net_added = dst_store.count() - already_in_dst
         return {
-            "migrated": len(src_rows),
+            "rows_read":      len(src_rows),
+            "net_added":      net_added,
             "already_in_dst": already_in_dst,
             "message": (
-                f"Copied {len(src_rows)} rows from source DB "
-                f"({already_in_dst} were already present in destination)."
+                f"Read {len(src_rows)} rows from source DB; "
+                f"{net_added} added to destination "
+                f"({already_in_dst} were already present)."
             ),
         }

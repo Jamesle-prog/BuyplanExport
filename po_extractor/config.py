@@ -66,8 +66,12 @@ def get_fabric_db_path() -> str:
         path = (_cfg.get("fabric_db_path") or "").strip()
         if path:
             return path
-    except (FileNotFoundError, Exception):
-        pass
+    except FileNotFoundError:
+        pass  # No config yet — first run.
+    except (OSError, _json.JSONDecodeError) as _exc:
+        # Corrupt config or permissions issue — surface it so the user can fix.
+        import warnings as _w
+        _w.warn(f"[fabric_config] could not read {_FABRIC_CONFIG_FILE}: {_exc!r}")
     return str(_ROOT / "data" / "fabric_master.db")
 
 
@@ -78,7 +82,9 @@ def save_fabric_db_path(path: str) -> None:
     try:
         with open(_FABRIC_CONFIG_FILE, encoding="utf-8") as _fh:
             cfg = _json.load(_fh)
-    except (FileNotFoundError, Exception):
+    except FileNotFoundError:
+        cfg = {}
+    except (OSError, _json.JSONDecodeError):
         cfg = {}
     cfg["fabric_db_path"] = path.strip()
     with open(_FABRIC_CONFIG_FILE, "w", encoding="utf-8") as _fh:
