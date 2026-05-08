@@ -60,13 +60,23 @@ _BRAND_AGNOSTIC = ""
 def _format_body_color_cn(
     cn_code: str, color_cn: str, sep: str = _CN_DISPLAY_SEP,
 ) -> str:
-    """Return the BODY COLOR-CN cell text.
+    """Return the BODY COLOR-CN cell text: ``"<code><sep><name>"``.
 
-    ``"<code><sep><name>"`` when both are present, else whichever side is
-    non-empty, else ``""``.
+    Strips any embedded code prefix from *color_cn* to prevent doubling.
+    Source data (Colors tab DB or 大货进度表) sometimes stores the color as
+    ``"84#红色"`` or ``"84|红色"`` rather than the plain name ``"红色"``.
+    When *cn_code* is ``"84"`` and *color_cn* is ``"84#红色"``, naïvely
+    joining gives ``"84|84#红色"`` — so we detect and strip the prefix.
     """
     if cn_code and color_cn:
-        return f"{cn_code}{sep}{color_cn}"
+        # Strip any leading "{cn_code}#", "{cn_code}{sep}", or "{cn_code} "
+        # prefix that source data may already embed in the Chinese color field.
+        name = color_cn
+        for pfx in (f"{cn_code}#", f"{cn_code}{sep}", f"{cn_code} "):
+            if color_cn.startswith(pfx):
+                name = color_cn[len(pfx):].lstrip()
+                break
+        return f"{cn_code}{sep}{name}" if name else cn_code
     return color_cn or cn_code
 
 

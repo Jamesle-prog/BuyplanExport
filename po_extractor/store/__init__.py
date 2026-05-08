@@ -52,6 +52,14 @@ def get_fabric_master_store() -> FabricMasterStore:
     point their own ``FabricMasterStore`` — or the standalone
     ``FabricMasterClient`` — at the same file and share the data.
 
+    Auto-migration
+    --------------
+    On the first call after the fabric DB was split out (v1.7.2), the new
+    ``fabric_master.db`` is empty but the legacy ``po_history.db`` still holds
+    all the fabric records.  This factory detects that condition (new DB empty,
+    legacy DB non-empty, different paths) and automatically copies the data
+    so exports continue to work without manual admin intervention.
+
     NOTE: this function previously existed only in ``ui.stores`` —
     importing it from ``po_extractor.store.fabric_master_store`` raised
     ``ImportError`` which was silently swallowed by callers, leaving the
@@ -59,7 +67,36 @@ def get_fabric_master_store() -> FabricMasterStore:
     ``from po_extractor.store import get_fabric_master_store``.
     """
     from ..config import get_fabric_db_path
-    return FabricMasterStore(get_fabric_db_path())
+    fabric_path = get_fabric_db_path()
+    store = FabricMasterStore(fabric_path)
+    # One-time auto-migration: if the dedicated fabric DB is empty and the
+    # legacy po_history.db still has fabric records, copy them over silently.
+    if fabric_path != _db_path() and store.count() == 0:
+        if _legacy_has_fabric_data(_db_path()):
+            try:
+                FabricMasterStore.migrate_from_db(_db_path(), fabric_path)
+            except Exception:
+                pass  # Never crash the app over a migration failure
+    return store
+
+
+def _legacy_has_fabric_data(db_path: str) -> bool:
+    """Return True if *db_path* contains a non-empty fabric_master table."""
+    import sqlite3
+    try:
+        conn = sqlite3.connect(db_path)
+        has_table = conn.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='fabric_master'"
+        ).fetchone()
+        if not has_table:
+            conn.close()
+            return False
+        count = conn.execute("SELECT COUNT(*) FROM fabric_master").fetchone()[0]
+        conn.close()
+        return count > 0
+    except Exception:
+        return False
 
 
 def get_color_translation_store() -> ColorTranslationStore:
