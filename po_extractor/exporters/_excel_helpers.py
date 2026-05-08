@@ -26,13 +26,29 @@ def apply_print_settings(wb) -> None:
 
     Call this just before ``wb.save()`` so it applies to all sheets including
     any Index sheet and per-style copies.
+
+    Implementation note
+    -------------------
+    openpyxl's ``page_setup.fitToPage`` is not a real attribute and has no
+    effect.  The "fit to page" scaling mode is controlled by two separate XML
+    elements:
+      • ``<sheetPr><pageSetUpPr fitToPage="1"/>`` — switches Excel from
+        percentage scaling to fit-to-page mode (set via
+        ``ws.sheet_properties.pageSetUpPr``).
+      • ``<pageSetup fitToWidth="1" fitToHeight="0"/>`` — the actual page
+        counts (set via ``ws.page_setup``).
+    Both must be present; missing either one leaves Excel using the default
+    percentage scaling and the fit-to-page settings are silently ignored.
     """
+    from openpyxl.worksheet.properties import PageSetupProperties
+
     for ws in wb.worksheets:
         ws.page_setup.orientation = "landscape"
         ws.page_setup.paperSize   = 9     # A4  (openpyxl PAPERSIZE_A4)
-        ws.page_setup.fitToPage   = True
         ws.page_setup.fitToWidth  = 1     # all columns on one page
         ws.page_setup.fitToHeight = 0     # unlimited pages tall
+        # Switch Excel to fit-to-page scaling mode (the missing piece).
+        ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
 
 
 # ---------------------------------------------------------------------------
