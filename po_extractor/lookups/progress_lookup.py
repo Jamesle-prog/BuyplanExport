@@ -242,10 +242,26 @@ class ProgressLookup:
         "brand":      {"brand"},
         "fabric":     {"fabricdetail"},
     }
+    # Default column positions (1-based) used as fallback when the header is
+    # absent from the workbook.  These match the legacy layout where 主标颜色
+    # is followed immediately by PO离厂日期 / 数量 / PO# / BRAND / FABRICDETAIL
+    # at cols 9-13 and there are NO cn_color / cn_code columns.
+    #
+    # Notes on the optional columns:
+    #   • ``cn_color`` (中文颜色) and ``cn_code`` (中文颜色代码) are intentionally
+    #     OMITTED from the defaults.  They were added in newer file revisions
+    #     between 主标颜色 (col 8) and PO离厂日期; if a workbook lacks those
+    #     headers we must NOT default them to cols 9/10 — that would silently
+    #     read ex-factory dates and quantities into the Chinese-colour fields,
+    #     producing corrupt buy-plan output.  Missing → return ``None`` from
+    #     ``_cv`` → record fields end up as empty strings, which the consumer
+    #     treats as "no PC-keyed match" and falls back to the Internal DB.
+    #   • ``ex_fty`` / ``qty`` defaults reflect the *new* layout (with the two
+    #     extra columns).  In legacy files the headers "PO离厂日期" / "数量"
+    #     are present and override these defaults to cols 9/10 anyway.
     _COL_DEFAULTS = {
         "seq": 1, "contract_no": 2, "pc_no": 3, "image": 4,
         "style": 5, "color": 7, "label_color": 8,
-        "cn_color": 9, "cn_code": 10,
         "ex_fty": 11, "qty": 12, "zalando_po": 13, "brand": 14, "fabric": 15,
     }
 
@@ -345,19 +361,23 @@ class ProgressLookup:
             pcn    = _norm_key(record["pc_no"])
             zpo    = _norm_key(record["zalando_po"])
             cnorm  = record["color_norm"]
-            ccode  = record["color_code"]
+            # Index codes in the same normalised form _lookup() uses for the
+            # caller's input ("52#" / "52" / "#52" all collapse to "52").
+            # Without this, codes stored as "52#" never match callers passing
+            # "52" and the (style, color_code) fallback tier silently misses.
+            ccode_key = _norm_key(record["color_code"])
 
             # Build all lookup indexes (lookup priority is enforced in _lookup())
             if pcn and cnorm:
                 self._by_pc_style_color.setdefault((pcn, style, cnorm), record)
-            if pcn and ccode:
-                self._by_pc_style_code.setdefault((pcn, style, ccode), record)
+            if pcn and ccode_key:
+                self._by_pc_style_code.setdefault((pcn, style, ccode_key), record)
             if zpo and cnorm:
                 self._by_po_style_color.setdefault((zpo, style, cnorm), record)
             if cnorm:
                 self._by_style_color.setdefault((style, cnorm), record)
-            if ccode:
-                self._by_style_code.setdefault((style, ccode), record)
+            if ccode_key:
+                self._by_style_code.setdefault((style, ccode_key), record)
             if pcn:
                 self._by_pc_style.setdefault((pcn, style), record)
             self._by_style.setdefault(style, []).append(record)
