@@ -23,6 +23,7 @@ from ui.shared import (
 from ui.stores import get_store, get_sky_east_store, get_color_translation_store, get_fabric_master_store, IMAGES_DIR_DEFAULT
 from ui.sky_east._shared import (
     live_label, _get_dual_header, _write_dual_header_excel, _write_wash_label_excel,
+    show_color_source_radio,
 )
 from ui.sky_east.items_view import _enrich_items_df, _build_items_display_df
 
@@ -788,44 +789,39 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         _m2.metric(t("Total Styles"),   _total_styles)
         _m3.metric(t("Total Units"),    f"{_total_units:,}")
 
-    # ── 大货进度表 upload (only needed when COLOR_SOURCE_PROGRESS is chosen) ────
+    # ── Color mapping source ──────────────────────────────────────────────────
+    show_color_source_radio("se_bp_color_src_radio")
+
+    # ── 大货进度表 uploader (shown whenever progress source is selected) ───────
     if st.session_state.get(SK.SE_COLOR_SOURCE) == COLOR_SOURCE_PROGRESS:
         _prog_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
         if _prog_lkup is not None:
             st.caption(f"✅ 大货进度表 loaded ({len(_prog_lkup)} records).")
-        else:
-            with st.expander("📂 Upload 大货进度表 (HHN Contract No. file)", expanded=True):
-                st.caption(
-                    "Chinese color mapping source is set to **大货进度表** but no file "
-                    "has been loaded yet. Upload it here, or switch to **Internal Database** "
-                    "in the **New Contracts** tab."
+        _prog_upload = st.file_uploader(
+            "📂 Upload 大货进度表 (HHN Contract No. file)",
+            type=_EXCEL_FILE_TYPES,
+            key="se_bp_progress_uploader",
+            help="Upload or replace the 大货进度表 to use as the Chinese color source.",
+        )
+        if _prog_upload is not None:
+            try:
+                import tempfile as _tf2
+                from po_extractor.lookups import ProgressLookup as _PL
+                _tmp_fd, _tmp_path = _tf2.mkstemp(
+                    suffix=os.path.splitext(_prog_upload.name)[1] or _DEFAULT_XLSX_EXT
                 )
-                _prog_upload = st.file_uploader(
-                    "HHN contract No. file (大货进度表)",
-                    type=_EXCEL_FILE_TYPES,
-                    key="se_bp_progress_uploader",
-                    label_visibility="collapsed",
+                with os.fdopen(_tmp_fd, "wb") as _fh:
+                    _fh.write(_prog_upload.getbuffer())
+                _new_lkup = _PL(_tmp_path)
+                len(_new_lkup)  # trigger lazy load while file exists
+                st.session_state[SK.SE_PROGRESS_LKUP] = _new_lkup
+                st.success(
+                    f"✅ 大货进度表 loaded: {len(_new_lkup)} records from "
+                    f"**{_prog_upload.name}**."
                 )
-                if _prog_upload is not None:
-                    try:
-                        import tempfile as _tf2
-                        from po_extractor.lookups import ProgressLookup as _PL
-                        # Write to a persistent temp file (ProgressLookup needs a path)
-                        _tmp_fd, _tmp_path = _tf2.mkstemp(
-                            suffix=os.path.splitext(_prog_upload.name)[1] or _DEFAULT_XLSX_EXT
-                        )
-                        with os.fdopen(_tmp_fd, "wb") as _fh:
-                            _fh.write(_prog_upload.getbuffer())
-                        _new_lkup = _PL(_tmp_path)
-                        len(_new_lkup)  # trigger lazy load while file exists
-                        st.session_state[SK.SE_PROGRESS_LKUP] = _new_lkup
-                        st.success(
-                            f"✅ 大货进度表 loaded: {len(_new_lkup)} records from "
-                            f"**{_prog_upload.name}**."
-                        )
-                        st.rerun()
-                    except Exception as _exc:
-                        st.error(f"Could not parse progress file: {_exc}")
+                st.rerun()
+            except Exception as _exc:
+                st.error(f"Could not parse progress file: {_exc}")
 
     if st.button(t("Generate Buy Plan + 核料"), type="primary",
                  disabled=not sel, key="se_bp_btn"):

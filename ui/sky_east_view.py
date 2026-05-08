@@ -4,65 +4,13 @@ import streamlit as st
 from ui.i18n import t
 from ui.session_keys import SK, COLOR_SOURCE_DB, COLOR_SOURCE_PROGRESS
 from ui.shared import ZIP_MIME, show_image_folder_expander
-from ui.sky_east._shared import live_label
+from ui.sky_east._shared import live_label, show_color_source_radio
 from ui.sky_east.processing import _run_sky_east_processing, _compute_se_missing_df
 from ui.sky_east.items_view import _show_se_results, _show_se_missing_fields_section
 from ui.sky_east.history import _show_se_history_section
 
-# Stable ordering for radio options (translation-independent).
-_COLOR_SOURCE_KEYS = [COLOR_SOURCE_DB, COLOR_SOURCE_PROGRESS]
-
-# English keys used for t() lookup; "大货进度表 (HHN Contract File)" is already
-# bilingual so we keep it verbatim.
-_COLOR_SOURCE_EN: dict[str, str] = {
-    COLOR_SOURCE_DB:       "Internal Database",
-    COLOR_SOURCE_PROGRESS: "大货进度表 (HHN Contract File)",
-}
-
-# Per-option lookup-key explainer shown beneath the radio (intentionally bilingual).
-_COLOR_SOURCE_CAPTIONS: dict[str, str] = {
-    COLOR_SOURCE_DB: (
-        "🔑 **Lookup keys:** Client · Brand · English color name  "
-        "→ **Returns:** 中文颜色, 中文颜色代码, 主标颜色  "
-        "*(source: 🎨 Colors tab — color_translation table)*"
-    ),
-    COLOR_SOURCE_PROGRESS: (
-        "🔑 **Lookup keys (priority order):**  \n"
-        "1. PC No (所在PO / 客人PC No) · 款式 · 颜色  \n"
-        "2. PO# · 款式 · 颜色  \n"
-        "3. 款式 · 颜色  \n"
-        "4. PC No · 款式 · 颜色代码  \n"
-        "5. 款式 · 颜色代码  \n"
-        "6. PC No · 款式  \n"
-        "7. 款式 only (last resort)  \n"
-        "→ **Returns:** 中文颜色, 中文颜色代码, 主标颜色  "
-        "*(source: HHN Contract No. file — 大货进度表)*"
-    ),
-}
-
-
-def _show_color_source_radio() -> None:
-    """Render the Chinese-colour-source radio + per-option lookup-key caption."""
-    cur = st.session_state.get(SK.SE_COLOR_SOURCE)
-    if cur is None:
-        # First render in this session — resolve the admin-configured default.
-        from ui.stores import get_app_settings_store
-        cur = get_app_settings_store().get("default_color_source", COLOR_SOURCE_DB)
-        st.session_state[SK.SE_COLOR_SOURCE] = cur
-
-    # Build translated labels at render time so they reflect the active language.
-    labels = [t(_COLOR_SOURCE_EN[k]) for k in _COLOR_SOURCE_KEYS]
-    chosen = st.radio(
-        t("Chinese color mapping source") + " (中文颜色 / 中文颜色代码)",
-        labels,
-        index=_COLOR_SOURCE_KEYS.index(cur) if cur in _COLOR_SOURCE_KEYS else 0,
-        horizontal=True,
-        key="se_color_src_radio",
-    )
-    new = _COLOR_SOURCE_KEYS[labels.index(chosen)]
-    if new != cur:
-        st.session_state[SK.SE_COLOR_SOURCE] = new
-    st.caption(_COLOR_SOURCE_CAPTIONS[new])
+# Color source radio is defined in sky_east._shared.show_color_source_radio
+# and shared with the Buy Plan section in the history tab.
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +69,7 @@ def _show_se_upload_section():
             )
 
     # ── Chinese color mapping source ──────────────────────────────────────────
-    _show_color_source_radio()
+    show_color_source_radio("se_color_src_radio")
 
     show_image_folder_expander("se_images_dir", "se_images_dir_apply")
 

@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 # Hard-coded fallback used when no DB row exists for a key.
 _DEFAULTS: dict[str, str] = {
-    "default_color_source": "db",   # "db" | "progress"
+    "default_color_source": "progress",   # "db" | "progress"
 }
 
 
