@@ -110,14 +110,7 @@ _COLOR_SOURCE_CAPTIONS: dict[str, str] = {
         "*(source: 🎨 Colors tab — color_translation table)*"
     ),
     COLOR_SOURCE_PROGRESS: (
-        "🔑 **Lookup keys (priority order):**  \n"
-        "1. PC No (所在PO / 客人PC No) · 款式 · 颜色  \n"
-        "2. PO# · 款式 · 颜色  \n"
-        "3. 款式 · 颜色  \n"
-        "4. PC No · 款式 · 颜色代码  \n"
-        "5. 款式 · 颜色代码  \n"
-        "6. PC No · 款式  \n"
-        "7. 款式 only (last resort)  \n"
+        "🔑 **Lookup key:** PC No (所在PO / 客人PC No) · 款式 · 颜色  "
         "→ **Returns:** 中文颜色, 中文颜色代码, 主标颜色  "
         "*(source: HHN Contract No. file — 大货进度表)*"
     ),

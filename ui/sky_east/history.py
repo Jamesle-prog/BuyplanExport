@@ -82,19 +82,14 @@ def _build_buyplan_color_lookups() -> tuple[dict, dict | None, dict | None, dict
         # so no extra warning needed here — just fall back silently.
         return cn_lookup, None, None, None
 
-    # Merge: progress data wins, DB fills gaps for colours not in the progress file.
-    # build_all_color_lookups iterates the progress data ONCE and returns all
-    # four dicts (cn, code, label, pc-keyed) — replaces three separate passes.
-    _cn_upd, _code_upd, _label_upd, cn_by_pc_lookup = (
-        progress_lkup.build_all_color_lookups(COMPANY_SKY_EAST)
-    )
-    cn_lookup.update(_cn_upd)
-    label_lookup = cn_store.build_label_lookup_dict()
-    label_lookup.update(_label_upd)
-    cn_code_lookup = cn_store.build_cn_code_lookup_dict()
-    cn_code_lookup.update(_code_upd)
-    st.caption("🗂 Chinese colors sourced from 大货进度表 (overrides Internal DB).")
-    return cn_lookup, label_lookup, cn_code_lookup, cn_by_pc_lookup
+    # Primary-only: build the PC No. + style + color keyed lookup.
+    # Flat brand-keyed data from the progress file is intentionally NOT merged
+    # so that only an exact (PC No · 款式 · 颜色) match returns a value —
+    # no looser fallback keys from the progress sheet bleed into the result.
+    # The Internal DB is still used as fallback for colours that have no PC match.
+    cn_by_pc_lookup = progress_lkup.build_pc_style_color_lookups()
+    st.caption("🗂 Chinese colors sourced from 大货进度表 (PC No. · style · color match only).")
+    return cn_lookup, None, None, cn_by_pc_lookup
 
 
 def _se_hist_summary_table(df_contracts) -> None:
