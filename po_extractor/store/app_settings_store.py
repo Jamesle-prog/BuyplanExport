@@ -26,7 +26,23 @@ CREATE TABLE IF NOT EXISTS app_settings (
     updated_at TEXT,
     updated_by TEXT
 );
+CREATE TABLE IF NOT EXISTS app_settings_migrations (
+    name TEXT PRIMARY KEY
+);
 """
+
+# One-time data migrations applied at store init.
+# Each entry: (migration_name, SQL to execute).
+# A migration runs exactly once — when its name is absent from
+# app_settings_migrations.  After that the admin can freely override the
+# value without it being reset on the next restart.
+_ONE_TIME_MIGRATIONS: list[tuple[str, str]] = [
+    (
+        "color_default_to_progress",
+        "INSERT OR REPLACE INTO app_settings (key, value) "
+        "VALUES ('default_color_source', 'progress')",
+    ),
+]
 
 # Hard-coded fallback used when no DB row exists for a key.
 _DEFAULTS: dict[str, str] = {
@@ -43,6 +59,16 @@ class AppSettingsStore(BaseSQLiteStore):
         self.db_path = db_path
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
+            # Run any pending one-time migrations.
+            for name, sql in _ONE_TIME_MIGRATIONS:
+                already = conn.execute(
+                    "SELECT 1 FROM app_settings_migrations WHERE name = ?", (name,)
+                ).fetchone()
+                if not already:
+                    conn.execute(sql)
+                    conn.execute(
+                        "INSERT INTO app_settings_migrations (name) VALUES (?)", (name,)
+                    )
 
     # ── Read ────────────────────────────────────────────────────────────────
 
