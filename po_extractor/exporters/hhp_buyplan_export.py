@@ -44,7 +44,7 @@ from openpyxl.utils import get_column_letter
 
 from ..utils.file_utils import versioned_path
 from ..config import EXCEL_PALETTE as _P
-from ._excel_helpers import clean_sheet_name, stable_unique, cell_value
+from ._excel_helpers import clean_sheet_name, stable_unique, cell_value, apply_print_settings
 from ._image_inject import inject_style_photos
 from ._photo_utils import resolve_photo_pair
 
@@ -171,6 +171,7 @@ def export_hhp_buyplan(
         wb.remove(template_ws)
 
     _set_index_widths(ws_index)
+    apply_print_settings(wb)
     wb.save(path)
 
     # Inject photos (front in J3:L6, back in M3:O6) via zip-level patch.

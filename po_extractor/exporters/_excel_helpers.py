@@ -12,6 +12,30 @@ import pandas as pd
 
 
 # ---------------------------------------------------------------------------
+# Page / print settings
+# ---------------------------------------------------------------------------
+
+def apply_print_settings(wb) -> None:
+    """Apply A4 landscape "fit all columns on one page" print settings to every
+    sheet in *wb*.
+
+    Settings match the Excel Page Setup screenshot:
+      • 横向    — Landscape orientation
+      • A4      — 21 cm × 29.7 cm
+      • 将所有列调整为一页 — fitToWidth=1, fitToHeight=0 (unlimited rows)
+
+    Call this just before ``wb.save()`` so it applies to all sheets including
+    any Index sheet and per-style copies.
+    """
+    for ws in wb.worksheets:
+        ws.page_setup.orientation = "landscape"
+        ws.page_setup.paperSize   = 9     # A4  (openpyxl PAPERSIZE_A4)
+        ws.page_setup.fitToPage   = True
+        ws.page_setup.fitToWidth  = 1     # all columns on one page
+        ws.page_setup.fitToHeight = 0     # unlimited pages tall
+
+
+# ---------------------------------------------------------------------------
 # Sheet names
 # ---------------------------------------------------------------------------
 

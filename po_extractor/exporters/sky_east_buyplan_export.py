@@ -35,6 +35,7 @@ import pandas as pd
 from openpyxl import load_workbook
 
 from ._sky_east_helpers import *  # noqa: F401,F403
+from ._excel_helpers import apply_print_settings
 from ..utils.file_utils import versioned_path
 from ..store.color_translation_store import _normalize_color_name as _nz_color
 from ..lookups.progress_lookup import _norm_key
@@ -600,6 +601,7 @@ def export_sky_east_buyplan(
     if not tpl_wb.sheetnames:
         tpl_wb.create_sheet("Empty")
 
+    apply_print_settings(tpl_wb)
     tpl_wb.save(str(path))
 
     # ── 综合key diagnostic — surface HHNs missing from fabric_master ──────
@@ -785,6 +787,7 @@ def export_sky_east_nukuryou(
 
         safe = re.sub(r'[<>:"/\\|?*\s]+', "_", fabric_no).strip("_") or "unknown"
         save_path = versioned_path(output_dir, f"Sky_East_核料_{safe}", ".xlsx")
+        apply_print_settings(tpl_wb)
         tpl_wb.save(str(save_path))
         output_paths.append(str(save_path))
 
