@@ -80,11 +80,16 @@ class FabricMasterClient:
         """Return ``(True, "OK — N records")`` or ``(False, error_message)``.
 
         Safe to call before instantiating the client — does not modify the DB.
+        Uses the same read-only PRAGMAs as ``_conn()`` and closes the
+        connection on every code path (including exceptions).
         """
+        from contextlib import closing
         try:
-            conn = sqlite3.connect(str(db_path))
-            count = conn.execute("SELECT COUNT(*) FROM fabric_master").fetchone()[0]
-            conn.close()
+            with closing(sqlite3.connect(str(db_path))) as conn:
+                conn.execute("PRAGMA query_only=1")
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM fabric_master"
+                ).fetchone()[0]
             return True, f"OK — {count:,} fabric records"
         except Exception as exc:
             return False, str(exc)

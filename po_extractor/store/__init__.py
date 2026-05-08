@@ -98,6 +98,7 @@ def get_fabric_master_store() -> FabricMasterStore:
     later calls skip the check entirely.
     """
     import sqlite3
+    from contextlib import closing
     from ..config import get_fabric_db_path
     fabric_path = get_fabric_db_path()
     store = FabricMasterStore(fabric_path)
@@ -106,8 +107,11 @@ def get_fabric_master_store() -> FabricMasterStore:
         return store   # No split — single-DB mode, nothing to migrate.
 
     # Fast path: marker already set → migration ran (or wasn't needed).
+    # NOTE: ``with sqlite3.connect(...) as conn`` only commits/rolls back; it
+    # does NOT close the connection.  We wrap in contextlib.closing() so the
+    # handle is released — without this every factory call leaked one fd.
     try:
-        with sqlite3.connect(fabric_path) as _probe:
+        with closing(sqlite3.connect(fabric_path)) as _probe:
             uv = _probe.execute("PRAGMA user_version").fetchone()[0]
     except sqlite3.Error:
         uv = 0
@@ -115,20 +119,29 @@ def get_fabric_master_store() -> FabricMasterStore:
         return store
 
     # Slow path: only on first run after the v1.7.2 split.
-    if store.count() == 0 and count_fabric_rows(_db_path()) > 0:
+    legacy_count = count_fabric_rows(_db_path())
+    needs_migration = store.count() == 0 and legacy_count > 0
+    migration_ok = True
+    if needs_migration:
         try:
             FabricMasterStore.migrate_from_db(_db_path(), fabric_path)
         except Exception as _exc:
+            migration_ok = False
             # Surface the cause — silent failure here would leave the buy plan
             # exporting with empty 综合keys with no signal to the user.
             import warnings as _w
             _w.warn(f"[fabric_master] auto-migration failed: {_exc!r}")
-    # Stamp the DB regardless of result so we don't keep retrying.
-    try:
-        with sqlite3.connect(fabric_path) as _stamp:
-            _stamp.execute(f"PRAGMA user_version = {_FABRIC_MIGRATION_PRAGMA}")
-    except sqlite3.Error:
-        pass
+
+    # Only stamp the marker on success (or when no migration was needed).
+    # Stamping on partial-failure would lock in a half-copied DB and prevent
+    # the next factory call from retrying.
+    if migration_ok:
+        try:
+            with closing(sqlite3.connect(fabric_path)) as _stamp:
+                _stamp.execute(f"PRAGMA user_version = {_FABRIC_MIGRATION_PRAGMA}")
+                _stamp.commit()
+        except sqlite3.Error:
+            pass
     return store
 
 

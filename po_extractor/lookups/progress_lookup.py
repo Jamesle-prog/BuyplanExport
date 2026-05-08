@@ -401,6 +401,15 @@ class ProgressLookup:
           5. (style, color_code)             — code fallback alone
           6. (pc_no, style)                  — colour value too messy to match
           7. first row for style             — last resort
+
+        PC scoping
+        ----------
+        When *pc_no* is supplied the result is constrained to that PC: the
+        PC-less fallback tiers (style+color, style+code, style-only) are
+        skipped to avoid leaking rows from a *different* PC contract.
+        Without this gate, a caller asking for ``HHPPC040`` could silently
+        receive a record from ``HHPPC041`` whenever the requested PC's row
+        was missing — wrong contract, wrong dates, wrong qtys.
         """
         self._load()
         s     = self._skey(style_no)
@@ -421,21 +430,9 @@ class ProgressLookup:
             if rec:
                 return rec
 
-        # FALLBACK2: (style, color_name)
-        if s and cnorm:
-            rec = self._by_style_color.get((s, cnorm))
-            if rec:
-                return rec
-
         # FALLBACK3: (pc_no, style, color_code)
         if pcn and s and ccode:
             rec = self._by_pc_style_code.get((pcn, s, ccode))
-            if rec:
-                return rec
-
-        # FALLBACK4: (style, color_code)
-        if s and ccode:
-            rec = self._by_style_code.get((s, ccode))
             if rec:
                 return rec
 
@@ -445,7 +442,24 @@ class ProgressLookup:
             if rec:
                 return rec
 
-        # FALLBACK6: style only
+        # When the caller specified a PC, do NOT cross into other PCs'
+        # rows — return None so they can decide what to do with the miss.
+        if pcn:
+            return None
+
+        # FALLBACK2: (style, color_name)  — only when no PC was given
+        if s and cnorm:
+            rec = self._by_style_color.get((s, cnorm))
+            if rec:
+                return rec
+
+        # FALLBACK4: (style, color_code)
+        if s and ccode:
+            rec = self._by_style_code.get((s, ccode))
+            if rec:
+                return rec
+
+        # FALLBACK6: style only — last resort
         rows = self._by_style.get(s, [])
         return rows[0] if rows else None
 

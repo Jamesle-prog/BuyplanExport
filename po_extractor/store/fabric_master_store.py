@@ -449,7 +449,11 @@ class FabricMasterStore(BaseSQLiteStore):
                 ).fetchall()
             }
             common = [c for c in src_cols if c in dst_cols]
-            col_list = ", ".join(common)
+            # Quote column identifiers so reserved-word or whitespace-bearing
+            # column names round-trip safely.  Doubling embedded `"` per the
+            # SQL-92 escaping rule keeps the SQL well-formed even with
+            # adversarial schemas.
+            col_list = ", ".join(f'"{c.replace(chr(34), chr(34)*2)}"' for c in common)
             ph       = ", ".join("?" * len(common))
             rows_to_insert = [
                 tuple(row[c] for c in common) for row in src_rows

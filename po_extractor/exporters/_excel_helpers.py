@@ -47,8 +47,13 @@ def apply_print_settings(wb) -> None:
         ws.page_setup.paperSize   = 9     # A4  (openpyxl PAPERSIZE_A4)
         ws.page_setup.fitToWidth  = 1     # all columns on one page
         ws.page_setup.fitToHeight = 0     # unlimited pages tall
-        # Switch Excel to fit-to-page scaling mode (the missing piece).
-        ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+        # Switch Excel to fit-to-page scaling mode.  Mutate in place when a
+        # pageSetUpPr already exists in the template so other attributes
+        # (e.g. autoPageBreaks) are preserved instead of silently lost.
+        if ws.sheet_properties.pageSetUpPr is None:
+            ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+        else:
+            ws.sheet_properties.pageSetUpPr.fitToPage = True
         # Margins (all values in inches):
         #   上/下 1.91 cm = 0.75 in  |  左/右 0.64 cm = 0.25 in
         #   页眉/页脚 0.76 cm = 0.30 in

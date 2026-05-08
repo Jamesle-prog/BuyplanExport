@@ -75,12 +75,19 @@ def _build_buyplan_color_lookups() -> BuyplanColorLookups:
     progress_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
     cn_lookup     = get_color_translation_store().build_lookup_dict()
 
-    use_progress = (
-        color_source == COLOR_SOURCE_PROGRESS and progress_lkup is not None
-    )
-    if not use_progress:
-        # Buy plan section shows an inline uploader when progress is selected
-        # but no file is loaded, so no extra warning needed here.
+    if color_source == COLOR_SOURCE_PROGRESS and progress_lkup is None:
+        # User picked 大货进度表 but no file is loaded — make the silent
+        # fallback to the Internal DB explicit so they don't think they
+        # got progress-sourced data.
+        st.warning(
+            "⚠ **大货进度表 not loaded** — falling back to the Internal DB "
+            "for all Chinese colours.  Upload the file above to use "
+            "PC-keyed progress data.",
+            icon="⚠️",
+        )
+        return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=None)
+
+    if color_source != COLOR_SOURCE_PROGRESS:
         return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=None)
 
     by_pc = progress_lkup.build_pc_style_color_lookups()
