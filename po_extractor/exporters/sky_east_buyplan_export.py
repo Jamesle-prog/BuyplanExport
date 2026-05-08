@@ -84,19 +84,16 @@ def _brand_keyed_get(
     lookup: dict | None, company: str, brand: str, norm_en: str,
     *, default: str = "",
 ) -> str:
-    """Two-tier (brand → brand-agnostic) lookup against a flat color dict.
+    """Primary-only (brand-specific) lookup against a flat color dict.
 
-    The buy-plan exporter uses this pattern for ``cn_code_lookup`` and
-    ``label_lookup``: try the brand-specific key first, then fall back to
-    a brand-agnostic key (``brand=""``) before giving up.
+    Only the exact ``(company, brand, norm_en)`` key is tried.  No
+    brand-agnostic fallback — returning a value from a different brand's
+    mapping would produce wrong color codes.  Returns *default* when the
+    key is absent.
     """
     if not lookup:
         return default
-    return (
-        lookup.get((company, brand, norm_en))
-        or lookup.get((company, _BRAND_AGNOSTIC, norm_en))
-        or default
-    )
+    return lookup.get((company, brand, norm_en)) or default
 
 
 def _resolve_pc_color(
@@ -106,32 +103,33 @@ def _resolve_pc_color(
 ) -> tuple[str, str, str, str]:
     """Resolve (color_cn, cn_code, label_color, color_cn_display) for one row.
 
-    Priority (most specific first):
-      1. ``cn_by_pc_lookup`` — keyed by (pc_no, style, color); from 大货进度表
-      2. ``cn_code_lookup``  — keyed by (company, brand, color); from DB or progress
-      3. brand-agnostic key in the same dict
-      4. light/dark heuristic at the call site (label only)
+    Primary-only resolution — no brand-agnostic or cross-source fallbacks:
+      1. ``cn_by_pc_lookup`` — exact (pc_no, style, color) match from 大货进度表
+      2. ``cn_code_lookup``  — exact (company, brand, color) match from DB
+
+    When a field cannot be found in its primary source, ``cn_code`` is set to
+    ``"NA"`` so the cell clearly signals a missing mapping rather than silently
+    inheriting a wrong value from another brand.
 
     ``label_color`` is non-empty only when tier 1 hits.  The buyplan caller
     falls back to ``label_lookup`` and ``derive_main_label_color`` when blank;
     nukuryou ignores ``label_color`` altogether (核料 doesn't render it).
     """
     norm_en  = _nz_color(color_en)
-    # Avoid building a throwaway ``{}`` per row when the PC-keyed dict is None.
     pc_match = (
         cn_by_pc_lookup.get((_norm_key(row.get("pc_no") or ""), sty_norm, norm_en))
         if cn_by_pc_lookup else None
     )
     if pc_match is not None:
-        # Defer the brand-keyed _cn_color() call: only fall back when the PC
-        # row didn't carry a Chinese name itself (the common case when 大货
-        # 进度表 is populated is that pc_match.cn_color is non-empty).
-        color_cn    = pc_match.cn_color or _cn_color(cn_lookup, brand, color_en)
-        cn_code     = pc_match.color_code
+        # Use PC row values directly — no cross-source fallback.
+        color_cn    = pc_match.cn_color
+        cn_code     = pc_match.color_code or "NA"
         label_color = pc_match.label_color
     else:
         color_cn    = _cn_color(cn_lookup, brand, color_en)
-        cn_code     = _brand_keyed_get(cn_code_lookup, COMPANY_SKY_EAST, brand, norm_en)
+        cn_code     = _brand_keyed_get(
+            cn_code_lookup, COMPANY_SKY_EAST, brand, norm_en, default="NA",
+        )
         label_color = ""
     return color_cn, cn_code, label_color, _format_body_color_cn(cn_code, color_cn)
 

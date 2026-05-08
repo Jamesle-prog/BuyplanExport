@@ -541,19 +541,18 @@ def _clean_sheet_name(name: str) -> str:
 
 
 def _cn_color(cn_lookup: dict, brand: str, color_en: str) -> str:
-    """Look up Chinese color (case-insensitive); fall back to brand-agnostic
-    entry.
+    """Look up Chinese color — primary (brand-specific) key only, no fallback.
 
     The keys in ``cn_lookup`` are normalised to title-case English by
     :meth:`ColorTranslationStore.build_lookup_dict`, so we apply the same
     normalisation here before the lookup.
+
+    No brand-agnostic fallback: returning a Chinese name from a different
+    brand's mapping would be misleading when the exact brand entry is absent.
     """
     from po_extractor.store.color_translation_store import _normalize_color_name
     norm = _normalize_color_name(color_en)
-    cn = cn_lookup.get((COMPANY_SKY_EAST, brand, norm), "")
-    if not cn and brand:
-        cn = cn_lookup.get((COMPANY_SKY_EAST, "", norm), "")
-    return cn
+    return cn_lookup.get((COMPANY_SKY_EAST, brand, norm), "")
 
 
 # ── 主标颜色 (main-label colour) auto-derivation ─────────────────────────────
