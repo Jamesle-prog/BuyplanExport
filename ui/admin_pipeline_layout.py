@@ -6,7 +6,7 @@ import json as _json
 import pandas as pd
 import streamlit as st
 
-_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+from ui.shared import XLSX_MIME as _XLSX_MIME
 
 
 def show_pipeline_layout_admin() -> None:
