@@ -383,3 +383,94 @@ class FabricMasterStore(BaseSQLiteStore):
                 "ORDER BY imported_at DESC LIMIT 1"
             ).fetchone()
         return dict(row) if row else None
+
+    # ── Cross-DB migration ─────────────────────────────────────────────────────
+
+    @classmethod
+    def migrate_from_db(cls, src_db_path: str, dst_db_path: str) -> dict:
+        """Copy the fabric_master table from one SQLite database to another.
+
+        Designed for the one-time migration from the legacy shared ``po_history.db``
+        into the dedicated ``fabric_master.db``.  Reads rows into Python memory
+        from the source then bulk-inserts into the destination — avoids ATTACH
+        transaction-locking issues that occur in WAL mode.
+
+        Existing rows in *dst_db_path* with matching ``quality_no`` are replaced.
+
+        Returns::
+            {
+                "rows_read":      int,   # rows read from source
+                "net_added":      int,   # net new rows in destination
+                                          # (= dst_count_after - dst_count_before)
+                "already_in_dst": int,   # rows in dst before migration
+                "message":        str,   # human-readable summary
+            }
+        """
+        import sqlite3 as _sqlite3
+
+        # ── Read from source ────────────────────────────────────────────────
+        try:
+            src_conn = _sqlite3.connect(src_db_path)
+            src_conn.row_factory = _sqlite3.Row
+            has_table = src_conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='fabric_master'"
+            ).fetchone()
+            if not has_table:
+                src_conn.close()
+                return {"rows_read": 0, "net_added": 0, "already_in_dst": 0,
+                        "message": "Source DB has no fabric_master table."}
+
+            src_rows = src_conn.execute("SELECT * FROM fabric_master").fetchall()
+            if not src_rows:
+                src_conn.close()
+                return {"rows_read": 0, "net_added": 0, "already_in_dst": 0,
+                        "message": "Source fabric_master is empty — nothing to migrate."}
+
+            # Column names from the source
+            src_cols = [desc[0] for desc in src_conn.execute(
+                "SELECT * FROM fabric_master LIMIT 0"
+            ).description]
+            src_conn.close()
+        except Exception as exc:
+            return {"rows_read": 0, "net_added": 0, "already_in_dst": 0,
+                    "message": f"Cannot read source DB: {exc}"}
+
+        # ── Ensure destination schema, then write ───────────────────────────
+        dst_store = cls(dst_db_path)
+        already_in_dst = dst_store.count()
+
+        # Only insert columns present in the destination schema.
+        with dst_store._conn() as dst_conn:
+            dst_cols = {
+                row[1]
+                for row in dst_conn.execute(
+                    "PRAGMA table_info(fabric_master)"
+                ).fetchall()
+            }
+            common = [c for c in src_cols if c in dst_cols]
+            # Quote column identifiers so reserved-word or whitespace-bearing
+            # column names round-trip safely.  Doubling embedded `"` per the
+            # SQL-92 escaping rule keeps the SQL well-formed even with
+            # adversarial schemas.
+            col_list = ", ".join(f'"{c.replace(chr(34), chr(34)*2)}"' for c in common)
+            ph       = ", ".join("?" * len(common))
+            rows_to_insert = [
+                tuple(row[c] for c in common) for row in src_rows
+            ]
+            dst_conn.executemany(
+                f"INSERT OR REPLACE INTO fabric_master ({col_list}) VALUES ({ph})",
+                rows_to_insert,
+            )
+
+        net_added = dst_store.count() - already_in_dst
+        return {
+            "rows_read":      len(src_rows),
+            "net_added":      net_added,
+            "already_in_dst": already_in_dst,
+            "message": (
+                f"Read {len(src_rows)} rows from source DB; "
+                f"{net_added} added to destination "
+                f"({already_in_dst} were already present)."
+            ),
+        }

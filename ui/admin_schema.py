@@ -9,8 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from po_extractor.ui_helpers import load_live_schema, save_live_schema
-
-_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+from ui.shared import XLSX_MIME as _XLSX_MIME
 
 
 def show_schema_editor(

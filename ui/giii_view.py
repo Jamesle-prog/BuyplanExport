@@ -97,6 +97,20 @@ def _show_excel_tab():
 
     _show_image_folder_expander("excel_images_dir", "excel_images_dir_apply")
 
+    with st.expander("📊 大货进度表 (contract number lookup)", expanded=False):
+        st.caption(
+            "Upload the production-progress Excel (大货进度表) to auto-fill **合同号** "
+            "in the buy plan.  Leave blank to skip."
+        )
+        progress_file = st.file_uploader(
+            "大货进度表 Excel",
+            type=["xlsx", "xlsm", "xls"],
+            key="excel_progress_file",
+            label_visibility="collapsed",
+        )
+        if progress_file:
+            st.caption(f"✅ {progress_file.name}")
+
     if not uploaded_excels:
         st.info("Upload one or more client Excel files to get started.")
         return
@@ -115,6 +129,7 @@ def _show_excel_tab():
             uploaded_excels,
             sheet_name=sheet_name,
             mask_prices=excel_mask,
+            progress_file=progress_file,
         )
 
     if st.session_state.excel_log:

@@ -45,9 +45,16 @@ def is_email_configured() -> bool:
 
 def _send(msg: EmailMessage, settings: _smtp.SmtpSettings) -> None:
     host, port, user, pw = settings["host"], settings["port"], settings["user"], settings["password"]
+    # Port 465 always means implicit SSL (SMTP_SSL); other ports use STARTTLS when use_tls=True.
+    use_ssl = (port == 465)
     try:
-        if settings["use_tls"]:
-            ctx = ssl.create_default_context()
+        ctx = ssl.create_default_context()
+        if use_ssl:
+            with smtplib.SMTP_SSL(host, port, context=ctx, timeout=30) as s:
+                if user:
+                    s.login(user, pw)
+                s.send_message(msg)
+        elif settings["use_tls"]:
             with smtplib.SMTP(host, port, timeout=30) as s:
                 s.starttls(context=ctx)
                 if user:

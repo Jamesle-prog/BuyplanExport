@@ -10,9 +10,10 @@ import streamlit as st
 
 from po_extractor.exporters import export_hhp_buyplan, export_hhp_template_p
 from po_extractor.parsers.client_excel_multi import combine_excel_files, repeat_order_summary
+from po_extractor.ui_helpers.color_enrichment import enrich_hhp_colors
 from po_extractor.utils.price_mask import mask_prices_excel_batch
 from auth.companies import get_company
-from ui.stores import get_store
+from ui.stores import get_store, get_color_translation_store
 from ui.giii.extraction import _save_fabric_parts_from_df
 
 
@@ -104,7 +105,18 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
     # Photo-match diagnostic — visible to the user via the log on the page
     _log_photo_matches(result.df, photo_map, log)
 
-    bp  = export_hhp_buyplan(result.df, out_dir, photo_map=photo_map)
+    # Enrich with 主标颜色 / 中文颜色 / 中文颜色代码 from the color-translation store
+    try:
+        ct_store    = get_color_translation_store()
+        label_lkp   = ct_store.build_label_lookup_dict()
+        cn_code_lkp = ct_store.build_cn_code_lookup_dict()
+        cn_lkp      = ct_store.build_lookup_dict()
+        enriched_df = enrich_hhp_colors(result.df, company,
+                                        label_lkp, cn_code_lkp, cn_lkp)
+    except Exception:
+        enriched_df = result.df
+
+    bp  = export_hhp_buyplan(enriched_df, out_dir, photo_map=photo_map)
     tps = export_hhp_template_p(result.df, out_dir)
 
     out: dict = {}
@@ -137,7 +149,8 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
 
 
 def _run_excel_extraction(uploaded_excels, sheet_name: str,
-                          mask_prices: bool = False):
+                          mask_prices: bool = False,
+                          progress_file=None):
     from ui.shared import (
         load_photo_map_from_dir as _load_photo_map_from_dir,
         images_dir as _get_images_dir,
@@ -155,6 +168,21 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
             with open(path, "wb") as f:
                 f.write(uf.getbuffer())
             excel_paths.append(path)
+
+        # 1b. Save progress file (大货进度表) if provided
+        progress_lookup = None
+        if progress_file is not None:
+            from po_extractor.lookups import ProgressLookup
+            prog_path = os.path.join(tmpdir, progress_file.name)
+            with open(prog_path, "wb") as f:
+                f.write(progress_file.getbuffer())
+            try:
+                progress_lookup = ProgressLookup(prog_path)
+                st.write(f"  📊 Progress lookup ready ({len(progress_lookup)} record(s))")
+                log.append(f"📊 Progress lookup: {len(progress_lookup)} record(s)")
+            except Exception as exc:
+                st.warning(f"Could not load progress file: {exc}")
+                log.append(f"⚠️ Progress lookup error: {exc}")
 
         # 2. Load photos from configured image folder
         photo_map: dict[str, bytes] = _load_photo_map_from_dir(
@@ -213,7 +241,92 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
         # Photo-match diagnostic — visible on the page
         _log_photo_matches(result.df, photo_map, log)
 
-        buyplan_path = export_hhp_buyplan(result.df, out_dir, photo_map=photo_map)
+        # Enrich with 主标颜色 / 中文颜色 / 中文颜色代码 from the color-translation store
+        # (Runs FIRST so 中文颜色代码 is available for the contract lookup below)
+        try:
+            from auth.companies import COMPANY_GIII
+            _ct_store    = get_color_translation_store()
+            _label_lkp   = _ct_store.build_label_lookup_dict()
+            _cn_code_lkp = _ct_store.build_cn_code_lookup_dict()
+            _cn_lkp      = _ct_store.build_lookup_dict()
+            _enriched_df = enrich_hhp_colors(result.df, COMPANY_GIII,
+                                             _label_lkp, _cn_code_lkp, _cn_lkp)
+        except Exception:
+            _enriched_df = result.df
+
+        # Enrich 合同号 from the production-progress lookup (大货进度表)
+        # Uses (PO, style, color_name) PRIMARY + color_code fallback
+        if progress_lookup is not None:
+            from po_extractor.lookups.progress_lookup import clean_color_for_lookup
+
+            # ── Color cleanup log ─────────────────────────────────────────
+            # Show what cleanups happened before the lookup (one entry per unique color)
+            color_col = "Main Supplier Color Description"
+            unique_colors = (_enriched_df[color_col].dropna().astype(str).unique()
+                             if color_col in _enriched_df.columns else [])
+            cleanup_lines: list[str] = []
+            for raw in unique_colors:
+                cleaned, steps = clean_color_for_lookup(raw)
+                if steps and cleaned != raw:
+                    cleanup_lines.append(
+                        f"  '{raw}' → '{cleaned}'  ({'; '.join(steps)})"
+                    )
+            if cleanup_lines:
+                st.write(f"🧹 Color cleanup ({len(cleanup_lines)} value(s)):")
+                for line in cleanup_lines:
+                    st.write(line)
+                log.append(f"🧹 Color cleanup ({len(cleanup_lines)} value(s)):")
+                log.extend(cleanup_lines)
+
+            # Look up the matched record once per row, then extract 4 fields
+            def _lookup_record(r):
+                return progress_lookup.get_record(
+                    str(r.get("Main Supplier Config SKU", "") or ""),
+                    str(r.get(color_col, "") or ""),
+                    str(r.get("Purchase Order Number", "") or ""),
+                    str(r.get("中文颜色代码", "") or ""),
+                )
+            _records = _enriched_df.apply(_lookup_record, axis=1)
+            _enriched_df["合同号"] = _records.apply(
+                lambda rec: rec["contract_no"] if rec else "")
+
+            # Override CN color / CN code / label color from 大货进度表 when matched
+            # (大货进度表 is the source of truth; color_translation_store is fallback)
+            def _pick(rec, field, fallback):
+                return rec[field] if (rec and rec.get(field)) else fallback
+
+            if "中文颜色" in _enriched_df.columns:
+                _enriched_df["中文颜色"] = [
+                    _pick(rec, "cn_color", _enriched_df.iloc[i].get("中文颜色", ""))
+                    for i, rec in enumerate(_records)
+                ]
+            else:
+                _enriched_df["中文颜色"] = [
+                    rec["cn_color"] if rec else "" for rec in _records]
+
+            if "中文颜色代码" in _enriched_df.columns:
+                _enriched_df["中文颜色代码"] = [
+                    _pick(rec, "color_code", _enriched_df.iloc[i].get("中文颜色代码", ""))
+                    for i, rec in enumerate(_records)
+                ]
+            else:
+                _enriched_df["中文颜色代码"] = [
+                    rec["color_code"] if rec else "" for rec in _records]
+
+            if "主标颜色" in _enriched_df.columns:
+                _enriched_df["主标颜色"] = [
+                    _pick(rec, "label_color", _enriched_df.iloc[i].get("主标颜色", ""))
+                    for i, rec in enumerate(_records)
+                ]
+
+            filled = (_enriched_df["合同号"] != "").sum()
+            st.write(f"  合同号: {filled}/{len(_enriched_df)} row(s) matched")
+            log.append(f"合同号 enrichment: {filled}/{len(_enriched_df)} rows filled")
+            cn_filled = (_enriched_df["中文颜色"].astype(str).str.strip() != "").sum()
+            st.write(f"  中文颜色: {cn_filled}/{len(_enriched_df)} row(s) (from 大货进度表)")
+            log.append(f"中文颜色 enrichment: {cn_filled}/{len(_enriched_df)} rows (大货进度表)")
+
+        buyplan_path = export_hhp_buyplan(_enriched_df, out_dir, photo_map=photo_map)
         st.write(f"  → {os.path.basename(buyplan_path)}")
 
         # 8. Generate Template_P workbooks

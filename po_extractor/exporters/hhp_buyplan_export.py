@@ -20,10 +20,10 @@ Template structure (all positions 1-based, the template is the contract):
   M3:O6   — back  photo box (merged, filled by inject_style_photos)
   Row 7-8 — bilingual column headers (English / Chinese) — preserved
   Row 9+  — data rows  (one per PO × ConfigSKU × ColorDesc group)
-            Cols A-R map to Contact No / Style / Brand / Article Name /
-            PO No / Config SKU / Color (EN) / Color (CN) / Label / J-O
-            sizes / 船样要求 / TTL Total / X-FTY date.
-  Q5      — grand total cell (referenced by the Index sheet).
+            Cols A-S map to 合同号 / 款号 / Brand / Article Name /
+            PO No / Config SKU / 英文颜色 / 主标颜色 / 中文颜色 / 中文颜色代码 /
+            K-P sizes / 船样要求 / TTL Total / X-FTY date.
+  R5      — grand total cell (referenced by the Index sheet).
 
 Index sheet
 -----------
@@ -44,19 +44,23 @@ from openpyxl.utils import get_column_letter
 
 from ..utils.file_utils import versioned_path
 from ..config import EXCEL_PALETTE as _P
-from ._excel_helpers import clean_sheet_name, stable_unique, cell_value
+from ._excel_helpers import clean_sheet_name, stable_unique, cell_value, apply_print_settings
 from ._image_inject import inject_style_photos
 from ._photo_utils import resolve_photo_pair
 
 
 # ── Layout constants (must match the template) ───────────────────────────────
+# Template column layout (1-based):
+#   A=合同号  B=款号  C=Brand  D=Article Name  E=PO No.  F=Config SKU
+#   G=英文颜色  H=主标颜色  I=中文颜色  J=中文颜色代码
+#   K-P=sizes (XS-XXL)  Q=船样要求  R=TTL Total  S=X-FTY
 SIZES = ["XS", "S", "M", "L", "XL", "XXL"]
 DATA_START_ROW   = 9       # first PO data row
-SIZE_COL_START   = 10      # column J
-TOTAL_FORMULA_COL = 17     # column Q
-FACTORY_DATE_COL  = 18     # column R
-GRAND_TOTAL_CELL  = "Q5"
-MAX_DATA_COL      = 18     # column R (last column we write to)
+SIZE_COL_START   = 11      # column K
+TOTAL_FORMULA_COL = 18     # column R
+FACTORY_DATE_COL  = 19     # column S
+GRAND_TOTAL_CELL  = "R5"
+MAX_DATA_COL      = 19     # column S (last column we write to)
 
 # ── Template path ─────────────────────────────────────────────────────────────
 _TEMPLATES_DIR = Path(__file__).parent.parent.parent / "data" / "buyplan_templates"
@@ -167,6 +171,7 @@ def export_hhp_buyplan(
         wb.remove(template_ws)
 
     _set_index_widths(ws_index)
+    apply_print_settings(wb)
     wb.save(path)
 
     # Inject photos (front in J3:L6, back in M3:O6) via zip-level patch.
@@ -370,9 +375,18 @@ def _write_data_row(ws, out_row: int, style: str, grp: pd.DataFrame) -> None:
     ws.cell(out_row, 4).value  = cell_value(g_first, "Article Name")
     ws.cell(out_row, 5).value  = cell_value(g_first, "Purchase Order Number")
     ws.cell(out_row, 6).value  = cell_value(g_first, "Config SKU")
-    ws.cell(out_row, 7).value  = cell_value(g_first, "Main Supplier Color Description")
-    ws.cell(out_row, 8).value  = cell_value(g_first, "颜色")
-    ws.cell(out_row, 9).value  = cell_value(g_first, "辅助色")
+    ws.cell(out_row, 7).value  = cell_value(g_first, "Main Supplier Color Description")  # 英文颜色
+
+    ws.cell(out_row, 8).value  = cell_value(g_first, "主标颜色")                           # H: label color
+
+    # I: 中文颜色 — combine as  #中文颜色代码|中文颜色  when both are present.
+    # Fall back to the source '颜色' field (pre-filled in some Zalando sheets).
+    _cn_name = cell_value(g_first, "中文颜色") or cell_value(g_first, "颜色") or ""
+    _cn_code = cell_value(g_first, "中文颜色代码") or ""
+    ws.cell(out_row, 9).value  = f"#{_cn_code}|{_cn_name}" if (_cn_code and _cn_name) \
+                                 else (_cn_name or None)
+
+    ws.cell(out_row, 10).value = _cn_code or None                                        # J: 中文颜色代码 (standalone)
 
     # Sizes J-O
     for s_idx, sz in enumerate(SIZES):
@@ -586,7 +600,7 @@ def _fill_blank_sheet(ws, style: str, sub: pd.DataFrame) -> None:
     correct column layout but no merges / styling / photos.
     """
     headers = ["合同号", "款号", "Brand", "Article Name", "PO No.",
-               "Config SKU", "Color (EN)", "颜色", "辅助色"] + SIZES + \
+               "Config SKU", "英文颜色", "主标颜色", "中文颜色", "中文颜色代码"] + SIZES + \
               ["", "Total", "X-FTY"]
     for col, h in enumerate(headers, start=1):
         ws.cell(row=DATA_START_ROW - 1, column=col, value=h)

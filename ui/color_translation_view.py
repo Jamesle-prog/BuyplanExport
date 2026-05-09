@@ -32,7 +32,7 @@ _CT_COL_CFG = {
              "to the same row (stored as title case).",
     ),
     "Chinese Color": st.column_config.TextColumn("Chinese Color (中文颜色)", width="medium"),
-    "Color Code":    st.column_config.TextColumn("Color Code", width="small"),
+    "中文颜色代码":   st.column_config.TextColumn("中文颜色代码", width="small"),
     "Light/Dark":    st.column_config.SelectboxColumn(
         "Light/Dark (深浅)",
         width="small",
@@ -53,7 +53,7 @@ _CT_COL_CFG = {
 }
 
 _CT_DISPLAY_COLS = ["Delete", "Client", "Brand", "English Color", "Chinese Color",
-                    "Color Code", "Light/Dark", "Label Color", "Notes"]
+                    "中文颜色代码", "Light/Dark", "Label Color", "Notes"]
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +260,9 @@ def show_color_translation_tab() -> None:
         # Add the Delete checkbox column (default False) and reorder to the
         # canonical display layout.
         df_view = df_view.copy()
+        # Compat: older cached store versions return "Color Code"; rename on the fly.
+        if "Color Code" in df_view.columns and "中文颜色代码" not in df_view.columns:
+            df_view = df_view.rename(columns={"Color Code": "中文颜色代码"})
         df_view["Delete"] = False
         display_df = df_view[_CT_DISPLAY_COLS]
         _ids_in_view = df_view["_id"].tolist() if "_id" in df_view.columns else []

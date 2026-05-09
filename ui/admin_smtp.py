@@ -15,10 +15,6 @@ _PROVIDERS: list[dict] = [
         "host": "smtp-mail.outlook.com",
         "port": 587,
         "use_tls": True,
-        "help": "Works for @outlook.com, @hotmail.com, @live.com accounts.\n"
-                "Use your full email address as Username and your normal password.\n"
-                "If 2FA is on, create an App Password at "
-                "https://account.microsoft.com/security → Advanced Security → App Passwords.",
     },
     {
         "label": "Office 365 (work)",
@@ -26,9 +22,6 @@ _PROVIDERS: list[dict] = [
         "host": "smtp.office365.com",
         "port": 587,
         "use_tls": True,
-        "help": "For corporate Microsoft 365 accounts (@yourdomain.com).\n"
-                "SMTP AUTH must be enabled for the mailbox by your IT admin.\n"
-                "Username = full email address.",
     },
     {
         "label": "Gmail",
@@ -36,21 +29,95 @@ _PROVIDERS: list[dict] = [
         "host": "smtp.gmail.com",
         "port": 587,
         "use_tls": True,
-        "help": "Gmail requires an App Password — your normal password will not work.\n"
-                "Go to https://myaccount.google.com/apppasswords, generate a password,\n"
-                "paste it in the Password field below.",
+    },
+    {
+        "label": "SendGrid",
+        "icon": "📨",
+        "host": "smtp.sendgrid.net",
+        "port": 587,
+        "use_tls": True,
+    },
+    {
+        "label": "Brevo",
+        "icon": "💌",
+        "host": "smtp-relay.brevo.com",
+        "port": 587,
+        "use_tls": True,
+    },
+    {
+        "label": "Resend",
+        "icon": "⚡",
+        "host": "smtp.resend.com",
+        "port": 465,
+        "use_tls": False,  # Resend uses SSL on 465, not STARTTLS
     },
     {
         "label": "Custom",
         "icon": "⚙️",
-        "host": None,   # don't overwrite
+        "host": None,
         "port": None,
         "use_tls": None,
-        "help": "Enter your server details manually.",
     },
 ]
 
 _SK_PRESET = "smtp_admin_preset"
+
+# Error substrings → actionable fix guidance
+_ERROR_HINTS: list[tuple[str, str]] = [
+    (
+        "535",
+        "**Authentication failed — Microsoft has blocked basic SMTP auth for this account.**\n\n"
+        "Even App Passwords are blocked on some personal Outlook/Hotmail accounts. "
+        "The most reliable fix is to use **SendGrid** as a free relay:\n\n"
+        "1. Sign up free at https://sendgrid.com (100 emails/day free)\n"
+        "2. Go to **Settings → API Keys → Create API Key** (Full Access)\n"
+        "3. In PO Extractor → Admin → 📧 Email → click **📨 SendGrid** preset\n"
+        "4. **Username:** `apikey` (literally type: apikey)\n"
+        "5. **App Password:** paste your SendGrid API key\n"
+        "6. **Sender:** your verified email address\n\n"
+        "Alternatively, if you have a Gmail account, the **🔴 Gmail** preset "
+        "with an App Password works reliably.",
+    ),
+    (
+        "authentication unsuccessful",
+        "**Authentication unsuccessful.** Microsoft has blocked basic SMTP auth on this account.\n\n"
+        "Switch to **📨 SendGrid** (free) or **🔴 Gmail** — both work reliably. "
+        "See the SendGrid setup guide above.",
+    ),
+    (
+        "smtp auth extension not supported",
+        "**SMTP AUTH is disabled** on this mailbox. For Office 365 work accounts, "
+        "ask your IT admin to enable SMTP AUTH in the Microsoft 365 admin centre, "
+        "or use **📨 SendGrid** as a relay instead.",
+    ),
+    (
+        "username and password not accepted",
+        "**Credentials rejected.** For Gmail, use an App Password:\n\n"
+        "1. Enable 2-Step Verification: https://myaccount.google.com/security\n"
+        "2. Create App Password: https://myaccount.google.com/apppasswords\n"
+        "3. Use the 16-character password in the Password field.",
+    ),
+]
+
+
+def _smtp_error_hint(exc: EmailError, host: str = "") -> str | None:
+    msg = str(exc).lower()
+    h = (host or "").lower()
+
+    # Brevo-specific: 535 means wrong username (must be Brevo account email)
+    if "brevo" in h and "535" in msg:
+        return (
+            "**Brevo: wrong username.**\n\n"
+            "For Brevo the **Username** must be the email address you used to "
+            "register on brevo.com — NOT your hotmail/gmail address.\n\n"
+            "Find it at https://app.brevo.com/settings/keys/smtp → "
+            "the login shown next to your SMTP key is your Brevo username."
+        )
+
+    for keyword, hint in _ERROR_HINTS:
+        if keyword.lower() in msg:
+            return hint
+    return None
 
 
 def show_smtp_admin() -> None:
@@ -69,26 +136,80 @@ def show_smtp_admin() -> None:
                 f"{p['icon']} {p['label']}",
                 key=f"smtp_preset_{i}",
                 use_container_width=True,
-                help=p["help"],
             ):
                 st.session_state[_SK_PRESET] = i
                 st.rerun()
 
-    # Which preset is active?
     active_idx = st.session_state.get(_SK_PRESET)
     active = _PROVIDERS[active_idx] if active_idx is not None else None
-    if active and active["label"] != "Custom":
-        st.info(
-            f"{active['icon']} **{active['label']}** selected — "
-            f"`{active['host']}:{active['port']}` (STARTTLS). "
-            f"{active['help']}",
-            icon="ℹ️",
-        )
+
+    # Provider-specific instructions
+    if active:
+        label = active["label"]
+        if label == "Outlook / Hotmail":
+            st.warning(
+                "⚠️ **Microsoft has disabled basic SMTP auth for most personal Outlook/Hotmail "
+                "accounts** — even App Passwords are blocked in many regions.\n\n"
+                "If you keep getting error 535, switch to **📨 SendGrid** (free) or **🔴 Gmail** instead.",
+            )
+            st.info(
+                "**If you still want to try Outlook:**\n\n"
+                "1. Enable 2FA at https://account.microsoft.com/security\n"
+                "2. Create App Password → Advanced security options → App passwords\n"
+                "3. Enable POP/IMAP at https://outlook.live.com/mail/0/options/mail/accounts/popImap\n"
+                "4. Use your full email as Username and the App Password below",
+                icon="ℹ️",
+            )
+        elif label == "Office 365 (work)":
+            st.info(
+                "**🏢 Office 365 setup**\n\n"
+                "- Username: your full work email address\n"
+                "- Password: your Microsoft 365 password (or App Password if MFA is on)\n"
+                "- Your IT admin must have **SMTP AUTH enabled** for your mailbox",
+                icon="ℹ️",
+            )
+        elif label == "Gmail":
+            st.info(
+                "**🔴 Gmail setup**\n\n"
+                "1. Enable 2-Step Verification: https://myaccount.google.com/security\n"
+                "2. Create App Password: https://myaccount.google.com/apppasswords\n"
+                "3. Username: your Gmail address\n"
+                "4. Password: the 16-character App Password (not your normal password)",
+                icon="ℹ️",
+            )
+        elif label == "SendGrid":
+            st.success(
+                "**📨 SendGrid — 100 emails/day free**\n\n"
+                "1. Sign up at https://sendgrid.com\n"
+                "2. **Settings → API Keys → Create API Key** → Full Access → Create\n"
+                "3. **Username:** `apikey` (literally)\n"
+                "4. **Password:** paste your API key\n"
+                "5. **Sender:** verify at https://app.sendgrid.com/settings/sender_auth",
+            )
+        elif label == "Brevo":
+            st.success(
+                "**💌 Brevo — 300 emails/day free (best free tier)**\n\n"
+                "1. Sign up at https://brevo.com\n"
+                "2. Go to **Settings → SMTP & API → Generate a new SMTP key**\n"
+                "3. **Username:** your Brevo account email address\n"
+                "4. **Password:** paste the SMTP key (not your login password)\n"
+                "5. **Sender:** any address you've verified in Brevo\n\n"
+                "300 emails/day free — 3× more than SendGrid.",
+            )
+        elif label == "Resend":
+            st.success(
+                "**⚡ Resend — 100 emails/day free, 3,000/month**\n\n"
+                "1. Sign up at https://resend.com\n"
+                "2. Go to **API Keys → Create API Key**\n"
+                "3. **Username:** `resend` (literally)\n"
+                "4. **Password:** paste your API key\n"
+                "5. **Sender:** must use a verified domain (e.g. `you@yourdomain.com`)\n"
+                "   — free accounts can also use `onboarding@resend.dev` for testing\n\n"
+                "Uses SSL on port 465 (configured automatically).",
+            )
 
     cur = smtp_settings.load()
 
-    # Compute field defaults: preset overrides saved config for host/port/tls;
-    # user/password/sender always come from saved config so editing isn't lost.
     def _host_default() -> str:
         if active and active["host"]:
             return active["host"]
@@ -105,12 +226,11 @@ def show_smtp_admin() -> None:
         return cur["use_tls"]
 
     # ── Settings form ─────────────────────────────────────────────────────────
-    st.markdown("**Server details:**")
     with st.form("smtp_form"):
         c1, c2 = st.columns([3, 1])
         with c1:
             host = st.text_input("SMTP Host", value=_host_default(),
-                                 placeholder="smtp-mail.outlook.com")
+                                 placeholder="smtp.sendgrid.net")
         with c2:
             port = st.number_input("Port", min_value=1, max_value=65535,
                                    value=_port_default(), step=1)
@@ -118,18 +238,21 @@ def show_smtp_admin() -> None:
         c3, c4 = st.columns(2)
         with c3:
             user = st.text_input(
-                "Username (your email address)", value=cur["user"],
-                placeholder="you@outlook.com",
+                "Username",
+                value=cur["user"],
+                placeholder="apikey  (for SendGrid) / you@gmail.com",
             )
         with c4:
             password = st.text_input(
-                "Password / App Password", value=cur["password"], type="password",
+                "Password / API Key / App Password",
+                value=cur["password"],
+                type="password",
             )
 
         sender = st.text_input(
-            "Sender name (optional)",
+            "Sender (From address)",
             value=cur["sender"],
-            placeholder="PO Extractor <you@outlook.com>",
+            placeholder="PO Extractor <you@example.com>",
             help="How the From address appears. Defaults to Username when empty.",
         )
         use_tls = st.checkbox("Use STARTTLS (recommended)", value=_tls_default())
@@ -142,7 +265,6 @@ def show_smtp_admin() -> None:
             "host": host, "port": int(port), "user": user,
             "password": password, "sender": sender, "use_tls": bool(use_tls),
         })
-        # Clear preset so next open shows saved values, not preset overrides.
         st.session_state.pop(_SK_PRESET, None)
         st.success("✅ Saved.")
         st.rerun()
@@ -152,7 +274,7 @@ def show_smtp_admin() -> None:
     st.markdown("**Test connection**")
     if not smtp_settings.is_configured():
         st.info(
-            "Fill in Host, Username (and Password), then click **Save** before testing.",
+            "Fill in Host, Username and Password/API Key, then click **Save** before testing.",
             icon="ℹ️",
         )
         return
@@ -172,10 +294,14 @@ def show_smtp_admin() -> None:
         st.write("")
         clicked = st.button("▶ Send test", use_container_width=True,
                             disabled=not to.strip(), key="smtp_test_btn")
+
     if clicked:
         try:
             with st.spinner(f"Connecting to {configured['host']}…"):
                 send_test_email(to)
             st.success(f"✅ Test email delivered to **{to}**.")
         except EmailError as exc:
+            hint = _smtp_error_hint(exc, host=configured["host"])
             st.error(f"❌ {exc}")
+            if hint:
+                st.warning(hint)

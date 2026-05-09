@@ -177,6 +177,8 @@ def _enrich_items_df(df_items):
             return pl.get_contract_no(
                 str(row.get("style", "")).strip(),
                 str(row.get("color_name", "")).strip(),
+                str(row.get("zalando_po", "")).strip(),
+                pc_no=str(row.get("pc_no", "")).strip(),
             ) or cno
         df["contract_no"] = df.apply(_fill_cno, axis=1)
 

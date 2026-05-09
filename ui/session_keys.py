@@ -49,3 +49,12 @@ class SK:
     SE_NK_COUNT      = "se_nk_count"
     SE_NK_REASON     = "se_nk_reason"   # human-readable reason when 核料 is empty
     SE_BP_CMP        = "se_bp_cmp"
+
+    # ── Sky East — color mapping source preference ────────────────────────────
+    SE_COLOR_SOURCE  = "se_color_source"   # value: COLOR_SOURCE_DB | COLOR_SOURCE_PROGRESS
+
+
+# Allowed values for ``SK.SE_COLOR_SOURCE`` — controls where the buy-plan
+# Chinese colour mapping (中文颜色 / 中文颜色代码 / 主标颜色) is loaded from.
+COLOR_SOURCE_DB       = "db"        # 🎨 Colors tab — color_translation table
+COLOR_SOURCE_PROGRESS = "progress"  # 大货进度表 — HHN Contract No. file

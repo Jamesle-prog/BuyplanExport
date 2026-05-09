@@ -22,6 +22,12 @@ XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CSV_MIME  = "text/csv"
 ZIP_MIME  = "application/zip"
 
+# File-type lists for st.file_uploader — single source of truth so changes
+# (e.g. allowing .xlsm in legacy uploaders) only need one edit.
+EXCEL_FILE_TYPES            = ["xlsx", "xls"]
+EXCEL_FILE_TYPES_WITH_MACRO = ["xlsx", "xls", "xlsm"]
+DEFAULT_XLSX_EXT            = ".xlsx"
+
 # ---------------------------------------------------------------------------
 # Language / label translation
 # ---------------------------------------------------------------------------
@@ -83,10 +89,23 @@ _LABEL_ZH: dict[str, str] = {
 
 
 def _th(label: str) -> str:
-    """Translate a header label to Chinese if UI language is set to 'zh'."""
-    if st.session_state.get(_SK.UI_LANG) == "zh":
-        return _LABEL_ZH.get(label, label)
-    return label
+    """Translate a header label to the active UI language.
+
+    Lookup order:
+    1. DB-backed ``t()`` (UITranslationStore) — live, editable via Admin.
+    2. Hardcoded ``_LABEL_ZH`` dict — compile-time fallback for robustness.
+    3. Original English label — when no translation exists anywhere.
+    """
+    if st.session_state.get(_SK.UI_LANG) != "zh":
+        return label
+    try:
+        from ui.i18n import t as _t
+        translated = _t(label)
+        if translated != label:
+            return translated
+    except Exception:
+        pass
+    return _LABEL_ZH.get(label, label)
 
 
 def _tr(mapping: dict) -> dict:
@@ -221,6 +240,11 @@ def _push_history(session_key: str, path: str) -> list[str]:
 
 def show_image_folder_expander(session_key: str, apply_key: str) -> None:
     """Render the Image folder expander with persistent history dropdown."""
+    try:
+        from ui.i18n import t as _t
+    except Exception:
+        def _t(s: str) -> str:  # type: ignore[misc]
+            return s
 
     # ------------------------------------------------------------------
     # Bootstrap: on first render, seed session state from persisted history
@@ -234,7 +258,7 @@ def show_image_folder_expander(session_key: str, apply_key: str) -> None:
 
     history: list[str] = st.session_state[hist_key]
 
-    with st.expander("Image folder (load & save style photos)"):
+    with st.expander(_t("Image folder (load & save style photos)")):
         st.caption(
             "Images are loaded from and saved here as `{style}_front.png` / `{style}_back.png` "
             "and also as `{picture_id}.png` for internal lookup. "
@@ -248,7 +272,7 @@ def show_image_folder_expander(session_key: str, apply_key: str) -> None:
             CLEAR_LABEL = "— Clear history —"
             options = history + [CLEAR_LABEL]
             chosen = st.selectbox(
-                "Recent folders",
+                _t("Recent folders"),
                 options=options,
                 index=0,
                 key=f"{session_key}_selectbox",
@@ -267,7 +291,7 @@ def show_image_folder_expander(session_key: str, apply_key: str) -> None:
         # Manual text input
         # ------------------------------------------------------------------
         img_dir_input = st.text_input(
-            "Folder path",
+            _t("Folder path"),
             value=prefill,
             placeholder=IMAGES_DIR_DEFAULT,
             key=f"{session_key}_input",
@@ -278,17 +302,17 @@ def show_image_folder_expander(session_key: str, apply_key: str) -> None:
             if img_dir_input.strip():
                 exists = os.path.isdir(img_dir_input.strip())
                 st.caption(
-                    "Folder exists" if exists
-                    else "Folder not found — it will be created when processing runs."
+                    _t("Folder exists") if exists
+                    else _t("Folder not found — it will be created when processing runs.")
                 )
         with c2:
-            if st.button("Apply", key=apply_key):
+            if st.button(_t("Apply"), key=apply_key):
                 new_path = img_dir_input.strip()
                 st.session_state[session_key] = new_path
                 if new_path:
                     updated = _push_history(session_key, new_path)
                     st.session_state[hist_key] = updated
-                st.success("Image folder updated.")
+                st.success(_t("Image folder updated."))
 
 
 # ---------------------------------------------------------------------------

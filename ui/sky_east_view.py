@@ -1,12 +1,16 @@
 """Sky East tab — public entry point and upload section (shell)."""
 from __future__ import annotations
 import streamlit as st
-from ui.session_keys import SK
+from ui.i18n import t
+from ui.session_keys import SK, COLOR_SOURCE_DB, COLOR_SOURCE_PROGRESS
 from ui.shared import ZIP_MIME, show_image_folder_expander
-from ui.sky_east._shared import live_label
+from ui.sky_east._shared import live_label, show_color_source_radio
 from ui.sky_east.processing import _run_sky_east_processing, _compute_se_missing_df
 from ui.sky_east.items_view import _show_se_results, _show_se_missing_fields_section
 from ui.sky_east.history import _show_se_history_section
+
+# Color source radio is defined in sky_east._shared.show_color_source_radio
+# and shared with the Buy Plan section in the history tab.
 
 
 # ---------------------------------------------------------------------------
@@ -14,7 +18,7 @@ from ui.sky_east.history import _show_se_history_section
 # ---------------------------------------------------------------------------
 
 def _show_se_upload_section():
-    st.markdown("**Order Files** (Sky East Purchase Contract xlsx)")
+    st.markdown(f"**{t('Order Files')}** (Sky East Purchase Contract xlsx)")
     order_files = st.file_uploader(
         "Upload Sky East order file(s)",
         type=["xlsx", "xls", "xlsm"],
@@ -25,7 +29,7 @@ def _show_se_upload_section():
     if order_files:
         st.caption(f"{len(order_files)} file(s) selected")
 
-    with st.expander("Reference files (optional -- Config SKU · Progress)"):
+    with st.expander(f"{t('Reference files')} (optional — Config SKU · Progress)"):
         ref_l, ref_r = st.columns(2)
         with ref_l:
             ean_file = st.file_uploader(
@@ -64,10 +68,13 @@ def _show_se_upload_section():
                 ),
             )
 
+    # ── Chinese color mapping source ──────────────────────────────────────────
+    show_color_source_radio("se_color_src_radio")
+
     show_image_folder_expander("se_images_dir", "se_images_dir_apply")
 
     se_mask = st.checkbox(
-        "Mask prices",
+        t("Mask prices"),
         value=False,
         key="se_mask_prices",
         help="Replace FOB / cost / price columns with *** before download.",
@@ -76,10 +83,10 @@ def _show_se_upload_section():
     st.divider()
 
     if not order_files:
-        st.info("Upload one or more Sky East Purchase Contract Excel files to begin.")
+        st.info(t("Upload one or more Sky East Purchase Contract Excel files to begin."))
         return
 
-    if st.button("Process Sky East Files", type="primary",
+    if st.button(t("Process Sky East Files"), type="primary",
                  use_container_width=True, key="se_run"):
         st.session_state.se_results = None
         st.session_state.se_log = []
@@ -91,7 +98,7 @@ def _show_se_upload_section():
         st.rerun()
 
     if st.session_state.se_log:
-        with st.expander("Processing log", expanded=False):
+        with st.expander(t("Processing log"), expanded=False):
             for line in st.session_state.se_log:
                 st.markdown(line, unsafe_allow_html=True)
 
@@ -115,20 +122,20 @@ def _show_se_upload_section():
 
 def show_sky_east_tab() -> None:
     """Sky East purchase-contract upload, merge, amendment review, and history."""
-    st.subheader("Sky East Purchase Contracts")
-    st.caption(
+    st.subheader(t("Sky East Purchase Contracts"))
+    st.caption(t(
         "Upload one or more Sky East order Excel files. "
         "Files with the **same PC No.** are merged (quantities added). "
         "Changed size breakdowns are detected as amendments and logged to history."
-    )
+    ))
 
     _missing_df = _compute_se_missing_df()
     _missing_count = len(_missing_df)
-    missing_label = (f"Missing Fields  {_missing_count}"
-                     if _missing_count else "Missing Fields")
+    _mf = t("Missing Fields")
+    missing_label = (f"{_mf}  {_missing_count}" if _missing_count else _mf)
 
     se_tab_upload, se_tab_history, se_tab_missing = st.tabs(
-        ["New Contracts", "Contract History", missing_label]
+        [t("New Contracts"), t("Contract History"), missing_label]
     )
 
     with se_tab_upload:
