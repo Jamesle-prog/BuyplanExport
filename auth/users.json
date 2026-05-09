@@ -32,5 +32,13 @@
     "password": "$2b$12$7h234Lkw6PHjW0gck2lIL.aMnvN6jM0SB0lTm1.uTR.89fmzPGIrC",
     "role": "admin",
     "companies": []
+  },
+  "skyeast_demo": {
+    "password": "$2b$12$CoUzX.c96GlIXRETQTvdrOjsLcIVinortd/qYojBhDEElgf4zxJCW",
+    "role": "user",
+    "companies": [
+      "Sky East"
+    ],
+    "email": ""
   }
 }
