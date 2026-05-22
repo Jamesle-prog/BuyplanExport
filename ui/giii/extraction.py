@@ -15,7 +15,7 @@ from po_extractor.exporters import (
     export_buyplan, export_color_plan, export_cross_check,
     export_csvs, export_po_summary,
 )
-from po_extractor.parsers import parse_pdf
+from po_extractor.parsers import parse_pdf, parse_pdf_ai
 from po_extractor.ui_helpers import (
     format_save_results as _format_save_results,
     se_items_to_buyplan_dfs as _se_items_to_buyplan_dfs_impl,
@@ -187,10 +187,12 @@ def _log_save_results(results: list[tuple], log: list) -> None:
     log.append(formatted.summary_html)
 
 
-def _run_from_history(po_numbers: list[str]):
+def _run_from_history(po_numbers: list[str], result_key: str = "history_results"):
     store = get_store()
     df_size = store.load_size_rows(po_numbers)
-    df_meta = store.load_metadata(po_numbers)
+    # Use list_pos (includes all commercial fields) filtered to selected POs
+    _all = store.list_pos()
+    df_meta = _all[_all["po_number"].isin(po_numbers)].reset_index(drop=True) if not _all.empty else store.load_metadata(po_numbers)
 
     if df_size.empty:
         st.warning("No size data found for selected POs.")
@@ -239,7 +241,7 @@ def _run_from_history(po_numbers: list[str]):
         zf.writestr("metadata.csv",
                     df_meta.to_csv(index=False, encoding="utf-8-sig"))
     outputs["csvs_zip"] = csv_buf.getvalue()
-    st.session_state.history_results = outputs
+    st.session_state[result_key] = outputs
 
 
 def _create_buyplan_bytes(po_numbers: list[str]) -> bytes:
@@ -357,7 +359,10 @@ def _validate_giii_pos(pos: list, log: list[str], company: str = "") -> None:
 
 
 def _process_pdf_group(company: str, paths: list[str], out_dir: str,
-                       mask_prices: bool, log: list) -> dict | None:
+                       mask_prices: bool, log: list,
+                       use_ai: bool = False,
+                       deepseek_api_key: str = "",
+                       deepseek_model: str = "deepseek-chat") -> dict | None:
     seen: set[str] = set()
     pos = []
     for path in paths:
@@ -369,12 +374,17 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
             continue
         seen.add(h)
         try:
-            po = parse_pdf(path)
+            if use_ai and deepseek_api_key:
+                po = parse_pdf_ai(path, api_key=deepseek_api_key, model=deepseek_model)
+                tag = "🤖"
+            else:
+                po = parse_pdf(path)
+                tag = "✅"
             po.metadata.company = company
             po.metadata.processed_by = st.session_state.get(SK.USERNAME, "")
             po.metadata.source_file_hash = h
             pos.append(po)
-            log.append(f'<span style="color:#198754">✅ {name}</span> — {len(po.size_rows)} rows')
+            log.append(f'<span style="color:#198754">{tag} {name}</span> — {len(po.size_rows)} rows')
         except Exception as exc:
             log.append(f'<span style="color:#dc3545">❌ {name}: {exc}</span>')
             get_store().save_exception(
@@ -428,7 +438,10 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
 
 
 def _run_smart_processing(detections, saved_paths: dict[str, str],
-                          mask_prices: bool):
+                          mask_prices: bool,
+                          use_ai: bool = False,
+                          deepseek_api_key: str = "",
+                          deepseek_model: str = "deepseek-chat"):
     from ui.shared import (
         load_photo_map_from_dir as _load_photo_map_from_dir,
         images_dir as _get_images_dir,
@@ -475,7 +488,9 @@ def _run_smart_processing(detections, saved_paths: dict[str, str],
                 )
             elif is_pdf and company != "Unknown":
                 grp_out = _process_pdf_group(
-                    company, paths, out_dir, mask_prices, log
+                    company, paths, out_dir, mask_prices, log,
+                    use_ai=use_ai, deepseek_api_key=deepseek_api_key,
+                    deepseek_model=deepseek_model,
                 )
             else:
                 st.write(f"  ⚠️ {company} — no supported pipeline (format: {fmt_ids})")

@@ -155,8 +155,14 @@ class _WritesMixin:
                 parser_version, parse_confidence, validation_status,
                 revision_reason, source_file_hash, processed_by,
                 external_quote_id, source_module, integration_status,
-                content_hash)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                content_hash,
+                buyer, seller, ship_to, destination_code, incoterm, origin_port,
+                issued_by, discount, payment_terms, approval_status, season,
+                customer, style_description, style_group,
+                unit_cost, line_extended_cost, factory_ship_date, packaging,
+                hanger, description_code, msrp, cpo, fabric)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+                       ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (m.get("po_number"), m.get("company"), m.get("style"), m.get("factory"),
              m.get("country_of_origin"), m.get("xport_date"),
              m.get("po_date"), m.get("version"),
@@ -165,7 +171,14 @@ class _WritesMixin:
              m.get("parser_version"), m.get("parse_confidence"), m.get("validation_status"),
              m.get("revision_reason"), m.get("source_file_hash"), m.get("processed_by"),
              m.get("external_quote_id"), m.get("source_module"), m.get("integration_status"),
-             content_hash),
+             content_hash,
+             m.get("buyer"), m.get("seller"), m.get("ship_to"), m.get("destination_code"),
+             m.get("incoterm"), m.get("origin_port"), m.get("issued_by"), m.get("discount"),
+             m.get("payment_terms"), m.get("approval_status"), m.get("season"),
+             m.get("customer"), m.get("style_description"), m.get("style_group"),
+             m.get("unit_cost"), m.get("line_extended_cost"), m.get("factory_ship_date"),
+             m.get("packaging"), m.get("hanger"), m.get("description_code"),
+             m.get("msrp"), m.get("cpo"), m.get("fabric")),
         )
         conn.executemany(
             """INSERT OR REPLACE INTO po_size_rows

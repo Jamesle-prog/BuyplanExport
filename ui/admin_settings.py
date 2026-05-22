@@ -7,7 +7,12 @@ import streamlit as st
 
 from ui.session_keys import SK, COLOR_SOURCE_DB, COLOR_SOURCE_PROGRESS
 from ui.stores import get_app_settings_store
-from po_extractor.store.app_settings_store import KEY_DEFAULT_COLOR_SOURCE
+from po_extractor.store.app_settings_store import (
+    KEY_DEFAULT_COLOR_SOURCE,
+    KEY_DEEPSEEK_API_KEY,
+    KEY_EXTRACTION_METHOD,
+    KEY_DEEPSEEK_MODEL,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -81,9 +86,94 @@ def show_settings_admin() -> None:
             "New sessions will start with this selection."
         )
 
+    # ── DeepSeek AI Extraction ───────────────────────────────────────────────
+    st.markdown("---")
+    _show_deepseek_settings(store)
+
     # ── Fabric Master Database ───────────────────────────────────────────────
     st.markdown("---")
     _show_fabric_db_settings()
+
+
+# ---------------------------------------------------------------------------
+# DeepSeek AI Extraction sub-section
+# ---------------------------------------------------------------------------
+
+def _show_deepseek_settings(store) -> None:
+    st.markdown("#### 🤖 AI Extraction — DeepSeek")
+    st.caption(
+        "When enabled, PO PDFs are sent to the **DeepSeek API** for field extraction "
+        "instead of (or alongside) the built-in regex parser.  "
+        "Requires a DeepSeek API key from [platform.deepseek.com](https://platform.deepseek.com)."
+    )
+
+    current_method = store.get(KEY_EXTRACTION_METHOD, "regex")
+    current_key    = store.get(KEY_DEEPSEEK_API_KEY, "")
+    current_model  = store.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
+
+    method_options = {"regex": "🔍 Regex (built-in, no API)", "deepseek": "🤖 DeepSeek AI"}
+    chosen_method  = st.radio(
+        "Default extraction method",
+        list(method_options.keys()),
+        index=0 if current_method == "regex" else 1,
+        format_func=lambda k: method_options[k],
+        key="admin_extraction_method",
+        help="Users can also switch per-session on the GIII upload tab.",
+    )
+
+    col_key, col_model = st.columns([3, 1])
+    with col_key:
+        new_key = st.text_input(
+            "DeepSeek API Key",
+            value=current_key,
+            type="password",
+            placeholder="sk-...",
+            key="admin_deepseek_key",
+            disabled=(chosen_method == "regex"),
+        )
+    with col_model:
+        new_model = st.selectbox(
+            "Model",
+            ["deepseek-chat", "deepseek-reasoner"],
+            index=0 if current_model == "deepseek-chat" else 1,
+            key="admin_deepseek_model",
+            disabled=(chosen_method == "regex"),
+        )
+
+    col_test, col_save = st.columns([1, 1])
+    with col_test:
+        if st.button("🔌 Test API key", key="admin_deepseek_test",
+                     disabled=(chosen_method == "regex" or not new_key)):
+            with st.spinner("Testing…"):
+                ok, msg = _test_deepseek(new_key, new_model)
+            if ok:
+                st.success(f"✅ {msg}")
+            else:
+                st.error(f"❌ {msg}")
+    with col_save:
+        if st.button("💾 Save AI settings", key="admin_deepseek_save", type="primary"):
+            user = st.session_state.get(SK.USERNAME, "")
+            store.set(KEY_EXTRACTION_METHOD, chosen_method, updated_by=user)
+            store.set(KEY_DEEPSEEK_MODEL,    new_model,      updated_by=user)
+            if new_key:
+                store.set(KEY_DEEPSEEK_API_KEY, new_key, updated_by=user)
+            st.success("✅ AI extraction settings saved.")
+
+
+def _test_deepseek(api_key: str, model: str) -> tuple[bool, str]:
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "Reply with the word OK only."}],
+            max_tokens=5,
+            temperature=0,
+        )
+        reply = resp.choices[0].message.content or ""
+        return True, f"API reachable — model={model}, reply='{reply.strip()}'"
+    except Exception as exc:
+        return False, str(exc)
 
 
 # ---------------------------------------------------------------------------

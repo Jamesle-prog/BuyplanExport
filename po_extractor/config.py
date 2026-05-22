@@ -10,18 +10,60 @@ SIZE_PATTERN = rf'({SIZE_INFO})'
 
 # Legacy G-III patterns
 PO_NUMBER_PATTERN = r'PO NUMBER\s+(\w+)'
-STYLE_PATTERN = r'STYLE#\s+(.+)'
-COLOR_PATTERN = r'(\w+(?:/\w+)+|\w+/\w+(?:\s\w+)?)'
-UNITS_PATTERN = r'(\d+)\s+(\d{12})'
-FULL_PATTERN = rf'{COLOR_PATTERN}\s+{SIZE_PATTERN}\s+{UNITS_PATTERN}'
+STYLE_PATTERN     = r'STYLE#\s+(\S+)'                  # first word only (not full line)
+UNITS_PATTERN     = r'(\d+)\s+(\d{12})'
+# Full item row: "001 STYLE COD/NAME SIZE units UPC"
+# Captures (color_code_name, size, units, upc) — color includes full "Q2C/LT SKY/ESPRES"
+FULL_PATTERN = rf'\d{{3}}\s+\w+\s+([\w/ ]+?)\s+({SIZE_INFO})(?=\s+\d+\s+\d{{12}})\s+(\d+)\s+(\d{{12}})'
 LN_START = "LN#"
-VENDOR_PATTERN = r'VENDOR\s+(\w+)'
+VENDOR_PATTERN    = r'VENDOR\s+(\w+)'
 ISSUED_BY_PATTERN = r'ISSUED BY\s+([a-zA-Z0-9.]+)'
-PO_DATE_PATTERN = r'PO DATE\s+(\d{1,2}/\d{1,2}/\d{2,4})'
+PO_DATE_PATTERN   = r'PO DATE\s+(\d{1,2}/\d{1,2}/\d{2,4})'
+# New legacy G-III extraction patterns
+SEASON_PATTERN      = r'SEASON\s+(\w+)'
+INCOTERM_PATTERN    = r'INCO TERMS:\s+(\w+)'
+PORT_PATTERN        = r'PORT:\s+(\w+)'
+FOB_PRICE_PATTERN   = r'\bFOB:\s*\$?([\d.]+)'
+TARIFF_PATTERN      = r'TARIFF:\s+([\d.]+)'
+FABRIC_PATTERN      = r'([A-Z][\w -]+HB-\w+)\s+TARIFF:'
+COMPOSITION_PATTERN = r'(\d+%\s+\w+(?:[\s/]+\d+%\s+\w+)*)'
+XPORT_DATE_PATTERN  = r'\d{12}\s+[\d.]+\s+\w+\s+\w+\s+\d+/\d+\s+(\d{1,2}/\d{2}/\d{2,4})'
+HTS_PATTERN         = r'(\d{4}\.\d{2}\.\d{4})'
+DISCOUNT_PATTERN    = r'subject to a ([\d.]+%)\s+discount'
+PACK_PATTERN        = r'(FLAT PACK|FOLDED|HANGING)\s+TTL'
+VENDOR_NAME_PATTERN = r'\d+/\d+/\d+\s+\w+\s+\d+/\d+/\d+\s+([A-Z][A-Z0-9 ]+)\s+STYLE#'
+COLOR_PATTERN       = r'(\w+(?:/\w+)+|\w+/\w+(?:\s\w+)?)'  # kept for backwards compat
+# Customer name: appears twice after PO NUMBER (PDF doubling) — backreference strips dup
+CUSTOMER_NAME_PATTERN = r'PO NUMBER\s+\w+\s+([A-Z][A-Z ]+)(?=\s+\w+\s+\1)'
+# Ship-to address components (ROSS DC format)
+SHIP_ADDR1_PATTERN    = r'(\d{3,4}\s+[A-Z ]+?)\s+DISTRIBUTION CENTER'
+SHIP_CITY_PATTERN     = r'([A-Z]+,\w{2}\s+\d{5})'
 VEND_CNTRY_PATTERN = r'VEND CNTRY\s+(\w+(?:\s*-\s*\w+)?)'
-FACTORY_PATTERN = r'FACTORY\s+(\d+)\s*-\s*([A-Z]+(?:\s[A-Z]+)*)(?=\s{2,}|$)'
-HANGER_PATTERN = r'HANGER'
+# Lookahead accepts: 2+ spaces, OR single-space before INCO/PORT keyword, OR end-of-string
+FACTORY_PATTERN = r'FACTORY\s+(\d+)\s*-\s*([A-Z]+(?:\s[A-Z]+)*)(?=\s{2,}|\s+INCO|\s+PORT|$)'
+# Case-insensitive full-line capture (handles both "HANGER QF5103" and "Hanger,unless specified...")
+HANGER_PATTERN = r'(?i)(hanger[^\n]*)'
 CNTRY_OF_ORIGIN_PATTERN = r'CNTRY OF ORIGIN\s+(\w+)'
+# Description via backreference (DKNY / CK): PDF doubles the text so the second
+# occurrence serves as a lookahead sentinel.  Apostrophe-aware ([\w'] handles CK
+# descriptions like "PYSP WOMEN'S BLOU ROSS 25").
+GIII_DESCRIPTION_PATTERN = r"\bDESCRIPTION\s+((?:[\w']+\s+){1,8}[\w']+)(?=\s+\1\b)"
+
+# ── Multi-brand G-III patterns (KL / CK / DKNY) ───────────────────────────────
+# Brand code: KL → 'KL', CK → 'CKSui', DKNY → None
+BRAND_CODE_PATTERN = r'ISSUED BY\s+\S+\s+\d+\s+(\w+)\s+SHIP TO'
+# KL FOB: "FOB:$3.89/ $3.50 W/TARIFF" → capture the W/TARIFF (lower) price
+KL_FOB_PATTERN     = r'FOB:\$[\d.]+/\s*\$([\d.]+)\s+W/TARIFF'
+# MSRP (KL only): "MSRP: $59"
+MSRP_PATTERN       = r'MSRP:\s*\$?([\d.]+)'
+# CPO / Customer PO: "CUST PO: TBA" (KL) or "CPO: TBD" (CK)
+CPO_PATTERN        = r'(?:CUST\s+PO|CPO):\s*(\S+)'
+# PPK ratio: "PPK ... (1-2-2-1)" — used by KL and CK; strip trailing ')' in capture
+PPK_PATTERN        = r'PPK[^(]*\((\d[\d-]+)\)'
+# KL hanger line: "DESCRIPTION EMBELLISHED CREW SHO ROSS H25 HANGER"
+KL_HANGER_PATTERN  = r'(DESCRIPTION\s+[^\n]+?\bHANGER)\b'
+# KL description: text between DESCRIPTION and HANGER
+KL_DESC_PATTERN    = r'DESCRIPTION\s+(.*?)\s+HANGER'
 
 FORMAT_INFOR_NEXUS = "infor_nexus"
 FORMAT_LEGACY = "legacy_giii"

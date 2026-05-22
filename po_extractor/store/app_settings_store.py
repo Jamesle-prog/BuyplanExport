@@ -20,6 +20,9 @@ from .base_store import BaseSQLiteStore
 # ---------------------------------------------------------------------------
 
 KEY_DEFAULT_COLOR_SOURCE = "default_color_source"
+KEY_DEEPSEEK_API_KEY     = "deepseek_api_key"
+KEY_EXTRACTION_METHOD    = "extraction_method"   # "regex" | "deepseek"
+KEY_DEEPSEEK_MODEL       = "deepseek_model"
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +57,9 @@ _ONE_TIME_MIGRATIONS: list[tuple[str, str]] = [
 # Hard-coded fallback used when no DB row exists for a key.
 _DEFAULTS: dict[str, str] = {
     KEY_DEFAULT_COLOR_SOURCE: "progress",   # "db" | "progress"
+    KEY_EXTRACTION_METHOD:    "regex",      # "regex" | "deepseek"
+    KEY_DEEPSEEK_MODEL:       "deepseek-chat",
+    KEY_DEEPSEEK_API_KEY:     "",
 }
 
 

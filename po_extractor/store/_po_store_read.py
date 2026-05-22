@@ -17,38 +17,47 @@ class _ReadsMixin:
         return dict(row) if row else None
 
     def list_pos(self, companies: list[str] | None = None) -> pd.DataFrame:
-        """Return all stored POs. If companies list given, filter to those only."""
+        """Return all stored POs including commercial fields. Filter by companies if given."""
+        _SELECT = """
+            SELECT m.po_number, m.company, m.style, m.factory, m.country_of_origin,
+                   m.xport_date, m.issue_date, m.version,
+                   m.division_code, m.division_name, m.source_format,
+                   m.file_name, m.extracted_at,
+                   m.buyer, m.seller, m.ship_to, m.destination_code,
+                   m.incoterm, m.origin_port, m.issued_by, m.discount,
+                   m.payment_terms, m.approval_status, m.season,
+                   m.customer, m.style_description, m.style_group,
+                   m.unit_cost, m.line_extended_cost, m.factory_ship_date,
+                   m.packaging, m.hanger, m.description_code,
+                   m.msrp, m.cpo, m.fabric,
+                   COALESCE(SUM(s.units), 0) AS total_units
+            FROM po_metadata m
+            LEFT JOIN po_size_rows s ON s.po_number = m.po_number
+        """
         with self._conn() as conn:
             if companies:
                 ph = ",".join("?" * len(companies))
                 rows = conn.execute(
-                    f"""SELECT m.po_number, m.company, m.style, m.factory, m.country_of_origin,
-                              m.xport_date, m.issue_date, m.version,
-                              m.division_code, m.division_name, m.source_format,
-                              m.file_name, m.extracted_at,
-                              COALESCE(SUM(s.units), 0) AS total_units
-                       FROM po_metadata m
-                       LEFT JOIN po_size_rows s ON s.po_number = m.po_number
-                       WHERE m.company IN ({ph})
-                       GROUP BY m.po_number
-                       ORDER BY m.extracted_at DESC""",
+                    f"{_SELECT} WHERE m.company IN ({ph}) GROUP BY m.po_number ORDER BY m.extracted_at DESC",
                     companies,
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    """SELECT m.po_number, m.company, m.style, m.factory, m.country_of_origin,
-                              m.xport_date, m.issue_date, m.version,
-                              m.division_code, m.division_name, m.source_format,
-                              m.file_name, m.extracted_at,
-                              COALESCE(SUM(s.units), 0) AS total_units
-                       FROM po_metadata m
-                       LEFT JOIN po_size_rows s ON s.po_number = m.po_number
-                       GROUP BY m.po_number
-                       ORDER BY m.extracted_at DESC"""
+                    f"{_SELECT} GROUP BY m.po_number ORDER BY m.extracted_at DESC"
                 ).fetchall()
-        cols = ["po_number", "company", "style", "factory", "country_of_origin",
-                "xport_date", "issue_date", "version", "division_code",
-                "division_name", "source_format", "file_name", "extracted_at", "total_units"]
+        cols = [
+            "po_number", "company", "style", "factory", "country_of_origin",
+            "xport_date", "issue_date", "version", "division_code", "division_name",
+            "source_format", "file_name", "extracted_at",
+            "buyer", "seller", "ship_to", "destination_code",
+            "incoterm", "origin_port", "issued_by", "discount",
+            "payment_terms", "approval_status", "season",
+            "customer", "style_description", "style_group",
+            "unit_cost", "line_extended_cost", "factory_ship_date",
+            "packaging", "hanger", "description_code",
+            "msrp", "cpo", "fabric",
+            "total_units",
+        ]
         return pd.DataFrame([dict(r) for r in rows], columns=cols) if rows else pd.DataFrame(columns=cols)
 
     def list_history(self, po_number: str) -> pd.DataFrame:

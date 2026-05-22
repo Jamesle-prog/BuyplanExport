@@ -5,14 +5,186 @@ import io
 
 import pandas as pd
 import streamlit as st
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 from auth.companies import COMPANY_GIII, COMPANY_SKY_EAST
 from ui.shared import _th, _tr
 from ui.stores import get_store, get_sky_east_store
 
 
+# ---------------------------------------------------------------------------
+# PO Tracker helpers
+# ---------------------------------------------------------------------------
+
+_TRACKER_COLS = {
+    "po_number":          "PO Number",
+    "issue_date":         "Issue Date",
+    "version":            "Version",
+    "buyer":              "Buyer",
+    "seller":             "Seller",
+    "factory":            "Factory",
+    "ship_to":            "Ship To",
+    "customer":           "End Customer",
+    "incoterm":           "Incoterm",
+    "origin_port":        "Origin Port",
+    "payment_terms":      "Payment Terms",
+    "discount":           "Discount",
+    "approval_status":    "Approved",
+    "country_of_origin":  "COO",
+    "division_code":      "Div Code",
+    "division_name":      "Division",
+    "season":             "Season",
+    "issued_by":          "Issued By",
+    "style":              "Style",
+    "fabric":             "Fabric",
+    "style_description":  "Description",
+    "style_group":        "Style Group",
+    "unit_cost":          "Unit Cost",
+    "total_units":        "Total Qty",
+    "line_extended_cost": "Extended Cost",
+    "xport_date":         "Ex-Fty Date",
+    "factory_ship_date":  "Factory Ship-by",
+    "company":            "Company",
+    "source_format":      "Format",
+}
+
+_DEFAULT_COLS = [
+    "po_number", "issue_date", "buyer", "seller", "factory",
+    "customer", "incoterm", "country_of_origin", "division_name",
+    "season", "style", "style_description", "unit_cost",
+    "total_units", "line_extended_cost", "xport_date",
+]
+
+
+def _build_tracker_excel(df: pd.DataFrame) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "PO Tracker"
+
+    NAVY, BLUE, LBLUE, WHITE = "1F3864", "2C5F8A", "D9E6F2", "FFFFFF"
+
+    def _bdr():
+        s = Side(style="thin", color="CCCCCC")
+        return Border(left=s, right=s, top=s, bottom=s)
+
+    # Title row
+    ws.merge_cells(f"A1:{get_column_letter(len(df.columns))}1")
+    t = ws["A1"]
+    t.value = "PO Tracker — Commercial Summary"
+    t.font = Font(name="Arial", bold=True, size=13, color=WHITE)
+    t.fill = PatternFill("solid", fgColor=NAVY)
+    t.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 24
+
+    # Header row
+    for ci, col in enumerate(df.columns, 1):
+        c = ws.cell(row=2, column=ci, value=col)
+        c.font = Font(name="Arial", bold=True, size=10, color=WHITE)
+        c.fill = PatternFill("solid", fgColor=BLUE)
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c.border = _bdr()
+    ws.row_dimensions[2].height = 28
+
+    # Data rows
+    for ri, row in enumerate(df.itertuples(index=False), 3):
+        for ci, val in enumerate(row, 1):
+            c = ws.cell(row=ri, column=ci, value=val)
+            c.font = Font(name="Arial", size=10)
+            c.fill = PatternFill("solid", fgColor=LBLUE if ri % 2 == 0 else WHITE)
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            c.border = _bdr()
+
+    # Column widths
+    width_map = {
+        "PO Number": 16, "Issue Date": 13, "Version": 13, "Buyer": 24, "Seller": 28,
+        "Factory": 32, "Ship To": 20, "End Customer": 22, "Incoterm": 14,
+        "Origin Port": 13, "Payment Terms": 16, "Discount": 10, "Approved": 10,
+        "COO": 10, "Div Code": 10, "Division": 18, "Season": 9, "Issued By": 18,
+        "Style": 12, "Description": 24, "Style Group": 14, "Unit Cost": 11,
+        "Total Qty": 11, "Extended Cost": 16, "Ex-Fty Date": 13,
+        "Factory Ship-by": 15, "Company": 16, "Format": 14,
+    }
+    for ci, col in enumerate(df.columns, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = width_map.get(col, 14)
+
+    ws.freeze_panes = "A3"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _show_po_tracker(user_cos: list[str], admin_mode: bool) -> None:
+    st.subheader("📋 PO Tracker")
+    st.caption("One row per PO — all commercial fields for comparison and tracking.")
+
+    df = get_store().list_pos(companies=user_cos if user_cos and not admin_mode else None)
+
+    if df.empty:
+        st.info("No POs stored yet. Upload PDFs via the GIII tab to populate.")
+        return
+
+    # ── Filters ──────────────────────────────────────────────────────────────
+    fc1, fc2, fc3 = st.columns(3)
+    with fc1:
+        seasons = sorted(df["season"].dropna().unique().tolist()) if "season" in df.columns else []
+        sel_season = st.multiselect("Season", seasons, key="tracker_season")
+    with fc2:
+        divs = sorted(df["division_name"].dropna().unique().tolist()) if "division_name" in df.columns else []
+        sel_div = st.multiselect("Division", divs, key="tracker_div")
+    with fc3:
+        buyers = sorted(df["buyer"].dropna().unique().tolist()) if "buyer" in df.columns else []
+        sel_buyer = st.multiselect("Buyer", buyers, key="tracker_buyer")
+
+    if sel_season:
+        df = df[df["season"].isin(sel_season)]
+    if sel_div:
+        df = df[df["division_name"].isin(sel_div)]
+    if sel_buyer:
+        df = df[df["buyer"].isin(sel_buyer)]
+
+    # ── Column selector ───────────────────────────────────────────────────────
+    avail = [k for k in _TRACKER_COLS if k in df.columns]
+    default = [k for k in _DEFAULT_COLS if k in avail]
+    picked = st.multiselect(
+        "Columns",
+        options=avail,
+        default=default,
+        format_func=lambda k: _TRACKER_COLS.get(k, k),
+        key="tracker_cols",
+    )
+    show_cols = picked or default
+    display_df = df[show_cols].rename(columns=_TRACKER_COLS)
+
+    st.caption(f"{len(display_df):,} PO(s)")
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    # ── Download ──────────────────────────────────────────────────────────────
+    xlsx = _build_tracker_excel(display_df)
+    st.download_button(
+        "⬇️ Download PO Tracker (.xlsx)",
+        data=xlsx,
+        file_name="po_tracker.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="tracker_dl",
+    )
+
+
 def show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
     """Cross-company order summary, filtered by user permissions."""
+    tab_overview, tab_tracker = st.tabs(["📊 Overview", "📋 PO Tracker"])
+
+    with tab_tracker:
+        _show_po_tracker(user_cos, admin_mode)
+
+    with tab_overview:
+        _show_overview(user_cos, admin_mode)
+
+
+def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
+    """Original cross-company overview content."""
     st.subheader("📊 Order Summary")
     st.caption("Aggregated view of all orders across clients, filtered to your permitted companies.")
 

@@ -1149,12 +1149,6 @@ def _show_se_history_section():
     st.divider()
     pc_options = df_contracts["pc_no"].tolist()
 
-    _se_hist_multi_pc_download(store, pc_options)
-    st.divider()
-    _se_hist_wash_label_download(store, pc_options)
-    st.divider()
     _se_hist_item_browser(store, pc_options)
-    st.divider()
-    _se_hist_buyplan_section(store, pc_options, df_contracts)
     st.divider()
     _se_hist_delete_section(store, pc_options)

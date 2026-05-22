@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "1.8.5"
+APP_VERSION = "1.13.2"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -70,6 +70,36 @@ st.markdown("""
 .badge-err { color: #dc3545; font-weight: 600; }
 /* Metric label smaller on stat rows */
 [data-testid="stMetricLabel"] { font-size: 0.8rem; }
+
+/* ── Multiselect dropdown checkboxes (all st.multiselect widgets) ─ */
+[data-baseweb="menu"] [role="option"] {
+    padding-left: 2.5rem !important;
+    position: relative;
+}
+[data-baseweb="menu"] [role="option"]::before {
+    content: '';
+    position: absolute;
+    left: 0.55rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1rem;
+    height: 1rem;
+    border: 1.5px solid #9ca3af;
+    border-radius: 3px;
+    background: #fff;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+[data-baseweb="menu"] [role="option"][aria-selected="true"]::before {
+    content: '✓';
+    background: #ff4b4b;
+    border-color: #ff4b4b;
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-align: center;
+    line-height: 1rem;
+}
 </style>
 """, unsafe_allow_html=True)
 

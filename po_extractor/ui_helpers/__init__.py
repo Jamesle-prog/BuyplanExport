@@ -26,6 +26,7 @@ from po_extractor.ui_helpers.excel_format import write_excel_header_row
 from po_extractor.ui_helpers.excel_reports import (
     SIZE_ORDER, generate_color_plan_excel, generate_po_summary_excel,
 )
+from po_extractor.ui_helpers.kl_format import generate_kl_format_excel
 from po_extractor.ui_helpers.fabric_mapping_parse import parse_fabric_mapping_rows
 from po_extractor.ui_helpers.wash_label import write_wash_label_excel
 from po_extractor.ui_helpers.dual_header import (
@@ -46,6 +47,7 @@ __all__ = [
     "FormattedLine", "FormattedSaveLog", "format_save_results",
     "write_excel_header_row",
     "SIZE_ORDER", "generate_color_plan_excel", "generate_po_summary_excel",
+    "generate_kl_format_excel",
     "parse_fabric_mapping_rows",
     "write_wash_label_excel",
     "DUAL_HEADER_STATIC", "get_dual_header", "write_dual_header_excel",

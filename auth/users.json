@@ -40,5 +40,11 @@
       "Sky East"
     ],
     "email": ""
+  },
+  "testadmin": {
+    "password": "$2b$12$P1arl9kclX4p1eHWgB6DnuhZ1DG0D7BvzjVvkhDklva6IwxL8U2e.",
+    "role": "admin",
+    "companies": [],
+    "email": ""
   }
 }

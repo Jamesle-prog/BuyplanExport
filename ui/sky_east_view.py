@@ -8,6 +8,7 @@ from ui.sky_east._shared import live_label, show_color_source_radio
 from ui.sky_east.processing import _run_sky_east_processing, _compute_se_missing_df
 from ui.sky_east.items_view import _show_se_results, _show_se_missing_fields_section
 from ui.sky_east.history import _show_se_history_section
+from ui.sky_east.reports_tab import _show_se_reports_tab
 
 # Color source radio is defined in sky_east._shared.show_color_source_radio
 # and shared with the Buy Plan section in the history tab.
@@ -134,8 +135,8 @@ def show_sky_east_tab() -> None:
     _mf = t("Missing Fields")
     missing_label = (f"{_mf}  {_missing_count}" if _missing_count else _mf)
 
-    se_tab_upload, se_tab_history, se_tab_missing = st.tabs(
-        [t("New Contracts"), t("Contract History"), missing_label]
+    se_tab_upload, se_tab_history, se_tab_reports, se_tab_missing = st.tabs(
+        [t("New Contracts"), t("Contract History"), "📊 Reports", missing_label]
     )
 
     with se_tab_upload:
@@ -143,6 +144,9 @@ def show_sky_east_tab() -> None:
 
     with se_tab_history:
         _show_se_history_section()
+
+    with se_tab_reports:
+        _show_se_reports_tab()
 
     with se_tab_missing:
         _show_se_missing_fields_section(_missing_df)
