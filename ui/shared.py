@@ -22,6 +22,12 @@ XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CSV_MIME  = "text/csv"
 ZIP_MIME  = "application/zip"
 
+# File-type lists for st.file_uploader — single source of truth so changes
+# (e.g. allowing .xlsm in legacy uploaders) only need one edit.
+EXCEL_FILE_TYPES            = ["xlsx", "xls"]
+EXCEL_FILE_TYPES_WITH_MACRO = ["xlsx", "xls", "xlsm"]
+DEFAULT_XLSX_EXT            = ".xlsx"
+
 # ---------------------------------------------------------------------------
 # Language / label translation
 # ---------------------------------------------------------------------------

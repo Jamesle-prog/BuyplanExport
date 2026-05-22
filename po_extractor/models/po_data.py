@@ -30,6 +30,7 @@ class POMetadata:
 
     # Infor Nexus extended (blank for legacy)
     buyer: str | None = None
+    seller: str | None = None
     ship_to: str | None = None
     destination_code: str | None = None
     division: str | None = None
@@ -52,6 +53,10 @@ class POMetadata:
     xport_date: str | None = None
     ratio: str | None = None
     version: str | None = None
+    description_code: str | None = None  # e.g. DKNY "DESCRIPTION DU5105" code
+    msrp: str | None = None             # retail price (KL: "$59"; others: None)
+    cpo: str | None = None              # customer PO ref / status (TBA / TBD)
+    fabric: str | None = None           # fabric name alone, e.g. "HIGH HOPE LIQUID JERSEY HB-XD6786"
     extracted_at: str | None = None
     company: str | None = None
 

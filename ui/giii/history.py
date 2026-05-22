@@ -7,13 +7,7 @@ from auth.users import get_user_companies, is_admin
 from ui.session_keys import SK
 from ui.stores import get_store
 from ui.giii._shared import _XLSX_MIME, live_label
-from ui.giii.extraction import _run_from_history, _create_buyplan_bytes
-from ui.giii.results import (
-    _show_downloads,
-    _generate_color_plan_excel,
-    _generate_po_summary_excel,
-    _show_master_po_table,
-)
+from ui.giii.results import _show_master_po_table
 
 
 def _show_history(exc_df=None):
@@ -79,84 +73,6 @@ def _show_history(exc_df=None):
                 st.caption(f"{len(hist)} archived version(s) for {inspect_po}")
                 st.dataframe(hist, width="stretch", hide_index=True)
 
-    st.divider()
-
-    # ── Re-export ─────────────────────────────────────────────────────────────
-    st.markdown("**Re-export selected POs**")
-    st.caption("Select PO numbers to regenerate all Excel outputs from stored data.")
-    po_options = df["po_number"].tolist()
-    selected = st.multiselect(
-        "Choose POs to include:", po_options,
-        placeholder="Select one or more PO numbers…",
-    )
-    col_a, col_b, _col_pad = st.columns([1, 1, 2])
-    with col_a:
-        if st.button("▶  Generate from History", type="primary",
-                     disabled=not selected, use_container_width=True):
-            st.session_state.pop("history_bp_bytes", None)
-            _run_from_history(selected)
-    with col_b:
-        if st.button("📋  Buy Plan Only", disabled=not selected,
-                     use_container_width=True, key="giii_bp_only_btn"):
-            st.session_state.pop("history_results", None)
-            with st.spinner("Generating buy plan…"):
-                bp_bytes = _create_buyplan_bytes(selected)
-            if bp_bytes:
-                st.session_state[SK.HISTORY_BP_BYTES] = bp_bytes
-            else:
-                st.warning("No size data found for selected POs.")
-
-    if st.session_state.get(SK.HISTORY_RESULTS):
-        _show_downloads(st.session_state.history_results, key_prefix="history")
-    elif st.session_state.get(SK.HISTORY_BP_BYTES):
-        st.divider()
-        st.download_button(
-            "⬇️ Download Buy Plan (.xlsx)",
-            data=st.session_state[SK.HISTORY_BP_BYTES],
-            file_name="buy_plan.xlsx",
-            mime=_XLSX_MIME,
-            key="history_bp_dl",
-        )
-
-    st.divider()
-
-    # ── Reports ───────────────────────────────────────────────────────────────
-    st.markdown("**📊 Reports**")
-    st.caption("Generate standard output reports from all saved POs.")
-    rpt_c1, rpt_c2 = st.columns(2)
-
-    with rpt_c1:
-        st.markdown("**Color Plan**")
-        st.caption("Style × Color × Size breakdown — one row per color.")
-        if st.button("Generate Color Plan Excel", key="rpt_color_plan"):
-            all_pos = df["po_number"].tolist()
-            with st.spinner("Building color plan…"):
-                xlsx_bytes = _generate_color_plan_excel(all_pos, store)
-            if xlsx_bytes:
-                st.download_button(
-                    "⬇ Download Color Plan",
-                    data=xlsx_bytes,
-                    file_name="Color_Plan.xlsx",
-                    mime=_XLSX_MIME,
-                    key="rpt_color_plan_dl",
-                )
-            else:
-                st.warning("No size data found.")
-
-    with rpt_c2:
-        st.markdown("**PO Summary**")
-        st.caption("One row per PO with factory, COO, X-factory date and quantity.")
-        if st.button("Generate PO Summary Excel", key="rpt_po_summary"):
-            with st.spinner("Building summary…"):
-                xlsx_bytes = _generate_po_summary_excel(df)
-            st.download_button(
-                "⬇ Download PO Summary",
-                data=xlsx_bytes,
-                file_name="PO_Summary.xlsx",
-                mime=_XLSX_MIME,
-                key="rpt_po_summary_dl",
-            )
-
     # ── Master table (admin only) ─────────────────────────────────────────────
     if is_admin(st.session_state.get(SK.USERNAME, "")):
         st.divider()
@@ -166,6 +82,7 @@ def _show_history(exc_df=None):
 
     # ── Delete ────────────────────────────────────────────────────────────────
     st.markdown("**Delete POs from history**")
+    po_options = df["po_number"].tolist()
     to_delete = st.multiselect("Select POs to delete:", po_options,
                                placeholder="Select POs to remove…",
                                key="del_pos")

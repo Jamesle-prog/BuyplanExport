@@ -48,6 +48,7 @@ def export_color_plan(df_size: pd.DataFrame, output_dir: str) -> str:
             pivot = sub.pivot_table(
                 index="Color", columns="Size",
                 values="Units", aggfunc="sum", fill_value=0,
+                dropna=False,
             )
             known   = [s for s in size_order if s in pivot.columns]
             unknown = [s for s in pivot.columns if s not in size_order]

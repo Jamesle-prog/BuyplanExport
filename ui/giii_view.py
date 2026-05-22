@@ -20,13 +20,16 @@ import streamlit as st
 
 from po_extractor.detectors import detect_files
 from po_extractor.utils.client_template import CLIENT_ALIASES
+from po_extractor.store.app_settings_store import (
+    KEY_EXTRACTION_METHOD, KEY_DEEPSEEK_API_KEY, KEY_DEEPSEEK_MODEL,
+)
 
 from auth.users import get_user_companies
 
 from ui.shared import (
     show_image_folder_expander as _show_image_folder_expander,
 )
-from ui.stores import get_store
+from ui.stores import get_store, get_app_settings_store
 
 from ui.giii._shared import _XLSX_MIME, _CONF_BADGE
 from ui.giii.extraction import _run_smart_processing
@@ -35,6 +38,11 @@ from ui.giii.results import _show_smart_downloads, _show_excel_downloads
 from ui.giii.reference import _show_giii_reference_section, _compute_giii_missing_df
 from ui.giii.history import _show_history
 from ui.giii.missing_view import _show_giii_missing_fields_section
+from ui.giii.reports_tab import _show_reports_tab
+from ui.giii.msg_extraction import show_msg_upload_section as _show_msg_upload_section
+from ui.giii.kl_extraction import show_kl_upload_section as _show_kl_upload_section
+from ui.giii.infornexus_extraction import show_infornexus_upload_section as _show_infornexus_upload_section
+from ui.giii.tk_eu_extraction import show_tk_eu_upload_section as _show_tk_eu_upload_section
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +178,38 @@ def _show_giii_upload_section():
         help="Replace FOB / cost / price values with *** in all output files.",
     )
 
+    # ── AI Extraction toggle ──────────────────────────────────────────────────
+    _settings = get_app_settings_store()
+    _default_method = _settings.get(KEY_EXTRACTION_METHOD, "regex")
+    _api_key        = _settings.get(KEY_DEEPSEEK_API_KEY, "")
+    _ds_model       = _settings.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
+
+    with st.expander("🤖 AI Extraction (DeepSeek)", expanded=(_default_method == "deepseek")):
+        st.caption(
+            "Use the DeepSeek API to extract PO fields instead of the built-in regex parser.  "
+            "Useful for non-standard layouts or when you want AI-assisted field recognition."
+        )
+        use_ai = st.toggle(
+            "Use DeepSeek AI extraction",
+            value=(_default_method == "deepseek"),
+            key="smart_use_ai",
+        )
+        if use_ai:
+            session_key = st.text_input(
+                "API Key (leave blank to use admin-configured key)",
+                value="",
+                type="password",
+                placeholder="sk-… (optional override)",
+                key="smart_ds_api_key_override",
+            )
+            effective_key = session_key.strip() or _api_key
+            if not effective_key:
+                st.warning("⚠️ No DeepSeek API key configured. Set one in Admin → Settings or enter above.")
+            else:
+                st.caption(f"Model: `{_ds_model}` · key ending …{effective_key[-4:]}")
+        else:
+            effective_key = ""
+
     st.divider()
 
     if not uploaded:
@@ -209,7 +249,12 @@ def _show_giii_upload_section():
                  use_container_width=True, key="smart_run"):
         st.session_state.smart_results = None
         st.session_state.smart_log = []
-        _run_smart_processing(detections, saved_paths, mask_prices)
+        _use_ai   = st.session_state.get("smart_use_ai", False)
+        _eff_key  = st.session_state.get("smart_ds_api_key_override", "").strip() or _api_key
+        _run_smart_processing(
+            detections, saved_paths, mask_prices,
+            use_ai=_use_ai, deepseek_api_key=_eff_key, deepseek_model=_ds_model,
+        )
 
     if st.session_state.smart_log:
         with st.expander("Processing log", expanded=False):
@@ -231,6 +276,9 @@ def show_smart_upload_tab():
         ("smart_detections", None),
         ("smart_results",    None),
         ("smart_log",        []),
+        ("rpt_all_results",  None),
+        ("rpt_cp_bytes",     None),
+        ("rpt_ps_bytes",     None),
     ]:
         if key not in st.session_state:
             st.session_state[key] = default
@@ -256,15 +304,22 @@ def show_smart_upload_tab():
         f"✏️ Missing Fields  🔴 {_missing_count}" if _missing_count else "✏️ Missing Fields"
     )
 
-    tab_upload, tab_history, tab_missing = st.tabs(
-        ["📤 Upload", history_label, missing_label]
+    tab_upload, tab_history, tab_reports, tab_missing = st.tabs(
+        ["📤 Upload", history_label, "📊 Reports", missing_label]
     )
 
     with tab_upload:
         _show_giii_upload_section()
+        _show_msg_upload_section()
+        _show_kl_upload_section()
+        _show_infornexus_upload_section()
+        _show_tk_eu_upload_section()
 
     with tab_history:
         _show_history(exc_df=_exc_df)
+
+    with tab_reports:
+        _show_reports_tab()
 
     with tab_missing:
         _show_giii_missing_fields_section(_missing_df)

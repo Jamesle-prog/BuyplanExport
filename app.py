@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.13.2"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -16,7 +16,7 @@ from auth.users import (
 )
 from po_extractor.ui_helpers import load_live_schema as _load_live_schema_impl
 from po_extractor.config import SCHEMA_PATH as _SCHEMA_PATH_CFG, CACHE_TTL_SECONDS
-from ui.session_keys import SK, COLOR_SOURCE_DB
+from ui.session_keys import SK
 
 # Seed default companies on startup (idempotent)
 ensure_defaults_seeded()
@@ -70,6 +70,36 @@ st.markdown("""
 .badge-err { color: #dc3545; font-weight: 600; }
 /* Metric label smaller on stat rows */
 [data-testid="stMetricLabel"] { font-size: 0.8rem; }
+
+/* ── Multiselect dropdown checkboxes (all st.multiselect widgets) ─ */
+[data-baseweb="menu"] [role="option"] {
+    padding-left: 2.5rem !important;
+    position: relative;
+}
+[data-baseweb="menu"] [role="option"]::before {
+    content: '';
+    position: absolute;
+    left: 0.55rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1rem;
+    height: 1rem;
+    border: 1.5px solid #9ca3af;
+    border-radius: 3px;
+    background: #fff;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+[data-baseweb="menu"] [role="option"][aria-selected="true"]::before {
+    content: '✓';
+    background: #ff4b4b;
+    border-color: #ff4b4b;
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-align: center;
+    line-height: 1rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -106,8 +136,8 @@ for key, default in [
     (SK.UI_LANG,         "en"),    # "en" | "zh"
     # GIII reference data panel
     (SK.GIII_MAPPING,    None),    # result of last mapping import
-    # Sky East — color mapping source
-    (SK.SE_COLOR_SOURCE, COLOR_SOURCE_DB),
+    # Sky East — color mapping source (None = resolve from admin default on first render)
+    (SK.SE_COLOR_SOURCE, None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -260,10 +290,10 @@ def _show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
 def _show_admin_panel():
     (admin_tab_users, admin_tab_cos, admin_tab_schema, admin_tab_sizes,
      admin_tab_tpl, admin_tab_pipe, admin_tab_bsr, admin_tab_smtp,
-     admin_tab_i18n) = st.tabs(
+     admin_tab_i18n, admin_tab_settings) = st.tabs(
         ["👤 Users", "🏢 Companies", "📋 Column Mapping", "📐 Size Order",
          "📄 Templates", "🧩 Pipeline Layouts", "🚢 船样要求", "📧 Email",
-         "🌐 Translations"]
+         "🌐 Translations", "⚙️ Settings"]
     )
 
     with admin_tab_cos:
@@ -294,6 +324,10 @@ def _show_admin_panel():
     with admin_tab_i18n:
         from ui.admin_i18n import show_i18n_admin
         show_i18n_admin()
+
+    with admin_tab_settings:
+        from ui.admin_settings import show_settings_admin
+        show_settings_admin()
 
 
 # ---------------------------------------------------------------------------

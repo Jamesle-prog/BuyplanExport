@@ -9,6 +9,59 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 import pandas as pd
+from openpyxl.worksheet.page import PageMargins
+from openpyxl.worksheet.properties import PageSetupProperties
+
+
+# ---------------------------------------------------------------------------
+# Page / print settings
+# ---------------------------------------------------------------------------
+
+def apply_print_settings(wb) -> None:
+    """Apply A4 landscape "fit all columns on one page" print settings to every
+    sheet in *wb*.
+
+    Settings match the Excel Page Setup screenshot:
+      • 横向    — Landscape orientation
+      • A4      — 21 cm × 29.7 cm
+      • 将所有列调整为一页 — fitToWidth=1, fitToHeight=0 (unlimited rows)
+
+    Call this just before ``wb.save()`` so it applies to all sheets including
+    any Index sheet and per-style copies.
+
+    Implementation note
+    -------------------
+    openpyxl's ``page_setup.fitToPage`` is not a real attribute and has no
+    effect.  The "fit to page" scaling mode is controlled by two separate XML
+    elements:
+      • ``<sheetPr><pageSetUpPr fitToPage="1"/>`` — switches Excel from
+        percentage scaling to fit-to-page mode (set via
+        ``ws.sheet_properties.pageSetUpPr``).
+      • ``<pageSetup fitToWidth="1" fitToHeight="0"/>`` — the actual page
+        counts (set via ``ws.page_setup``).
+    Both must be present; missing either one leaves Excel using the default
+    percentage scaling and the fit-to-page settings are silently ignored.
+    """
+    for ws in wb.worksheets:
+        ws.page_setup.orientation = "landscape"
+        ws.page_setup.paperSize   = 9     # A4  (openpyxl PAPERSIZE_A4)
+        ws.page_setup.fitToWidth  = 1     # all columns on one page
+        ws.page_setup.fitToHeight = 0     # unlimited pages tall
+        # Switch Excel to fit-to-page scaling mode.  Mutate in place when a
+        # pageSetUpPr already exists in the template so other attributes
+        # (e.g. autoPageBreaks) are preserved instead of silently lost.
+        if ws.sheet_properties.pageSetUpPr is None:
+            ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+        else:
+            ws.sheet_properties.pageSetUpPr.fitToPage = True
+        # Margins (all values in inches):
+        #   上/下 1.91 cm = 0.75 in  |  左/右 0.64 cm = 0.25 in
+        #   页眉/页脚 0.76 cm = 0.30 in
+        ws.page_margins = PageMargins(
+            top=0.75, bottom=0.75,
+            left=0.25, right=0.25,
+            header=0.30, footer=0.30,
+        )
 
 
 # ---------------------------------------------------------------------------

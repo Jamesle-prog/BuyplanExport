@@ -1,12 +1,12 @@
-"""Infor Nexus PO parser.
+"""Infor Nexus PO parser — pypdfium2 text layout.
 
-Text layout notes (from PyMuPDF linearized output):
-- Vertical block labels (B/U/Y/E/R etc.) come as single chars on consecutive lines.
-- Header key-value pairs: labels appear as a column block, then values as another
-  column block — linearized they come out label-block then value-block.
-- The line-item column header (15 columns) is a reliable split delimiter.
-- Repeated page headers appear mid-text when a line item spans pages.
-- Size grids use Size:/UOM:/UPC:/Qty: headers, then groups of 4 lines per size.
+pypdfium2 extracts text in reading order (left-to-right, top-to-bottom).
+Key layout differences from PyMuPDF column-order extraction:
+  - Table header labels appear on ONE line, not one label per line.
+  - Vertical party labels (B/U/Y/E/R etc.) are preserved as single chars
+    on consecutive lines — those patterns are unchanged.
+  - Line-item columns appear space-separated on a single line.
+  - Size grid (Size:/UOM:/UPC:/Qty:) remains one entry per line.
 """
 import os
 import re
@@ -15,28 +15,23 @@ from datetime import datetime
 from ..config import FORMAT_INFOR_NEXUS
 from ..models import POData, POMetadata, SizeRow
 
-PARSER_VERSION = "1.0"
+PARSER_VERSION = "2.0"
 
 
 def _score_confidence(meta: POMetadata) -> int:
-    """Return confidence 0–100. Deduct 10 for each missing key field."""
     key_fields = [
-        meta.po_number,
-        meta.factory,
-        meta.country_of_origin,
-        meta.xport_date,
-        meta.division_code,
-        meta.style,
+        meta.po_number, meta.factory, meta.country_of_origin,
+        meta.xport_date, meta.division_code, meta.style,
     ]
     missing = sum(1 for f in key_fields if not f)
     return max(0, 100 - missing * 10)
 
-# fi/fl ligatures from PDF rendering
+
 def _normalize(text: str) -> str:
     return (text
-            .replace('\ufb01', 'fi')
-            .replace('\ufb02', 'fl')
-            .replace('\u2019', "'"))
+            .replace('ﬁ', 'fi')
+            .replace('ﬂ', 'fl')
+            .replace('’', "'"))
 
 
 def _search(pattern: str, text: str, group: int = 1, flags: int = 0):
@@ -45,87 +40,156 @@ def _search(pattern: str, text: str, group: int = 1, flags: int = 0):
 
 
 # ---------------------------------------------------------------------------
-# Header / metadata extraction
+# Header / metadata extraction  (pypdfium2 single-line label format)
 # ---------------------------------------------------------------------------
 
 def _extract_po_number(text: str):
-    # Labels: Contract ID / Contract Ref / Order Number / Issue Date / Version
-    # then values: (blank) / (blank) / DW843126UC / 2026-01-14 / ...
-    return _search(r'Order Number\s*\nIssue Date\s*\nVersion\s*\n(\w+)', text)
+    # "Order Number Issue Date Version\r\nDWCCC013DS 2026-03-25 ..."
+    return _search(r'Order Number Issue Date Version\s*[\r\n](\S+)', text)
 
 
 def _extract_issue_date(text: str):
-    return _search(r'Order Number\s*\nIssue Date\s*\nVersion\s*\n\w+\s*\n(\d{4}-\d{2}-\d{2})', text)
+    return _search(r'Order Number Issue Date Version\s*[\r\n]\S+\s+(\d{4}-\d{2}-\d{2})', text)
 
 
 def _extract_version(text: str):
-    return _search(r'Order Number\s*\nIssue Date\s*\nVersion\s*\n\w+\s*\n\d{4}-\d{2}-\d{2}\s*\n([^\n]+)', text)
+    return _search(r'Order Number Issue Date Version\s*[\r\n]\S+\s+[\d-]+\s+(\S+)', text)
 
 
 def _extract_buyer(text: str):
-    # BUYER block has vertical chars B\nU\nY\nE\nR\n then company name
-    return _search(r'B\s*\nU\s*\nY\s*\nE\s*\nR\s*\n([^\n]+)', text)
+    # Vertical chars B/U/Y/E/R preserved by pypdfium2
+    return _search(r'B\s*\nU\s*\nY\s*\nE\s*\nR\s*\n([^\r\n]+)', text)
 
 
 def _extract_seller(text: str):
-    return _search(r'S\s*\nE\s*\nL\s*\nL\s*\nE\s*\nR\s*\n([^\n]+)', text)
+    return _search(r'S\s*\nE\s*\nL\s*\nL\s*\nE\s*\nR\s*\n([^\r\n]+)', text)
 
 
 def _extract_factory(text: str) -> tuple:
     """Return (factory_name, factory_code)."""
     m = re.search(
-        r'F\s*\nA\s*\nC\s*\nT\s*\nO\s*\nR\s*\nY\s*\n(.*?)\n(\d{5})\s*\n',
+        r'F\s*\nA\s*\nC\s*\nT\s*\nO\s*\nR\s*\nY\s*\n(.*?)\n(\d{5,6})',
         text, re.DOTALL,
     )
     if not m:
         return None, None
-    # Name lines come before the street address (which starts with NO. or a digit)
     name_lines = []
     for line in m.group(1).splitlines():
         line = line.strip()
         if not line:
             continue
-        if re.match(r'NO\.|^\d', line) or any(kw in line for kw in ('ROAD', 'STREET', 'DISTRICT', 'CITY', 'TOWN')):
+        if re.match(r'NO\.|^\d', line) or any(
+            kw in line for kw in ('ROAD', 'STREET', 'DISTRICT', 'CITY', 'TOWN')
+        ):
             break
         name_lines.append(line)
-    return ' '.join(name_lines), m.group(2).strip()
+    return ' '.join(name_lines) or None, m.group(2).strip()
 
 
 def _extract_ship_to(text: str) -> tuple:
-    """Return (ship_to_line1, destination_code)."""
-    ship = _search(r'S\s*\nH\s*\nI\s*\nP\s*\nT\s*\nO\s*\n([^\n]+)', text)
-    # Destination code: WRH__ pattern that appears just before Incoterm section
-    dest = _search(r'(WRH\w{2,3})\s*\n(?:Incoterm|FOB)', text)
+    """Return (ship_to_name, destination_code)."""
+    ship = _search(r'S\s*\nH\s*\nI\s*\nP\s*\nT\s*\nO\s*\n([^\r\n]+)', text)
+    # WRHDS appears as last token before the Incoterm header line
+    dest = _search(r'(WRH\w{2,3})\s*[\r\n]', text)
     return ship, dest
 
 
 def _extract_incoterm(text: str):
-    # Label block: Incoterm / Payment Terms / Division Code / Division Name / Approval Status
-    # Then value block starts with Incoterm value on the next line
+    # "Incoterm Payment Terms Division Code Division Name Approval Status\r\nFOB ORIGIN ..."
     return _search(
-        r'Incoterm\s*\nPayment Terms\s*\nDivision Code\s*\nDivision Name\s*\nApproval Status\s*\n([^\n]+)',
+        r'Incoterm Payment Terms[^\r\n]+[\r\n]+((?:FOB|CIF|EXW|DAP|DDP|CFR|CPT|CIP|FCA|FAS)(?:\s+\w+)?)',
         text,
     )
+
+
+def _extract_payment_terms(text: str):
+    # Value line: "FOB ORIGIN Supplier Damage Allow 0075 \r\nN75\r\nDW ..."
+    # The short payment code (e.g. N75, L30) follows on its own line
+    m = re.search(r'Supplier[^\r\n]+\d{4}\s*[\r\n](\w+)', text)
+    if m:
+        return m.group(1).strip()
+    # Fallback: "Open[^\n]+" style terms
+    m = re.search(r'(Open[^\r\n]+)', text)
+    return m.group(1).strip() if m else None
 
 
 def _extract_division(text: str) -> tuple:
-    """Return (division_code, division_name)."""
-    m = re.search(
-        r'Incoterm\s*\nPayment Terms\s*\nDivision Code\s*\nDivision Name\s*\nApproval Status\s*\n'
-        r'([^\n]+)\s*\n([^\n]+)\s*\n([^\n]+)\s*\n([^\n]+)',
-        text,
-    )
+    """Return (division_code, division_name) from the values line."""
+    # Values line 3: "DW DKNY W/SPRTSWR Y"  — code(2 chars) name(rest) status(1 char)
+    m = re.search(r'\n([A-Z]{2}) ([A-Z][A-Z0-9/ ]+?) ([YN])\r?\n', text)
     if m:
-        return m.group(3).strip(), m.group(4).strip()
+        return m.group(1).strip(), m.group(2).strip()
     return None, None
 
 
-def _extract_xport_date(blocks: list) -> str | None:
-    """Extract Orig X-Port Date from the first line item block.
+def _extract_approval_status(text: str):
+    m = re.search(r'\n[A-Z]{2} [A-Z][A-Z0-9/ ]+ ([YN])\r?\n', text)
+    return m.group(1).strip() if m else None
 
-    In a line item block the last two YYYY-MM-DD dates are
-    Orig X-Port Date and Last Confirmed Date (in that order).
-    """
+
+def _extract_origin_port(text: str):
+    # "Order Type Origin Port Issued By Season Price Type\r\nBTB Shanghai ..."
+    return _search(
+        r'Order Type Origin Port Issued By Season Price Type\s*[\r\n]\S+\s+(\S+)',
+        text,
+    )
+
+
+def _extract_issued_by(text: str):
+    raw = _search(
+        r'Order Type Origin Port Issued By Season Price Type\s*[\r\n]\S+\s+\S+\s+(\S+)',
+        text,
+    )
+    if raw:
+        m = re.match(r'([a-zA-Z][a-zA-Z0-9._]+)', raw)
+        return m.group(1) if m else raw
+    return None
+
+
+def _extract_season(text: str):
+    # "BTB Shanghai ana.cristian 331491 V FOB" — season is single letter before Price Type
+    return _search(
+        r'Order Type Origin Port Issued By Season Price Type\s*[\r\n]\S+\s+\S+\s+\S+(?:\s+\d+)?\s+([A-Z])\s+',
+        text,
+    )
+
+
+def _extract_discount(text: str):
+    return _search(r'(\d+\.\d+%)', text)
+
+
+def _extract_country(text: str):
+    # "PO Number Label Hanger Discount Country of Origin\r\nDWCCC013DS 0.75% China"
+    return _search(r'PO Number[^\r\n]+[\r\n]+\S+\s+[\d.]+%\s+(\S+)', text)
+
+
+def _extract_customer(text: str):
+    # "Customer MODIVO.EU SP.ZO.O Packaging F"
+    return _search(r'Customer\s+(.+?)\s+Packaging', text)
+
+
+def _extract_style_description(text: str):
+    # "Factory Ship by Date 2026-07-15 Style Description L/S STUDDED LIQUID J"
+    return _search(r'Style Description\s+([^\r\n]+)', text)
+
+
+def _extract_style_group(text: str):
+    # "Original Factory Ship by Date 2026-07-15 Style Group KNIT TOPS"
+    return _search(r'Style Group\s+([^\r\n]+)', text)
+
+
+def _extract_unit_cost(text: str):
+    # Line item: "... 2500 4.50 USD 11,250.00 USD S 2026-07-15 ..."
+    # Unit cost is the decimal before "USD <total> USD"
+    return _search(r'\s([\d.]+)\s+USD\s+[\d,]+\.\d{2}\s+USD\s+[A-Z]\s+\d{4}-\d{2}-\d{2}', text)
+
+
+def _extract_extended_cost(text: str):
+    # "Extended Cost: 11,250.00 USD"
+    return _search(r'Extended Cost:\s*([\d,]+\.\d{2})\s+USD', text)
+
+
+def _extract_xport_date(blocks: list) -> str | None:
     for block in blocks:
         dates = re.findall(r'\b(\d{4}-\d{2}-\d{2})\b', block)
         if len(dates) >= 2:
@@ -135,36 +199,13 @@ def _extract_xport_date(blocks: list) -> str | None:
     return None
 
 
-def _extract_origin_port(text: str):
-    # Label block: Order Type / Origin Port / Issued By / Season / Price Type
-    # Values: STD / Shanghai / helen.cho ... / V / FOB
-    return _search(
-        r'Order Type\s*\nOrigin Port\s*\nIssued By\s*\nSeason\s*\nPrice Type\s*\n\S+\s*\n([^\n]+)',
-        text,
-    )
-
-
-def _extract_issued_by(text: str):
-    raw = _search(
-        r'Order Type\s*\nOrigin Port\s*\nIssued By\s*\nSeason\s*\nPrice Type\s*\n\S+\s*\n[^\n]+\s*\n([^\n]+)',
-        text,
-    )
-    if raw:
-        # "helen.cho 251532 274183" — Issued By is the first token before digits
-        m = re.match(r'([a-zA-Z][a-zA-Z0-9._]+)', raw)
-        return m.group(1) if m else raw
+def _extract_factory_ship_date(blocks: list) -> str | None:
+    """Last Confirmed Date is the final date on the line item."""
+    for block in blocks:
+        dates = re.findall(r'\b(\d{4}-\d{2}-\d{2})\b', block)
+        if len(dates) >= 1:
+            return dates[-1]
     return None
-
-
-def _extract_discount(text: str):
-    return _search(r'(\d+\.\d+%)', text)
-
-
-def _extract_country(text: str):
-    # Label block has 5 labels, Country of Origin is last; its value comes after
-    # PO Number (DW...) and Discount (0.75%) values, so look after the discount
-    m = re.search(r'\d+\.\d+%\s*\n([A-Z][a-z]+)', text)
-    return m.group(1).strip() if m else None
 
 
 # ---------------------------------------------------------------------------
@@ -172,15 +213,14 @@ def _extract_country(text: str):
 # ---------------------------------------------------------------------------
 
 _PAGE_HEADER_RE = re.compile(
-    r'(?:G-III[^\n]+\n)PURCHASE ORDER as of[^\n]+\n'
-    r'(?:[^\n]+\n){5,8}'
-    r'Powered by Infor Nexus\n',
+    r'[^\n]+PURCHASE ORDER as of[^\n]+\n'
+    r'(?:[^\n]+\n){3,6}'
+    r'[^\n]*Powered by Infor Nexus[^\n]*\n',
     re.MULTILINE,
 )
 
 
 def _strip_repeated_headers(text: str) -> str:
-    """Keep first page header, strip subsequent ones."""
     matches = list(_PAGE_HEADER_RE.finditer(text))
     if len(matches) <= 1:
         return text
@@ -191,30 +231,24 @@ def _strip_repeated_headers(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Line item parsing
+# Line item parsing  (pypdfium2: entire item on one line)
 # ---------------------------------------------------------------------------
 
 _LINE_HEADER_RE = re.compile(
-    r'Line #\s*\nStyle\s*\nColor Code\s*\nColor Name\s*\nDIM\s*\nSize\s*\nUOM\s*\nUnits\s*\n'
-    r'UPC #\s*\nCost P/U\s*\nExtended Cost\s*\nShip Via\s*\nGIII L/C\s*\n'
-    r'Orig X-Port Date\s*\nLast Confirmed Date\s*\n'
+    r'Line #\s+Style\s+Color Code\s+Color Name\s+DIM\s+Size\s+UOM\s+Units\s+'
+    r'UPC #\s+Cost P/U\s+Extended Cost\s+Ship Via\s+GIII L/C\s+'
+    r'Orig X-Port Date\s+Last Confirmed Date\s*[\r\n]'
 )
 
 
 def _parse_size_grid(block: str) -> list[tuple]:
-    """Return [(size, upc, qty), ...] from all size grids in block.
-
-    Handles both standard (Size/UOM/UPC/Qty = 4-line) and assortment
-    (Size/UOM/UPC/Ratio/Qty = 5-line) grid formats.
-    """
+    """Return [(size, upc, qty), ...] — same logic, works with \\r\\n via \\s*."""
     results = []
     for gm in re.finditer(
         r'Size:\s*\nUOM:\s*\nUPC:\s*\n(?:Ratio:\s*\n)?Qty:\s*\n'
         r'(.*?)(?=Size:\s*\n|Total Qty|Detail Instructions|PO Summary|$)',
         block, re.DOTALL,
     ):
-        # Detect ratio per-segment (gm.group(0) includes the matched header)
-        # so mixed grids get the correct stride independently of other segments.
         has_ratio = bool(re.search(r'Ratio:\s*\n', gm.group(0)))
         stride = 5 if has_ratio else 4
         grid_lines = [l.strip() for l in gm.group(1).splitlines() if l.strip()]
@@ -233,16 +267,21 @@ def _parse_size_grid(block: str) -> list[tuple]:
 
 
 def _parse_line_block(block: str, po_number: str) -> list[SizeRow]:
-    # Stop at PO Summary (last page summary table)
     if 'PO Summary' in block:
         block = block[:block.index('PO Summary')]
 
+    # pypdfium2: first non-empty line is the full item line
+    # "1 P6HHJETI BLK BLACK - EA EA 2500 4.50 USD ..."
     lines = [l.strip() for l in block.splitlines() if l.strip()]
-    if len(lines) < 4:
+    if not lines:
         return []
 
-    style = lines[1] if len(lines) > 1 else ''
-    color_code = lines[2] if len(lines) > 2 else ''
+    style = ''
+    color_code = ''
+    m = re.match(r'\d+\s+(\S+)\s+(\S+)', lines[0])
+    if m:
+        style = m.group(1)
+        color_code = m.group(2)
 
     size_entries = _parse_size_grid(block)
     return [
@@ -272,7 +311,9 @@ def parse(text: str, file_path: str) -> POData:
     meta = POMetadata(
         po_number=po_number,
         po_date=_extract_issue_date(text),
+        version=_extract_version(text),
         buyer=_extract_buyer(text),
+        seller=_extract_seller(text),
         factory=factory,
         ship_to=ship_to,
         destination_code=dest_code,
@@ -281,10 +322,18 @@ def parse(text: str, file_path: str) -> POData:
         origin_port=_extract_origin_port(text),
         issued_by=_extract_issued_by(text),
         discount=_extract_discount(text),
+        payment_terms=_extract_payment_terms(text),
+        approval_status=_extract_approval_status(text),
+        season=_extract_season(text),
         division_code=div_code,
         division_name=div_name,
+        customer=_extract_customer(text),
+        style_description=_extract_style_description(text),
+        style_group=_extract_style_group(text),
+        unit_cost=_extract_unit_cost(text),
+        line_extended_cost=_extract_extended_cost(text),
         xport_date=_extract_xport_date(line_blocks),
-        version=_extract_version(text),
+        factory_ship_date=_extract_factory_ship_date(line_blocks),
         extracted_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         source_format=FORMAT_INFOR_NEXUS,
         file_name=os.path.basename(file_path),

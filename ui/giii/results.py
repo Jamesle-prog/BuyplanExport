@@ -8,6 +8,7 @@ from po_extractor.ui_helpers import (
     write_excel_header_row as _write_excel_header_row,
     generate_color_plan_excel as _generate_color_plan_excel_impl,
     generate_po_summary_excel as _generate_po_summary_excel_impl,
+    generate_kl_format_excel as _generate_kl_format_excel_impl,
 )
 from ui.shared import build_image_cache_for_ids as _build_image_cache_for_ids
 from auth.companies import COMPANY_SKY_EAST
@@ -25,9 +26,20 @@ def _generate_color_plan_excel(po_numbers: list, store) -> bytes:
     return _generate_color_plan_excel_impl(df)
 
 
-def _generate_po_summary_excel(df_pos: "pd.DataFrame") -> bytes:
-    """One-row-per-PO summary with key header fields."""
-    return _generate_po_summary_excel_impl(df_pos, label_for=live_label)
+def _generate_po_summary_excel(
+    df_pos: "pd.DataFrame",
+    df_sizes: "pd.DataFrame | None" = None,
+) -> bytes:
+    """Rich two-sheet PO Summary with header block, size pivot, and Size Breakdown."""
+    return _generate_po_summary_excel_impl(df_pos, df_sizes=df_sizes, label_for=live_label)
+
+
+def _generate_kl_format_excel_bytes(
+    df_meta: "pd.DataFrame",
+    df_sizes: "pd.DataFrame",
+) -> bytes:
+    """KL-format two-sheet summary (PO Detail + Summary) matching KL reference layout."""
+    return _generate_kl_format_excel_impl(df_meta, df_sizes)
 
 
 def _show_master_po_table():

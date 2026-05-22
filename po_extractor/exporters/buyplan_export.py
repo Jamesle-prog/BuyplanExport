@@ -153,6 +153,7 @@ def export_buyplan(
         pivot = sub.pivot_table(
             index=pivot_idx, columns="Size",
             values="Units", aggfunc="sum", fill_value=0,
+            dropna=False,
         )
         pivot = pivot.loc[:, (pivot != 0).any(axis=0)]
         known     = [s for s in size_order if s in pivot.columns]

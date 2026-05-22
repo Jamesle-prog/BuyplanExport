@@ -30,12 +30,14 @@ from po_extractor.store import (
     ColorTranslationStore,
     BoatSampleStore,
     UITranslationStore,
+    AppSettingsStore,
     get_po_store as _get_po_store,
     get_sky_east_store as _get_sky_east_store,
     get_fabric_master_store as _get_fabric_master_store,
     get_color_translation_store as _get_color_translation_store,
     get_boat_sample_store as _get_boat_sample_store,
     get_ui_translation_store as _get_ui_translation_store,
+    get_app_settings_store as _get_app_settings_store,
     list_all_brands as _list_all_brands,
 )
 from po_extractor.config import DATA_DIR, DB_PATH   # canonical path constants
@@ -90,6 +92,17 @@ def get_ui_translation_store() -> UITranslationStore:
     store = _get_ui_translation_store()
     store.seed_defaults(skip_existing=True)
     return store
+
+
+@functools.cache
+def get_app_settings_store() -> AppSettingsStore:
+    """Return the cached AppSettingsStore.
+
+    Uses ``functools.cache`` (same rationale as ColorTranslationStore) to
+    avoid the stale-class issue that ``@st.cache_resource`` causes on
+    Streamlit hot-reloads.
+    """
+    return _get_app_settings_store()
 
 
 # ── Convenience helpers exported for UI code ────────────────────────────────

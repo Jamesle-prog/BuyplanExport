@@ -5,6 +5,7 @@ import io
 import os
 import tempfile
 import zipfile
+from typing import NamedTuple
 import pandas as pd
 import streamlit as st
 from ui.i18n import t
@@ -16,6 +17,8 @@ from po_extractor.exporters import (
 from ui.session_keys import SK, COLOR_SOURCE_PROGRESS
 from ui.shared import (
     XLSX_MIME, ZIP_MIME,
+    EXCEL_FILE_TYPES as _EXCEL_FILE_TYPES,
+    DEFAULT_XLSX_EXT as _DEFAULT_XLSX_EXT,
     _th, _tr,
     build_image_cache_for_ids,
     persisted_download,
@@ -23,21 +26,9 @@ from ui.shared import (
 from ui.stores import get_store, get_sky_east_store, get_color_translation_store, get_fabric_master_store, IMAGES_DIR_DEFAULT
 from ui.sky_east._shared import (
     live_label, _get_dual_header, _write_dual_header_excel, _write_wash_label_excel,
+    show_color_source_radio,
 )
 from ui.sky_east.items_view import _enrich_items_df, _build_items_display_df
-
-
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
-
-# Excel file extensions accepted by uploaders in this module.  Centralised so
-# adding (e.g.) ``"xlsm"`` only needs one edit.
-_EXCEL_FILE_TYPES   = ["xlsx", "xls"]
-_DEFAULT_XLSX_EXT   = ".xlsx"
-
-# 大货进度表 uploader UI strings — kept inline below so they remain searchable
-# alongside the widget that renders them; no constants extracted unless reused.
 
 
 # ---------------------------------------------------------------------------
@@ -45,55 +36,63 @@ _DEFAULT_XLSX_EXT   = ".xlsx"
 # ---------------------------------------------------------------------------
 
 
-def _build_buyplan_color_lookups() -> tuple[dict, dict | None, dict | None, dict | None]:
-    """Build ``(cn_lookup, label_lookup, cn_code_lookup, cn_by_pc_lookup)``
-    honoring the user's color-source choice.
+class BuyplanColorLookups(NamedTuple):
+    """Bundle of all color lookups passed into the buyplan / 核料 exporters.
+
+    Fields
+    ------
+    cn : dict
+        ``{(client, brand, en_color): cn_color}`` — canonical Chinese name map.
+    label : dict | None
+        ``{(client, brand, en_color): label_color}`` — 主标颜色 map.
+        ``None`` tells the exporter to auto-fetch from the Internal DB.
+    cn_code : dict | None
+        ``{(client, brand, en_color): color_code}`` — 中文颜色代码 (e.g. "52#").
+        ``None`` tells the exporter to auto-fetch from the Internal DB.
+    by_pc : dict | None
+        ``{(pc_no_norm, style_norm, en_color_norm): PCColorMatch}`` — populated
+        only when the user selects 大货进度表 as the color source AND a file is
+        loaded.  ``None`` skips the PC-keyed tier inside the exporter.
+    """
+    cn:      dict
+    label:   dict | None
+    cn_code: dict | None
+    by_pc:   dict | None
+
+
+def _build_buyplan_color_lookups() -> BuyplanColorLookups:
+    """Build the bundle of color lookups honoring the user's source choice.
 
     Always starts from the canonical Color-Translation DB.  When the user has
     chosen ``COLOR_SOURCE_PROGRESS`` *and* a 大货进度表 is loaded in this session,
-    its entries are merged in on top (progress data wins) for all lookups.
-
-    Returns
-    -------
-    cn_lookup : dict
-        ``{(client, brand, en_color): cn_color}``
-    label_lookup : dict | None
-        ``None`` → exporter auto-fetches from DB.
-    cn_code_lookup : dict | None
-        ``{(client, brand, en_color): color_code}`` (中文颜色代码, e.g. "52#").
-        ``None`` → exporter auto-fetches from DB.
-    cn_by_pc_lookup : dict | None
-        ``{(pc_no_norm, style_norm, en_color_norm): (cn_color, color_code)}`` —
-        used by the exporter for per-row PC-No.-prioritised lookup of both
-        the Chinese color name and code simultaneously.
-        ``None`` when not using progress source (exporter skips this tier).
+    the PC-No.-keyed lookup from the progress file is added on top.  Flat
+    brand-keyed data from the progress file is intentionally NOT merged so
+    that only an exact (PC No · 款式 · 颜色) match returns a progress value —
+    no looser fallback keys bleed into the result.  The Internal DB is still
+    used as fallback for colours that have no PC match.
     """
     color_source  = st.session_state.get(SK.SE_COLOR_SOURCE)
     progress_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
-    cn_store      = get_color_translation_store()
-    cn_lookup     = cn_store.build_lookup_dict()
+    cn_lookup     = get_color_translation_store().build_lookup_dict()
+
+    if color_source == COLOR_SOURCE_PROGRESS and progress_lkup is None:
+        # User picked 大货进度表 but no file is loaded — make the silent
+        # fallback to the Internal DB explicit so they don't think they
+        # got progress-sourced data.
+        st.warning(
+            "⚠ **大货进度表 not loaded** — falling back to the Internal DB "
+            "for all Chinese colours.  Upload the file above to use "
+            "PC-keyed progress data.",
+            icon="⚠️",
+        )
+        return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=None)
 
     if color_source != COLOR_SOURCE_PROGRESS:
-        return cn_lookup, None, None, None
+        return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=None)
 
-    if progress_lkup is None:
-        # The buyplan section shows an inline uploader when this happens,
-        # so no extra warning needed here — just fall back silently.
-        return cn_lookup, None, None, None
-
-    # Merge: progress data wins, DB fills gaps for colours not in the progress file.
-    # build_all_color_lookups iterates the progress data ONCE and returns all
-    # four dicts (cn, code, label, pc-keyed) — replaces three separate passes.
-    _cn_upd, _code_upd, _label_upd, cn_by_pc_lookup = (
-        progress_lkup.build_all_color_lookups(COMPANY_SKY_EAST)
-    )
-    cn_lookup.update(_cn_upd)
-    label_lookup = cn_store.build_label_lookup_dict()
-    label_lookup.update(_label_upd)
-    cn_code_lookup = cn_store.build_cn_code_lookup_dict()
-    cn_code_lookup.update(_code_upd)
-    st.caption("🗂 Chinese colors sourced from 大货进度表 (overrides Internal DB).")
-    return cn_lookup, label_lookup, cn_code_lookup, cn_by_pc_lookup
+    by_pc = progress_lkup.build_pc_style_color_lookups()
+    st.caption("🗂 Chinese colors sourced from 大货进度表 (PC No. · style · color match only).")
+    return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=by_pc)
 
 
 def _se_hist_summary_table(df_contracts) -> None:
@@ -210,7 +209,11 @@ def _wl_mapped_styles(source: str = SOURCE_SKY_EAST) -> list[str]:
     return sorted(r["style"] for r in rows)
 
 
-def _warn_missing_color_translations(df_items: pd.DataFrame) -> None:
+def _warn_missing_color_translations(
+    df_items: pd.DataFrame,
+    cn_map: dict | None = None,
+    label_map: dict | None = None,
+) -> None:
     """Surface (brand, en_color) pairs in the buy plan that have no Chinese
     translation or label colour in the DB.
 
@@ -218,6 +221,10 @@ def _warn_missing_color_translations(df_items: pd.DataFrame) -> None:
     ``label_color`` empty → 主标颜色 falls through to the light/dark heuristic,
     which often picks the wrong shade. Either is a data-quality issue worth
     surfacing so the user can fix it in the Color Translation tab.
+
+    Pass *cn_map* / *label_map* when the caller has already built them — the
+    function falls back to the canonical store only when omitted, so the buy
+    plan path doesn't query the color_translation table twice.
     """
     if df_items is None or df_items.empty:
         return
@@ -225,8 +232,10 @@ def _warn_missing_color_translations(df_items: pd.DataFrame) -> None:
         return
     from po_extractor.store.color_translation_store import _normalize_color_name
 
-    cn_map    = get_color_translation_store().build_lookup_dict()
-    label_map = get_color_translation_store().build_label_lookup_dict()
+    if cn_map is None:
+        cn_map = get_color_translation_store().build_lookup_dict()
+    if label_map is None:
+        label_map = get_color_translation_store().build_label_lookup_dict()
 
     missing_cn:    set[tuple[str, str]] = set()
     missing_label: set[tuple[str, str]] = set()
@@ -236,8 +245,9 @@ def _warn_missing_color_translations(df_items: pd.DataFrame) -> None:
         if not en:
             continue
         norm = _normalize_color_name(en)
-        cn = cn_map.get((COMPANY_SKY_EAST, brand, norm)) or cn_map.get((COMPANY_SKY_EAST, "", norm))
-        lb = label_map.get((COMPANY_SKY_EAST, brand, norm)) or label_map.get((COMPANY_SKY_EAST, "", norm))
+        # Brand-specific only — matches the exporter's primary-only lookup.
+        cn = cn_map.get((COMPANY_SKY_EAST, brand, norm))
+        lb = label_map.get((COMPANY_SKY_EAST, brand, norm))
         if not (cn or "").strip():
             missing_cn.add((brand, en))
         if not (lb or "").strip():
@@ -372,7 +382,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
         )
         wl_upload_file = st.file_uploader(
             "Fabric mapping file (.xlsx / .xls)",
-            type=["xlsx", "xls"],
+            type=_EXCEL_FILE_TYPES,
             key="se_wl_upload_map",
             label_visibility="collapsed",
         )
@@ -788,44 +798,39 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         _m2.metric(t("Total Styles"),   _total_styles)
         _m3.metric(t("Total Units"),    f"{_total_units:,}")
 
-    # ── 大货进度表 upload (only needed when COLOR_SOURCE_PROGRESS is chosen) ────
+    # ── Color mapping source ──────────────────────────────────────────────────
+    show_color_source_radio("se_bp_color_src_radio")
+
+    # ── 大货进度表 uploader (shown whenever progress source is selected) ───────
     if st.session_state.get(SK.SE_COLOR_SOURCE) == COLOR_SOURCE_PROGRESS:
         _prog_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
         if _prog_lkup is not None:
             st.caption(f"✅ 大货进度表 loaded ({len(_prog_lkup)} records).")
-        else:
-            with st.expander("📂 Upload 大货进度表 (HHN Contract No. file)", expanded=True):
-                st.caption(
-                    "Chinese color mapping source is set to **大货进度表** but no file "
-                    "has been loaded yet. Upload it here, or switch to **Internal Database** "
-                    "in the **New Contracts** tab."
+        _prog_upload = st.file_uploader(
+            "📂 Upload 大货进度表 (HHN Contract No. file)",
+            type=_EXCEL_FILE_TYPES,
+            key="se_bp_progress_uploader",
+            help="Upload or replace the 大货进度表 to use as the Chinese color source.",
+        )
+        if _prog_upload is not None:
+            try:
+                import tempfile as _tf2
+                from po_extractor.lookups import ProgressLookup as _PL
+                _tmp_fd, _tmp_path = _tf2.mkstemp(
+                    suffix=os.path.splitext(_prog_upload.name)[1] or _DEFAULT_XLSX_EXT
                 )
-                _prog_upload = st.file_uploader(
-                    "HHN contract No. file (大货进度表)",
-                    type=_EXCEL_FILE_TYPES,
-                    key="se_bp_progress_uploader",
-                    label_visibility="collapsed",
+                with os.fdopen(_tmp_fd, "wb") as _fh:
+                    _fh.write(_prog_upload.getbuffer())
+                _new_lkup = _PL(_tmp_path)
+                len(_new_lkup)  # trigger lazy load while file exists
+                st.session_state[SK.SE_PROGRESS_LKUP] = _new_lkup
+                st.success(
+                    f"✅ 大货进度表 loaded: {len(_new_lkup)} records from "
+                    f"**{_prog_upload.name}**."
                 )
-                if _prog_upload is not None:
-                    try:
-                        import tempfile as _tf2
-                        from po_extractor.lookups import ProgressLookup as _PL
-                        # Write to a persistent temp file (ProgressLookup needs a path)
-                        _tmp_fd, _tmp_path = _tf2.mkstemp(
-                            suffix=os.path.splitext(_prog_upload.name)[1] or _DEFAULT_XLSX_EXT
-                        )
-                        with os.fdopen(_tmp_fd, "wb") as _fh:
-                            _fh.write(_prog_upload.getbuffer())
-                        _new_lkup = _PL(_tmp_path)
-                        len(_new_lkup)  # trigger lazy load while file exists
-                        st.session_state[SK.SE_PROGRESS_LKUP] = _new_lkup
-                        st.success(
-                            f"✅ 大货进度表 loaded: {len(_new_lkup)} records from "
-                            f"**{_prog_upload.name}**."
-                        )
-                        st.rerun()
-                    except Exception as _exc:
-                        st.error(f"Could not parse progress file: {_exc}")
+                st.rerun()
+            except Exception as _exc:
+                st.error(f"Could not parse progress file: {_exc}")
 
     if st.button(t("Generate Buy Plan + 核料"), type="primary",
                  disabled=not sel, key="se_bp_btn"):
@@ -834,7 +839,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         if df_items.empty:
             st.warning(t("No data found for the selected contracts."))
         else:
-            cn_lookup, label_lookup, cn_code_lookup, cn_by_pc_lookup = _build_buyplan_color_lookups()
+            color_lookups = _build_buyplan_color_lookups()
             out_dir = tempfile.mkdtemp()
 
             # ── Auto-register new brands in 船样要求 admin ──────────────────────
@@ -884,15 +889,23 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             # Both export_sky_east_buyplan and export_sky_east_nukuryou group
             # by fabric_item_no, so we must fill it before calling either.
             if fabric_parts_by_style and "style" in df_items.columns:
-                def _fill_fabric_no(row):
-                    existing = str(row.get("fabric_item_no", "") or "").strip()
-                    if existing and existing.lower() not in ("none", "nan"):
-                        return existing
-                    parts = fabric_parts_by_style.get(
-                        str(row.get("style", "")).strip(), [])
-                    return parts[0].hhn_no if parts else existing
+                # Vectorised: build a {style: hhn_no} map from the first part of
+                # each style, then fill missing fabric_item_no values via map().
+                _style_to_hhn = {
+                    s: (parts[0].hhn_no if parts else "")
+                    for s, parts in fabric_parts_by_style.items()
+                }
                 df_items = df_items.copy()
-                df_items["fabric_item_no"] = df_items.apply(_fill_fabric_no, axis=1)
+                _existing = (
+                    df_items.get("fabric_item_no", pd.Series("", index=df_items.index))
+                    .fillna("").astype(str).str.strip()
+                )
+                _is_blank = _existing.str.lower().isin(("", "none", "nan"))
+                _filled = (
+                    df_items["style"].astype(str).str.strip().map(_style_to_hhn)
+                    .fillna(_existing)
+                )
+                df_items["fabric_item_no"] = _existing.where(~_is_blank, _filled)
 
             # ── Build style → [front_bytes, back_bytes] image map ────────────
             # Used for: Index sheet thumbnail (front) + Photo1/Photo2 in each
@@ -900,6 +913,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             # disk first (saved by save_images_to_disk during processing), then
             # falls back to the session picture_id cache for front-only.
             import re as _re2
+            from pathlib import Path as _Path
             _img_folder = (st.session_state.get(SK.SE_IMAGES_DIR) or "").strip() \
                           or IMAGES_DIR_DEFAULT
             style_image_map: dict = {}
@@ -907,11 +921,12 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                 _safe = _re2.sub(r'[\\/:*?"<>|]', '_', _style)
                 _pair: list = []
                 for _pos in ("front", "back"):
-                    _disk_path = os.path.join(_img_folder, f"{_safe}_{_pos}.png")
+                    _disk_path = _Path(_img_folder) / f"{_safe}_{_pos}.png"
                     try:
-                        _pair.append(open(_disk_path, "rb").read()
-                                     if os.path.exists(_disk_path) else None)
-                    except Exception:
+                        # read_bytes() opens, reads, and closes in one call —
+                        # no leaked file handles when missing-file branch fires.
+                        _pair.append(_disk_path.read_bytes() if _disk_path.exists() else None)
+                    except OSError:
                         _pair.append(None)
                 if any(_pair):
                     style_image_map[_style] = _pair
@@ -934,12 +949,12 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                 st.write("Building main buy plan (Template)...")
                 try:
                     bp_path, style_totals = export_sky_east_buyplan(
-                        df_items, cn_lookup, out_dir,
+                        df_items, color_lookups.cn, out_dir,
                         fabric_parts_by_style=fabric_parts_by_style,
                         style_image_map=style_image_map or None,
-                        label_lookup=label_lookup,
-                        cn_code_lookup=cn_code_lookup,
-                        cn_by_pc_lookup=cn_by_pc_lookup,
+                        label_lookup=color_lookups.label,
+                        cn_code_lookup=color_lookups.cn_code,
+                        cn_by_pc_lookup=color_lookups.by_pc,
                     )
                     with open(bp_path, "rb") as f:
                         st.session_state[SK.SE_BP_BYTES] = f.read()
@@ -953,9 +968,9 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                 st.write("Building 核料 workbooks (Template_P)...")
                 try:
                     nk_paths = export_sky_east_nukuryou(
-                        df_items, cn_lookup, out_dir,
-                        cn_code_lookup=cn_code_lookup,
-                        cn_by_pc_lookup=cn_by_pc_lookup,
+                        df_items, color_lookups.cn, out_dir,
+                        cn_code_lookup=color_lookups.cn_code,
+                        cn_by_pc_lookup=color_lookups.by_pc,
                     )
                     if nk_paths:
                         nk_buf = io.BytesIO()
@@ -985,7 +1000,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                 else:
                     st.session_state[SK.SE_BP_CMP] = None
 
-                _warn_missing_color_translations(df_items)
+                _warn_missing_color_translations(df_items, cn_map=color_lookups.cn)
 
                 _status.update(label="Done!", state="complete")
 
@@ -1134,12 +1149,6 @@ def _show_se_history_section():
     st.divider()
     pc_options = df_contracts["pc_no"].tolist()
 
-    _se_hist_multi_pc_download(store, pc_options)
-    st.divider()
-    _se_hist_wash_label_download(store, pc_options)
-    st.divider()
     _se_hist_item_browser(store, pc_options)
-    st.divider()
-    _se_hist_buyplan_section(store, pc_options, df_contracts)
     st.divider()
     _se_hist_delete_section(store, pc_options)

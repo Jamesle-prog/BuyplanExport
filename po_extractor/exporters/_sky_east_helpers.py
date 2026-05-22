@@ -541,19 +541,18 @@ def _clean_sheet_name(name: str) -> str:
 
 
 def _cn_color(cn_lookup: dict, brand: str, color_en: str) -> str:
-    """Look up Chinese color (case-insensitive); fall back to brand-agnostic
-    entry.
+    """Look up Chinese color — primary (brand-specific) key only, no fallback.
 
     The keys in ``cn_lookup`` are normalised to title-case English by
     :meth:`ColorTranslationStore.build_lookup_dict`, so we apply the same
     normalisation here before the lookup.
+
+    No brand-agnostic fallback: returning a Chinese name from a different
+    brand's mapping would be misleading when the exact brand entry is absent.
     """
     from po_extractor.store.color_translation_store import _normalize_color_name
     norm = _normalize_color_name(color_en)
-    cn = cn_lookup.get((COMPANY_SKY_EAST, brand, norm), "")
-    if not cn and brand:
-        cn = cn_lookup.get((COMPANY_SKY_EAST, "", norm), "")
-    return cn
+    return cn_lookup.get((COMPANY_SKY_EAST, brand, norm), "")
 
 
 # ── 主标颜色 (main-label colour) auto-derivation ─────────────────────────────
@@ -723,13 +722,15 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
     # ── Build row data ────────────────────────────────────────────────────────
     if sheet_meta_list is not None:
         # One Index row per (style, fabric) sheet — caller pre-built this list.
+        # Use display_key (综合标识Key) for the fabric column when available;
+        # fall back to the bare HHN code so older callers still work.
         rows_iter = [
             (
                 meta["style"],
                 meta["sheet_name"],
                 meta.get("brand",       ""),
                 meta.get("body_part",   ""),
-                meta.get("hhn_no",      ""),
+                meta.get("display_key") or meta.get("hhn_no", ""),
                 meta.get("ex_fty_date", ""),
             )
             for meta in sheet_meta_list
@@ -758,7 +759,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
             for row in agg.itertuples(index=False)
         ]
 
-    for ri, (style_name, sheet_name, brand, body_part, hhn_no, ex_fty_date) in \
+    for ri, (style_name, sheet_name, brand, body_part, fab_key, ex_fty_date) in \
             enumerate(rows_iter, start=2):
 
         idx_ws.cell(ri, _C_NO).value = ri - 1
@@ -786,7 +787,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                     pass  # non-fatal — skip broken images silently
 
         idx_ws.cell(ri, _C_BRAND).value = brand
-        idx_ws.cell(ri, _C_FABNO).value = hhn_no
+        idx_ws.cell(ri, _C_FABNO).value = fab_key
         if sheet_name in wb.sheetnames:
             idx_ws.cell(ri, _C_QTY).value = f"='{sheet_name}'!{total_anchor}"
         idx_ws.cell(ri, _C_EXFTY).value = ex_fty_date
@@ -808,7 +809,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
         _C_NO:    6,
         _C_STYLE: 20,   # 款号  style names can be 15-18 chars
         _C_BRAND: 16,   # 客户品牌
-        _C_FABNO: 24,   # 面料_大身_编号  HHN code e.g. "HHN-JA-01715" = 12 chars
+        _C_FABNO: 44,   # 面料_大身_编号  综合标识Key e.g. "HHN-JA-01715|100%POLYESTER|280|150"
         _C_QTY:   12,   # 订单数合计
         _C_EXFTY: 14,   # 离厂时间
     }

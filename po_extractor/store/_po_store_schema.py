@@ -25,7 +25,26 @@ CREATE TABLE IF NOT EXISTS po_metadata (
     external_quote_id TEXT,
     source_module    TEXT,
     integration_status TEXT,
-    content_hash     TEXT
+    content_hash     TEXT,
+    -- Commercial fields added v1.9.0
+    buyer            TEXT,
+    seller           TEXT,
+    ship_to          TEXT,
+    destination_code TEXT,
+    incoterm         TEXT,
+    origin_port      TEXT,
+    issued_by        TEXT,
+    discount         TEXT,
+    payment_terms    TEXT,
+    approval_status  TEXT,
+    season           TEXT,
+    customer         TEXT,
+    style_description TEXT,
+    style_group      TEXT,
+    unit_cost        TEXT,
+    line_extended_cost TEXT,
+    factory_ship_date TEXT,
+    packaging        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS po_size_rows (
@@ -109,14 +128,40 @@ CREATE TABLE IF NOT EXISTS fabric_hhn_cache (
 
 # Columns added after initial release — migrated in POStore.__init__
 _NEW_METADATA_COLS: list[tuple[str, str]] = [
-    ("parser_version",    "TEXT"),
-    ("parse_confidence",  "INTEGER"),
-    ("validation_status", "TEXT"),
-    ("revision_reason",   "TEXT"),
-    ("source_file_hash",  "TEXT"),
-    ("processed_by",      "TEXT"),
-    ("external_quote_id", "TEXT"),
-    ("source_module",     "TEXT"),
-    ("integration_status","TEXT"),
-    ("content_hash",      "TEXT"),
+    ("parser_version",     "TEXT"),
+    ("parse_confidence",   "INTEGER"),
+    ("validation_status",  "TEXT"),
+    ("revision_reason",    "TEXT"),
+    ("source_file_hash",   "TEXT"),
+    ("processed_by",       "TEXT"),
+    ("external_quote_id",  "TEXT"),
+    ("source_module",      "TEXT"),
+    ("integration_status", "TEXT"),
+    ("content_hash",       "TEXT"),
+    # v1.9.0 commercial fields
+    ("buyer",              "TEXT"),
+    ("seller",             "TEXT"),
+    ("ship_to",            "TEXT"),
+    ("destination_code",   "TEXT"),
+    ("incoterm",           "TEXT"),
+    ("origin_port",        "TEXT"),
+    ("issued_by",          "TEXT"),
+    ("discount",           "TEXT"),
+    ("payment_terms",      "TEXT"),
+    ("approval_status",    "TEXT"),
+    ("season",             "TEXT"),
+    ("customer",           "TEXT"),
+    ("style_description",  "TEXT"),
+    ("style_group",        "TEXT"),
+    ("unit_cost",          "TEXT"),
+    ("line_extended_cost", "TEXT"),
+    ("factory_ship_date",  "TEXT"),
+    ("packaging",          "TEXT"),
+    # v1.12.0 — KL-format fields
+    ("hanger",             "TEXT"),
+    ("description_code",   "TEXT"),
+    # v1.13.0 — multi-brand commercial fields
+    ("msrp",               "TEXT"),
+    ("cpo",                "TEXT"),
+    ("fabric",             "TEXT"),
 ]

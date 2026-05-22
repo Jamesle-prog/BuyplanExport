@@ -35,6 +35,7 @@ import pandas as pd
 from openpyxl import load_workbook
 
 from ._sky_east_helpers import *  # noqa: F401,F403
+from ._excel_helpers import apply_print_settings
 from ..utils.file_utils import versioned_path
 from ..store.color_translation_store import _normalize_color_name as _nz_color
 from ..lookups.progress_lookup import _norm_key
@@ -59,13 +60,23 @@ _BRAND_AGNOSTIC = ""
 def _format_body_color_cn(
     cn_code: str, color_cn: str, sep: str = _CN_DISPLAY_SEP,
 ) -> str:
-    """Return the BODY COLOR-CN cell text.
+    """Return the BODY COLOR-CN cell text: ``"<code><sep><name>"``.
 
-    ``"<code><sep><name>"`` when both are present, else whichever side is
-    non-empty, else ``""``.
+    Strips any embedded code prefix from *color_cn* to prevent doubling.
+    Source data (Colors tab DB or 大货进度表) sometimes stores the color as
+    ``"84#红色"`` or ``"84|红色"`` rather than the plain name ``"红色"``.
+    When *cn_code* is ``"84"`` and *color_cn* is ``"84#红色"``, naïvely
+    joining gives ``"84|84#红色"`` — so we detect and strip the prefix.
     """
     if cn_code and color_cn:
-        return f"{cn_code}{sep}{color_cn}"
+        # Strip any leading "{cn_code}#", "{cn_code}{sep}", or "{cn_code} "
+        # prefix that source data may already embed in the Chinese color field.
+        name = color_cn
+        for pfx in (f"{cn_code}#", f"{cn_code}{sep}", f"{cn_code} "):
+            if color_cn.startswith(pfx):
+                name = color_cn[len(pfx):].lstrip()
+                break
+        return f"{cn_code}{sep}{name}" if name else cn_code
     return color_cn or cn_code
 
 
@@ -73,19 +84,16 @@ def _brand_keyed_get(
     lookup: dict | None, company: str, brand: str, norm_en: str,
     *, default: str = "",
 ) -> str:
-    """Two-tier (brand → brand-agnostic) lookup against a flat color dict.
+    """Primary-only (brand-specific) lookup against a flat color dict.
 
-    The buy-plan exporter uses this pattern for ``cn_code_lookup`` and
-    ``label_lookup``: try the brand-specific key first, then fall back to
-    a brand-agnostic key (``brand=""``) before giving up.
+    Only the exact ``(company, brand, norm_en)`` key is tried.  No
+    brand-agnostic fallback — returning a value from a different brand's
+    mapping would produce wrong color codes.  Returns *default* when the
+    key is absent.
     """
     if not lookup:
         return default
-    return (
-        lookup.get((company, brand, norm_en))
-        or lookup.get((company, _BRAND_AGNOSTIC, norm_en))
-        or default
-    )
+    return lookup.get((company, brand, norm_en)) or default
 
 
 def _resolve_pc_color(
@@ -95,32 +103,33 @@ def _resolve_pc_color(
 ) -> tuple[str, str, str, str]:
     """Resolve (color_cn, cn_code, label_color, color_cn_display) for one row.
 
-    Priority (most specific first):
-      1. ``cn_by_pc_lookup`` — keyed by (pc_no, style, color); from 大货进度表
-      2. ``cn_code_lookup``  — keyed by (company, brand, color); from DB or progress
-      3. brand-agnostic key in the same dict
-      4. light/dark heuristic at the call site (label only)
+    Primary-only resolution — no brand-agnostic or cross-source fallbacks:
+      1. ``cn_by_pc_lookup`` — exact (pc_no, style, color) match from 大货进度表
+      2. ``cn_code_lookup``  — exact (company, brand, color) match from DB
+
+    When a field cannot be found in its primary source, ``cn_code`` is set to
+    ``"NA"`` so the cell clearly signals a missing mapping rather than silently
+    inheriting a wrong value from another brand.
 
     ``label_color`` is non-empty only when tier 1 hits.  The buyplan caller
     falls back to ``label_lookup`` and ``derive_main_label_color`` when blank;
     nukuryou ignores ``label_color`` altogether (核料 doesn't render it).
     """
     norm_en  = _nz_color(color_en)
-    # Avoid building a throwaway ``{}`` per row when the PC-keyed dict is None.
     pc_match = (
         cn_by_pc_lookup.get((_norm_key(row.get("pc_no") or ""), sty_norm, norm_en))
         if cn_by_pc_lookup else None
     )
     if pc_match is not None:
-        # Defer the brand-keyed _cn_color() call: only fall back when the PC
-        # row didn't carry a Chinese name itself (the common case when 大货
-        # 进度表 is populated is that pc_match.cn_color is non-empty).
-        color_cn    = pc_match.cn_color or _cn_color(cn_lookup, brand, color_en)
-        cn_code     = pc_match.color_code
+        # Use PC row values directly — no cross-source fallback.
+        color_cn    = pc_match.cn_color
+        cn_code     = pc_match.color_code or "NA"
         label_color = pc_match.label_color
     else:
         color_cn    = _cn_color(cn_lookup, brand, color_en)
-        cn_code     = _brand_keyed_get(cn_code_lookup, COMPANY_SKY_EAST, brand, norm_en)
+        cn_code     = _brand_keyed_get(
+            cn_code_lookup, COMPANY_SKY_EAST, brand, norm_en, default="NA",
+        )
         label_color = ""
     return color_cn, cn_code, label_color, _format_body_color_cn(cn_code, color_cn)
 
@@ -578,13 +587,23 @@ def export_sky_east_buyplan(
             # ── Collect metadata for Index sheet ─────────────────────────
             # Show the first fabric in the combination as the representative entry.
             _idx_fp = combo_parts[0] if combo_parts else None
+            _idx_hhn  = (str(getattr(_idx_fp, "hhn_no", "") or "") if _idx_fp
+                         else str(first.get("fabric_item_no", "") or ""))
+            _idx_comp = (str(getattr(_idx_fp, "composition", "") or "") if _idx_fp
+                         else str(first.get("fabrication", "") or ""))
+            _idx_dk = _display_key_for(
+                _idx_hhn,
+                fallback_composition=_idx_comp,
+                fallback_gsm  =getattr(_idx_fp, "weight_gsm", None) if _idx_fp else None,
+                fallback_width=getattr(_idx_fp, "width_cm",   None) if _idx_fp else None,
+            )
             _sheet_meta_list.append({
                 "style":       style,
                 "sheet_name":  sheet_title,
                 "brand":       str(first.get("brand",       "") or ""),
                 "body_part":   str(getattr(_idx_fp, "body_part", "") or "") if _idx_fp else "",
-                "hhn_no":      (str(getattr(_idx_fp, "hhn_no", "") or "") if _idx_fp
-                                else str(first.get("fabric_item_no", "") or "")),
+                "hhn_no":      _idx_hhn,
+                "display_key": _idx_dk,
                 "ex_fty_date": str(first.get("ex_fty_date", "") or ""),
             })
 
@@ -600,6 +619,7 @@ def export_sky_east_buyplan(
     if not tpl_wb.sheetnames:
         tpl_wb.create_sheet("Empty")
 
+    apply_print_settings(tpl_wb)
     tpl_wb.save(str(path))
 
     # ── 综合key diagnostic — surface HHNs missing from fabric_master ──────
@@ -785,6 +805,7 @@ def export_sky_east_nukuryou(
 
         safe = re.sub(r'[<>:"/\\|?*\s]+', "_", fabric_no).strip("_") or "unknown"
         save_path = versioned_path(output_dir, f"Sky_East_核料_{safe}", ".xlsx")
+        apply_print_settings(tpl_wb)
         tpl_wb.save(str(save_path))
         output_paths.append(str(save_path))
 

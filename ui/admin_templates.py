@@ -38,8 +38,7 @@ from po_extractor.ui_helpers import (
     make_sample_buyplan_template,
 )
 from po_extractor.utils.client_template import CLIENT_ALIASES, create_template
-
-_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+from ui.shared import XLSX_MIME as _XLSX_MIME
 
 
 # ─────────────────────────────────────────────────────────────────────────────
