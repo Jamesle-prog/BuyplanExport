@@ -194,8 +194,32 @@ class ProgressLookup:
         Sheet to read (default "2026 Zalando ").
     """
 
-    def __init__(self, path: str, sheet_name: str | None = None):
-        self._path        = path
+    def __init__(self, path: str | bytes | None = None,
+                 sheet_name: str | None = None, *,
+                 data: bytes | None = None):
+        """
+        Parameters
+        ----------
+        path : str | bytes | None
+            Path to the 大货进度表 xlsx file **or** the raw file bytes.
+            Pass bytes (or use the *data* keyword) to avoid writing a temp
+            file — openpyxl / pandas both accept BytesIO directly.
+        data : bytes | None
+            Alternative keyword-only way to supply raw bytes.
+        sheet_name : str | None
+            Sheet to read (``None`` → auto-detect first matching sheet).
+        """
+        import io as _io
+        _raw: bytes | None = data if data is not None else (
+            path if isinstance(path, (bytes, bytearray, memoryview)) else None
+        )
+        if _raw is not None:
+            # Store a BytesIO; _path is unused in this mode
+            self._path   = None
+            self._source = _io.BytesIO(bytes(_raw))
+        else:
+            self._path   = path     # str path — original behaviour
+            self._source = None
         self._sheet_name  = sheet_name   # None = auto-detect first matching sheet
         # PRIMARY:  (pc_no_norm, style_norm, color_norm) → record
         #           Sky East PC No (所在PO col 2) — most reliable join key in 大货进度表
@@ -288,8 +312,16 @@ class ProgressLookup:
         import pandas as pd
         import openpyxl as _opxl
 
+        # Resolve the data source — BytesIO (from bytes upload) or file path
+        import io as _io
+        if self._source is not None:
+            self._source.seek(0)
+            _src_meta: str | _io.BytesIO = self._source
+        else:
+            _src_meta = self._path
+
         # Identify the target sheet name first (openpyxl just for sheet list)
-        wb_meta = _opxl.load_workbook(self._path, read_only=True, data_only=True)
+        wb_meta = _opxl.load_workbook(_src_meta, read_only=True, data_only=True)
         sheet_name = None
         if self._sheet_name and self._sheet_name in wb_meta.sheetnames:
             sheet_name = self._sheet_name
@@ -303,8 +335,13 @@ class ProgressLookup:
         wb_meta.close()
 
         # Read with pandas — single-pass, C-backed, much faster for large files
+        if self._source is not None:
+            self._source.seek(0)
+            _src_pd: str | _io.BytesIO = self._source
+        else:
+            _src_pd = self._path
         df = pd.read_excel(
-            self._path, sheet_name=sheet_name,
+            _src_pd, sheet_name=sheet_name,
             header=None, dtype=str, engine="openpyxl"
         )
         df = df.fillna("")

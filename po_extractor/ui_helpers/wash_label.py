@@ -72,39 +72,50 @@ def write_wash_label_excel(
         ws.column_dimensions[cell.column_letter].width = w
     ws.row_dimensions[1].height = 22
 
+    # ── Build lookup dicts with vectorised pandas ops (replaces 3 iterrows) ──
     style_to_pid: dict[str, str] = {}
-    if "picture_id" in df_enriched.columns:
-        for _, r in df_enriched.iterrows():
-            s   = str(r.get("style",      "") or "").strip()
-            pid = str(r.get("picture_id", "") or "").strip()
-            if s and pid and s not in style_to_pid:
-                style_to_pid[s] = pid
+    if "picture_id" in df_enriched.columns and "style" in df_enriched.columns:
+        _pid_df = (df_enriched[["style", "picture_id"]]
+                   .assign(style=lambda d: d["style"].fillna("").astype(str).str.strip(),
+                           picture_id=lambda d: d["picture_id"].fillna("").astype(str).str.strip()))
+        _pid_df = _pid_df[(_pid_df["style"] != "") & (_pid_df["picture_id"] != "")]
+        if not _pid_df.empty:
+            style_to_pid = (
+                _pid_df.drop_duplicates(subset="style", keep="first")
+                .set_index("style")["picture_id"].to_dict()
+            )
 
     if styles is not None:
         # Caller supplied an explicit list — use it directly (preserves order,
         # includes styles that may have no rows in df_enriched).
         styles_ordered = [s for s in styles if s]
+    elif "style" in df_enriched.columns:
+        styles_ordered = (
+            df_enriched["style"].dropna()
+            .astype(str).str.strip()
+            .replace("", pd.NA).dropna()
+            .drop_duplicates().tolist()
+        )
     else:
         styles_ordered = []
-        seen: set[str] = set()
-        for _, r in df_enriched.iterrows():
-            s = str(r.get("style", "") or "").strip()
-            if s and s not in seen:
-                styles_ordered.append(s)
-                seen.add(s)
 
     if not fabric_parts_by_style:
         fabric_parts_by_style = {}
 
     fallback_hhn: dict[str, tuple[str, str]] = {}
-    if "fabric_item_no" in df_enriched.columns:
-        for _, r in df_enriched.iterrows():
-            s = str(r.get("style", "") or "").strip()
-            h = str(r.get("fabric_item_no", "") or "").strip()
-            c_raw = r.get("composition_en", "")
-            c = "" if (c_raw is None or str(c_raw).lower() in ("nan", "none", "")) else str(c_raw).strip()
-            if s and h and s not in fallback_hhn:
-                fallback_hhn[s] = (h, c)
+    if "fabric_item_no" in df_enriched.columns and "style" in df_enriched.columns:
+        _fb_cols = ["style", "fabric_item_no"]
+        if "composition_en" in df_enriched.columns:
+            _fb_cols.append("composition_en")
+        _fb = (df_enriched[_fb_cols]
+               .assign(style=lambda d: d["style"].fillna("").astype(str).str.strip(),
+                       fabric_item_no=lambda d: d["fabric_item_no"].fillna("").astype(str).str.strip()))
+        _fb = _fb[(_fb["style"] != "") & (_fb["fabric_item_no"] != "")]
+        _fb = _fb.drop_duplicates(subset="style", keep="first")
+        for row in _fb.itertuples(index=False):
+            c_raw = getattr(row, "composition_en", "") or ""
+            c = "" if str(c_raw).lower() in ("nan", "none", "") else str(c_raw).strip()
+            fallback_hhn[row.style] = (row.fabric_item_no, c)
 
     # ------------------------------------------------------------------ #
     # Build the render list: one entry per (style, combo_idx) group.

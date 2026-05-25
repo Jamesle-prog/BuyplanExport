@@ -16,7 +16,7 @@ from po_extractor.exporters import (
 )
 from ui.session_keys import SK, COLOR_SOURCE_PROGRESS
 from ui.shared import (
-    XLSX_MIME, ZIP_MIME,
+    XLSX_MIME, ZIP_MIME, CSV_MIME,
     EXCEL_FILE_TYPES as _EXCEL_FILE_TYPES,
     DEFAULT_XLSX_EXT as _DEFAULT_XLSX_EXT,
     _th, _tr,
@@ -135,6 +135,9 @@ def _se_hist_multi_pc_download(store, pc_options: list[str]) -> None:
             t("Select all"), key="se_dl_all",
             on_click=lambda: st.session_state.update({"se_dl_pcs": pc_options}),
         )
+
+    if not sel_dl_pcs:
+        st.info(t("Select one or more PC Nos. above, then click Generate."))
 
     if sel_dl_pcs:
         fmt_col, btn_col = st.columns([1, 2])
@@ -340,6 +343,8 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
                 t("Select all"), key="se_wl_all",
                 on_click=lambda: st.session_state.update({"se_wl_pcs": pc_options}),
             )
+        if not sel_wl_pcs:
+            st.info(t("Select one or more PC Nos. above, then click Generate."))
         has_selection = bool(sel_wl_pcs)
 
     elif sel_mode == "Style (Fabric Mapping)":
@@ -349,7 +354,8 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
         if not mapped_styles:
             st.warning(
                 "No styles found in the Fabric Mapping database for Sky East. "
-                "Go to the **📐 Fabric Mapping** tab to import a mapping first."
+                "Go to the **📐 Fabric Mapping** tab to import a mapping first, "
+                "or switch to **PC No.** mode to download by contract."
             )
             has_selection = False
         else:
@@ -718,8 +724,8 @@ def _se_hist_amendment_history(store, df_items, sel_pcs: list[str]) -> None:
         if not sel_style:
             return
         hist_frames = [store.list_item_history(pc, style=sel_style) for pc in sel_pcs]
-        df_hist = (pd.concat([f for f in hist_frames if not f.empty], ignore_index=True)
-                   if hist_frames else pd.DataFrame())
+        non_empty_frames = [f for f in hist_frames if not f.empty]
+        df_hist = pd.concat(non_empty_frames, ignore_index=True) if non_empty_frames else pd.DataFrame()
         if df_hist.empty:
             st.info(f"No amendment history for {sel_style} in PC(s) {', '.join(sel_pcs)}.")
             return
@@ -744,6 +750,14 @@ def _se_hist_amendment_history(store, df_items, sel_pcs: list[str]) -> None:
 
 def _se_hist_item_browser(store, pc_options: list[str]) -> None:
     """Multi-PC items browser with optional photo column and amendment history."""
+    # Guard: remove any stale pc_nos from session state that no longer exist
+    # in pc_options (e.g. after a delete + rerun).  Without this Streamlit
+    # raises StreamlitAPIException: "The selection contains invalid values."
+    _pc_set = set(pc_options)
+    _current = st.session_state.get("se_hist_pc", [])
+    if isinstance(_current, list) and any(v not in _pc_set for v in _current):
+        st.session_state["se_hist_pc"] = [v for v in _current if v in _pc_set]
+
     sel_pcs = st.multiselect(t("Browse items for PC No.:"), pc_options,
                              key="se_hist_pc",
                              placeholder="Select one or more PC Nos.")
@@ -769,7 +783,12 @@ def _se_hist_delete_section(store, pc_options: list[str]) -> None:
                             key="se_del_pcs")
     if st.button(t("Delete selected"), disabled=not to_del, key="se_del_btn"):
         n = store.delete_contracts(to_del)
-        st.success(f"Deleted {n} contract(s).")
+        # Clear multiselect session state BEFORE rerun so Streamlit doesn't
+        # raise StreamlitAPIException when deleted pc_nos are no longer in
+        # pc_options on the next render pass.
+        for _key in ("se_del_pcs", "se_hist_pc"):
+            st.session_state.pop(_key, None)
+        st.toast(f"✅ Deleted {n} contract(s).", icon="🗑️")
         st.rerun()
 
 
@@ -781,12 +800,42 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         "Generates the main buy plan (Template) and fabric 核料 workbooks (Template_P) "
         "from the selected contracts, matching the VBA output format."
     )
-    sel = st.multiselect(
-        t("PC No.(s) to include:"),
-        pc_options,
-        key="se_bp_sel",
-        placeholder="Select one or more PC Nos...",
-    )
+    # ── Multiselect with shadow-key pattern ────────────────────────────────────
+    # Previous bug: chips showed visually but sel=[] (Streamlit widget-state
+    # desync when key= alone is used).  Fix: use a *widget* key separate from
+    # the *logical* key, populate widget via default=, then capture the
+    # return value as source of truth.
+    _logical_sel = st.session_state.get("se_bp_sel", [])
+    if not isinstance(_logical_sel, list):
+        _logical_sel = []
+    # Filter to options that still exist (replaces the reports_tab stale guard
+    # for this widget — guard upstream is still kept as a safety net).
+    _default = [v for v in _logical_sel if v in pc_options]
+
+    _bp_col1, _bp_col2 = st.columns([4, 1])
+    with _bp_col1:
+        sel = st.multiselect(
+            t("PC No.(s) to include:"),
+            pc_options,
+            default=_default,
+            key="se_bp_sel_widget",
+            placeholder="Select one or more PC Nos...",
+        )
+        # Sync widget value back to the logical key — single source of truth.
+        st.session_state["se_bp_sel"] = sel
+    with _bp_col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        def _bp_select_all() -> None:
+            st.session_state["se_bp_sel_widget"] = list(pc_options)
+            st.session_state["se_bp_sel"]        = list(pc_options)
+        st.button(
+            t("Select all"), key="se_bp_all",
+            on_click=_bp_select_all,
+            use_container_width=True,
+        )
+
+    if not sel:
+        st.info(t("Select one or more PC Nos. above, then click Generate."))
 
     # ── Total units summary for selection ─────────────────────────────────────
     if sel and df_contracts is not None and not df_contracts.empty:
@@ -803,9 +852,6 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
 
     # ── 大货进度表 uploader (shown whenever progress source is selected) ───────
     if st.session_state.get(SK.SE_COLOR_SOURCE) == COLOR_SOURCE_PROGRESS:
-        _prog_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
-        if _prog_lkup is not None:
-            st.caption(f"✅ 大货进度表 loaded ({len(_prog_lkup)} records).")
         _prog_upload = st.file_uploader(
             "📂 Upload 大货进度表 (HHN Contract No. file)",
             type=_EXCEL_FILE_TYPES,
@@ -813,24 +859,28 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             help="Upload or replace the 大货进度表 to use as the Chinese color source.",
         )
         if _prog_upload is not None:
-            try:
-                import tempfile as _tf2
-                from po_extractor.lookups import ProgressLookup as _PL
-                _tmp_fd, _tmp_path = _tf2.mkstemp(
-                    suffix=os.path.splitext(_prog_upload.name)[1] or _DEFAULT_XLSX_EXT
-                )
-                with os.fdopen(_tmp_fd, "wb") as _fh:
-                    _fh.write(_prog_upload.getbuffer())
-                _new_lkup = _PL(_tmp_path)
-                len(_new_lkup)  # trigger lazy load while file exists
-                st.session_state[SK.SE_PROGRESS_LKUP] = _new_lkup
-                st.success(
-                    f"✅ 大货进度表 loaded: {len(_new_lkup)} records from "
-                    f"**{_prog_upload.name}**."
-                )
-                st.rerun()
-            except Exception as _exc:
-                st.error(f"Could not parse progress file: {_exc}")
+            # Process only when the file is new (fingerprint changed).
+            # NOTE: no st.rerun() here — the file-upload event itself already
+            # triggered this script run, so processing in-place is sufficient.
+            # Calling st.rerun() would cause an extra cycle where se_bp_sel
+            # may still be [] (if the file was uploaded before PC Nos were
+            # selected), keeping the Generate button permanently disabled.
+            _fp = getattr(_prog_upload, "file_id", None) or f"{_prog_upload.name}-{_prog_upload.size}"
+            if st.session_state.get("_se_bp_prog_fp") != _fp:
+                try:
+                    from po_extractor.lookups import ProgressLookup as _PL
+                    # Pass raw bytes directly — no temp file written to disk
+                    _new_lkup = _PL(data=_prog_upload.getvalue())
+                    len(_new_lkup)  # trigger lazy load into memory
+                    st.session_state[SK.SE_PROGRESS_LKUP] = _new_lkup
+                    st.session_state["_se_bp_prog_fp"] = _fp  # mark as processed
+                except Exception as _exc:
+                    st.error(f"Could not parse progress file: {_exc}")
+
+        # Show loaded status AFTER potentially processing — reads updated session state
+        _prog_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
+        if _prog_lkup is not None:
+            st.caption(f"✅ 大货进度表 loaded ({len(_prog_lkup)} records).")
 
     if st.button(t("Generate Buy Plan + 核料"), type="primary",
                  disabled=not sel, key="se_bp_btn"):
@@ -840,6 +890,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             st.warning(t("No data found for the selected contracts."))
         else:
             color_lookups = _build_buyplan_color_lookups()
+            import shutil as _shutil
             out_dir = tempfile.mkdtemp()
 
             # ── Auto-register new brands in 船样要求 admin ──────────────────────
@@ -1004,6 +1055,9 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
 
                 _status.update(label="Done!", state="complete")
 
+            # All file bytes are now in session_state — temp dir no longer needed
+            _shutil.rmtree(out_dir, ignore_errors=True)
+
     if st.session_state.get(SK.SE_BP_BYTES) or st.session_state.get(SK.SE_NK_BYTES):
         st.divider()
         dl_cols = st.columns(2)
@@ -1085,6 +1139,21 @@ def _se_hist_email_section() -> None:
         )
         return
 
+    # Brevo silent-drop guard: warn if the sender address is the @smtp-brevo.com
+    # login username.  Brevo accepts the SMTP handshake but never delivers such emails.
+    from auth import smtp_settings as _smtp_cfg
+    _smtp_s = _smtp_cfg.load()
+    _eff_sender = _smtp_cfg.effective_sender(_smtp_s)
+    if "brevo" in _smtp_s["host"].lower() and (
+        not _eff_sender or _eff_sender.lower().endswith("@smtp-brevo.com")
+    ):
+        st.warning(
+            "⚠️ **Email will not be delivered.** Your Sender address is "
+            f"`{_eff_sender}` — Brevo silently drops emails whose From address is "
+            "not a verified sender. Go to **⚙️ Admin → 📧 Email** and fill in a "
+            "verified Sender address (e.g. `orders@yourdomain.com`), then try again."
+        )
+
     default_to = get_user_email(st.session_state.username)
     c_to, c_send = st.columns([4, 1])
     with c_to:
@@ -1138,6 +1207,15 @@ def _show_se_history_section():
     store = get_sky_east_store()
     df_contracts = store.list_contracts()
 
+    # ── Auto-clean orphaned blank-pc_no contracts (left by old parser bugs) ──
+    # Files uploaded before the dynamic header fix could save a contract with
+    # pc_no = ''.  These show up as invisible items in every multiselect and
+    # make the widgets appear broken.  Silently remove them on every load.
+    blank_pcs = df_contracts[df_contracts["pc_no"].fillna("").str.strip() == ""]["pc_no"].tolist()
+    if blank_pcs:
+        store.delete_contracts(blank_pcs)
+        df_contracts = store.list_contracts()   # refresh after cleanup
+
     total = len(df_contracts)
     st.subheader(f"{t('Saved Contracts')} — {total} PC No.(s)")
 
@@ -1147,7 +1225,8 @@ def _show_se_history_section():
 
     _se_hist_summary_table(df_contracts)
     st.divider()
-    pc_options = df_contracts["pc_no"].tolist()
+    # Filter out any blank / None pc_nos defensively before building options
+    pc_options = [pc for pc in df_contracts["pc_no"].tolist() if pc and str(pc).strip()]
 
     _se_hist_item_browser(store, pc_options)
     st.divider()

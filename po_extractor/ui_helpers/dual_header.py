@@ -109,12 +109,17 @@ def write_dual_header_excel(
             photo_ci = ci
 
     style_to_pid: dict[str, str] = {}
-    if has_photos:
-        for _, r in df_enriched.iterrows():
-            s   = str(r.get("style", "")).strip()
-            pid = str(r.get("picture_id", "")).strip()
-            if s and pid and s not in style_to_pid:
-                style_to_pid[s] = pid
+    if has_photos and "style" in df_enriched.columns and "picture_id" in df_enriched.columns:
+        _pid_df = (df_enriched[["style", "picture_id"]]
+                   .dropna(subset=["picture_id"])
+                   .assign(style=lambda d: d["style"].fillna("").astype(str).str.strip(),
+                           picture_id=lambda d: d["picture_id"].astype(str).str.strip()))
+        _pid_df = _pid_df[(_pid_df["style"] != "") & (_pid_df["picture_id"] != "")]
+        if not _pid_df.empty:
+            style_to_pid = (
+                _pid_df.drop_duplicates(subset="style", keep="first")
+                .set_index("style")["picture_id"].to_dict()
+            )
 
     real_db_cols = [c for c in db_cols if c != "__photo__"]
     row_records  = df_enriched[real_db_cols].to_dict("records")

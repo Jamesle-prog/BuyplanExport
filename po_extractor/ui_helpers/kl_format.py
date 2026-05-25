@@ -171,6 +171,11 @@ def generate_kl_format_excel(
         })
 
     # ── Build detail rows ─────────────────────────────────────────────────────
+    # Pre-group sizes once — avoids O(POs) full-scan boolean masks inside loop
+    _sizes_by_po: dict[str, pd.DataFrame] = (
+        {pn: grp for pn, grp in sizes.groupby("po_number")}
+        if not sizes.empty and "po_number" in sizes.columns else {}
+    )
     detail_rows: list[dict] = []
 
     for _, m in meta.iterrows():
@@ -195,8 +200,8 @@ def generate_kl_format_excel(
         cpo      = _s(m.get("cpo")) or "TBA"
         msrp_val = _s(m.get("msrp"))
 
-        # Size rows for this PO
-        po_sizes = sizes[sizes["po_number"] == pn] if not sizes.empty else pd.DataFrame()
+        # Size rows for this PO — O(1) lookup instead of O(rows) boolean scan
+        po_sizes = _sizes_by_po.get(pn, pd.DataFrame())
         pack_ratio = _pack_ratio(po_sizes, KL_SIZE_ORDER) if not po_sizes.empty else ""
 
         for _, r in po_sizes.iterrows():

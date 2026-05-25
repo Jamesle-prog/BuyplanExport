@@ -16,6 +16,7 @@ from ui.giii.results import (
     _generate_kl_format_excel_bytes,
 )
 from po_extractor.ui_helpers.kl_consistency import check_kl_excel as _check_kl_excel
+from po_extractor.exporters.giii_production_plan import generate_giii_production_plan
 from ui.summary_view import _build_tracker_excel, _TRACKER_COLS, _DEFAULT_COLS
 
 
@@ -92,7 +93,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
 
     st.divider()
 
-    # ── Action buttons ────────────────────────────────────────────────────────
+    # ── Action buttons — row 1 ────────────────────────────────────────────────
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
@@ -161,6 +162,31 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             else:
                 st.warning("No size data found for selected POs.")
 
+    # ── Action buttons — row 2 ────────────────────────────────────────────────
+    c5, _c6, _c7, _c8 = st.columns(4)
+    with c5:
+        if st.button(
+            "📋 Create Buy Plan (生产计划单)",
+            disabled=not selected,
+            use_container_width=True,
+            key="rpt_gen_bp_btn",
+            help=(
+                "Generate a GIII production plan (生产计划单) in the standard "
+                "factory buy plan format — one sheet per style, with size breakdown, "
+                "Chinese colours, and merged rows."
+            ),
+        ):
+            st.session_state.pop("rpt_bp_bytes", None)
+            with st.spinner("Building production plan…"):
+                try:
+                    bp_bytes = generate_giii_production_plan(selected, store)
+                    if bp_bytes:
+                        st.session_state["rpt_bp_bytes"] = bp_bytes
+                    else:
+                        st.warning("No size data found for the selected POs.")
+                except Exception as exc:
+                    st.error(f"Production plan generation failed: {exc}")
+
     # ── Download area ─────────────────────────────────────────────────────────
     if st.session_state.get("rpt_all_results"):
         _show_downloads(st.session_state["rpt_all_results"], key_prefix="rpt")
@@ -190,6 +216,15 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             file_name="PO_Summary_KL.xlsx",
             mime=_XLSX_MIME,
             key="rpt_kl_dl",
+        )
+
+    if st.session_state.get("rpt_bp_bytes"):
+        st.download_button(
+            "⬇️ Download Buy Plan — 生产计划单 (.xlsx)",
+            data=st.session_state["rpt_bp_bytes"],
+            file_name="GIII_Production_Plan.xlsx",
+            mime=_XLSX_MIME,
+            key="rpt_bp_dl",
         )
 
 

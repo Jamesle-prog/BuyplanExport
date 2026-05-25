@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import os
+import shutil
 import tempfile
 
 import pandas as pd
@@ -218,43 +219,47 @@ def _show_giii_upload_section():
 
     # ── Auto-detect ───────────────────────────────────────────────────────────
     tmpdir = tempfile.mkdtemp()
-    saved_paths: dict[str, str] = {}
-    for uf in uploaded:
-        p = os.path.join(tmpdir, uf.name)
-        with open(p, "wb") as f:
-            f.write(uf.getbuffer())
-        saved_paths[uf.name] = p
+    try:
+        saved_paths: dict[str, str] = {}
+        for uf in uploaded:
+            p = os.path.join(tmpdir, uf.name)
+            with open(p, "wb") as f:
+                f.write(uf.getbuffer())
+            saved_paths[uf.name] = p
 
-    detections = detect_files(list(saved_paths.values()))
-    st.session_state.smart_detections = detections
+        detections = detect_files(list(saved_paths.values()))
+        st.session_state.smart_detections = detections
 
-    # ── Detection summary table ───────────────────────────────────────────────
-    table_rows = []
-    for d in detections:
-        primary = d.companies[0] if d.companies else "Unknown"
-        badge   = _CONF_BADGE.get(d.confidence, "⚪")
-        table_rows.append({
-            "File":       d.filename,
-            "Type":       d.file_type.upper(),
-            "Client":     primary,
-            "Format":     d.format_id,
-            "Confidence": f"{badge} {d.confidence}",
-            "Detail":     d.detail or d.error or "",
-        })
-    st.dataframe(pd.DataFrame(table_rows), width="stretch", hide_index=True)
+        # ── Detection summary table ───────────────────────────────────────────────
+        table_rows = []
+        for d in detections:
+            primary = d.companies[0] if d.companies else "Unknown"
+            badge   = _CONF_BADGE.get(d.confidence, "⚪")
+            table_rows.append({
+                "File":       d.filename,
+                "Type":       d.file_type.upper(),
+                "Client":     primary,
+                "Format":     d.format_id,
+                "Confidence": f"{badge} {d.confidence}",
+                "Detail":     d.detail or d.error or "",
+            })
+        st.dataframe(pd.DataFrame(table_rows), width="stretch", hide_index=True)
 
-    st.divider()
+        st.divider()
 
-    if st.button("▶  Process all files", type="primary",
-                 use_container_width=True, key="smart_run"):
-        st.session_state.smart_results = None
-        st.session_state.smart_log = []
-        _use_ai   = st.session_state.get("smart_use_ai", False)
-        _eff_key  = st.session_state.get("smart_ds_api_key_override", "").strip() or _api_key
-        _run_smart_processing(
-            detections, saved_paths, mask_prices,
-            use_ai=_use_ai, deepseek_api_key=_eff_key, deepseek_model=_ds_model,
-        )
+        if st.button("▶  Process all files", type="primary",
+                     use_container_width=True, key="smart_run"):
+            st.session_state.smart_results = None
+            st.session_state.smart_log = []
+            _use_ai   = st.session_state.get("smart_use_ai", False)
+            _eff_key  = st.session_state.get("smart_ds_api_key_override", "").strip() or _api_key
+            _run_smart_processing(
+                detections, saved_paths, mask_prices,
+                use_ai=_use_ai, deepseek_api_key=_eff_key, deepseek_model=_ds_model,
+            )
+    finally:
+        # Files have been read into memory (detection + processing) — temp dir no longer needed
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
     if st.session_state.smart_log:
         with st.expander("Processing log", expanded=False):

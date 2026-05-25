@@ -146,15 +146,25 @@ def _apply_sky_east_compact_layout(ws, *, last_row: int) -> None:
     from openpyxl.utils import get_column_letter as _gcl
 
     SIZE_COLS = set(range(10, 16))   # J-O
+    # Pre-build two shared Font instances — reusing immutable style objects is
+    # ~10x faster than constructing a new Font per cell (avoids deep-copy
+    # overhead inside openpyxl for every cell on every sheet).
+    _font_cache: dict[tuple, Font] = {}
+
     for row in ws.iter_rows(min_row=1, max_row=last_row + 1, min_col=1, max_col=18):
         for cell in row:
             f = cell.font
             try:
-                cell.font = Font(
-                    name=f.name, size=10, bold=f.bold, italic=f.italic,
-                    vertAlign=f.vertAlign, underline=f.underline,
-                    strike=f.strike, color=f.color,
-                )
+                key = (f.name, f.bold, f.italic, f.vertAlign,
+                       f.underline, f.strike,
+                       f.color.rgb if f.color and f.color.type == "rgb" else None)
+                if key not in _font_cache:
+                    _font_cache[key] = Font(
+                        name=f.name, size=10, bold=f.bold, italic=f.italic,
+                        vertAlign=f.vertAlign, underline=f.underline,
+                        strike=f.strike, color=f.color,
+                    )
+                cell.font = _font_cache[key]
             except Exception:
                 pass
 
@@ -712,45 +722,53 @@ def export_sky_east_nukuryou(
 
     output_paths: list[str] = []
 
+    # ── Load template ONCE and detect layout ONCE outside the loop ───────────
+    # Each fabric group previously re-parsed the template from disk (ZIP+XML
+    # decompression) — with N groups that was N × 100-500 ms.  Now we load
+    # once, detect layout once, then copy.deepcopy() per iteration.
+    import copy as _copy
+    _master_wb = load_workbook(str(_SE_TEMPLATE_P))
+    _master_ws = _master_wb.worksheets[0]
+
+    color_col, size_col_map, nuk_data_row = _detect_nukuryou_layout(_master_ws)
+    # Apply user-configured overrides (Sky_East_P_config.json)
+    try:
+        from . import template_config as _tc
+        _nuk_cfg = _tc.load_config("sky_east_nukuryou")
+        for sz, raw in (_nuk_cfg.get("size_column_map") or {}).items():
+            k = str(sz).strip().lower()
+            k = "xxl" if k in ("2xl", "xxl") else k
+            if k in {"xs", "s", "m", "l", "xl", "xxl"}:
+                try:
+                    size_col_map[k] = _tc.column_letter_to_int(raw)
+                except Exception:
+                    pass
+        cm = _nuk_cfg.get("column_map") or {}
+        for k_raw, raw in cm.items():
+            if str(k_raw).strip().lower() in {"color", "color name", "colordesc", "颜色"}:
+                try:
+                    color_col = _tc.column_letter_to_int(raw)
+                except Exception:
+                    pass
+        if _nuk_cfg.get("data_start_row"):
+            try:
+                nuk_data_row = int(_nuk_cfg["data_start_row"])
+            except (TypeError, ValueError):
+                pass
+    except Exception:
+        pass
+    nuk_header_row = nuk_data_row - 1   # row where size headers are written
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     for fabric_no, fabric_df in df_items.groupby(fabric_col, sort=False):
         fabric_no = str(fabric_no or "").strip()
         if not fabric_no:
             continue
 
-        tpl_wb = load_workbook(str(_SE_TEMPLATE_P))
+        # Fast in-memory copy — avoids re-parsing ZIP+XML from disk
+        tpl_wb = _copy.deepcopy(_master_wb)
         tpl_ws = tpl_wb.worksheets[0]
 
-        # ── Detect layout from the nukuryou template ──────────────────────
-        color_col, size_col_map, nuk_data_row = _detect_nukuryou_layout(tpl_ws)
-        # Apply user-configured overrides (Sky_East_P_config.json)
-        try:
-            from . import template_config as _tc
-            _nuk_cfg = _tc.load_config("sky_east_nukuryou")
-            for sz, raw in (_nuk_cfg.get("size_column_map") or {}).items():
-                k = str(sz).strip().lower()
-                k = "xxl" if k in ("2xl", "xxl") else k
-                if k in {"xs", "s", "m", "l", "xl", "xxl"}:
-                    try:
-                        size_col_map[k] = _tc.column_letter_to_int(raw)
-                    except Exception:
-                        pass
-            cm = _nuk_cfg.get("column_map") or {}
-            for k_raw, raw in cm.items():
-                if str(k_raw).strip().lower() in {"color", "color name", "colordesc", "颜色"}:
-                    try:
-                        color_col = _tc.column_letter_to_int(raw)
-                    except Exception:
-                        pass
-            if _nuk_cfg.get("data_start_row"):
-                try:
-                    nuk_data_row = int(_nuk_cfg["data_start_row"])
-                except (TypeError, ValueError):
-                    pass
-        except Exception:
-            pass
-        nuk_header_row = nuk_data_row - 1   # row where size headers are written
-
-        created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         _replace_placeholders(tpl_ws, {"created_at": created_at, "fabric": fabric_no})
 
         for style, style_df in fabric_df.groupby("style", sort=False):
@@ -769,24 +787,30 @@ def export_sky_east_nukuryou(
                 ws.cell(nuk_header_row, sz_col).value = sz_key.upper().replace("XXL", "2XL")
 
             # Aggregate sizes by color (style invariant — normalise once).
+            # Resolve color display labels once per distinct (color_name, brand)
+            # pair, then aggregate sizes vectorised — avoids iterrows overhead.
             _sty_norm = _norm_key(style)
             color_totals: dict[str, dict[str, int]] = {}
-            for _, item in style_df.iterrows():
-                color_en = str(item.get("color_name", "") or "").title()
-                brand    = str(item.get("brand",      "") or "")
-                _, _, _, color_cn_display = _resolve_pc_color(
-                    item, _sty_norm, color_en, brand,
-                    cn_lookup, cn_code_lookup, cn_by_pc_lookup,
-                )
-                display = (
-                    _NUKURYOU_LABEL_FMT.format(en=color_en, cn=color_cn_display)
-                    if color_cn_display else color_en
-                )
-
+            # Build display-label map for distinct color+brand combos
+            _color_display_map: dict[tuple, str] = {}
+            for item in style_df.itertuples(index=False):
+                color_en = str(getattr(item, "color_name", "") or "").title()
+                brand    = str(getattr(item, "brand", "") or "")
+                key      = (color_en, brand)
+                if key not in _color_display_map:
+                    _, _, _, color_cn_display = _resolve_pc_color(
+                        item._asdict(), _sty_norm, color_en, brand,
+                        cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                    )
+                    _color_display_map[key] = (
+                        _NUKURYOU_LABEL_FMT.format(en=color_en, cn=color_cn_display)
+                        if color_cn_display else color_en
+                    )
+                display = _color_display_map[key]
                 if display not in color_totals:
                     color_totals[display] = {sz: 0 for sz in _SIZES_LC}
                 for sz in _SIZES_LC:
-                    color_totals[display][sz] += int(item.get(sz, 0) or 0)
+                    color_totals[display][sz] += int(getattr(item, sz, 0) or 0)
 
             # Write color rows starting at the detected data row
             out_row = nuk_data_row

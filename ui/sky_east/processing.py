@@ -189,19 +189,23 @@ def _se_mask_order_files(order_paths, log: list[str]) -> bytes | None:
     if not order_paths:
         return None
     st.write("Masking prices in source files...")
+    import shutil as _shutil2
     mask_out_dir = tempfile.mkdtemp()
-    masked_files = mask_prices_excel_batch(
-        [p for _, p in order_paths], mask_out_dir
-    )
-    if not masked_files:
-        return None
-    mbuf = io.BytesIO()
-    with zipfile.ZipFile(mbuf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for mp in masked_files:
-            zf.write(mp, os.path.basename(mp))
-    st.write(f"  {len(masked_files)} masked file(s) ready for download")
-    log.append(f"{len(masked_files)} price-masked file(s) created")
-    return mbuf.getvalue()
+    try:
+        masked_files = mask_prices_excel_batch(
+            [p for _, p in order_paths], mask_out_dir
+        )
+        if not masked_files:
+            return None
+        mbuf = io.BytesIO()
+        with zipfile.ZipFile(mbuf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for mp in masked_files:
+                zf.write(mp, os.path.basename(mp))
+        st.write(f"  {len(masked_files)} masked file(s) ready for download")
+        log.append(f"{len(masked_files)} price-masked file(s) created")
+        return mbuf.getvalue()
+    finally:
+        _shutil2.rmtree(mask_out_dir, ignore_errors=True)
 
 
 def _se_patch_contract_numbers(store, contracts, progress_lookup, log: list[str]) -> None:
@@ -258,6 +262,7 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
     from po_extractor.parsers.sky_east_order import parse as se_parse
     from po_extractor.utils.image_extractor import ImageCache
 
+    import shutil as _shutil
     tmpdir = tempfile.mkdtemp()
     log: list[str] = []
     contracts = []
@@ -372,3 +377,5 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
         st.session_state.se_image_cache,
         _se_build_style_pid_map(contracts),
     )
+    # Clean up temp directory — all data is now in memory / DB / disk images
+    _shutil.rmtree(tmpdir, ignore_errors=True)
