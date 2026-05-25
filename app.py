@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "1.13.2"
+APP_VERSION = "1.14.8"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -126,7 +126,11 @@ for key, default in [
     (SK.SE_LOG,          []),      # processing log lines
     (SK.SE_CONTRACTS,    None),    # list of SkyEastContract parsed
     (SK.SE_IMAGE_CACHE,  {}),      # image_id → bytes
-    (SK.SE_DL_BYTES,     None),    # generated download bytes
+    (SK.SE_PROGRESS_LKUP, None),  # ProgressLookup instance
+    (SK.SE_FABRIC_LOOKUP, None),  # fabric lookup cache
+    (SK.SE_MASKED_ZIP,   None),   # masked zip bytes
+    (SK.SE_IMAGES_DIR,   ""),     # local images folder path
+    (SK.SE_DL_BYTES,     None),   # generated download bytes
     (SK.SE_DL_FNAME,     None),    # generated download filename
     (SK.SE_DL_MIME,      None),    # generated download MIME type
     (SK.SE_WL_BYTES,     None),    # wash label download bytes
@@ -228,16 +232,41 @@ def show_main():
         st.divider()
         if st.button("Sign Out", use_container_width=True):
             for k, v in [
-                (SK.LOGGED_IN,     False),
-                (SK.USERNAME,      None),
-                (SK.RESULTS,       None),
-                (SK.PARSE_LOG,     []),
-                (SK.SE_RESULTS,    None),
-                (SK.SE_LOG,        []),
-                (SK.SE_CONTRACTS,  None),
-                (SK.SE_IMAGE_CACHE, {}),
+                (SK.LOGGED_IN,        False),
+                (SK.USERNAME,         None),
+                # GIII
+                (SK.RESULTS,          None),
+                (SK.PARSE_LOG,        []),
+                (SK.HISTORY_RESULTS,  None),
+                (SK.HISTORY_BP_BYTES, None),
+                (SK.GIII_MAPPING,     None),
+                # Sky East — processing
+                (SK.SE_RESULTS,       None),
+                (SK.SE_LOG,           []),
+                (SK.SE_CONTRACTS,     None),
+                (SK.SE_IMAGE_CACHE,   {}),
+                (SK.SE_PROGRESS_LKUP, None),
+                (SK.SE_FABRIC_LOOKUP, None),
+                (SK.SE_MASKED_ZIP,    None),
+                # Sky East — generated files
+                (SK.SE_DL_BYTES,      None),
+                (SK.SE_DL_FNAME,      None),
+                (SK.SE_DL_MIME,       None),
+                (SK.SE_WL_BYTES,      None),
+                (SK.SE_WL_FNAME,      None),
+                (SK.SE_WL_PENDING,    None),
+                (SK.SE_BP_BYTES,      None),
+                (SK.SE_BP_NAME,       None),
+                (SK.SE_NK_BYTES,      None),
+                (SK.SE_NK_COUNT,      0),
+                (SK.SE_NK_REASON,     None),
+                (SK.SE_BP_CMP,        None),
+                # Color source resets to admin default on next render
+                (SK.SE_COLOR_SOURCE,  None),
             ]:
                 st.session_state[k] = v
+            # Clear bare-string keys not in SK enum
+            st.session_state.pop("_se_bp_prog_fp", None)
             st.rerun()
 
         st.divider()
@@ -256,7 +285,7 @@ def show_main():
 
     # ---- Tabs ----
     admin_mode = is_admin(st.session_state.username)
-    tab_labels = ["📋 GIII", "🛍 Sky East", "🧵 Fabric DB", "📐 Fabric Mapping", "🎨 Colors", "📊 Summary"]
+    tab_labels = ["📋 GIII", "🛍 Sky East", "🧵 Fabric DB", "📐 Fabric Mapping", "🎨 Colors", "📊 Summary", "🔖 Releases"]
     if admin_mode:
         tab_labels.append("⚙️ Admin")
     tabs = st.tabs(tab_labels)
@@ -274,8 +303,10 @@ def show_main():
     with tabs[5]:
         _show_summary_tab(user_cos=get_user_companies(st.session_state.username),
                           admin_mode=admin_mode)
+    with tabs[6]:
+        _show_changelog_tab()
     if admin_mode:
-        with tabs[6]:
+        with tabs[7]:
             _show_admin_panel()
 
 
@@ -424,6 +455,16 @@ def _show_fabric_mapping_tab() -> None:
 def _show_color_translation_tab() -> None:
     from ui.color_translation_view import show_color_translation_tab
     show_color_translation_tab()
+
+
+# ---------------------------------------------------------------------------
+# Changelog / Releases tab
+# ---------------------------------------------------------------------------
+
+
+def _show_changelog_tab() -> None:
+    from ui.changelog_view import show_changelog_tab
+    show_changelog_tab()
 
 
 

@@ -30,7 +30,7 @@ def _show_se_upload_section():
     if order_files:
         st.caption(f"{len(order_files)} file(s) selected")
 
-    with st.expander(f"{t('Reference files')} (optional — Config SKU · Progress)"):
+    with st.expander(f"{t('Reference files')} (optional — Config SKU · Progress)", expanded=True):
         ref_l, ref_r = st.columns(2)
         with ref_l:
             ean_file = st.file_uploader(

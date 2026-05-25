@@ -135,15 +135,19 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
     out["pipeline"]         = "excel"
 
     if mask_prices and paths:
+        import shutil as _shutil_mask
         mask_out_dir = tempfile.mkdtemp()
-        masked_files = mask_prices_excel_batch(paths, mask_out_dir)
-        if masked_files:
-            mbuf = io.BytesIO()
-            with zipfile.ZipFile(mbuf, "w", zipfile.ZIP_DEFLATED) as zf:
-                for mp in masked_files:
-                    zf.write(mp, os.path.basename(mp))
-            out["masked_zip"] = mbuf.getvalue()
-            log.append(f"🔒 {len(masked_files)} price-masked file(s) created for {company}")
+        try:
+            masked_files = mask_prices_excel_batch(paths, mask_out_dir)
+            if masked_files:
+                mbuf = io.BytesIO()
+                with zipfile.ZipFile(mbuf, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for mp in masked_files:
+                        zf.write(mp, os.path.basename(mp))
+                out["masked_zip"] = mbuf.getvalue()
+                log.append(f"🔒 {len(masked_files)} price-masked file(s) created for {company}")
+        finally:
+            _shutil_mask.rmtree(mask_out_dir, ignore_errors=True)
 
     return out
 
@@ -155,6 +159,7 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
         load_photo_map_from_dir as _load_photo_map_from_dir,
         images_dir as _get_images_dir,
     )
+    import shutil as _shutil
     tmpdir  = tempfile.mkdtemp()
     out_dir = tempfile.mkdtemp()
     log: list[str] = []
@@ -169,15 +174,12 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
                 f.write(uf.getbuffer())
             excel_paths.append(path)
 
-        # 1b. Save progress file (大货进度表) if provided
+        # 1b. Load progress file (大货进度表) if provided — bytes direct, no temp file
         progress_lookup = None
         if progress_file is not None:
             from po_extractor.lookups import ProgressLookup
-            prog_path = os.path.join(tmpdir, progress_file.name)
-            with open(prog_path, "wb") as f:
-                f.write(progress_file.getbuffer())
             try:
-                progress_lookup = ProgressLookup(prog_path)
+                progress_lookup = ProgressLookup(data=progress_file.getvalue())
                 st.write(f"  📊 Progress lookup ready ({len(progress_lookup)} record(s))")
                 log.append(f"📊 Progress lookup: {len(progress_lookup)} record(s)")
             except Exception as exc:
@@ -339,15 +341,18 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
         if mask_prices and excel_paths:
             st.write("Masking prices in source files…")
             mask_out_dir = tempfile.mkdtemp()
-            masked_files = mask_prices_excel_batch(excel_paths, mask_out_dir)
-            if masked_files:
-                mbuf = io.BytesIO()
-                with zipfile.ZipFile(mbuf, "w", zipfile.ZIP_DEFLATED) as zf:
-                    for mp in masked_files:
-                        zf.write(mp, os.path.basename(mp))
-                masked_excel_zip = mbuf.getvalue()
-                st.write(f"  🔒 {len(masked_files)} masked file(s) ready for download")
-                log.append(f"🔒 {len(masked_files)} price-masked file(s) created")
+            try:
+                masked_files = mask_prices_excel_batch(excel_paths, mask_out_dir)
+                if masked_files:
+                    mbuf = io.BytesIO()
+                    with zipfile.ZipFile(mbuf, "w", zipfile.ZIP_DEFLATED) as zf:
+                        for mp in masked_files:
+                            zf.write(mp, os.path.basename(mp))
+                    masked_excel_zip = mbuf.getvalue()
+                    st.write(f"  🔒 {len(masked_files)} masked file(s) ready for download")
+                    log.append(f"🔒 {len(masked_files)} price-masked file(s) created")
+            finally:
+                _shutil.rmtree(mask_out_dir, ignore_errors=True)
 
         status.update(label="Done!", state="complete")
 
@@ -386,3 +391,6 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
 
     st.session_state.excel_results = outputs
     st.session_state.excel_log = log
+    # Clean up temp directories — all data is now in session_state as bytes
+    _shutil.rmtree(tmpdir, ignore_errors=True)
+    _shutil.rmtree(out_dir, ignore_errors=True)

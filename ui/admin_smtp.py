@@ -285,6 +285,26 @@ def show_smtp_admin() -> None:
         f"as `{configured['user'] or configured['sender']}`",
     )
 
+    # Brevo-specific: warn when the effective sender is the @smtp-brevo.com
+    # login username.  Brevo silently accepts the SMTP handshake but never
+    # delivers emails whose From address is not a verified sender/domain.
+    _eff_sender = smtp_settings.effective_sender(configured)
+    if "brevo" in configured["host"].lower() and (
+        not _eff_sender or _eff_sender.lower().endswith("@smtp-brevo.com")
+    ):
+        if not _eff_sender:
+            _sender_desc = "empty — neither Username nor Sender is set"
+        else:
+            _sender_desc = f"`{_eff_sender}` — this is the SMTP login username, NOT a verified sender"
+        st.warning(
+            "⚠️ **Brevo: Sender address is not set correctly.**\n\n"
+            f"Your current From address is {_sender_desc}. Brevo will accept the connection but "
+            "**silently drop the email** without delivering it.\n\n"
+            "**Fix:** Fill in the **Sender** field above with an email address you have "
+            "verified in your Brevo account (e.g. `orders@yourdomain.com`), then click **Save**.\n\n"
+            "Verify senders at: https://app.brevo.com/senders"
+        )
+
     default_to = get_user_email(st.session_state.username) or configured["user"]
     tcol1, tcol2 = st.columns([4, 1])
     with tcol1:

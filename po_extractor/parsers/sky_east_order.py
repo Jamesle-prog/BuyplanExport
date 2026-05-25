@@ -1,18 +1,16 @@
 """Parser for Sky East Purchase Contract Excel files.
 
-File structure (Sheet1):
-  Row 1       : "Sky East International Trading Limited"
-  Row 3       : PC NO.      (col 5)  → e.g. HHPPC038
-  Row 4       : Date        (col 5)
-  Row 5       : Party A     (col 5)  – Buyer = Sky East
-  Row 7       : Party B     (col 5)  – Seller = HHN / Newest
-  Row 9       : Currency    (col 5)
-  Row 10      : Payment     (col 5)
-  Row 13      : Trade term  (col 5)
-  Row 16      : Column header row
-  Row 17+     : Data rows
-  Brand divider: col-1 = non-integer string with no Style / PO (e.g. "ABOUT YOU")
-  Footer row  : col-1 starts with "SAY " or col contains "Total"
+All structural positions are determined dynamically:
+
+  Contract sheet  : first worksheet whose header block contains "Sky East"
+                    or a "PC NO." label; falls back to worksheets[0].
+  Header row      : first row that contains both a style-like and a PO-like
+                    column header (scanned up to row 40).
+  Header columns  : every header token is matched against _COL_ALIASES; size
+                    columns are recognised from _KNOWN_SIZES and mapped to the
+                    6 DB size keys via _SIZE_TO_DB.
+  Contract fields : label → value scan in rows 1-25, cols 1-6; value is the
+                    first non-empty cell to the right of the label cell.
 
 Returns SkyEastContract (with SkyEastItem list) matching models/sky_east_data.py.
 
@@ -32,7 +30,7 @@ from ..models.sky_east_data import SkyEastContract, SkyEastItem
 from ..models.fabric_part import FabricPart
 from ..utils.image_extractor import extract_dispimg_positions
 
-PARSER_VERSION = "1.1"
+PARSER_VERSION = "1.3"
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -40,8 +38,44 @@ PARSER_VERSION = "1.1"
 
 _DISPIMG_RE = re.compile(r'DISPIMG\("(ID_[0-9A-Fa-f]+)"', re.IGNORECASE)
 
+# ── Size recognition ──────────────────────────────────────────────────────────
+# Any header token whose stripped, upper-cased value is in this set is treated
+# as a size column.  Add new variants here; no other code needs to change.
+_KNOWN_SIZES: frozenset[str] = frozenset({
+    # Letter sizes
+    "XXS", "XS", "S", "SM", "M", "MED", "L", "LG", "XL", "XXL", "2XL", "3XL",
+    "4XL", "XXXL", "XXXXL",
+    # Plus / extended
+    "1X", "2X", "3X", "4X", "5X", "6X",
+    # Numeric (women's / children's)
+    "0", "2", "4", "6", "8", "10", "12", "14", "16", "18", "20", "22", "24",
+    "2T", "3T", "4T", "5T", "6T",
+    # Other
+    "OS", "ONE SIZE", "ONE-SIZE", "FREE SIZE", "FREESIZE",
+})
+
+# Map every recognised size (upper-cased) → DB column key.
+# Unmapped sizes still contribute to total_qty in the store.
+SIZE_TO_DB: dict[str, str] = {
+    "XXS": "xs",
+    "XS": "xs", "X-SMALL": "xs",
+    "S": "s",  "SM": "s",  "SMALL": "s",
+    "M": "m",  "MED": "m", "MEDIUM": "m",
+    "L": "l",  "LG": "l",  "LARGE": "l",
+    "XL": "xl", "X-LARGE": "xl", "XLARGE": "xl", "1X": "xl",
+    "XXL": "xxl", "2XL": "xxl", "3XL": "xxl", "4XL": "xxl",
+    "XXXL": "xxl", "XXXXL": "xxl",
+    "2X": "xxl", "3X": "xxl", "4X": "xxl", "5X": "xxl", "6X": "xxl",
+}
+
+# Legacy constants kept for external callers that import them
 SIZE_KEYS  = ("XS", "S", "M", "L", "XL", "2XL")
 _SIZE_COLS = ("xs",  "s", "m", "l", "xl", "xxl")   # DB column names
+
+
+def _is_size_header(text: str) -> bool:
+    """Return True if *text* looks like a garment size column header."""
+    return text.strip().upper() in _KNOWN_SIZES
 
 
 def _v(cell_value) -> str:
@@ -79,16 +113,36 @@ def _dispimg_id(val) -> str:
 
 # Each entry: (field_name, set_of_label_aliases)
 # Labels appear somewhere in the header block (rows 1-20), values are read
-# from the same row — either the rightmost non-empty cell in cols A-H or the
-# first cell in cols C-H after the label column.
+# from the same row — first non-empty cell to the right of the label cell.
 _HEADER_LABEL_ALIASES: list[tuple[str, set[str]]] = [
-    ("pc_no",         {"pc no.", "pc no", "p.c. no.", "pc number", "合同编号", "contract no"}),
-    ("pc_date",       {"date", "日期", "合同日期"}),
-    ("party_a",       {"party a", "buyer", "甲方", "party a (buyer)"}),
-    ("party_b",       {"party b", "seller", "乙方", "party b (seller)"}),
-    ("currency",      {"currency", "货币", "currency:"}),
-    ("payment_terms", {"payment", "payment method", "payment terms", "付款方式"}),
-    ("trade_term",    {"trade term", "trade terms", "贸易条款", "incoterm"}),
+    ("pc_no", {
+        "pc no.", "pc no", "p.c. no.", "pc number", "pc#",
+        "合同编号", "合同号", "contract no", "contract no.", "contract number",
+        "contract#", "po contract no", "purchase contract no",
+    }),
+    ("pc_date", {
+        "date", "contract date", "pc date", "order date",
+        "日期", "合同日期", "签约日期",
+    }),
+    ("party_a", {
+        "party a", "buyer", "party a (buyer)", "甲方", "买方",
+        "issued to", "sold to", "bill to", "customer", "client",
+    }),
+    ("party_b", {
+        "party b", "seller", "party b (seller)", "乙方", "卖方",
+        "vendor", "supplier", "factory", "manufacturer",
+    }),
+    ("currency", {
+        "currency", "currency:", "curr.", "货币", "结算货币",
+    }),
+    ("payment_terms", {
+        "payment", "payment method", "payment terms", "payment condition",
+        "terms of payment", "付款方式", "付款条款",
+    }),
+    ("trade_term", {
+        "trade term", "trade terms", "incoterm", "incoterms",
+        "delivery term", "delivery terms", "贸易条款", "交货条款",
+    }),
 ]
 
 
@@ -124,25 +178,30 @@ def _parse_contract_header(ws) -> dict[str, str]:
             norm = _norm_label(str(cell_val))
             field = alias_to_field.get(norm)
             if field and field not in found:
-                # Value is in col E; fall back to first non-empty in cols F-H
-                val = _v(ws.cell(row=r, column=5).value)
-                if not val:
-                    for vc in range(6, 9):
-                        val = _v(ws.cell(row=r, column=vc).value)
-                        if val:
-                            break
+                # Value is in the next non-empty cell on this row (col c+1 … H).
+                # Standard layout puts it in col E (5); some files use col D (4).
+                val = ""
+                for vc in range(c + 1, 9):
+                    val = _v(ws.cell(row=r, column=vc).value)
+                    if val:
+                        break
                 found[field] = val
                 break   # move to next row once a field is found on this row
 
-    # Hard-coded fallbacks for any field not found by label search
+    # Hard-coded fallbacks for any field not found by label search.
+    # Try col 4 first (newer layout), then col 5 (classic layout).
     _FALLBACK_ROWS = {
-        "pc_no": (3, 5), "pc_date": (4, 5), "party_a": (5, 5),
-        "party_b": (7, 5), "currency": (9, 5),
-        "payment_terms": (10, 5), "trade_term": (13, 5),
+        "pc_no": (3,), "pc_date": (4,), "party_a": (5,),
+        "party_b": (7,), "currency": (9,),
+        "payment_terms": (10,), "trade_term": (13,),
     }
-    for field, (row, col) in _FALLBACK_ROWS.items():
+    for field, (row,) in _FALLBACK_ROWS.items():
         if field not in found:
-            found[field] = _v(ws.cell(row=row, column=col).value)
+            for col in (4, 5, 6):
+                val = _v(ws.cell(row=row, column=col).value)
+                if val:
+                    found[field] = val
+                    break
 
     return found
 
@@ -151,57 +210,275 @@ def _parse_contract_header(ws) -> dict[str, str]:
 # Column detection
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Contract sheet detection
+# ---------------------------------------------------------------------------
+
+_CONTRACT_SIGNALS = frozenset({
+    "sky east international trading limited",
+    "sky east",
+    "pc no.",
+    "pc no",
+    "purchase contract",
+    "purchase order contract",
+})
+
+
+def _find_contract_sheet(wb):
+    """Return the worksheet most likely to be the Sky East purchase contract.
+
+    Scans the first 15 rows × 10 columns of each sheet for keywords that
+    only appear in contract sheets (Sky East company name, PC NO. label, etc.).
+    Falls back to ``worksheets[0]`` if nothing matches.
+    """
+    best_ws   = wb.worksheets[0]
+    best_hits = 0
+
+    for ws in wb.worksheets:
+        hits = 0
+        for r in range(1, 16):
+            for c in range(1, 10):
+                raw = str(ws.cell(r, c).value or "").strip().lower()
+                if not raw:
+                    continue
+                if any(sig in raw for sig in _CONTRACT_SIGNALS):
+                    hits += 1
+                # Direct PC No. pattern match (e.g. HHPPC038, LSKHHN005R …)
+                if re.match(r'^[A-Z]{2,8}PC\d{3}', raw, re.IGNORECASE):
+                    hits += 2
+        if hits > best_hits:
+            best_hits = hits
+            best_ws   = ws
+
+    return best_ws
+
+
+# ---------------------------------------------------------------------------
+# Column detection
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Column aliases
+# ---------------------------------------------------------------------------
+# Non-size column aliases — sizes are detected dynamically via _is_size_header.
+# Add synonyms freely; _find_header_row and _map_columns both use this table.
+# ---------------------------------------------------------------------------
 _COL_ALIASES: dict[str, set[str]] = {
-    "item":         {"item", "item no", "item no.", "no", "no."},
-    "return_label": {"需要挂 return label", "return label", "return label "},
-    "style_no":     {"style no.", "style no", "style"},
-    "po_number":    {"po number", "po no.", "po#", "po_number"},
-    "config_sku":   {"config_sku", "config sku"},
-    "article_name": {"supplier article name", "article name"},
-    "picture":      {"piicture", "picture", "image"},
-    "fabric_no":    {"fabric item number", "fabric item no", "fabric item number"},
-    "fabrication":  {"fabrication", "fabrication "},
-    "brand":        {"brand"},
-    "color_name":   {"color name", "colour name"},
-    "color_code":   {"colour code", "color code"},
-    "launch_date":  {"launch date"},
-    "xs":  {"xs"}, "s": {"s"}, "m": {"m"}, "l": {"l"}, "xl": {"xl"},
-    "xxl": {"2xl", "xxl"},
-    "total_qty":    {"total quantity", "qty", "total qty"},
-    "fob_usd":      {"fob\nusd", "fob usd", " fob \nusd", "fob"},
-    "total_cost":   {"total cost\nusd", "total cost usd", "total cost"},
-    "ex_fty":       {"ex-fty", "ex fty", "exfty"},
+    "item": {
+        "item", "item no", "item no.", "no", "no.", "seq", "seq.",
+        "line", "line no", "line no.", "line item",
+    },
+    "return_label": {
+        "需要挂 return label", "return label", "return label ",
+        "return label?", "need return label",
+    },
+    "style_no": {
+        "style no.", "style no", "style", "style#", "style number",
+        "style code", "design no", "design no.", "design number",
+        "supplier style", "supplier style no", "supplier style number",
+        "supplier article number", "supplier article no",
+        "main supplier config sku", "vendor style",
+        "item style", "sku style",
+    },
+    "po_number": {
+        "po number", "po no.", "po no", "po#", "po_number",
+        "purchase order number", "purchase order no",
+        "purchase order no.", "purchase order#",
+        "order number", "order no", "order no.", "order#",
+        "zalando po", "zalando po number", "buyer po", "buyer po number",
+        "client po", "retailer po",
+    },
+    "config_sku": {
+        "config_sku", "config sku", "config sku.", "sku",
+        "buyer sku", "buyer article sku", "retailer sku",
+        "article sku", "product sku",
+    },
+    "article_name": {
+        "supplier article name", "article name", "article description",
+        "product name", "product description", "garment description",
+        "description", "item description", "style description",
+        "style name", "item name",
+    },
+    "picture": {
+        "piicture", "picture", "image", "photo", "photo id",
+        "picture id", "image id", "style image",
+    },
+    "fabric_no": {
+        "fabric item number", "fabric item no", "fabric item no.",
+        "fabric no", "fabric no.", "fabric number", "fabric code",
+        "fabric reference", "fabric ref", "hhn no",
+        "material no", "material number", "material code",
+    },
+    "fabrication": {
+        "fabrication", "fabrication ", "composition",
+        "fabric composition", "material composition",
+        "fabric content", "content",
+    },
+    "brand": {
+        "brand", "brand name", "brand/label", "label",
+        "buyer brand", "division", "sub-brand",
+    },
+    "color_name": {
+        "color name", "colour name", "color", "colour",
+        "color description", "colour description",
+        "colorway", "colourway", "color/colour",
+        "supplier color name", "supplier colour name",
+        "color description en", "shade", "shade name",
+    },
+    "color_code": {
+        "colour code", "color code", "color code.", "colour code.",
+        "color ref", "colour ref", "color reference",
+        "colour reference", "color id", "colour id",
+        "supplier color code", "supplier colour code",
+        "color#", "colour#",
+    },
+    "launch_date": {
+        "launch date", "handover window from",
+        "delivery date", "ship date", "ship window",
+        "delivery window", "delivery window from",
+        "required delivery date", "required ship date",
+        "target delivery", "target ship date",
+        "in-store date", "in store date",
+    },
+    "total_qty": {
+        "total quantity", "qty", "total qty",
+        "quantity ordered", "quantity", "order qty",
+        "total pcs", "pcs", "total pieces", "total units",
+        "units", "total order qty", "ordered qty",
+    },
+    "fob_usd": {
+        "fob\nusd", "fob usd", " fob \nusd", "fob",
+        "fob price", "fob unit price", "unit price usd",
+        "unit price", "unit fob", "price usd", "price (usd)",
+        "net price", "selling price usd",
+    },
+    "total_cost": {
+        "total cost\nusd", "total cost usd", "total cost",
+        "total amount", "total amount usd", "amount usd",
+        "total value", "total value usd",
+        "extended cost", "total extended",
+    },
+    "ex_fty": {
+        "ex-fty", "ex fty", "exfty", "离厂期",
+        "ex factory", "ex-factory", "ex factory date",
+        "ex-factory date", "ex fac", "ex fac date",
+        "ship date", "ship ex factory", "departure date",
+        "date ex factory",
+    },
 }
 
-_DEFAULTS: dict[str, int] = {   # 1-based column fallbacks
-    "item": 1, "return_label": 3, "style_no": 4, "po_number": 5,
-    "config_sku": 6, "article_name": 7, "picture": 8, "fabric_no": 9,
-    "fabrication": 10, "brand": 11, "color_name": 12, "color_code": 13,
-    "launch_date": 14,
-    "xs": 15, "s": 16, "m": 17, "l": 18, "xl": 19, "xxl": 20,
+# Minimal positional fallbacks — only applied to fields not found by header scan.
+# Prefer dynamic detection; these only protect against completely headerless files.
+_DEFAULTS: dict[str, int] = {
+    "item": 1, "style_no": 4, "po_number": 5,
+    "config_sku": 6, "article_name": 7, "picture": 8,
+    "fabric_no": 9, "fabrication": 10, "brand": 11,
+    "color_name": 12, "color_code": 13, "launch_date": 14,
     "total_qty": 21, "fob_usd": 22, "total_cost": 23, "ex_fty": 24,
 }
 
 
 def _find_header_row(ws) -> int:
-    for r in range(1, 30):
-        for c in range(1, 15):
-            v = _v(ws.cell(row=r, column=c).value).lower()
-            if v in ("style no.", "style no", "po number"):
-                return r
-    return 16
+    """Return the 1-based row index of the column-header row.
+
+    Strategy: score every row up to row 40 by counting how many cells match
+    a known column alias (from _COL_ALIASES) or a known size token.  The row
+    with the highest score is the header row.  Ties are broken by taking the
+    earlier row.  Falls back to row 16 when nothing scores above 0.
+
+    Auto-derives its signal set from _COL_ALIASES so adding new aliases there
+    automatically improves header detection — no separate list to maintain.
+    """
+    # Build the full signal set from _COL_ALIASES
+    _signals: frozenset[str] = frozenset(
+        alias for aliases in _COL_ALIASES.values() for alias in aliases
+    )
+
+    max_col = min((ws.max_column or 0) + 1, 50)
+    best_row, best_score = 16, 0
+
+    for r in range(1, 41):
+        score = 0
+        for c in range(1, max_col):
+            v = _v(ws.cell(row=r, column=c).value).strip().lower()
+            if not v:
+                continue
+            if v in _signals or _is_size_header(v):
+                score += 1
+        if score > best_score:
+            best_score = score
+            best_row = r
+
+    return best_row
 
 
 def _map_columns(ws, hrow: int) -> dict[str, int]:
+    """Build a ``{field_name: column_index}`` map from the header row.
+
+    Three passes over the header cells:
+
+    Pass 1 — Exact alias match
+        Each normalised cell value is looked up directly in ``_COL_ALIASES``.
+
+    Pass 2 — Size columns
+        Anything not matched in pass 1 is tested with ``_is_size_header``
+        and stored under its canonical upper-cased name (``"XS"``, ``"2XL"`` …).
+
+    Pass 3 — Partial / substring match (fallback for near-miss headers)
+        For every field still unmapped, check whether any alias string is a
+        substring of the cell text or vice-versa (minimum alias length: 5
+        characters to avoid false positives on short words like "no", "qty").
+
+    Positional defaults from ``_DEFAULTS`` are applied last, only for fields
+    that remained undetected after all three passes.
+    """
     col_map: dict[str, int] = {}
-    for c in range(1, min(ws.max_column + 1, 35)):
-        raw = _v(ws.cell(row=hrow, column=c).value).lower().strip()
+    max_col = min((ws.max_column or 0) + 1, 50)
+
+    # Collect (col, norm) pairs for all non-empty header cells
+    header_cells: list[tuple[int, str]] = []
+    for c in range(1, max_col):
+        raw  = _v(ws.cell(row=hrow, column=c).value)
+        norm = raw.lower().strip()
+        if not norm:
+            continue
+        header_cells.append((c, norm))
+
+        # Pass 1: exact alias match
+        matched = False
         for key, aliases in _COL_ALIASES.items():
-            if raw and raw in aliases and key not in col_map:
+            if norm in aliases and key not in col_map:
                 col_map[key] = c
+                matched = True
                 break
+
+        # Pass 2: size columns
+        if not matched and _is_size_header(norm):
+            canonical = norm.strip().upper()
+            if canonical not in col_map:
+                col_map[canonical] = c
+
+    # Pass 3: partial / substring matching for fields still unmapped
+    claimed_cols = set(col_map.values())
+    for c, norm in header_cells:
+        if c in claimed_cols:
+            continue
+        for key, aliases in _COL_ALIASES.items():
+            if key in col_map:
+                continue
+            for alias in aliases:
+                # Guard: alias must be long enough to avoid noise
+                if len(alias) < 5:
+                    continue
+                if alias in norm or norm in alias:
+                    col_map[key] = c
+                    claimed_cols.add(c)
+                    break
+
+    # Apply positional defaults only for fields still missing
     for k, v in _DEFAULTS.items():
         col_map.setdefault(k, v)
+
     return col_map
 
 
@@ -302,18 +579,22 @@ def _fabrication_display(parts: list[FabricPart], fabrication_cell) -> str:
 # ---------------------------------------------------------------------------
 
 def parse(path: str, processed_by: str = "") -> SkyEastContract:
-    """
-    Parse a Sky East Excel file (Sheet1) and return a SkyEastContract.
+    """Parse a Sky East Excel file and return a SkyEastContract.
+
+    Sheet selection, header-row position, column mapping, and size columns are
+    all determined dynamically from the file content — no hardcoded positions.
 
     Each SkyEastItem has:
       • fabric_item_no  — primary HHN (backward compat)
       • fabrication     — human-readable display string
       • fabric_parts    — list[FabricPart] with full structured data
+      • sizes           — dict keyed by actual size labels found in the file
+                          (e.g. {"XS": 49, "S": 143, "1X": 60})
 
     processed_by  : username of the person who triggered the upload (optional)
     """
     wb = openpyxl.load_workbook(path, data_only=True)
-    ws = wb.worksheets[0]
+    ws = _find_contract_sheet(wb)     # ← dynamic sheet detection
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     fname   = os.path.basename(path)
@@ -377,18 +658,18 @@ def parse(path: str, processed_by: str = "") -> SkyEastContract:
         # Brand: prefer per-row brand col, fall back to last seen divider
         brand = _v(cv(r, "brand")) or current_brand
 
-        # Sizes dict
-        xs  = _int(cv(r, "xs"))
-        s   = _int(cv(r, "s"))
-        m   = _int(cv(r, "m"))
-        l   = _int(cv(r, "l"))
-        xl  = _int(cv(r, "xl"))
-        xxl = _int(cv(r, "xxl"))
-        sizes = {"XS": xs, "S": s, "M": m, "L": l, "XL": xl, "2XL": xxl}
+        # ── Dynamic sizes ─────────────────────────────────────────────────────
+        # All keys in col_map that pass _is_size_header are size columns.
+        sizes: dict[str, int] = {}
+        for key, cidx in col.items():
+            if _is_size_header(key):
+                qty = _int(ws.cell(row=r, column=cidx).value)
+                if qty:   # only store non-zero for compactness
+                    sizes[key.upper()] = qty
 
         total_qty = _int(cv(r, "total_qty"))
         if total_qty == 0:
-            total_qty = xs + s + m + l + xl + xxl
+            total_qty = sum(sizes.values())
 
         # ── Multi-fabric extraction ───────────────────────────────────────────
         fabric_parts = _extract_fabric_parts(cv(r, "fabric_no"))

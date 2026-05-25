@@ -392,12 +392,32 @@ def save_images_to_disk(image_dict: dict,
 def build_image_cache_for_ids(picture_ids,
                               session_cache_key: str = "se_image_cache",
                               img_dir: str | None = None) -> dict:
-    """Return {picture_id: bytes} for the given IDs, loading from session then disk."""
-    result = {}
+    """Return {picture_id: bytes} for the given IDs, loading from session then disk.
+
+    Already-loaded images are served from the session-state cache so repeated
+    Generate presses skip all disk I/O for images that were loaded previously.
+    Newly loaded images are written back into the session cache so future calls
+    (within the same session) are instant.
+    """
+    session_cache: dict = st.session_state.setdefault(session_cache_key, {})
+    result: dict = {}
     for pid in picture_ids:
         pid = str(pid).strip() if pid else ""
-        if pid:
-            b = load_image(pid, session_cache_key=session_cache_key, img_dir=img_dir)
-            if b:
+        if not pid:
+            continue
+        if pid in session_cache:
+            # Already in session — free hit
+            result[pid] = session_cache[pid]
+            continue
+        # Not cached yet — load from disk and populate session cache
+        folder = img_dir if img_dir is not None else images_dir()
+        path = os.path.join(folder, f"{pid}.png")
+        if os.path.exists(path):
+            try:
+                with open(path, "rb") as _f:
+                    b = _f.read()
+                session_cache[pid] = b
                 result[pid] = b
+            except OSError:
+                pass
     return result

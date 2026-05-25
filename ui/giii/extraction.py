@@ -30,6 +30,7 @@ _ProgressTracker = ProgressTracker
 
 
 def _run_extraction(uploaded_files, mask_prices: bool, company: str = ""):
+    import shutil as _shutil
     tmpdir = tempfile.mkdtemp()
     out_dir = tempfile.mkdtemp()
     log = []
@@ -165,6 +166,9 @@ def _run_extraction(uploaded_files, mask_prices: bool, company: str = ""):
 
     st.session_state.results = outputs
     st.session_state.parse_log = log
+    # All outputs are now in session_state — clean up temp dirs
+    _shutil.rmtree(tmpdir,  ignore_errors=True)
+    _shutil.rmtree(out_dir, ignore_errors=True)
 
 
 def _log_save_results(results: list[tuple], log: list) -> None:
@@ -200,6 +204,7 @@ def _run_from_history(po_numbers: list[str], result_key: str = "history_results"
 
     df_size = _enrich_cn_color(df_size, df_meta)
 
+    import shutil as _shutil2
     out_dir = tempfile.mkdtemp()
     with st.status("Generating from history…", expanded=True) as status:
         st.write("Building buy plan…")
@@ -242,6 +247,7 @@ def _run_from_history(po_numbers: list[str], result_key: str = "history_results"
                     df_meta.to_csv(index=False, encoding="utf-8-sig"))
     outputs["csvs_zip"] = csv_buf.getvalue()
     st.session_state[result_key] = outputs
+    _shutil2.rmtree(out_dir, ignore_errors=True)
 
 
 def _create_buyplan_bytes(po_numbers: list[str]) -> bytes:
@@ -251,12 +257,16 @@ def _create_buyplan_bytes(po_numbers: list[str]) -> bytes:
     df_meta = store.load_metadata(po_numbers)
     if df_size.empty:
         return b""
+    import shutil as _shutil3
     df_size = _enrich_cn_color(df_size, df_meta)
     out_dir = tempfile.mkdtemp()
-    path = export_buyplan(df_size, df_meta, out_dir,
-                          images_dir=_get_images_dir("giii_images_dir"))
-    with open(path, "rb") as f:
-        return f.read()
+    try:
+        path = export_buyplan(df_size, df_meta, out_dir,
+                              images_dir=_get_images_dir("giii_images_dir"))
+        with open(path, "rb") as f:
+            return f.read()
+    finally:
+        _shutil3.rmtree(out_dir, ignore_errors=True)
 
 
 def _se_items_to_buyplan_dfs(df_items: pd.DataFrame) -> tuple:

@@ -8,7 +8,7 @@ import pandas as pd
 
 from ..models.sky_east_data import SkyEastContract, SkyEastItem
 from .base_store import BaseSQLiteStore
-from ._sky_east_store_schema import _SCHEMA, _item_sizes_dict, _sizes_equal
+from ._sky_east_store_schema import _SCHEMA, _item_sizes_dict, _normalize_sizes, _sizes_equal
 
 DB_PATH_DEFAULT = Path(__file__).parent.parent.parent / "data" / "po_history.db"
 
@@ -56,6 +56,26 @@ class SkyEastStore(BaseSQLiteStore):
             ),
         )
 
+    @staticmethod
+    def _sizes_to_db_cols(sizes: dict) -> tuple:
+        """Collapse a dynamic sizes dict into the 6 fixed DB columns.
+
+        Any size key recognised by SIZE_TO_DB (e.g. "1X", "2X", "XXXL", "SM")
+        is aggregated into the correct bucket.  Unknown keys are silently
+        ignored so future parser additions never raise here.
+
+        Returns: (xs, s, m, l, xl, xxl)
+        """
+        from ..parsers.sky_east_order import SIZE_TO_DB  # lazy import to avoid circular
+        db: dict[str, int] = {"xs": 0, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0}
+        for raw_key, qty in sizes.items():
+            if not qty:
+                continue
+            bucket = SIZE_TO_DB.get(str(raw_key).strip().upper())
+            if bucket:
+                db[bucket] += int(qty)
+        return db["xs"], db["s"], db["m"], db["l"], db["xl"], db["xxl"]
+
     def _archive_item(self, conn: sqlite3.Connection, existing: dict) -> None:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
@@ -84,6 +104,7 @@ class SkyEastStore(BaseSQLiteStore):
         self, conn: sqlite3.Connection, item: SkyEastItem, revision_reason: str | None = None
     ) -> None:
         sizes = item.sizes or {}
+        xs, s, m, l, xl, xxl = self._sizes_to_db_cols(sizes)
         conn.execute(
             """INSERT OR REPLACE INTO sky_east_items
                (pc_no, zalando_po, style, config_sku, article_name, brand,
@@ -97,8 +118,7 @@ class SkyEastStore(BaseSQLiteStore):
                 item.article_name, item.brand, item.color_name, item.colour_code,
                 item.launch_date, item.fabric_item_no, item.fabrication,
                 item.contract_no,
-                sizes.get("XS", 0), sizes.get("S", 0), sizes.get("M", 0),
-                sizes.get("L", 0), sizes.get("XL", 0), sizes.get("2XL", 0),
+                xs, s, m, l, xl, xxl,
                 item.total_qty, item.fob_usd, item.total_cost_usd,
                 item.ex_fty_date, item.picture_id, revision_reason,
             ),
@@ -108,6 +128,7 @@ class SkyEastStore(BaseSQLiteStore):
         self, conn: sqlite3.Connection, item: SkyEastItem, revision_reason: str = "updated"
     ) -> None:
         sizes = item.sizes or {}
+        xs, s, m, l, xl, xxl = self._sizes_to_db_cols(sizes)
         conn.execute(
             """UPDATE sky_east_items SET
                config_sku=?, article_name=?, brand=?, colour_code=?, launch_date=?,
@@ -119,8 +140,7 @@ class SkyEastStore(BaseSQLiteStore):
             (
                 item.config_sku, item.article_name, item.brand, item.colour_code,
                 item.launch_date, item.fabric_item_no, item.fabrication, item.contract_no,
-                sizes.get("XS", 0), sizes.get("S", 0), sizes.get("M", 0),
-                sizes.get("L", 0), sizes.get("XL", 0), sizes.get("2XL", 0),
+                xs, s, m, l, xl, xxl,
                 item.total_qty, item.fob_usd, item.total_cost_usd,
                 item.ex_fty_date, item.picture_id, revision_reason,
                 item.pc_no, item.style, item.color_name, item.zalando_po,
@@ -173,7 +193,9 @@ class SkyEastStore(BaseSQLiteStore):
                     result["new_items"].append((item.style, item.color_name, item.zalando_po))
                 else:
                     old_sizes = _item_sizes_dict(existing)
-                    new_sizes = item.sizes or {}
+                    # Normalise to canonical 6-key format so raw parser keys
+                    # (e.g. "1X", "XXXL") compare correctly against DB data.
+                    new_sizes = _normalize_sizes(item.sizes or {})
 
                     sizes_same = _sizes_equal(old_sizes, new_sizes)
                     old_qty  = existing.get("total_qty") or 0
