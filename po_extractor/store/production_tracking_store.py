@@ -193,18 +193,38 @@ class ProductionTrackingStore(BaseSQLiteStore):
             ).fetchone()
         return dict(row) if row else None
 
-    def list_untracked_pos(self, po_store) -> list[dict]:
-        """Return all (po_number, style, factory, company) combos that are
-        present in ``po_size_rows`` but not yet tracked.
+    def list_untracked_pos(
+        self,
+        po_store,
+        companies: list[str] | None = None,
+        allow_all: bool = False,
+    ) -> list[dict]:
+        """Return untracked (po_number, style, factory, company) combos.
 
         Sourced from ``po_size_rows`` (not ``po_metadata``) because a single
-        PO can carry multiple distinct styles in po_size_rows; po_metadata
-        has only one style column per PO and would miss multi-style orders.
+        PO can carry multiple distinct styles; po_metadata has only one style
+        column per PO and would miss multi-style orders.
+
+        Access-control contract (mirrors ``list_all``):
+          - ``allow_all=True`` → no company filter (admin path)
+          - ``allow_all=False`` + empty/None companies → return ``[]``
+          - ``allow_all=False`` + non-empty companies → filter by company
 
         Runs against ``po_store.db_path`` — which in single-DB mode is the
-        same file as ``self.db_path``, so the same connection sees all three
-        tables.
+        same file as ``self.db_path``, so the same connection sees all tables.
         """
+        # Guard: non-admin with no assigned companies → nothing visible
+        if not allow_all and not companies:
+            return []
+
+        # Build the optional company WHERE fragment
+        company_clause = ""
+        company_params: list[Any] = []
+        if not allow_all and companies:
+            ph = ",".join("?" * len(companies))
+            company_clause = f" AND COALESCE(m.company, '') IN ({ph})"
+            company_params = list(companies)
+
         import sqlite3
         from contextlib import closing
         with closing(sqlite3.connect(po_store.db_path)) as conn:
@@ -214,7 +234,7 @@ class ProductionTrackingStore(BaseSQLiteStore):
             # can simply read the local production_tracking table.
             if po_store.db_path == self.db_path:
                 rows = conn.execute(
-                    """
+                    f"""
                     SELECT DISTINCT
                            s.po_number,
                            COALESCE(s.style, '') AS style,
@@ -224,8 +244,10 @@ class ProductionTrackingStore(BaseSQLiteStore):
                     LEFT JOIN po_metadata m ON m.po_number = s.po_number
                     WHERE (s.po_number, COALESCE(s.style, '')) NOT IN
                           (SELECT po_number, style FROM production_tracking)
+                    {company_clause}
                     ORDER BY s.po_number, s.style
-                    """
+                    """,
+                    company_params,
                 ).fetchall()
             else:
                 # Different DB files: attach the tracking DB read-only.
@@ -233,7 +255,7 @@ class ProductionTrackingStore(BaseSQLiteStore):
                     f"ATTACH DATABASE '{self.db_path}' AS pt"
                 )
                 rows = conn.execute(
-                    """
+                    f"""
                     SELECT DISTINCT
                            s.po_number,
                            COALESCE(s.style, '') AS style,
@@ -243,8 +265,10 @@ class ProductionTrackingStore(BaseSQLiteStore):
                     LEFT JOIN po_metadata m ON m.po_number = s.po_number
                     WHERE (s.po_number, COALESCE(s.style, '')) NOT IN
                           (SELECT po_number, style FROM pt.production_tracking)
+                    {company_clause}
                     ORDER BY s.po_number, s.style
-                    """
+                    """,
+                    company_params,
                 ).fetchall()
         return [dict(r) for r in rows]
 

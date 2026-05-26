@@ -116,26 +116,30 @@ def show_production_tracking_tab(
     elif active_label == _TAB_LABELS[TAB_EDIT]:
         _render_edit_tab(records, readiness_map, store, username, today)
     elif active_label == _TAB_LABELS[TAB_ADD]:
-        _render_add_tab(store, po_store, username)
+        _render_add_tab(store, po_store, username, user_cos=user_cos, admin_mode=admin_mode)
     elif active_label == _TAB_LABELS[TAB_PLAN]:
         _render_plan_tab(records, store)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Metrics row (Stage 4 — minimal counts; Stage 7 fleshes out formatting)
+# Metrics row
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_metrics(records, readiness_map, reminder_map, today) -> None:
     """Five summary metrics at the top of the Tracking tab."""
-    from po_extractor.store._production_tracking_schema import STAGES
+    from po_extractor.store._production_tracking_schema import STAGES, OPTIONAL_SAMPLE_STAGES
 
     total = len(records)
 
+    # Only count stages that are applicable — inapplicable optional samples
+    # (applicable=0) must be excluded from Delayed to match the module rule
+    # that inapplicable stages are invisible to all metrics.
     delayed_stages = sum(
         1
         for r in records
         for s in STAGES
         if (r.get(f"{s}_status") or "") == "Delayed"
+        and (s not in OPTIONAL_SAMPLE_STAGES or r.get(f"{s}_applicable", 0))
     )
 
     blocked = sum(
@@ -153,6 +157,7 @@ def _render_metrics(records, readiness_map, reminder_map, today) -> None:
         for r in records
         for s in STAGES
         if (r.get(f"{s}_actual") or "") == today_iso
+        and (s not in OPTIONAL_SAMPLE_STAGES or r.get(f"{s}_applicable", 0))
     )
 
     qc_due = sum(1 for r in records if reminder_map[r["id"]])
@@ -202,9 +207,26 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
     )
 
 
-def _render_add_tab(store, po_store, username) -> None:
-    """Stage 5 will render the Add New picker + initial form."""
-    untracked = store.list_untracked_pos(po_store)
+def _render_add_tab(
+    store,
+    po_store,
+    username: str,
+    *,
+    user_cos: list[str],
+    admin_mode: bool,
+) -> None:
+    """Stage 5 will render the Add New picker + initial form.
+
+    ``user_cos`` and ``admin_mode`` are forwarded to
+    ``store.list_untracked_pos()`` so non-admin users only see candidates
+    from their assigned companies (mirrors the ``list_all`` access-control
+    contract).
+    """
+    untracked = store.list_untracked_pos(
+        po_store,
+        companies=user_cos if not admin_mode else None,
+        allow_all=admin_mode,
+    )
     if not untracked:
         st.info("All POs are already being tracked.")
         return
