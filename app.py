@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "1.14.8"
+APP_VERSION = "1.15.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -142,6 +142,12 @@ for key, default in [
     (SK.GIII_MAPPING,    None),    # result of last mapping import
     # Sky East — color mapping source (None = resolve from admin default on first render)
     (SK.SE_COLOR_SOURCE, None),
+    # Production Tracking
+    (SK.PT_SELECTED_EDIT,  None),   # int — record id selected in Edit tab
+    (SK.PT_SELECTED_PLAN,  None),   # int — record id selected in Plan tab
+    (SK.PT_PLAN_OVERRIDE,  {}),     # dict[stage, int] — what-if day overrides
+    (SK.PT_DELETE_CONFIRM, False),  # bool — delete confirmation shown
+    (SK.PT_ACTIVE_TAB,     0),      # int — active sub-tab (0 = Dashboard)
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -285,7 +291,7 @@ def show_main():
 
     # ---- Tabs ----
     admin_mode = is_admin(st.session_state.username)
-    tab_labels = ["📋 GIII", "🛍 Sky East", "🧵 Fabric DB", "📐 Fabric Mapping", "🎨 Colors", "📊 Summary", "🔖 Releases"]
+    tab_labels = ["📋 GIII", "🛍 Sky East", "🧵 Fabric DB", "📐 Fabric Mapping", "🎨 Colors", "📊 Summary", "🏭 Tracking", "🔖 Releases"]
     if admin_mode:
         tab_labels.append("⚙️ Admin")
     tabs = st.tabs(tab_labels)
@@ -304,9 +310,14 @@ def show_main():
         _show_summary_tab(user_cos=get_user_companies(st.session_state.username),
                           admin_mode=admin_mode)
     with tabs[6]:
+        _show_production_tracking_tab(
+            user_cos=get_user_companies(st.session_state.username),
+            admin_mode=admin_mode,
+        )
+    with tabs[7]:
         _show_changelog_tab()
     if admin_mode:
-        with tabs[7]:
+        with tabs[8]:
             _show_admin_panel()
 
 
@@ -316,6 +327,15 @@ def show_main():
 def _show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
     from ui.summary_view import show_summary_tab
     show_summary_tab(user_cos=user_cos, admin_mode=admin_mode)
+
+
+def _show_production_tracking_tab(user_cos: list[str], admin_mode: bool) -> None:
+    from ui.production_tracking_view import show_production_tracking_tab
+    show_production_tracking_tab(
+        user_cos=user_cos,
+        username=st.session_state.username,
+        admin_mode=admin_mode,
+    )
 
 
 def _show_admin_panel():
