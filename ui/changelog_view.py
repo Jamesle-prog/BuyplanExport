@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.1.1",
+        "date": "2026-06-19",
+        "entries": [
+            {"type": "perf", "text": "Sky East Buy Plan: the per-row style normalisation introduced in 2.1.0 is now memoised per distinct style within a sheet — collapsing what was one `_norm_key()` call per data row back down to one call per style (a sheet has at most a base style and its `A` variant)"},
+        ],
+    },
+    {
         "version": "2.1.0",
         "date": "2026-06-19",
         "entries": [

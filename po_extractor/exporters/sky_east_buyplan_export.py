@@ -440,6 +440,12 @@ def export_sky_east_buyplan(
         # Produce ordered list of combos; use [None] sentinel when none exist.
         combo_list: list = [combos[k] for k in sorted(combos)] if combos else [None]
 
+        # Memoise the normalised style key per distinct style across all combos
+        # and row groups in this sheet.  A sheet has 1–2 distinct styles (a base
+        # and its optional "A" variant), so this collapses what would otherwise
+        # be one _norm_key() call per data row down to one call per style.
+        _sty_norm_cache: dict[str, str] = {}
+
         for combo_parts in combo_list:
             # ── Unique sheet name ─────────────────────────────────────────
             # Name after style + first HHN in this combination (most informative).
@@ -559,10 +565,13 @@ def export_sky_east_buyplan(
                 # Actual style for this row (with / without "A"), not the sheet's
                 # base group key — so DR5302 and DR5302A stay distinct in column B.
                 _row_style = str(g.get("style", "") or "").strip() or style
+                _row_sty_norm = _sty_norm_cache.get(_row_style)
+                if _row_sty_norm is None:
+                    _row_sty_norm = _sty_norm_cache[_row_style] = _norm_key(_row_style)
                 color_en = str(g.get("color_name", "") or "").title()
                 brand    = str(g.get("brand",      "") or "")
                 _, _, _pc_label, color_cn_display = _resolve_pc_color(
-                    g, _norm_key(_row_style), color_en, brand,
+                    g, _row_sty_norm, color_en, brand,
                     cn_lookup, cn_code_lookup, cn_by_pc_lookup,
                 )
 
