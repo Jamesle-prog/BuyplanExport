@@ -57,6 +57,21 @@ _NUKURYOU_LABEL_FMT = "{en}({cn})"
 _BRAND_AGNOSTIC = ""
 
 
+def _se_base_style_key(style: str, known_styles: set[str]) -> str:
+    """Map a trailing-"A" variant onto its base style when the base exists.
+
+    ``"DR5302A"`` → ``"DR5302"`` only when ``"DR5302"`` is itself present in
+    *known_styles*; every other style is returned unchanged.  Used to group an
+    "A" variant into the same buy-plan sheet as its base style while each data
+    row still carries its own style name (with / without the trailing "A").
+    A standalone ``"…A"`` style with no matching base keeps its own sheet.
+    """
+    s = str(style or "").strip()
+    if len(s) > 1 and s.endswith("A") and s[:-1] in known_styles:
+        return s[:-1]
+    return s
+
+
 def _format_body_color_cn(
     cn_code: str, color_cn: str, sep: str = _CN_DISPLAY_SEP,
 ) -> str:
@@ -394,12 +409,24 @@ def export_sky_east_buyplan(
     _used_sheet_names: set[str] = set(tpl_wb.sheetnames)
     _sheet_meta_list:  list[dict] = []
 
-    for style, style_df in df_items.groupby("style", sort=False):
+    # Trailing-"A" variants share a sheet with their base style (e.g. DR5302A is
+    # grouped into the DR5302 sheet) — but only when the base style is itself
+    # present in the data.  The group key is the base style; each data row still
+    # carries its own style name (with / without the "A") — see col["style"] in
+    # the row loop below.  An "A" style with no matching base keeps its own sheet.
+    _known_styles = {
+        str(s).strip() for s in df_items["style"].dropna() if str(s).strip()
+    }
+    _group_keys = df_items["style"].map(
+        lambda s: _se_base_style_key(s, _known_styles)
+    )
+
+    for style, style_df in df_items.groupby(_group_keys, sort=False):
+        # ``style`` here is the *base* style (group representative) — used for the
+        # sheet name, fabric-part lookup, header placeholder and per-tab total.
         style = str(style or "").strip()
         if not style:
             continue
-        # Style is invariant within this groupby — normalise once, reuse per row.
-        _sty_norm = _norm_key(style)
 
         first = style_df.iloc[0]
         parts = (fabric_parts_by_style or {}).get(style, []) if fabric_parts_by_style else []
@@ -515,8 +542,11 @@ def export_sky_east_buyplan(
             # ── Clear data area ───────────────────────────────────────────
             _clear_data_area(ws, data_row)
 
-            # ── Group by (PONo | ConfigSKU | ColorDesc) — mirrors VBA grpKey ─
-            grp_cols = [c for c in ["zalando_po", "config_sku", "color_name"]
+            # ── Group by (Style | PONo | ConfigSKU | ColorDesc) — VBA grpKey ─
+            # "style" leads the key so a base style and its "A" variant sharing a
+            # sheet keep separate rows (each with its own style name).  For a
+            # single-style sheet "style" is constant, so this is a no-op.
+            grp_cols = [c for c in ["style", "zalando_po", "config_sku", "color_name"]
                         if c in style_df.columns]
             groups = list(style_df.groupby(grp_cols, sort=False))
 
@@ -526,10 +556,13 @@ def export_sky_east_buyplan(
             for _key, grp_df in groups:
                 g = grp_df.iloc[0]
 
+                # Actual style for this row (with / without "A"), not the sheet's
+                # base group key — so DR5302 and DR5302A stay distinct in column B.
+                _row_style = str(g.get("style", "") or "").strip() or style
                 color_en = str(g.get("color_name", "") or "").title()
                 brand    = str(g.get("brand",      "") or "")
                 _, _, _pc_label, color_cn_display = _resolve_pc_color(
-                    g, _sty_norm, color_en, brand,
+                    g, _norm_key(_row_style), color_en, brand,
                     cn_lookup, cn_code_lookup, cn_by_pc_lookup,
                 )
 
@@ -543,7 +576,7 @@ def export_sky_east_buyplan(
                 style_total += row_total
 
                 _style_data(ws.cell(out_row, col["contract"]),  str(g.get("contract_no",  "") or ""))
-                _style_data(ws.cell(out_row, col["style"]),     style)
+                _style_data(ws.cell(out_row, col["style"]),     _row_style)
                 _style_data(ws.cell(out_row, col["brand"]),     brand)
                 _style_data(ws.cell(out_row, col["article"]),   str(g.get("article_name", "") or ""))
                 _style_data(ws.cell(out_row, col["po"]),        str(g.get("zalando_po",   "") or ""))
@@ -856,13 +889,19 @@ def build_cross_comparison(
     DataFrame with columns:
         Style | Total (Buy Plan) | Total (核料) | Match
     """
-    # Compute 核料 totals directly from df_items
+    # Compute 核料 totals directly from df_items.  Fold trailing-"A" variants
+    # onto their base style (DR5302A → DR5302) so the comparison matches the
+    # buy plan, which now groups those variants into one base-style sheet.
+    _known_styles = {
+        str(s).strip() for s in df_items["style"].dropna() if str(s).strip()
+    }
     nukuryou_totals: dict[str, int] = {}
     for style, grp in df_items.groupby("style", sort=False):
         total = sum(
             int(grp[sz].sum()) for sz in _SIZES_LC if sz in grp.columns
         )
-        nukuryou_totals[str(style)] = total
+        _key = _se_base_style_key(style, _known_styles)
+        nukuryou_totals[_key] = nukuryou_totals.get(_key, 0) + total
 
     all_styles = sorted(
         set(style_totals_buyplan) | set(nukuryou_totals)

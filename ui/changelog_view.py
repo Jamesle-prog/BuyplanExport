@@ -10,6 +10,84 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.1.0",
+        "date": "2026-06-19",
+        "entries": [
+            {"type": "feat", "text": "Sky East Buy Plan: a style ending in **A** (e.g. `DR5302A`) is now placed in the **same sheet** as its base style (`DR5302`) instead of getting its own tab — but only when the base style is also present in the data. Each data row keeps its own style name, so `DR5302` and `DR5302A` stay distinct in column B; the sheet's per-tab total combines both. A standalone `…A` style with no matching base is unaffected. The Buy Plan ↔ 核料 cross-comparison folds the variant onto the base style too, so the Match column stays correct"},
+        ],
+    },
+    {
+        "version": "2.0.6",
+        "date": "2026-06-18",
+        "entries": [
+            {"type": "perf", "text": "All 8 main tabs are now wrapped in `st.fragment` — a widget interaction (typing, selecting, clicking) reruns **only its own tab** instead of all 8. Previously `st.tabs` re-executed every tab's data loads and table renders on every interaction anywhere in the app (~8× the necessary work per click)"},
+            {"type": "perf", "text": "`BaseSQLiteStore._conn()` now sets `PRAGMA journal_mode=WAL` **once per database per process** instead of on every connection — WAL is a persisted DB property, so re-applying it on each query (≈5× the cost of a bare connect, ~11× per items-table build) was pure overhead"},
+            {"type": "refactor", "text": "Dependencies upgraded to latest (Streamlit 1.58.0, pyarrow 24, cryptography 49, and ~24 others); `beautifulsoup4` / `ebcdic` held at the newest versions `extract-msg` (the `.msg` PO parser) supports — environment verified consistent via `pip check`"},
+        ],
+    },
+    {
+        "version": "2.0.5",
+        "date": "2026-06-17",
+        "entries": [
+            {"type": "fix", "text": "Sky East processing: `_run_sky_east_processing` now wraps its temp directory in `try/finally` — the temp dir leaked on the early *no contracts parsed* return and on any exception during a run"},
+            {"type": "fix", "text": "Sky East **Missing Fields** editor: the Save action now drops the locale-aware Photo column (`_th(\"Photo\")`) rather than the literal `\"Photo\"`, so the image column is correctly removed before saving under the Chinese UI"},
+        ],
+    },
+    {
+        "version": "2.0.4",
+        "date": "2026-06-17",
+        "entries": [
+            {"type": "refactor", "text": "Sky East Buy Plan PC No. multiselect simplified to the same single-key pattern used by the Download / Wash Label multiselects — removed the shadow-key + pre-render-snapshot workaround. Structurally eliminates both the deselect-all bug and the stale-delete crash rather than patching them"},
+        ],
+    },
+    {
+        "version": "2.0.3",
+        "date": "2026-06-17",
+        "entries": [
+            {"type": "fix", "text": "Sky East Buy Plan: deleting a contract that was selected here no longer crashes the tab — a stale-value guard now cleans the multiselect's widget key before render, matching every other multiselect in the module (`reports_tab` guard fixed to clean the actual widget key, not just the logical mirror)"},
+            {"type": "fix", "text": "Sky East Buy Plan: the PC No. selection can now be **fully cleared** — removed a fallback that silently re-added the last deselected PC, which made deselect-all impossible"},
+            {"type": "fix", "text": "Buy Plan temp directory is now removed via `try/finally` even if brand registration or image-map building throws mid-generation"},
+            {"type": "refactor", "text": "Cross-comparison mismatch count made robust to the emoji label changing in `build_cross_comparison`; removed an unused pandas import; unified download filename thresholds"},
+        ],
+    },
+    {
+        "version": "2.0.2",
+        "date": "2026-06-17",
+        "entries": [
+            {"type": "fix", "text": "Sky East Buy Plan: fixed a broken indentation in the **Generate Buy Plan + 核料** handler and a stale `sel` reference — the full buy-plan + 核料 generation block now runs correctly and the output filename uses the effective selection"},
+        ],
+    },
+    {
+        "version": "2.0.1",
+        "date": "2026-06-17",
+        "entries": [
+            {"type": "fix", "text": "Sky East Buy Plan: initial fixes for the **Generate Buy Plan + 核料** button staying disabled after uploading 大货进度表 — handling for the multiselect session-state desync that left the selection empty"},
+        ],
+    },
+    {
+        "version": "2.0.0",
+        "date": "2026-05-26",
+        "entries": [
+            {"type": "feat", "text": "**Production Stage Tracking** reaches its 2.0 baseline — the new 🏭 Tracking module is now a first-class part of PO Extractor (22 stages across 4 groups, dependency-driven readiness, forward-scheduling planner, and QC inspection tracking)"},
+            {"type": "fix", "text": "Tracking: `list_untracked_pos` is now scoped by company (P1) so the Add New picker only offers POs the user is permitted to see"},
+            {"type": "fix", "text": "Tracking: inapplicable optional sample stages are excluded from the dashboard Delayed / Blocked metrics (P2) so N/A stages don't inflate at-risk counts"},
+        ],
+    },
+    {
+        "version": "1.15.0",
+        "date": "2026-05-26",
+        "entries": [
+            {"type": "feat", "text": "Added the **Production Stage Tracking** module — Stages 0–4: wide-table schema (22 stages, dependency matrix, QC inspections), store layer with `compute_readiness` / `compute_schedule` / `compute_inspection_reminders`, and the 🏭 Tracking tab (Dashboard, Overview, Edit, Add New, Plan)"},
+        ],
+    },
+    {
+        "version": "1.14.8",
+        "date": "2026-05-25",
+        "entries": [
+            {"type": "fix", "text": "Sky East Buy Plan multiselect + multiple bug fixes (merged from the production-delivery-tracking branch)"},
+        ],
+    },
+    {
         "version": "1.14.6",
         "date": "2026-05-25",
         "entries": [

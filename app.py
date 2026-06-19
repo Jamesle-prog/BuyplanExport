@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "1.15.0"
+APP_VERSION = "2.1.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -324,11 +324,13 @@ def show_main():
 # -- Summary tab ---------------------------------------------------------
 
 
+@st.fragment
 def _show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
     from ui.summary_view import show_summary_tab
     show_summary_tab(user_cos=user_cos, admin_mode=admin_mode)
 
 
+@st.fragment
 def _show_production_tracking_tab(user_cos: list[str], admin_mode: bool) -> None:
     from ui.production_tracking_view import show_production_tracking_tab
     show_production_tracking_tab(
@@ -435,6 +437,7 @@ def _show_user_admin():
 # ---------------------------------------------------------------------------
 
 
+@st.fragment
 def _show_smart_upload_tab() -> None:
     from ui.giii_view import show_smart_upload_tab
     show_smart_upload_tab()
@@ -445,6 +448,7 @@ def _show_smart_upload_tab() -> None:
 # ---------------------------------------------------------------------------
 
 
+@st.fragment
 def _show_sky_east_tab() -> None:
     from ui.sky_east_view import show_sky_east_tab
     show_sky_east_tab()
@@ -457,11 +461,13 @@ def _show_sky_east_tab() -> None:
 # ---------------------------------------------------------------------------
 
 
+@st.fragment
 def _show_fabric_db_tab() -> None:
     from ui.fabric_db_view import show_fabric_db_tab
     show_fabric_db_tab()
 
 
+@st.fragment
 def _show_fabric_mapping_tab() -> None:
     from ui.fabric_mapping_view import show_fabric_mapping_tab
     show_fabric_mapping_tab()
@@ -472,6 +478,7 @@ def _show_fabric_mapping_tab() -> None:
 # ---------------------------------------------------------------------------
 
 
+@st.fragment
 def _show_color_translation_tab() -> None:
     from ui.color_translation_view import show_color_translation_tab
     show_color_translation_tab()
@@ -482,6 +489,7 @@ def _show_color_translation_tab() -> None:
 # ---------------------------------------------------------------------------
 
 
+@st.fragment
 def _show_changelog_tab() -> None:
     from ui.changelog_view import show_changelog_tab
     show_changelog_tab()
