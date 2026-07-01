@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 
+from ..utils.deepseek_client import chat_kwargs as _chat_kwargs
+
 # Process-lifetime cache: raw colour string -> resolved candidate tuple.
 # Deliberately module-level (not per-export) so re-running an export for the
 # same file, or the next file with overlapping colours, doesn't re-spend
@@ -70,6 +72,12 @@ def recognize_colors(
     Returns an empty tuple when *raw_color* or *api_key* is blank, or on any
     API/parse error — callers must treat that as "no enhancement available"
     and keep their existing not-found result. This function never raises.
+
+    Only a genuine (non-empty) result is cached — a failure (API error,
+    malformed response, no colour recognised) is never cached, so a
+    transient problem (network blip, a since-fixed config issue) doesn't
+    permanently block every future attempt for the same string within this
+    process's lifetime.
     """
     if not raw_color or not api_key:
         return ()
@@ -85,9 +93,9 @@ def recognize_colors(
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": raw_color[:200]},
             ],
-            temperature=0,
             max_tokens=128,
             response_format={"type": "json_object"},
+            **_chat_kwargs(model),
         )
         raw = response.choices[0].message.content or "{}"
         data = json.loads(raw)
@@ -97,7 +105,8 @@ def recognize_colors(
     except Exception:
         colors = ()
 
-    _cache[raw_color] = colors
+    if colors:
+        _cache[raw_color] = colors
     return colors
 
 
@@ -120,6 +129,11 @@ def match_color_to_candidates(
     trusted local lookup — the API never supplies a Chinese name or code, so
     a wrong pick can at worst surface the wrong *existing* row's colour, never
     fabricate data. Never raises.
+
+    Only a genuine match is cached — a miss (no candidate applies, an API
+    error, a malformed response) is never cached, so a transient problem
+    doesn't permanently block every future attempt for the same
+    (colour, candidate-set) pair within this process's lifetime.
     """
     if not client_color or not candidates or not api_key:
         return ""
@@ -140,9 +154,9 @@ def match_color_to_candidates(
                 {"role": "system", "content": _MATCH_SYSTEM_PROMPT},
                 {"role": "user", "content": user_msg},
             ],
-            temperature=0,
             max_tokens=64,
             response_format={"type": "json_object"},
+            **_chat_kwargs(model),
         )
         raw = response.choices[0].message.content or "{}"
         picked = str(json.loads(raw).get("match", "")).strip()
@@ -152,5 +166,6 @@ def match_color_to_candidates(
     except Exception:
         picked = ""
 
-    _match_cache[cache_key] = picked
+    if picked:
+        _match_cache[cache_key] = picked
     return picked

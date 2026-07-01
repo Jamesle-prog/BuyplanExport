@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.16.3",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "fix", "text": "**AI Extraction / Local + AI Enhance failed silently whenever the DeepSeek `deepseek-reasoner` model was selected.** Every DeepSeek call (PO PDF extraction, the admin \"Test API key\" button, and colour recognition/matching) unconditionally sent `temperature=0`, but `deepseek-reasoner` rejects that parameter — the call errors out, and the error was swallowed and treated as a plain \"no result\". New shared `po_extractor/utils/deepseek_client.py` (`chat_kwargs()`) omits `temperature` for reasoning models across all three call sites"},
+            {"type": "fix", "text": "**A failed AI-enhance colour lookup was being cached forever.** `recognize_colors()`/`match_color_to_candidates()` cached *every* outcome, including API errors and \"no match\" answers — so a colour that failed once (e.g. due to the reasoner-model bug above, or a missing key at the time) stayed stuck at 未找到 for the rest of the server's uptime even after the underlying problem was fixed, since it was never retried. Only genuine successes are cached now; a failure is retried on the next generation"},
+            {"type": "docs", "text": "8 new tests: the shared `chat_kwargs()`/`is_reasoning_model()` helpers, that `recognize_colors()`/`match_color_to_candidates()`/`_call_deepseek()` all omit `temperature` for `deepseek-reasoner`, and that a transient failure in either colour-AI function doesn't block a subsequent retry"},
+        ],
+    },
+    {
         "version": "2.16.2",
         "date": "2026-07-01",
         "entries": [

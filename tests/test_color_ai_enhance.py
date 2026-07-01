@@ -191,3 +191,101 @@ def test_match_color_to_candidates_returns_empty_on_api_error(monkeypatch):
     assert color_ai_enhance.match_color_to_candidates(
         "Dark Blue", ["Navy"], "sk-fake",
     ) == ""
+
+
+# ---------------------------------------------------------------------------
+# deepseek-reasoner support — temperature must be omitted, not sent as 0
+# ---------------------------------------------------------------------------
+
+def test_recognize_colors_omits_temperature_for_reasoning_model(monkeypatch):
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(kwargs)
+        return _FakeResponse(json.dumps({"colors": ["Navy"]}))
+
+    _install_fake_openai(monkeypatch, _create)
+    color_ai_enhance.recognize_colors("navy", "sk-fake", "deepseek-reasoner")
+    assert "temperature" not in calls[0]
+
+
+def test_recognize_colors_includes_temperature_for_chat_model(monkeypatch):
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(kwargs)
+        return _FakeResponse(json.dumps({"colors": ["Navy"]}))
+
+    _install_fake_openai(monkeypatch, _create)
+    color_ai_enhance.recognize_colors("navy", "sk-fake", "deepseek-chat")
+    assert calls[0]["temperature"] == 0
+
+
+def test_match_color_to_candidates_omits_temperature_for_reasoning_model(monkeypatch):
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(kwargs)
+        return _FakeResponse(json.dumps({"match": "Navy"}))
+
+    _install_fake_openai(monkeypatch, _create)
+    color_ai_enhance.match_color_to_candidates(
+        "Dark Blue", ["Navy"], "sk-fake", "deepseek-reasoner",
+    )
+    assert "temperature" not in calls[0]
+
+
+# ---------------------------------------------------------------------------
+# Failures must never be cached — only a genuine success is memoised, so a
+# transient/config problem doesn't permanently block retries.
+# ---------------------------------------------------------------------------
+
+def test_recognize_colors_does_not_cache_api_errors(monkeypatch):
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise RuntimeError("transient failure")
+        return _FakeResponse(json.dumps({"colors": ["Navy"]}))
+
+    _install_fake_openai(monkeypatch, _create)
+    first  = color_ai_enhance.recognize_colors("navy", "sk-fake")
+    second = color_ai_enhance.recognize_colors("navy", "sk-fake")
+    assert first == ()
+    assert second == ("Navy",)
+    assert len(calls) == 2   # second call actually retried, not served from cache
+
+
+def test_match_color_to_candidates_does_not_cache_failures(monkeypatch):
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise RuntimeError("transient failure")
+        return _FakeResponse(json.dumps({"match": "Navy"}))
+
+    _install_fake_openai(monkeypatch, _create)
+    first  = color_ai_enhance.match_color_to_candidates("Dark Blue", ["Navy"], "sk-fake")
+    second = color_ai_enhance.match_color_to_candidates("Dark Blue", ["Navy"], "sk-fake")
+    assert first == ""
+    assert second == "Navy"
+    assert len(calls) == 2   # second call actually retried, not served from cache
+
+
+def test_match_color_to_candidates_does_not_cache_no_match(monkeypatch):
+    """A genuine "no candidate applies" answer is also a miss -- must be
+    retried next time too, since the candidate set (or the API's judgement)
+    could differ on a later call.
+    """
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(kwargs)
+        return _FakeResponse(json.dumps({"match": ""}))
+
+    _install_fake_openai(monkeypatch, _create)
+    color_ai_enhance.match_color_to_candidates("Chartreuse", ["Navy"], "sk-fake")
+    color_ai_enhance.match_color_to_candidates("Chartreuse", ["Navy"], "sk-fake")
+    assert len(calls) == 2

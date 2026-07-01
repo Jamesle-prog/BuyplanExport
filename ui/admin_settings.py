@@ -14,6 +14,7 @@ from po_extractor.store.app_settings_store import (
     KEY_DEEPSEEK_MODEL,
     KEY_COLOR_AI_ENHANCE,
 )
+from po_extractor.utils.deepseek_client import chat_kwargs as _chat_kwargs
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -173,7 +174,7 @@ def _test_deepseek(api_key: str, model: str) -> tuple[bool, str]:
             model=model,
             messages=[{"role": "user", "content": "Reply with the word OK only."}],
             max_tokens=5,
-            temperature=0,
+            **_chat_kwargs(model),
         )
         reply = resp.choices[0].message.content or ""
         return True, f"API reachable — model={model}, reply='{reply.strip()}'"
