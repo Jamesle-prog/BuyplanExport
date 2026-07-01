@@ -42,13 +42,27 @@ def _norm_key(s) -> str:
 
 _DISPIMG_RE = re.compile(r'DISPIMG\("(ID_[0-9A-Fa-f]+)"', re.IGNORECASE)
 
+# A cached formula error in the source file (e.g. a 中文颜色代码 VLOOKUP that
+# couldn't extract a numeric code from a colour cell with no code suffix,
+# such as "BLACK 黑色" with nothing after it) is stored by openpyxl as the
+# literal text "#N/A" — not None. Treating that string as a real value would
+# leak "#N/A" straight into match keys and the generated buy plan cell.
+_EXCEL_ERROR_RE = re.compile(
+    r'^#(N/A|REF!|VALUE!|DIV/0!|NAME\?|NULL!|NUM!|SPILL!|CALC!)$', re.IGNORECASE,
+)
+
 
 def _v(val) -> str:
     if val is None:
         return ""
     if isinstance(val, datetime):
         return val.strftime("%Y-%m-%d")
-    return str(val).strip()
+    s = str(val).strip()
+    if _EXCEL_ERROR_RE.match(s):
+        # Blank it out so callers fall back to their next-tier match — e.g.
+        # the colour name alone is enough; a code isn't required.
+        return ""
+    return s
 
 
 def _dispimg_id(val) -> str:

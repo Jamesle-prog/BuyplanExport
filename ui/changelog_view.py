@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.4.2",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "fix", "text": "**HHN Contract No. (大货进度表) lookup**: a broken formula in the source file (e.g. a 中文颜色代码 VLOOKUP with no numeric code to extract, such as \"BLACK 黑色\" with nothing after it) is cached by Excel/openpyxl as the literal text `#N/A` — not blank. This was read as a real value and leaked straight into match keys and the buy plan's 中文颜色代码 cell as garbage `#N/A` text. Excel error strings (`#N/A`, `#REF!`, `#VALUE!`, `#DIV/0!`, `#NAME?`, `#NULL!`, `#NUM!`, `#SPILL!`, `#CALC!`) are now treated as blank everywhere a progress-file cell is read, so the colour name still resolves correctly and the missing code falls back to the existing `NA` placeholder instead of the raw error"},
+        ],
+    },
+    {
         "version": "2.4.1",
         "date": "2026-07-01",
         "entries": [

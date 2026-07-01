@@ -655,3 +655,50 @@ def test_progress_lookup_still_skips_non_numeric_seq_when_column_is_used():
     assert "DR2000" not in pl._by_style
     assert pl.get_contract_no("DR1000", "NAVY", pc_no="HHPPC060") == "26302-ZA0001"
     assert pl.get_contract_no("DR3000", "RED", pc_no="HHPPC060") == "26302-ZA0003"
+
+
+def test_progress_lookup_treats_excel_error_strings_as_blank():
+    """A broken formula in the source file (e.g. a 中文颜色代码 VLOOKUP that
+    can't extract a numeric code from a colour cell with no code suffix,
+    such as "BLACK 黑色" with nothing after it) is cached by openpyxl as the
+    literal string "#N/A" -- not None. That must not leak through as a real
+    colour code (or any other field): it should be treated as blank so
+    lookups fall back to matching by colour name alone.
+    """
+    import os as _os
+    from po_extractor.lookups import ProgressLookup
+
+    tmpdir = tempfile.mkdtemp()
+    filepath = _os.path.join(tmpdir, "progress_excel_error.xlsx")
+
+    data = {
+        "序号":        [1, 2],
+        "合同号":      ["26302-ZA7150", "26302-ZA7163"],
+        "所在PO":      ["HHPPC048", "HHPPC048"],
+        "IMAGE":       ["", ""],
+        "款式":        ["DR5334", "BL4259"],
+        "颜色":        ["DARK BLUE", "BLACK"],
+        "中文颜色":    ["藏青色", "黑色"],
+        "中文颜色代码": ["#N/A", "#N/A"],   # ← literal Excel error, not blank
+        "主标颜色":    ["黑色", "黑色"],
+        "PO离厂日期":  ["2026-08-26", "2026-08-26"],
+        "数量":        [300, 500],
+        "PO#":         ["", ""],
+        "BRAND":       ["Anna Field", "Anna Field"],
+        "FABRICDETAIL": ["", ""],
+    }
+    pd.DataFrame(data).to_excel(filepath, sheet_name="2026 Zalando", index=False)
+    pl = ProgressLookup(filepath)
+
+    # Contract number and colour name still resolve correctly...
+    assert pl.get_contract_no("BL4259", "BLACK", pc_no="HHPPC048") == "26302-ZA7163"
+    assert pl.get_cn_color("BL4259", "BLACK", pc_no="HHPPC048") == "黑色"
+    # ...but the colour code must NOT be the literal "#N/A" string.
+    assert pl.get_color_code("BL4259", "BLACK", pc_no="HHPPC048") == ""
+
+    # build_pc_style_color_lookups() keys colour by _normalize_color_name()
+    # (title-case), not the raw uppercase input used by get_contract_no().
+    pc_lookup = pl.build_pc_style_color_lookups()
+    match = pc_lookup[("HHPPC048", "BL4259", "Black")]
+    assert match.color_code == ""
+    assert match.cn_color == "黑色"
