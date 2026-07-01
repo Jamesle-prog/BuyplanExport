@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.8.0"
+APP_VERSION = "2.8.1"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -291,7 +291,7 @@ def show_main():
 
     # ---- Tabs ----
     admin_mode = is_admin(st.session_state.username)
-    tab_labels = ["📋 GIII", "🛍 Sky East", "🧵 Fabric DB", "📐 Fabric Mapping", "🎨 Colors", "📊 Summary", "🏭 Tracking", "🔖 Releases"]
+    tab_labels = ["📋 GIII", "🛍 Sky East", "🧵 Fabric DB", "📐 Reference Data", "🎨 Colors", "📊 Summary", "🏭 Tracking", "🔖 Releases"]
     if admin_mode:
         tab_labels.append("⚙️ Admin")
     tabs = st.tabs(tab_labels)

@@ -102,13 +102,13 @@ def _diff_fabric_parts(
 # ---------------------------------------------------------------------------
 
 def show_fabric_mapping_tab() -> None:
-    """📐 Fabric Mapping tab — style-to-fabric mapping and HHN Contract Progress.
+    """📐 Reference Data tab — style-to-fabric mapping and HHN Contract Progress.
 
     Both sub-sections follow the same upload-once / diff-on-update pattern:
     save data independently of order processing so it doesn't need
     re-uploading for every run.
     """
-    st.subheader("📐 Fabric Mapping")
+    st.subheader("📐 Reference Data")
 
     fm_tab, pm_tab = st.tabs(["🧵 Style-Fabric Mapping", "📋 HHN Contract Progress (大货进度表)"])
     with fm_tab:

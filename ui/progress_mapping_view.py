@@ -187,7 +187,10 @@ def show_progress_mapping_section() -> None:
     for rec, key in keyed_records:
         row = {
             "PC No.": rec.get("pc_no", ""), "Style": rec.get("style_display", ""),
-            "Color": rec.get("color", ""), "Contract No.": rec.get("contract_no", ""),
+            "Color (EN)": rec.get("color", ""), "Color (CN)": rec.get("cn_color", ""),
+            "Color Code": rec.get("color_code", ""), "Label Color": rec.get("label_color", ""),
+            "Contract No.": rec.get("contract_no", ""),
+            "Ex-Fty": rec.get("ex_fty", ""), "Qty": rec.get("qty", ""),
         }
         if not key[1]:   # no style_norm — shouldn't happen (parser requires style)
             row["Status"] = "⚠️ No style"
@@ -232,7 +235,7 @@ def show_progress_mapping_section() -> None:
     elif changed_rows or unchanged_rows:
         diff_rows = [
             {"PC No.": rec.get("pc_no", ""), "Style": rec.get("style_display", ""),
-             "Color": rec.get("color", ""), **d}
+             "Color (EN)": rec.get("color", ""), **d}
             for rec, key in existing_in_file
             if key in diff_by_key
             for d in diff_by_key[key]

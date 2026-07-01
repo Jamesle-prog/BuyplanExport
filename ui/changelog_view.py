@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.8.1",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "Top navigation tab renamed **📐 Fabric Mapping** → **📐 Reference Data**, since it now holds two distinct sub-sections (Style-Fabric Mapping and HHN Contract Progress) that \"Fabric Mapping\" alone no longer described. All in-app hints pointing to this tab updated to match"},
+            {"type": "feat", "text": "**HHN Contract Progress** preview table now shows the Chinese colour name (中文颜色), colour code (中文颜色代码), label colour (主标颜色), ex-factory date, and quantity for every record — not just PC No. / Style / English colour / Contract No. — so a mismatch is visible directly in the preview instead of requiring a full import first"},
+        ],
+    },
+    {
         "version": "2.8.0",
         "date": "2026-07-01",
         "entries": [

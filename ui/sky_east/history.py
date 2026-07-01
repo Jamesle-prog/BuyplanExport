@@ -84,7 +84,7 @@ def _build_buyplan_color_lookups() -> BuyplanColorLookups:
         st.warning(
             "⚠ **大货进度表 not loaded** — falling back to the Internal DB "
             "for all Chinese colours. Upload the file above for a one-off "
-            "override, or save it permanently via **📐 Fabric Mapping → "
+            "override, or save it permanently via **📐 Reference Data → "
             "HHN Contract Progress**.",
             icon="⚠️",
         )
@@ -357,7 +357,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
         if not mapped_styles:
             st.warning(
                 "No styles found in the Fabric Mapping database for Sky East. "
-                "Go to the **📐 Fabric Mapping** tab to import a mapping first, "
+                "Go to the **📐 Reference Data** tab to import a mapping first, "
                 "or switch to **PC No.** mode to download by contract."
             )
             has_selection = False
@@ -882,12 +882,12 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             if _db_lkup is not None:
                 st.caption(
                     f"✅ Using saved 大货进度表 data ({len(_db_lkup)} records) — "
-                    "uploaded via **📐 Fabric Mapping → HHN Contract Progress**."
+                    "uploaded via **📐 Reference Data → HHN Contract Progress**."
                 )
             else:
                 st.caption(
                     "ℹ️ No saved 大货进度表 data for Sky East yet — upload one above "
-                    "for this run, or save it permanently via **📐 Fabric Mapping → "
+                    "for this run, or save it permanently via **📐 Reference Data → "
                     "HHN Contract Progress**."
                 )
 
