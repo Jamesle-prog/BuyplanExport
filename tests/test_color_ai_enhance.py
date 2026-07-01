@@ -254,6 +254,67 @@ def test_match_color_to_candidates_omits_temperature_for_reasoning_model(monkeyp
 
 
 # ---------------------------------------------------------------------------
+# Reasoning models spend part of max_tokens on a hidden reasoning trace --
+# a budget sized for a chat-model answer gets fully consumed by reasoning,
+# truncating the response before any answer is written (finish_reason ==
+# "length", empty content). Confirmed live: 64 tokens produced empty content
+# with all 64 spent on reasoning; 1024 completed normally with the correct
+# answer. Reasoning models must get a much larger max_tokens budget.
+# ---------------------------------------------------------------------------
+
+def test_recognize_colors_raises_max_tokens_for_reasoning_model(monkeypatch):
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(kwargs)
+        return _FakeResponse(json.dumps({"colors": ["Navy"]}))
+
+    _install_fake_openai(monkeypatch, _create)
+    color_ai_enhance.recognize_colors("navy", "sk-fake", "deepseek-reasoner")
+    assert calls[0]["max_tokens"] >= 1024
+
+
+def test_recognize_colors_keeps_small_max_tokens_for_chat_model(monkeypatch):
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(kwargs)
+        return _FakeResponse(json.dumps({"colors": ["Navy"]}))
+
+    _install_fake_openai(monkeypatch, _create)
+    color_ai_enhance.recognize_colors("navy", "sk-fake", "deepseek-chat")
+    assert calls[0]["max_tokens"] == 128
+
+
+def test_match_color_to_candidates_raises_max_tokens_for_reasoning_model(monkeypatch):
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(kwargs)
+        return _FakeResponse(json.dumps({"match": "Navy"}))
+
+    _install_fake_openai(monkeypatch, _create)
+    color_ai_enhance.match_color_to_candidates(
+        "Dark Blue", ["Navy"], "sk-fake", "deepseek-reasoner",
+    )
+    assert calls[0]["max_tokens"] >= 1024
+
+
+def test_match_color_to_candidates_keeps_small_max_tokens_for_chat_model(monkeypatch):
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(kwargs)
+        return _FakeResponse(json.dumps({"match": "Navy"}))
+
+    _install_fake_openai(monkeypatch, _create)
+    color_ai_enhance.match_color_to_candidates(
+        "Dark Blue", ["Navy"], "sk-fake", "deepseek-chat",
+    )
+    assert calls[0]["max_tokens"] == 64
+
+
+# ---------------------------------------------------------------------------
 # Failures must never be cached — only a genuine success is memoised, so a
 # transient/config problem doesn't permanently block retries.
 # ---------------------------------------------------------------------------

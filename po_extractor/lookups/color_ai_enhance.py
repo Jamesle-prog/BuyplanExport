@@ -17,7 +17,10 @@ from __future__ import annotations
 
 import json
 
-from ..utils.deepseek_client import chat_kwargs as _chat_kwargs
+from ..utils.deepseek_client import (
+    chat_kwargs as _chat_kwargs,
+    max_tokens_for as _max_tokens_for,
+)
 
 # Process-lifetime cache: raw colour string -> resolved candidate tuple.
 # Deliberately module-level (not per-export) so re-running an export for the
@@ -111,7 +114,7 @@ def recognize_colors(
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": raw_color[:200]},
             ],
-            max_tokens=128,
+            max_tokens=_max_tokens_for(model, 128),
             response_format={"type": "json_object"},
             **_chat_kwargs(model),
         )
@@ -176,7 +179,7 @@ def match_color_to_candidates(
                 {"role": "system", "content": _MATCH_SYSTEM_PROMPT},
                 {"role": "user", "content": user_msg},
             ],
-            max_tokens=64,
+            max_tokens=_max_tokens_for(model, 64),
             response_format={"type": "json_object"},
             **_chat_kwargs(model),
         )

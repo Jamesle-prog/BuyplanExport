@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.16.5",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "fix", "text": "**Local + AI Enhance colour matching returned no match for genuinely correctable cases (e.g. \"dark brown\" vs 大货进度表's \"Dk Brown\") when the `deepseek-reasoner` model was selected.** `deepseek-reasoner` spends part of its `max_tokens` budget on a hidden reasoning trace before writing the visible answer — the 64/128-token budget sized for a short chat-model answer was being fully consumed by reasoning, truncating the response (`finish_reason: \"length\"`, empty content) before any JSON answer was written. Confirmed live: a 64-token budget produced empty content with all 64 tokens spent on reasoning, while 1024 completed normally with the correct answer. New `max_tokens_for()` in `po_extractor/utils/deepseek_client.py` raises the floor to 1024 for reasoning models at both `color_ai_enhance.py` call sites"},
+        ],
+    },
+    {
         "version": "2.16.4",
         "date": "2026-07-01",
         "entries": [

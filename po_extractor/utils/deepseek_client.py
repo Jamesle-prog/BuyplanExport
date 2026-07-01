@@ -29,3 +29,25 @@ def chat_kwargs(model: str, *, temperature: float = 0) -> dict:
     if is_reasoning_model(model):
         return {}
     return {"temperature": temperature}
+
+
+# Reasoning models spend part of ``max_tokens`` on a hidden reasoning trace
+# before writing the visible answer -- a budget sized for a short chat-model
+# answer (e.g. 64-128 tokens) can be entirely consumed by reasoning, cutting
+# the response off (``finish_reason == "length"``) before any answer is
+# written at all. Confirmed live against deepseek-reasoner: a 64-token budget
+# produced empty content with 64/64 reasoning tokens spent; 1024 was enough
+# for the same request to finish normally.
+_REASONING_MIN_MAX_TOKENS = 1024
+
+
+def max_tokens_for(model: str, base: int) -> int:
+    """Return a ``max_tokens`` value safe for *model*, at least *base*.
+
+    Reasoning models get a floor of :data:`_REASONING_MIN_MAX_TOKENS` so the
+    hidden reasoning trace has room to finish before the visible answer is
+    written; chat models get *base* unchanged.
+    """
+    if is_reasoning_model(model):
+        return max(base, _REASONING_MIN_MAX_TOKENS)
+    return base
