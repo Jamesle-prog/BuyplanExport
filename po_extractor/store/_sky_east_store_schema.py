@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS sky_east_color_misses (
     po_no           TEXT,
     client_po_color TEXT,   -- raw client colour text, before bracket-strip/split
     attempted_color TEXT,   -- the specific component the lookup was tried with
+    progress_colors TEXT,   -- 大货进度表's own colour(s) on file for this PC/style, comma-joined
     source          TEXT,   -- "progress" | "db" — which source was selected
     logged_at       TEXT
 );

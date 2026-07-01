@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.16.1",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "**Colour resolution issues log now also shows 大货进度表's own colour(s)**, alongside the client's PO colour — the same comparison already shown in the Excel cell comment, now visible in the reviewable table too without opening the buy plan"},
+            {"type": "docs", "text": "New `progress_colors` column on `sky_east_color_misses`, with an ALTER TABLE migration for existing databases (older rows show blank, never crash or drop data). 6 new tests: storing/joining/blanking progress_colors, the migration path against a pre-existing DB, and an end-to-end naming-mismatch check"},
+        ],
+    },
+    {
         "version": "2.16.0",
         "date": "2026-07-01",
         "entries": [

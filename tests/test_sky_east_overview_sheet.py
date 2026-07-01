@@ -790,6 +790,29 @@ def test_color_miss_is_logged_to_sky_east_store(_isolated_sky_east_store, tmp_pa
     assert row["po_no"] == "PO2338263C"
     assert row["client_po_color"] == "Dark Brown"
     assert row["source"] == "progress"
+    assert row["progress_colors"] == ""   # nothing on file for this PC/style
+
+
+def test_color_miss_log_captures_progress_colors_on_naming_mismatch(_isolated_sky_east_store, tmp_path):
+    """When 大货进度表 DOES have colour(s) on file for this PC/style (just
+    under a different English name), the log must capture them too -- the
+    same comparison already shown in the Excel cell comment.
+    """
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "BL4257", "brand": "Anna Field",
+        "contract_no": "26302-ZA7158", "article_name": "LONG SLEEVE BLOUSE",
+        "zalando_po": "PO2338263C", "config_sku": "C1", "color_name": "Dark Brown",
+        "xs": 28, "s": 69, "m": 90, "l": 67, "xl": 46, "xxl": 0,
+    }])
+    cn_by_pc = {("HHPPC048", "BL4257", "Chocolate"): PCColorMatch("巧克力色", "12#", "")}
+    export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=cn_by_pc,
+    )
+    row = _isolated_sky_east_store.list_color_misses().iloc[0]
+    assert row["progress_colors"] == "Chocolate"
 
 
 def test_resolved_color_is_not_logged_as_a_miss(_isolated_sky_east_store, tmp_path):

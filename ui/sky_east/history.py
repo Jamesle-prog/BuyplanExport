@@ -1151,14 +1151,16 @@ def _se_color_miss_log_section() -> None:
         icon="⚠️",
     )
     with st.expander(f"Colour resolution issues ({len(misses_df)})", expanded=False):
+        _display_df = misses_df.copy()
+        _display_df["progress_colors"] = _display_df["progress_colors"].fillna("")
         st.dataframe(
-            misses_df[[
+            _display_df[[
                 "logged_at", "pc_no", "contract_no", "style", "po_no",
-                "client_po_color", "source",
+                "client_po_color", "progress_colors", "source",
             ]].rename(columns={
                 "logged_at": "Logged At", "pc_no": "PC No.", "contract_no": "Contract No.",
                 "style": "Style", "po_no": "PO No.", "client_po_color": "Client's PO Colour",
-                "source": "Source",
+                "progress_colors": "大货进度表 Colour(s)", "source": "Source",
             }),
             width="stretch", hide_index=True,
         )

@@ -24,6 +24,13 @@ class SkyEastStore(BaseSQLiteStore):
                 cols = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})")}
                 if "contract_no" not in cols:
                     conn.execute(f"ALTER TABLE {tbl} ADD COLUMN contract_no TEXT")
+            # Migrate: add progress_colors if missing (existing DBs, added after
+            # sky_east_color_misses first shipped)
+            _cm_cols = {r[1] for r in conn.execute("PRAGMA table_info(sky_east_color_misses)")}
+            if "progress_colors" not in _cm_cols:
+                conn.execute(
+                    "ALTER TABLE sky_east_color_misses ADD COLUMN progress_colors TEXT"
+                )
 
     # ------------------------------------------------------------------ #
     # Internal helpers                                                     #
@@ -416,22 +423,31 @@ class SkyEastStore(BaseSQLiteStore):
     def log_color_miss(
         self, *, pc_no: str, contract_no: str, style: str, po_no: str,
         client_po_color: str, attempted_color: str, source: str,
+        progress_colors: list[str] | None = None,
     ) -> None:
         """Record a colour that failed to resolve during buy plan generation.
+
+        ``progress_colors`` is the distinct colour name(s) 大货进度表 actually
+        has on file for this PC No./style (``None`` or ``[]`` when the
+        internal DB was the selected source, or 大货进度表 has nothing for
+        this PC/style at all) — stored comma-joined so the log mirrors the
+        same "client colour vs. 大货进度表 colour" comparison already shown
+        in the 未找到 cell's Excel comment.
 
         Deliberately append-only (no dedup) — one entry per (style, PO,
         colour) per generation run, so re-running after fixing the source
         data shows the failure count actually dropping over time.
         """
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        progress_colors_text = ", ".join(progress_colors) if progress_colors else ""
         with self._conn() as conn:
             conn.execute(
                 """INSERT INTO sky_east_color_misses
                    (pc_no, contract_no, style, po_no, client_po_color,
-                    attempted_color, source, logged_at)
-                   VALUES (?,?,?,?,?,?,?,?)""",
+                    attempted_color, progress_colors, source, logged_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
                 (pc_no, contract_no, style, po_no, client_po_color,
-                 attempted_color, source, now),
+                 attempted_color, progress_colors_text, source, now),
             )
 
     def list_color_misses(self, limit: int = 500) -> pd.DataFrame:
@@ -442,7 +458,7 @@ class SkyEastStore(BaseSQLiteStore):
                 (limit,),
             ).fetchall()
         cols = ["id", "pc_no", "contract_no", "style", "po_no", "client_po_color",
-                "attempted_color", "source", "logged_at"]
+                "attempted_color", "progress_colors", "source", "logged_at"]
         return pd.DataFrame([dict(r) for r in rows], columns=cols) if rows else pd.DataFrame(columns=cols)
 
     def clear_color_misses(self) -> int:

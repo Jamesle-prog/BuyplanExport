@@ -841,6 +841,7 @@ def export_sky_east_buyplan(
                                 po_no=str(g.get("zalando_po", "") or ""),
                                 client_po_color=_raw_client_color,
                                 attempted_color=color_en,
+                                progress_colors=_progress_colors,
                                 source=_color_source,
                             )
                         except Exception:
