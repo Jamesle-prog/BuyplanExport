@@ -72,14 +72,18 @@ def test_factory_returns_usable_store(factory_name):
 
 
 def test_factory_uses_canonical_db_path():
-    """All factories must point at po_extractor.config.DB_PATH — the same
-    DB that ui.stores writes to.  Otherwise UI writes are invisible to
-    the exporters and vice-versa.
+    """Each factory must point at its own canonical DB path from
+    po_extractor.config — the same one ui.stores writes to. Otherwise UI
+    writes are invisible to the exporters and vice-versa.
+
+    fabric_master lives in its own database file (FABRIC_DB_PATH, honoring
+    the FABRIC_DB_PATH env var) — a deliberate split from po_history.db
+    (DB_PATH), not an oversight. See CLAUDE.md's data/ layout.
     """
     from po_extractor.store import get_boat_sample_store, get_fabric_master_store
-    from po_extractor.config import DB_PATH
+    from po_extractor.config import DB_PATH, FABRIC_DB_PATH
     assert get_boat_sample_store().db_path == DB_PATH
-    assert get_fabric_master_store().db_path == DB_PATH
+    assert get_fabric_master_store().db_path == FABRIC_DB_PATH
 
 
 def test_no_inline_db_path_construction_in_exporters():
@@ -225,17 +229,17 @@ def test_photo_lookup_returns_pair_when_both_present():
 @pytest.fixture
 def fabric_in_db():
     """Insert one fabric_master record so 综合key lookups have data,
-    then clean up."""
-    from po_extractor.config import DB_PATH
+    then clean up.
+
+    fabric_master lives in its own database file (FABRIC_DB_PATH), not
+    po_history.db (DB_PATH) — see CLAUDE.md's data/ layout. Inserting into
+    the wrong file makes the row invisible to get_fabric_master_store().
+    """
+    from po_extractor.config import FABRIC_DB_PATH
+    from po_extractor.store import get_fabric_master_store
+    get_fabric_master_store()   # ensure the real schema (incl. migrations) exists first
     HHN = "__TEST_HHN__"
-    with sqlite3.connect(DB_PATH) as c:
-        c.execute(
-            """CREATE TABLE IF NOT EXISTS fabric_master (
-                quality_no TEXT PRIMARY KEY, erp_code TEXT, display_key TEXT,
-                composition_en TEXT, weight_gsm INTEGER,
-                cuttable_width_cm INTEGER, shrinkage_rate TEXT,
-                short_rate TEXT)"""
-        )
+    with sqlite3.connect(FABRIC_DB_PATH) as c:
         c.execute(
             "INSERT OR REPLACE INTO fabric_master "
             "(quality_no, display_key, composition_en, weight_gsm, "
@@ -243,7 +247,7 @@ def fabric_in_db():
             (HHN, "100%TestFiber", 220, 145),
         )
     yield HHN
-    with sqlite3.connect(DB_PATH) as c:
+    with sqlite3.connect(FABRIC_DB_PATH) as c:
         c.execute("DELETE FROM fabric_master WHERE quality_no = ?", (HHN,))
 
 

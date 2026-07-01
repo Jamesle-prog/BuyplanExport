@@ -10,6 +10,16 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.8.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "fix", "text": "**Wash Label export was crashing** — `po_extractor/ui_helpers/wash_label.py` referenced `pd.NA` without ever importing pandas, so `write_wash_label_excel()` raised `NameError` any time it ran against real style data. Added the missing import; wash label generation now works"},
+            {"type": "fix", "text": "Test suite cleanup: fixed 2 long-stale `test_store_factories.py` tests that assumed `fabric_master` shares `po_history.db` — it's intentionally a separate database file (`FABRIC_DB_PATH`) per the documented data/ layout, so the canonical-path test and the `fabric_in_db` fixture were both pointed at the wrong file, silently making the fixture's test data invisible to the real code path"},
+            {"type": "fix", "text": "Updated 4 stale `test_excel_reports.py` PO-summary tests written against a since-replaced simple version of `generate_po_summary_excel` (a single header row + dynamic per-input-column labels). The current exporter emits a fixed title + 12-row metadata block + fixed detail-table structure; tests now assert against that actual shape. Also surfaced that the `label_for` custom-label parameter is accepted but no longer called anywhere in the current implementation — documented as a no-op rather than silently tested as if it still worked"},
+            {"type": "docs", "text": "Full test suite is green for the first time this cycle: 281 passed, 0 failed (previously 13 persistent failures across three files, unrelated to any single feature change)"},
+        ],
+    },
+    {
         "version": "2.7.1",
         "date": "2026-07-01",
         "entries": [
