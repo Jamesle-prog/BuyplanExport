@@ -408,6 +408,9 @@ def export_sky_east_buyplan(
     # Index row's hyperlink and total formula both break.
     _used_sheet_names: set[str] = set(tpl_wb.sheetnames)
     _sheet_meta_list:  list[dict] = []
+    # One entry per item row across the whole workbook — feeds the Overview
+    # sheet, a flat cross-check table mirroring the per-style sheets.
+    _overview_rows:    list[dict] = []
 
     # Trailing-"A" variants share a sheet with their base style (e.g. DR5302A is
     # grouped into the DR5302 sheet) — but only when the base style is itself
@@ -513,19 +516,29 @@ def export_sky_east_buyplan(
             # the FabricPart has no composition and the HHN is not in fabric master.
             _fabrication_fb = str(first.get("fabrication", "") or "")
 
+            # Collected in the same pass as the header cells below, feeding the
+            # Overview sheet's per-item Fabric N / 综合标识 Key N columns —
+            # every row in this sheet shares the same fabric combination.
+            _fabric_summary: list[tuple[str, str]] = []
+
             if combo_parts is not None:
                 for slot_idx, fp in enumerate(combo_parts[:len(fabric_rows)]):
                     frow, body_c, hhn_c, _comp_c, dk_c = fabric_rows[slot_idx]
                     _hhn = str(getattr(fp, "hhn_no", "") or "")
+                    _body_part = str(getattr(fp, "body_part", "") or "")
                     _comp_fb = (str(getattr(fp, "composition", "") or "")
                                 or _fabrication_fb)
-                    ws.cell(frow, body_c).value = str(getattr(fp, "body_part", "") or "")
+                    ws.cell(frow, body_c).value = _body_part
                     ws.cell(frow, hhn_c).value  = None           # cleared — HHN already in 综合标识Key
-                    ws.cell(frow, dk_c).value   = _display_key_for(
+                    _dk = _display_key_for(
                         _hhn,
                         fallback_composition=_comp_fb,
                         fallback_gsm  =getattr(fp, "weight_gsm", None) or None,
                         fallback_width=getattr(fp, "width_cm",  None) or None,
+                    )
+                    ws.cell(frow, dk_c).value = _dk
+                    _fabric_summary.append(
+                        (f"{_hhn} ({_body_part})" if _body_part else _hhn, _dk)
                     )
                     # Defensive: clear column E in case an older config put the
                     # display key there.  The value belongs in D (under the
@@ -538,10 +551,13 @@ def export_sky_east_buyplan(
                     frow, _body_c, hhn_c, _comp_c, dk_c = fabric_rows[0]
                     hhn_fb = str(first.get("fabric_item_no", "") or "")
                     ws.cell(frow, hhn_c).value = None            # cleared — HHN already in 综合标识Key
-                    ws.cell(frow, dk_c).value  = _display_key_for(
+                    _dk = _display_key_for(
                         hhn_fb,
                         fallback_composition=_fabrication_fb,
                     )
+                    ws.cell(frow, dk_c).value = _dk
+                    if hhn_fb:
+                        _fabric_summary.append((hhn_fb, _dk))
                     if dk_c != 5:
                         ws.cell(frow, 5).value = None
 
@@ -570,7 +586,7 @@ def export_sky_east_buyplan(
                     _row_sty_norm = _sty_norm_cache[_row_style] = _norm_key(_row_style)
                 color_en = str(g.get("color_name", "") or "").title()
                 brand    = str(g.get("brand",      "") or "")
-                _, _, _pc_label, color_cn_display = _resolve_pc_color(
+                color_cn, cn_code, _pc_label, color_cn_display = _resolve_pc_color(
                     g, _row_sty_norm, color_en, brand,
                     cn_lookup, cn_code_lookup, cn_by_pc_lookup,
                 )
@@ -615,8 +631,26 @@ def export_sky_east_buyplan(
                 if _boat_req:
                     _style_data(ws.cell(out_row, _BOAT_SAMPLE_COL), _boat_req)
                 _style_data(ws.cell(out_row, col["total"]),  row_total)
-                _style_data(ws.cell(out_row, col["ex_fty"]),
-                            str(g.get("ex_fty_date", "") or ""))
+                _ex_fty = str(g.get("ex_fty_date", "") or "")
+                _style_data(ws.cell(out_row, col["ex_fty"]), _ex_fty)
+
+                _overview_rows.append({
+                    "contract_no":  str(g.get("contract_no", "") or ""),
+                    "style":        _row_style,
+                    "sheet_name":   sheet_title,
+                    "color_en":     color_en,
+                    "color_cn":     color_cn,
+                    "color_code":   cn_code if cn_code != "NA" else "",
+                    "brand":        brand,
+                    "po":           str(g.get("zalando_po", "") or ""),
+                    "config_sku":   str(g.get("config_sku", "") or ""),
+                    "article_name": str(g.get("article_name", "") or ""),
+                    "xs": xs, "s": s, "m": m, "l": l, "xl": xl, "xxl": xxl,
+                    "total":        row_total,
+                    "ex_fty":       _ex_fty,
+                    "photo":        _front,
+                    "fabrics":      _fabric_summary,
+                })
 
                 out_row += 1
 
@@ -667,6 +701,10 @@ def export_sky_east_buyplan(
     _create_index_sheet(tpl_wb, df_items, total_anchor=total_anchor,
                         style_image_map=style_image_map,
                         sheet_meta_list=_sheet_meta_list)
+
+    # ── Overview sheet — flat item-level cross-check table ────────────────
+    if _overview_rows:
+        _create_overview_sheet(tpl_wb, _overview_rows, n_fabric_slots=len(fabric_rows))
 
     if not tpl_wb.sheetnames:
         tpl_wb.create_sheet("Empty")

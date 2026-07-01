@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.5.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "Sky East Buy Plan: new **Overview** sheet, inserted right after Index — one flat row per style/PO/colour item across the *entire* workbook, for easy cross-checking without hopping between per-style tabs. Mirrors the Contract History item-browser preview (Style with a hyperlink to its sheet, Photo, Brand, PO No., Config SKU, Article Name, sizes, Ex-Fty, Fabric N / 综合标识 Key N) plus **both English and Chinese colour names side by side and the plain colour code** as separate columns. Only created when the buy plan has at least one item. Covered by 7 new tests"},
+        ],
+    },
+    {
         "version": "2.4.2",
         "date": "2026-07-01",
         "entries": [

@@ -32,7 +32,7 @@ __all__ = [
     # Helper functions
     "_norm", "_thin",
     "_apply_config_overrides", "_clean_sheet_name",
-    "_clear_data_area", "_cn_color", "_create_index_sheet",
+    "_clear_data_area", "_cn_color", "_create_index_sheet", "_create_overview_sheet",
     "_detect_buyplan_layout", "_detect_fabric_rows", "_detect_nukuryou_layout",
     "_embed_style_photos", "_prep_image_for_embed",
     "_replace_placeholders", "_set_sheet_column_widths", "_style_data", "_style_total",
@@ -828,6 +828,164 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
 
     # Freeze the header row so it stays visible while scrolling
     idx_ws.freeze_panes = "A2"
+
+
+def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 0) -> None:
+    """Item-level cross-check sheet — one row per (style, PO, colour) item
+    across the whole workbook, inserted right after the Index sheet.
+
+    Mirrors the Contract History item-browser preview table (Style, Photo,
+    Color, Brand, PO No., Config SKU, Article Name, Color Code, sizes,
+    Ex-Fty, Fabric N / 综合标识 Key N) plus the Chinese colour name alongside
+    the English one and the plain colour code, so every value written to a
+    per-style sheet can be spot-checked against one flat table without
+    hopping between tabs.
+
+    Parameters
+    ----------
+    wb             : target openpyxl Workbook — the Index sheet must already
+                     exist (this sheet is inserted at position 1, right after it).
+    overview_rows  : one dict per item row::
+
+                         {
+                             "contract_no": str, "style": str, "sheet_name": str,
+                             "color_en": str, "color_cn": str, "color_code": str,
+                             "brand": str, "po": str, "config_sku": str,
+                             "article_name": str,
+                             "xs": int, "s": int, "m": int, "l": int,
+                             "xl": int, "xxl": int, "total": int, "ex_fty": str,
+                             "photo": bytes | None,
+                             "fabrics": [(label, display_key), ...],
+                         }
+
+    n_fabric_slots : number of Fabric / 综合标识 Key column pairs to render —
+                     matches the template's fabric-header row count, so every
+                     sheet's fabric combination fits regardless of how many
+                     fabrics any single style/combo actually uses.
+    """
+    import io as _io
+    from openpyxl.utils import get_column_letter as _gcl
+
+    has_photos = any(r.get("photo") for r in overview_rows)
+
+    _base_headers = [
+        "No.", "Contract No.", "Style", "Color (EN)", "Color (CN)", "Color Code",
+        "Brand", "PO No.", "Config SKU", "Article Name",
+        "XS", "S", "M", "L", "XL", "2XL", "Total Qty", "Ex-Fty",
+    ]
+    headers = (_base_headers[:2] + ["Photo"] + _base_headers[2:]
+              if has_photos else list(_base_headers))
+    for i in range(1, n_fabric_slots + 1):
+        headers += [f"Fabric {i}", f"综合标识 Key {i}"]
+
+    ov_ws = wb.create_sheet("Overview", 1)   # right after Index
+
+    for ci, h in enumerate(headers, 1):
+        cell = ov_ws.cell(1, ci, value=h)
+        cell.fill = PatternFill(start_color="FF1F3864", end_color="FF1F3864", fill_type="solid")
+        cell.font = Font(bold=True, color="FFFFFFFF", size=10)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ov_ws.row_dimensions[1].height = 30
+
+    # ── Column index map (1-based) — shifts right by 1 when Photo is present ─
+    _off        = 1 if has_photos else 0
+    _C_NO       = 1
+    _C_CONTRACT = 2
+    _C_IMG      = 3 if has_photos else None
+    _C_STYLE    = 3 + _off
+    _C_COLOR_EN = 4 + _off
+    _C_COLOR_CN = 5 + _off
+    _C_CODE     = 6 + _off
+    _C_BRAND    = 7 + _off
+    _C_PO       = 8 + _off
+    _C_CONFIG   = 9 + _off
+    _C_ARTICLE  = 10 + _off
+    _C_XS       = 11 + _off
+    _C_S        = 12 + _off
+    _C_M        = 13 + _off
+    _C_L        = 14 + _off
+    _C_XL       = 15 + _off
+    _C_XXL      = 16 + _off
+    _C_TOTAL    = 17 + _off
+    _C_EXFTY    = 18 + _off
+    _FAB_START  = 19 + _off
+
+    _IMG_PX = 60   # small thumbnail — this sheet is one row per item, potentially
+    _ROW_PT = 46   # far more rows than the style-level Index sheet
+
+    for ri, row in enumerate(overview_rows, start=2):
+        ov_ws.cell(ri, _C_NO,       value=ri - 1)
+        ov_ws.cell(ri, _C_CONTRACT, value=row.get("contract_no", ""))
+        style_cell = ov_ws.cell(ri, _C_STYLE, value=row.get("style", ""))
+        sheet_name = row.get("sheet_name", "")
+        if sheet_name and sheet_name in wb.sheetnames:
+            # Quote the sheet name so spaces / special chars don't break the target.
+            style_cell.hyperlink = f"#'{sheet_name}'!A1"
+            style_cell.style = "Hyperlink"
+        ov_ws.cell(ri, _C_COLOR_EN, value=row.get("color_en", ""))
+        ov_ws.cell(ri, _C_COLOR_CN, value=row.get("color_cn", ""))
+        ov_ws.cell(ri, _C_CODE,     value=row.get("color_code", ""))
+        ov_ws.cell(ri, _C_BRAND,    value=row.get("brand", ""))
+        ov_ws.cell(ri, _C_PO,       value=row.get("po", ""))
+        ov_ws.cell(ri, _C_CONFIG,   value=row.get("config_sku", ""))
+        ov_ws.cell(ri, _C_ARTICLE,  value=row.get("article_name", ""))
+        ov_ws.cell(ri, _C_XS,  value=row.get("xs", 0))
+        ov_ws.cell(ri, _C_S,   value=row.get("s", 0))
+        ov_ws.cell(ri, _C_M,   value=row.get("m", 0))
+        ov_ws.cell(ri, _C_L,   value=row.get("l", 0))
+        ov_ws.cell(ri, _C_XL,  value=row.get("xl", 0))
+        ov_ws.cell(ri, _C_XXL, value=row.get("xxl", 0))
+        ov_ws.cell(ri, _C_TOTAL, value=row.get("total", 0))
+        ov_ws.cell(ri, _C_EXFTY, value=row.get("ex_fty", ""))
+
+        if has_photos and _C_IMG:
+            img_bytes = row.get("photo")
+            if img_bytes:
+                try:
+                    from openpyxl.drawing.image import Image as _XLImage
+                    _prepped = _prep_image_for_embed(img_bytes, _IMG_PX)
+                    xl_img = _XLImage(_io.BytesIO(_prepped))
+                    xl_img.height = _IMG_PX
+                    xl_img.width  = _IMG_PX
+                    ov_ws.add_image(xl_img, f"{_gcl(_C_IMG)}{ri}")
+                except Exception:
+                    pass  # non-fatal — skip broken images silently
+
+        fabrics = row.get("fabrics") or []
+        for i in range(n_fabric_slots):
+            label, key = fabrics[i] if i < len(fabrics) else ("", "")
+            ov_ws.cell(ri, _FAB_START + i * 2,     value=label)
+            ov_ws.cell(ri, _FAB_START + i * 2 + 1, value=key)
+
+        ov_ws.row_dimensions[ri].height = _ROW_PT if has_photos else 18
+
+    # ── Alignment ─────────────────────────────────────────────────────────
+    _center_cols = {_C_NO, _C_XS, _C_S, _C_M, _C_L, _C_XL, _C_XXL, _C_TOTAL}
+    for rn in range(2, ov_ws.max_row + 1):
+        for cn in range(1, len(headers) + 1):
+            c = ov_ws.cell(rn, cn)
+            c.alignment = (
+                Alignment(horizontal="center", vertical="center") if cn in _center_cols
+                else Alignment(horizontal="left", vertical="center", indent=1)
+            )
+
+    # ── Column widths ─────────────────────────────────────────────────────
+    _fixed_widths: dict[int, float] = {
+        _C_NO: 6, _C_CONTRACT: 16, _C_STYLE: 20, _C_COLOR_EN: 14, _C_COLOR_CN: 12,
+        _C_CODE: 10, _C_BRAND: 14, _C_PO: 16, _C_CONFIG: 16, _C_ARTICLE: 22,
+        _C_XS: 6, _C_S: 6, _C_M: 6, _C_L: 6, _C_XL: 6, _C_XXL: 6,
+        _C_TOTAL: 10, _C_EXFTY: 12,
+    }
+    if has_photos and _C_IMG:
+        _fixed_widths[_C_IMG] = 10
+    for i in range(n_fabric_slots):
+        _fixed_widths[_FAB_START + i * 2]     = 24
+        _fixed_widths[_FAB_START + i * 2 + 1] = 40
+
+    for ci in range(1, len(headers) + 1):
+        ov_ws.column_dimensions[_gcl(ci)].width = _fixed_widths.get(ci, 14)
+
+    ov_ws.freeze_panes = "A2"
 
 
 def _prep_image_for_embed(img_bytes: bytes, display_px: int) -> bytes:
