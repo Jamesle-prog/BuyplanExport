@@ -50,7 +50,9 @@ _DIFF_FIELDS = [
 ]
 
 
-def _diff_fabric_parts(old_parts: list, new_parts: list) -> list[dict]:
+def _diff_fabric_parts(
+    old_parts: list, new_parts: list, *, will_delete_missing: bool,
+) -> list[dict]:
     """Field-level diff between the stored and incoming parts of one style.
 
     Matched by ``(combo_idx, seq)`` — stable slot positions assigned at parse
@@ -58,6 +60,15 @@ def _diff_fabric_parts(old_parts: list, new_parts: list) -> list[dict]:
     with slot 1 in the new file even when other slots were skipped.  Returns
     one row per changed field, plus one row for an entirely added/removed
     combo/seq slot. Empty list means the stored data already matches the file.
+
+    ``will_delete_missing`` must reflect what the *import* actually does with
+    a stored slot absent from the new file: ``save_fabric_parts_batch()`` is
+    an ``INSERT ... ON CONFLICT DO UPDATE`` — it never deletes rows. So a
+    slot missing from the file is only truly removed under **Replace all**
+    (which wipes the style's data first); under Upsert / Add new only it is
+    left in the database untouched. Mislabeling this as "removed" when it
+    will actually persist would be a data-loss surprise in the wrong
+    direction — the user would think it's gone when it isn't.
     """
     old_map = {(p.combo_idx, p.seq): p for p in old_parts}
     new_map = {(p.combo_idx, p.seq): p for p in new_parts}
@@ -70,8 +81,13 @@ def _diff_fabric_parts(old_parts: list, new_parts: list) -> list[dict]:
                         "Stored": "—", "In File": npart.display()})
             continue
         if npart is None:
-            rows.append({"Combo": combo, "Seq": seq, "Field": "(slot removed)",
-                        "Stored": op.display(), "In File": "—"})
+            if will_delete_missing:
+                rows.append({"Combo": combo, "Seq": seq, "Field": "(slot removed)",
+                            "Stored": op.display(), "In File": "—"})
+            else:
+                rows.append({"Combo": combo, "Seq": seq,
+                            "Field": "(not in file — kept, not deleted)",
+                            "Stored": op.display(), "In File": "(unchanged)"})
             continue
         for attr, label in _DIFF_FIELDS:
             ov, nv = getattr(op, attr), getattr(npart, attr)
@@ -209,14 +225,24 @@ def show_fabric_mapping_tab() -> None:
 
     # ── Diff for styles that will update ─────────────────────────────────────
     update_styles = [r["Style"] for r in preview_rows if r["Status"] == "♻️ Will update"]
-    if update_styles:
+    if update_styles and "Add new only" in import_mode:
+        # These styles already exist, so Add-new-only skips them entirely —
+        # a diff here would suggest changes that will not actually happen.
+        with st.expander(f"🔍 {len(update_styles)} existing style(s) — will be skipped"):
+            st.caption(
+                "Import mode is **Add new only**: styles already in the database are "
+                "left completely unchanged. None of these will be touched by this import."
+            )
+    elif update_styles:
+        will_delete_missing = "Replace all" in import_mode
         old_parts_map = get_store().load_fabric_parts_for_styles(update_styles, source)
         diff_rows: list[dict] = []
         changed_styles: set[str] = set()
         for style in update_styles:
             old_parts = old_parts_map.get(style, [])
             new_parts = style_parts_map.get(style, [])
-            for d in _diff_fabric_parts(old_parts, new_parts):
+            for d in _diff_fabric_parts(old_parts, new_parts,
+                                        will_delete_missing=will_delete_missing):
                 diff_rows.append({"Style": style, **d})
                 changed_styles.add(style)
         with st.expander(
@@ -226,6 +252,14 @@ def show_fabric_mapping_tab() -> None:
         ):
             if diff_rows:
                 st.dataframe(pd.DataFrame(diff_rows), width="stretch", hide_index=True)
+                if not will_delete_missing and any(
+                    d["Field"].startswith("(not in file") for d in diff_rows
+                ):
+                    st.caption(
+                        "💡 **(not in file — kept, not deleted)** rows stay in the database "
+                        "as-is under Upsert. Use **Replace all** if you need stale fabric "
+                        "slots actually removed."
+                    )
             else:
                 st.caption(
                     "No field-level differences — the stored data already matches the file."

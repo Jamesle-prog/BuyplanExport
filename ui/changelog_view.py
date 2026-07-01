@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.2.1",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "fix", "text": "**📐 Fabric Mapping** diff (added in 2.2.0): a stored fabric slot missing from the uploaded file was always labeled **(slot removed)** — but `save_fabric_parts_batch()` only upserts, it never deletes, so under **Upsert** / **Add new only** that slot actually stays in the database untouched. The label now depends on the selected import mode: **(slot removed)** only under **Replace all** (which does wipe first); otherwise **(not in file — kept, not deleted)** with a note explaining Replace all is needed to actually remove it. Styles under **Add new only** now show a plain skip notice instead of a diff, since existing styles aren't touched at all in that mode"},
+        ],
+    },
+    {
         "version": "2.2.0",
         "date": "2026-07-01",
         "entries": [
