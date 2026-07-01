@@ -926,3 +926,92 @@ def test_not_found_comment_omits_progress_line_for_internal_db_source(tmp_path):
     headers = [c.value for c in ov[1]]
     cn_cell = ov.cell(2, headers.index("Color (CN)") + 1)
     assert "大货进度表" not in cn_cell.comment.text
+
+
+# ---------------------------------------------------------------------------
+# AI candidate-matching — bridge order-file/大货进度表 colour-name mismatches
+# ---------------------------------------------------------------------------
+
+def test_ai_candidate_match_resolves_naming_mismatch(monkeypatch):
+    """Order says "Dark Blue"; 大货进度表 has this exact PC+style under
+    "Navy" only. The exact colour match misses, but AI candidate-matching
+    picks "Navy" from the colours on file and resolves to its Chinese
+    name/code -- the values still come from the trusted file.
+    """
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.exporters.sky_east_buyplan_export import _resolve_pc_color_multi
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    seen = []
+
+    def _fake_match(client_color, candidates, api_key, model="deepseek-chat"):
+        seen.append((client_color, list(candidates)))
+        return "Navy" if "Navy" in candidates else ""
+
+    monkeypatch.setattr(_ai, "match_color_to_candidates", _fake_match)
+    # recognize_colors must NOT be needed once the candidate match succeeds.
+    monkeypatch.setattr(_ai, "recognize_colors",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not be called")))
+
+    cn_by_pc = {("HHPPC048", "DR5124", "Navy"): PCColorMatch("藏青", "52#", "")}
+    row = {"pc_no": "HHPPC048"}
+    result = _resolve_pc_color_multi(
+        row, "DR5124", "Dark Blue", "Anna Field", {}, {}, cn_by_pc,
+        ai_enhance=True, ai_api_key="sk-fake",
+    )
+    assert result[0] == "藏青"
+    assert result[1] == "52#"
+    assert seen == [("Dark Blue", ["Navy"])]
+
+
+def test_ai_candidate_match_not_used_when_disabled(monkeypatch):
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.exporters.sky_east_buyplan_export import (
+        _COLOR_NOT_FOUND, _resolve_pc_color_multi,
+    )
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    monkeypatch.setattr(_ai, "match_color_to_candidates",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not call")))
+
+    cn_by_pc = {("HHPPC048", "DR5124", "Navy"): PCColorMatch("藏青", "52#", "")}
+    row = {"pc_no": "HHPPC048"}
+    result = _resolve_pc_color_multi(
+        row, "DR5124", "Dark Blue", "Anna Field", {}, {}, cn_by_pc,
+        ai_enhance=False, ai_api_key="sk-fake",
+    )
+    assert result[0] == _COLOR_NOT_FOUND
+
+
+def test_ai_candidate_match_end_to_end_overview(tmp_path, monkeypatch):
+    """Full export: a bracketed "(dark blue)" order colour, stripped to
+    "Dark Blue", resolves via AI candidate-matching against the "Navy" row
+    on file and shows the Chinese name/code in the Overview sheet.
+    """
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    monkeypatch.setattr(
+        _ai, "match_color_to_candidates",
+        lambda client_color, candidates, api_key, model="deepseek-chat":
+            "Navy" if "Navy" in candidates else "",
+    )
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "DR5124", "brand": "Anna Field",
+        "contract_no": "26302-ZA7148", "article_name": "LACE DRESS",
+        "zalando_po": "PO2333438C", "config_sku": "C1", "color_name": "(dark blue)",
+        "xs": 30, "s": 82, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    cn_by_pc = {("HHPPC048", "DR5124", "Navy"): PCColorMatch("藏青", "52#", "")}
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=cn_by_pc,
+        ai_enhance=True, ai_api_key="sk-fake",
+        sky_east_store=None,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    row = dict(zip(headers, [ov.cell(2, c + 1).value for c in range(len(headers))]))
+    assert row["Color (CN)"] == "藏青"
+    assert row["Color Code"] == "52#"

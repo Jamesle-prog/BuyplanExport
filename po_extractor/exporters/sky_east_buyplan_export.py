@@ -199,11 +199,45 @@ def _ai_retry_component(
     cn_by_pc_lookup: dict | None,
     ai_api_key: str, ai_model: str,
 ) -> tuple[str, str, str, str] | None:
-    """Ask the AI to recognise *comp* and retry the local lookup with each
-    candidate name it returns.  Returns the first candidate result that
-    resolves, or ``None`` when the API found nothing usable.
+    """AI-assisted retry for a colour *comp* that missed the local lookup.
+
+    Two strategies, in order:
+
+    1. **Constrained candidate match** (progress source only) — when
+       ``cn_by_pc_lookup`` is the selected source and the row's 客人PC NO +
+       款式 *does* have colour(s) on file, ask the API which of those exact
+       recorded colours *comp* refers to. This bridges the common case where
+       the order file and 大货进度表 simply spell the same colour differently
+       (Navy vs Dark Blue, DK Brown vs Dark Brown, a "Daek Blue" typo). The
+       API only picks among colours already on file, so it can never inject a
+       fabricated value.
+    2. **Open-ended recognition** — fall back to asking the API to normalise
+       *comp* into candidate colour names, then retry the lookup with each.
+       Covers the internal-DB source (which has no per-PC candidate set) and
+       progress rows whose colour is buried in a longer description.
+
+    Returns the first result that resolves, or ``None``.
     """
-    from ..lookups.color_ai_enhance import recognize_colors
+    from ..lookups.color_ai_enhance import (
+        match_color_to_candidates, recognize_colors,
+    )
+
+    if cn_by_pc_lookup is not None:
+        candidates = _available_progress_colors(
+            cn_by_pc_lookup, _norm_key(row.get("pc_no") or ""), sty_norm,
+        )
+        if candidates:
+            picked = match_color_to_candidates(
+                comp, candidates, ai_api_key, ai_model,
+            )
+            if picked:
+                result = _resolve_pc_color(
+                    row, sty_norm, picked, brand,
+                    cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                )
+                if result[0] != _COLOR_NOT_FOUND:
+                    return result
+
     for cand in recognize_colors(comp, ai_api_key, ai_model):
         result = _resolve_pc_color(
             row, sty_norm, cand, brand,

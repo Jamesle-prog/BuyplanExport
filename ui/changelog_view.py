@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.16.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "**\"Local + AI Enhance\" now bridges colour-name mismatches between the order file and 大货进度表.** When an exact (客人PC NO · 款式 · 英文颜色) match misses but that PC No. + style *does* have colour(s) on file, the API is asked to pick which of those **actual recorded colours** the client's colour refers to — resolving the common cases where the two files simply spell the same colour differently: synonyms (order says \"Dark Blue\", 大货进度表 says \"Navy\"), abbreviations (\"Dark Brown\" vs \"DK Brown\"), and outright typos (\"Daek Blue\"). The API only ever picks among colours already on file (its answer is validated against the candidate list), so the Chinese name/code still come from the trusted 大货进度表 — a wrong pick can at worst surface the wrong existing row, never fabricate data. Only runs when Local + AI Enhance is enabled and only on a genuine miss; cached per (colour, candidate-set) so a repeated question costs one API call. **Local-only mode is unchanged — these still show 未找到** with the diagnostic comment listing 大货进度表's own colour(s)"},
+            {"type": "docs", "text": "New `match_color_to_candidates()` in `color_ai_enhance.py`, tried before the existing open-ended `recognize_colors()` fallback inside `_ai_retry_component`. 10 new tests: the matcher itself (synonym pick, hallucination rejected, empty/no-candidate/error paths, caching) and end-to-end resolution of a \"(dark blue)\"→\"Navy\" mismatch through the Overview sheet"},
+        ],
+    },
+    {
         "version": "2.15.1",
         "date": "2026-07-01",
         "entries": [

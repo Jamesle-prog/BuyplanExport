@@ -23,6 +23,11 @@ import json
 # tokens on a string already seen.
 _cache: dict[str, tuple[str, ...]] = {}
 
+# Separate cache for the constrained candidate-match path, keyed by
+# (client_colour, sorted candidate tuple) so the same (colour, candidate-set)
+# question is only ever asked once.
+_match_cache: dict[tuple, str] = {}
+
 _SYSTEM_PROMPT = """\
 You identify colour names in short garment colour description strings.
 Return ONLY a JSON object: {"colors": ["<name1>", "<name2>", ...]}
@@ -34,6 +39,25 @@ Rules:
   words) unless removing them would lose the colour itself.
 - If only one colour is present, return a single-item list.
 - If you cannot identify any colour, return {"colors": []}.
+- Return exactly one JSON object, nothing else.
+"""
+
+_MATCH_SYSTEM_PROMPT = """\
+You match one garment colour to a known list of colour names for the same item.
+You are given a CLIENT colour (from an order form) and a list of CANDIDATE
+colours (the colours actually recorded for that exact style). Decide which
+single candidate refers to the SAME physical colour as the client colour.
+
+Return ONLY a JSON object: {"match": "<exact candidate string, or empty>"}
+
+Rules:
+- Treat synonyms as the same (e.g. "Navy" = "Dark Blue"), common
+  abbreviations (e.g. "DK Brown" = "Dark Brown"), and obvious typos
+  (e.g. "Daek Blue" = "Dark Blue").
+- The "match" value MUST be one of the CANDIDATE strings copied verbatim,
+  or an empty string.
+- If no candidate clearly refers to the same colour, return {"match": ""} —
+  do NOT guess.
 - Return exactly one JSON object, nothing else.
 """
 
@@ -75,3 +99,58 @@ def recognize_colors(
 
     _cache[raw_color] = colors
     return colors
+
+
+def match_color_to_candidates(
+    client_color: str, candidates: list[str], api_key: str,
+    model: str = "deepseek-chat",
+) -> str:
+    """Ask the API which *candidate* colour is the same as *client_color*.
+
+    Used when an order-file colour doesn't exact-match any 大货进度表 colour
+    for a given 客人PC NO + 款式, but that combo *does* have colour(s) on
+    file: rather than guessing an open-ended normalisation, the API is asked
+    to pick which of the *actual* recorded colours the client colour refers
+    to (bridging synonyms like Navy/Dark Blue, abbreviations like DK Brown,
+    and typos like "Daek Blue").
+
+    Returns the chosen candidate **verbatim** (guaranteed to be one of
+    *candidates*), or ``""`` when nothing matches / on any error / when the
+    inputs are blank. The returned name is only ever used to re-key the
+    trusted local lookup — the API never supplies a Chinese name or code, so
+    a wrong pick can at worst surface the wrong *existing* row's colour, never
+    fabricate data. Never raises.
+    """
+    if not client_color or not candidates or not api_key:
+        return ""
+    cache_key = (client_color, tuple(sorted(candidates)))
+    if cache_key in _match_cache:
+        return _match_cache[cache_key]
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        user_msg = (
+            f'CLIENT colour: "{client_color[:200]}"\n'
+            f'CANDIDATE colours: {list(candidates)}'
+        )
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": _MATCH_SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0,
+            max_tokens=64,
+            response_format={"type": "json_object"},
+        )
+        raw = response.choices[0].message.content or "{}"
+        picked = str(json.loads(raw).get("match", "")).strip()
+        # Only accept an answer that is exactly one of the candidates — guards
+        # against the model inventing a colour that isn't on file.
+        picked = picked if picked in candidates else ""
+    except Exception:
+        picked = ""
+
+    _match_cache[cache_key] = picked
+    return picked

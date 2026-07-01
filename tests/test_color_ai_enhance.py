@@ -24,8 +24,10 @@ from po_extractor.lookups import color_ai_enhance
 @pytest.fixture(autouse=True)
 def _clear_cache():
     color_ai_enhance._cache.clear()
+    color_ai_enhance._match_cache.clear()
     yield
     color_ai_enhance._cache.clear()
+    color_ai_enhance._match_cache.clear()
 
 
 def test_recognize_colors_returns_empty_without_api_key():
@@ -118,3 +120,74 @@ def test_recognize_colors_returns_empty_on_malformed_json(monkeypatch):
 
     _install_fake_openai(monkeypatch, _create)
     assert color_ai_enhance.recognize_colors("garbled", "sk-fake") == ()
+
+
+# ---------------------------------------------------------------------------
+# match_color_to_candidates — constrained match against colours on file
+# ---------------------------------------------------------------------------
+
+def test_match_color_to_candidates_returns_empty_without_api_key():
+    assert color_ai_enhance.match_color_to_candidates("Dark Blue", ["Navy"], "") == ""
+
+
+def test_match_color_to_candidates_returns_empty_with_no_candidates():
+    assert color_ai_enhance.match_color_to_candidates("Dark Blue", [], "sk-fake") == ""
+
+
+def test_match_color_to_candidates_picks_synonym(monkeypatch):
+    def _create(**kwargs):
+        return _FakeResponse(json.dumps({"match": "Navy"}))
+
+    _install_fake_openai(monkeypatch, _create)
+    result = color_ai_enhance.match_color_to_candidates(
+        "Dark Blue", ["Navy", "Black"], "sk-fake",
+    )
+    assert result == "Navy"
+
+
+def test_match_color_to_candidates_rejects_hallucinated_answer(monkeypatch):
+    """The model must never return a colour that isn't one of the candidates
+    -- an answer outside the candidate set is treated as no match.
+    """
+    def _create(**kwargs):
+        return _FakeResponse(json.dumps({"match": "Teal"}))   # not a candidate
+
+    _install_fake_openai(monkeypatch, _create)
+    result = color_ai_enhance.match_color_to_candidates(
+        "Dark Blue", ["Navy", "Black"], "sk-fake",
+    )
+    assert result == ""
+
+
+def test_match_color_to_candidates_empty_match_returns_empty(monkeypatch):
+    def _create(**kwargs):
+        return _FakeResponse(json.dumps({"match": ""}))
+
+    _install_fake_openai(monkeypatch, _create)
+    assert color_ai_enhance.match_color_to_candidates(
+        "Chartreuse", ["Navy", "Black"], "sk-fake",
+    ) == ""
+
+
+def test_match_color_to_candidates_is_cached(monkeypatch):
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(kwargs)
+        return _FakeResponse(json.dumps({"match": "Navy"}))
+
+    _install_fake_openai(monkeypatch, _create)
+    a = color_ai_enhance.match_color_to_candidates("Dark Blue", ["Navy"], "sk-fake")
+    b = color_ai_enhance.match_color_to_candidates("Dark Blue", ["Navy"], "sk-fake")
+    assert a == b == "Navy"
+    assert len(calls) == 1   # second question served from cache
+
+
+def test_match_color_to_candidates_returns_empty_on_api_error(monkeypatch):
+    def _create(**kwargs):
+        raise RuntimeError("network down")
+
+    _install_fake_openai(monkeypatch, _create)
+    assert color_ai_enhance.match_color_to_candidates(
+        "Dark Blue", ["Navy"], "sk-fake",
+    ) == ""
