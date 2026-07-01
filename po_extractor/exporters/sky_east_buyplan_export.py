@@ -56,13 +56,17 @@ _NUKURYOU_LABEL_FMT = "{en}({cn})"
 # Centralised so changes propagate to every dict that follows the convention.
 _BRAND_AGNOSTIC = ""
 
-# Shown in the 中文颜色 / 中文颜色代码 cells when the *selected* colour source
-# (大货进度表 or the internal DB — whichever the caller wired in) has no entry
-# at all for this (style, colour) — an explicit miss, not a soft blank/"NA".
-# Deliberately distinct from "NA" (which means "matched, but that one field
-# happened to be empty in the source row") so the two situations aren't
-# confused with each other.
-_COLOR_NOT_FOUND = "未找到"
+# _COLOR_NOT_FOUND is defined in _sky_east_helpers.py (shared with the
+# Overview sheet builder, which attaches a diagnostic comment to any cell
+# showing it) and reaches this module via the `from ._sky_east_helpers
+# import *` above.
+
+# Sentinel distinguishing "sky_east_store not passed — auto-fetch the
+# canonical store" from "explicitly passed None — disable colour-miss
+# logging entirely".  Callers that just want the default behaviour never
+# need to know this exists; tests pass ``sky_east_store=None`` to keep
+# colour-miss diagnostics (a real DB write) out of the shared dev database.
+_AUTO_STORE = object()
 
 
 def _se_base_style_key(style: str, known_styles: set[str]) -> str:
@@ -318,6 +322,7 @@ def export_sky_east_buyplan(
     ai_enhance: bool | None = None,
     ai_api_key: str | None = None,
     ai_model: str | None = None,
+    sky_east_store=_AUTO_STORE,
 ) -> str:
     """Generate the main Sky East buy plan.
 
@@ -364,6 +369,12 @@ def export_sky_east_buyplan(
     ai_model              : optional override for the DeepSeek model used by
                            AI-enhanced colour recognition.  When None, read from
                            the admin DeepSeek settings.
+    sky_east_store        : optional override for the store used to log colour
+                           resolution misses (see ``SkyEastStore.log_color_miss``).
+                           When omitted, the canonical store is auto-fetched.
+                           Pass ``None`` explicitly to disable colour-miss
+                           logging entirely (e.g. in tests, to avoid writing
+                           diagnostic rows into a real database).
 
     Returns
     -------
@@ -407,6 +418,17 @@ def export_sky_east_buyplan(
             ai_enhance = bool(ai_enhance)
             ai_api_key = ai_api_key or ""
             ai_model   = ai_model or "deepseek-chat"
+
+    # Colour-miss diagnostic log — best-effort, never blocks export.
+    if sky_east_store is _AUTO_STORE:
+        try:
+            from ..store import get_sky_east_store
+            _se_store = get_sky_east_store()
+        except Exception:
+            _se_store = None
+    else:
+        _se_store = sky_east_store
+    _color_source = "progress" if cn_by_pc_lookup is not None else "db"
 
     if not _SE_TEMPLATE.exists():
         raise FileNotFoundError(f"Sky East template not found: {_SE_TEMPLATE}")
@@ -747,6 +769,20 @@ def export_sky_east_buyplan(
                     cn_lookup, cn_code_lookup, cn_by_pc_lookup,
                     ai_enhance=ai_enhance, ai_api_key=ai_api_key, ai_model=ai_model,
                 )
+                _raw_client_color = str(g.get("color_name", "") or "")
+                if color_cn == _COLOR_NOT_FOUND and _se_store is not None:
+                    try:
+                        _se_store.log_color_miss(
+                            pc_no=str(g.get("pc_no", "") or ""),
+                            contract_no=str(g.get("contract_no", "") or ""),
+                            style=_row_style,
+                            po_no=str(g.get("zalando_po", "") or ""),
+                            client_po_color=_raw_client_color,
+                            attempted_color=color_en,
+                            source=_color_source,
+                        )
+                    except Exception:
+                        pass   # diagnostic logging must never break export
 
                 xs  = int(grp_df["xs"].sum()  if "xs"  in grp_df.columns else 0)
                 s   = int(grp_df["s"].sum()   if "s"   in grp_df.columns else 0)
@@ -764,7 +800,13 @@ def export_sky_east_buyplan(
                 _style_data(ws.cell(out_row, col["po"]),        str(g.get("zalando_po",   "") or ""))
                 _style_data(ws.cell(out_row, col["config"]),    str(g.get("config_sku",   "") or ""))
                 _style_data(ws.cell(out_row, col["color_en"]),  color_en)
-                _style_data(ws.cell(out_row, col["color_cn"]),  color_cn_display)
+                _color_cn_cell = ws.cell(out_row, col["color_cn"])
+                _style_data(_color_cn_cell, color_cn_display)
+                if color_cn == _COLOR_NOT_FOUND:
+                    from openpyxl.comments import Comment as _Comment
+                    _color_cn_cell.comment = _Comment(
+                        f"Client's PO colour: \"{_raw_client_color}\"", "PO Extractor",
+                    )
                 # 主标颜色 resolution order:
                 #   1. 大货进度表 PC-keyed (most specific — same contract)
                 #   2. label_lookup (brand-keyed DB or progress fallback)
@@ -799,6 +841,7 @@ def export_sky_east_buyplan(
                     "color_en":     color_en,
                     "color_cn":     color_cn,
                     "color_code":   cn_code if cn_code != "NA" else "",
+                    "client_po_color": _raw_client_color,
                     "label_color":  _label_clr,
                     "brand":        brand,
                     "po":           str(g.get("zalando_po", "") or ""),

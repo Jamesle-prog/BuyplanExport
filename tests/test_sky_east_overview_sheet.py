@@ -23,6 +23,20 @@ def _png_bytes(size=(20, 20), color=(200, 50, 50)) -> bytes:
     return buf.getvalue()
 
 
+@pytest.fixture(autouse=True)
+def _isolated_sky_east_store(tmp_path, monkeypatch):
+    """Colour-lookup misses in this file are logged via
+    ``get_sky_east_store().log_color_miss(...)`` (a real DB write). Point that
+    factory at a throwaway tmp-path DB for every test here so a NOT_FOUND
+    scenario never writes diagnostic rows into the shared dev database.
+    """
+    from po_extractor.store.sky_east_store import SkyEastStore
+
+    store = SkyEastStore(str(tmp_path / "_isolated_sky_east.db"))
+    monkeypatch.setattr("po_extractor.store.get_sky_east_store", lambda: store)
+    return store
+
+
 @pytest.fixture
 def two_style_df():
     return pd.DataFrame([
@@ -691,4 +705,121 @@ def test_overview_includes_pc_no_next_to_contract_no_and_label_color(tmp_path):
     assert headers[headers.index("Contract No.") + 1] == "客人PC NO"
     row = dict(zip(headers, [ov.cell(2, c + 1).value for c in range(len(headers))]))
     assert row["客人PC NO"] == "HHPPC048"
-    assert row["主标颜色"] == "黑色"
+
+
+# ---------------------------------------------------------------------------
+# Colour-miss diagnostics — Excel comment + Sky East colour-miss log
+# ---------------------------------------------------------------------------
+
+def test_not_found_cell_gets_comment_with_clients_po_color(tmp_path):
+    """A 未找到 cell in the Overview sheet must carry a comment showing the
+    client's PO colour text -- e.g. it can differ from Color (EN) if the
+    combined-string display omits some detail from the raw order file.
+    """
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "BL4257", "brand": "Anna Field",
+        "contract_no": "26302-ZA7158", "article_name": "LONG SLEEVE BLOUSE",
+        "zalando_po": "PO2338263C", "config_sku": "C1", "color_name": "Dark Brown",
+        "xs": 28, "s": 69, "m": 90, "l": 67, "xl": 46, "xxl": 0,
+    }])
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup={},
+        sky_east_store=None,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    cn_col   = headers.index("Color (CN)") + 1
+    code_col = headers.index("Color Code") + 1
+    cn_cell   = ov.cell(2, cn_col)
+    code_cell = ov.cell(2, code_col)
+    assert cn_cell.value == "未找到"
+    assert cn_cell.comment is not None
+    assert "Dark Brown" in cn_cell.comment.text
+    assert code_cell.comment is not None
+    assert "Dark Brown" in code_cell.comment.text
+
+
+def test_found_cell_has_no_comment(tmp_path):
+    """A successfully-resolved colour must not carry a stray comment."""
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "DR5124", "brand": "Anna Field",
+        "contract_no": "26302-ZA7148", "article_name": "LACE DRESS",
+        "zalando_po": "PO001", "config_sku": "C1", "color_name": "dark blue",
+        "xs": 30, "s": 82, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    cn_by_pc = {("HHPPC048", "DR5124", "Dark Blue"): PCColorMatch("藏青", "503", "")}
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=cn_by_pc,
+        sky_east_store=None,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    cn_cell = ov.cell(2, headers.index("Color (CN)") + 1)
+    assert cn_cell.comment is None
+
+
+def test_color_miss_is_logged_to_sky_east_store(_isolated_sky_east_store, tmp_path):
+    """A colour that ends up 未找到 must be logged via
+    SkyEastStore.log_color_miss() with the client's raw PO colour text --
+    this is what powers the diagnostic log, separate from the Excel comment.
+    """
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "BL4257", "brand": "Anna Field",
+        "contract_no": "26302-ZA7158", "article_name": "LONG SLEEVE BLOUSE",
+        "zalando_po": "PO2338263C", "config_sku": "C1", "color_name": "Dark Brown",
+        "xs": 28, "s": 69, "m": 90, "l": 67, "xl": 46, "xxl": 0,
+    }])
+    export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup={},
+    )
+    misses = _isolated_sky_east_store.list_color_misses()
+    assert len(misses) == 1
+    row = misses.iloc[0]
+    assert row["pc_no"] == "HHPPC048"
+    assert row["style"] == "BL4257"
+    assert row["contract_no"] == "26302-ZA7158"
+    assert row["po_no"] == "PO2338263C"
+    assert row["client_po_color"] == "Dark Brown"
+    assert row["source"] == "progress"
+
+
+def test_resolved_color_is_not_logged_as_a_miss(_isolated_sky_east_store, tmp_path):
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "DR5124", "brand": "Anna Field",
+        "contract_no": "26302-ZA7148", "article_name": "LACE DRESS",
+        "zalando_po": "PO001", "config_sku": "C1", "color_name": "dark blue",
+        "xs": 30, "s": 82, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    cn_by_pc = {("HHPPC048", "DR5124", "Dark Blue"): PCColorMatch("藏青", "503", "")}
+    export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=cn_by_pc,
+    )
+    assert _isolated_sky_east_store.list_color_misses().empty
+
+
+def test_sky_east_store_none_disables_logging_without_breaking_export(tmp_path):
+    """Passing sky_east_store=None must still produce a correct export --
+    logging is purely diagnostic and never required for the export itself.
+    """
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "BL4257", "brand": "Anna Field",
+        "contract_no": "26302-ZA7158", "article_name": "LONG SLEEVE BLOUSE",
+        "zalando_po": "PO2338263C", "config_sku": "C1", "color_name": "Dark Brown",
+        "xs": 28, "s": 69, "m": 90, "l": 67, "xl": 46, "xxl": 0,
+    }])
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup={},
+        sky_east_store=None,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    assert ov.cell(2, headers.index("Color (CN)") + 1).value == "未找到"

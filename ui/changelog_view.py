@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.13.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "**找不到的颜色 (未找到) now carry a diagnostic comment showing the client's PO colour.** Every 未找到 cell in the Overview sheet and per-style sheets gets an Excel cell comment with the raw colour text exactly as the client's order file had it — before bracket-stripping or multi-colour splitting — so a reviewer can see what was actually searched for without reopening the source order file"},
+            {"type": "feat", "text": "**New Sky East colour-resolution error log.** Every colour miss during buy plan generation is now recorded (PC No., Contract No., Style, PO No., client's PO colour, source) in a dedicated log — separate from the GIII PDF-parsing Exception Queue, since it's a different kind of failure. A new **Colour resolution issues** panel appears under Sky East → Contract History after generating a buy plan whenever any misses were logged, with a table and a clear-log button"},
+            {"type": "docs", "text": "11 new tests: SkyEastStore.log_color_miss()/list_color_misses()/clear_color_misses() unit tests, plus end-to-end checks that a 未找到 cell gets the comment (and a resolved one doesn't), that a miss is logged with the correct raw client colour, and that passing sky_east_store=None disables logging without affecting the export itself"},
+        ],
+    },
+    {
         "version": "2.12.0",
         "date": "2026-07-01",
         "entries": [

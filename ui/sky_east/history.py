@@ -1126,7 +1126,46 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         with st.expander("Cross-comparison detail"):
             st.dataframe(cmp_df, width="stretch", hide_index=True)
 
+    if st.session_state.get(SK.SE_BP_BYTES):
+        _se_color_miss_log_section()
+
     _se_hist_email_section()
+
+
+def _se_color_miss_log_section() -> None:
+    """Show colours that failed to resolve during the most recent buy plan
+    generation -- mirrors the "Client's PO colour" comment attached to the
+    未找到 cells in the Overview sheet, but as a reviewable table so the
+    user doesn't have to hunt through every sheet for them.
+    """
+    from ui.stores import get_sky_east_store
+
+    store = get_sky_east_store()
+    misses_df = store.list_color_misses()
+    if misses_df.empty:
+        return
+
+    st.warning(
+        f"⚠️ {len(misses_df)} colour(s) could not be resolved in recent buy plan runs "
+        "-- see the cell comments on the Overview sheet's 未找到 cells, or the detail below.",
+        icon="⚠️",
+    )
+    with st.expander(f"Colour resolution issues ({len(misses_df)})", expanded=False):
+        st.dataframe(
+            misses_df[[
+                "logged_at", "pc_no", "contract_no", "style", "po_no",
+                "client_po_color", "source",
+            ]].rename(columns={
+                "logged_at": "Logged At", "pc_no": "PC No.", "contract_no": "Contract No.",
+                "style": "Style", "po_no": "PO No.", "client_po_color": "Client's PO Colour",
+                "source": "Source",
+            }),
+            width="stretch", hide_index=True,
+        )
+        if st.button("🗑️ Clear colour resolution log", key="se_clear_color_miss_log"):
+            n = store.clear_color_misses()
+            st.success(f"Cleared {n} logged issue(s).")
+            st.rerun()
 
 
 def _se_hist_email_section() -> None:

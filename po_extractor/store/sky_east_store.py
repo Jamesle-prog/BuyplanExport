@@ -408,3 +408,46 @@ class SkyEastStore(BaseSQLiteStore):
     def contract_count(self) -> int:
         with self._conn() as conn:
             return conn.execute("SELECT COUNT(*) FROM sky_east_contracts").fetchone()[0]
+
+    # ------------------------------------------------------------------ #
+    # Colour resolution misses — diagnostic log                            #
+    # ------------------------------------------------------------------ #
+
+    def log_color_miss(
+        self, *, pc_no: str, contract_no: str, style: str, po_no: str,
+        client_po_color: str, attempted_color: str, source: str,
+    ) -> None:
+        """Record a colour that failed to resolve during buy plan generation.
+
+        Deliberately append-only (no dedup) — one entry per (style, PO,
+        colour) per generation run, so re-running after fixing the source
+        data shows the failure count actually dropping over time.
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO sky_east_color_misses
+                   (pc_no, contract_no, style, po_no, client_po_color,
+                    attempted_color, source, logged_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (pc_no, contract_no, style, po_no, client_po_color,
+                 attempted_color, source, now),
+            )
+
+    def list_color_misses(self, limit: int = 500) -> pd.DataFrame:
+        """Return the most recent colour-resolution misses, newest first."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM sky_east_color_misses ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        cols = ["id", "pc_no", "contract_no", "style", "po_no", "client_po_color",
+                "attempted_color", "source", "logged_at"]
+        return pd.DataFrame([dict(r) for r in rows], columns=cols) if rows else pd.DataFrame(columns=cols)
+
+    def clear_color_misses(self) -> int:
+        """Delete all logged colour misses. Returns the number of rows removed."""
+        with self._conn() as conn:
+            n = conn.execute("SELECT COUNT(*) FROM sky_east_color_misses").fetchone()[0]
+            conn.execute("DELETE FROM sky_east_color_misses")
+        return n

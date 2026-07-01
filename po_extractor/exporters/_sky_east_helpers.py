@@ -38,7 +38,18 @@ __all__ = [
     "_replace_placeholders", "_set_sheet_column_widths", "_strip_color_brackets",
     "_style_data", "_style_total",
     "derive_main_label_color",
+    "_COLOR_NOT_FOUND",
 ]
+
+# ---------------------------------------------------------------------------
+# Colour resolution — explicit "not found" marker
+# ---------------------------------------------------------------------------
+# Distinct from a soft blank/"NA" (matched, but that field was empty in the
+# source row) — this means the selected colour source has no entry at all
+# for the (style, colour) key.  Shared by both buyplan exporters and the
+# Overview sheet builder below, which attaches a diagnostic comment to any
+# cell showing this value.
+_COLOR_NOT_FOUND = "未找到"
 
 # ---------------------------------------------------------------------------
 # Template paths
@@ -881,7 +892,7 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
                              "contract_no": str, "pc_no": str, "style": str,
                              "sheet_name": str,
                              "color_en": str, "color_cn": str, "color_code": str,
-                             "label_color": str,
+                             "client_po_color": str, "label_color": str,
                              "brand": str, "po": str, "config_sku": str,
                              "article_name": str,
                              "xs": int, "s": int, "m": int, "l": int,
@@ -890,12 +901,20 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
                              "fabrics": [(label, display_key), ...],
                          }
 
+                     ``client_po_color`` is the colour text exactly as the
+                     client's order file had it, before bracket-stripping or
+                     multi-colour splitting -- when ``color_cn``/``color_code``
+                     is :data:`_COLOR_NOT_FOUND`, it's attached as a cell
+                     comment so a reviewer can see what was actually searched
+                     for without opening the source order file.
+
     n_fabric_slots : number of Fabric / 综合标识 Key column pairs to render —
                      matches the template's fabric-header row count, so every
                      sheet's fabric combination fits regardless of how many
                      fabrics any single style/combo actually uses.
     """
     import io as _io
+    from openpyxl.comments import Comment as _Comment
     from openpyxl.utils import get_column_letter as _gcl
 
     has_photos = any(r.get("photo") for r in overview_rows)
@@ -959,8 +978,13 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
             style_cell.hyperlink = f"#'{sheet_name}'!A1"
             style_cell.style = "Hyperlink"
         ov_ws.cell(ri, _C_COLOR_EN, value=row.get("color_en", ""))
-        ov_ws.cell(ri, _C_COLOR_CN, value=row.get("color_cn", ""))
-        ov_ws.cell(ri, _C_CODE,     value=row.get("color_code", ""))
+        color_cn_cell = ov_ws.cell(ri, _C_COLOR_CN, value=row.get("color_cn", ""))
+        color_code_cell = ov_ws.cell(ri, _C_CODE, value=row.get("color_code", ""))
+        if row.get("color_cn") == _COLOR_NOT_FOUND:
+            _client_color = row.get("client_po_color") or row.get("color_en", "")
+            _note_text = f"Client's PO colour: \"{_client_color}\""
+            color_cn_cell.comment   = _Comment(_note_text, "PO Extractor")
+            color_code_cell.comment = _Comment(_note_text, "PO Extractor")
         ov_ws.cell(ri, _C_LABEL,    value=row.get("label_color", ""))
         ov_ws.cell(ri, _C_BRAND,    value=row.get("brand", ""))
         ov_ws.cell(ri, _C_PO,       value=row.get("po", ""))

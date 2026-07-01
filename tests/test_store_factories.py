@@ -279,6 +279,7 @@ def sky_east_output(fabric_in_db, tmp_path):
         df, {}, str(tmp_path),
         fabric_parts_by_style=None,
         style_image_map=photo_map,
+        sky_east_store=None,   # keep colour-miss diagnostics out of the real DB
     )
     return path, load_workbook(path)
 
@@ -563,6 +564,7 @@ def test_sky_east_buyplan_auto_fills_main_label_color(fabric_in_db, tmp_path):
     path, _ = export_sky_east_buyplan(
         df, {}, str(tmp_path),
         fabric_parts_by_style=None, style_image_map=None,
+        sky_east_store=None,   # keep colour-miss diagnostics out of the real DB
     )
     wb = load_workbook(path)
 
@@ -899,6 +901,7 @@ def test_buyplan_uses_db_label_color_over_keyword_derivation(fabric_in_db, tmp_p
         path, _ = export_sky_east_buyplan(
             df, {}, str(tmp_path),
             fabric_parts_by_style=None, style_image_map=None,
+            sky_east_store=None,   # keep colour-miss diagnostics out of the real DB
         )
         wb = load_workbook(path)
         # Column I row 9 = label_clr
@@ -926,7 +929,8 @@ def test_sky_east_buyplan_warns_when_hhn_missing_from_db(tmp_path, capsys):
         warnings.simplefilter("always")
         export_sky_east_buyplan(df, {}, str(tmp_path),
                                 fabric_parts_by_style=None,
-                                style_image_map=None)
+                                style_image_map=None,
+                                sky_east_store=None)
         msgs = [str(w.message) for w in W]
     assert any("综合key partial" in m or "综合key" in m for m in msgs), (
         f"Expected 综合key diagnostic warning; got messages: {msgs}"
