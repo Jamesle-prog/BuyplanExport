@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.16.2",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "fix", "text": "**DeepSeek AI Extraction / Local + AI Enhance were both broken** — the `openai` package (the OpenAI-compatible client both features use to call DeepSeek) was never added to `requirements.txt`/`requirements.lock` and wasn't installed, so \"Test API key\" failed with `No module named 'openai'` regardless of a valid key. Installed the package and pinned it (and its transitive dependencies: httpx, pydantic, distro, jiter, etc.) in both requirement files so a fresh environment install includes it"},
+        ],
+    },
+    {
         "version": "2.16.1",
         "date": "2026-07-01",
         "entries": [
