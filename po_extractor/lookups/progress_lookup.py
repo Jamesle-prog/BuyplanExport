@@ -363,16 +363,36 @@ class ProgressLookup:
                 return row.iloc[c]
             return None
 
+        # The "序号" (seq) column is normally a row-number sanity check — a
+        # non-numeric value there usually flags a subtotal/section-header row
+        # rather than real data. But some 大货进度表 exports never populate
+        # that column at all (blank for every row). Enforcing the check
+        # unconditionally in that case discards *every* row — silently
+        # losing 合同号 / colour / ex-fty data for the whole file. Only
+        # enforce it when at least one row in the sheet actually has a
+        # numeric value there, i.e. the file's author is using it as a
+        # marker; otherwise fall back to "style is present" alone.
+        seq_col_used = False
+        if "seq" in col:
+            for v in df.iloc[1:, col["seq"]]:
+                try:
+                    int(float(str(v)))
+                    seq_col_used = True
+                    break
+                except (ValueError, TypeError):
+                    continue
+
         # Iterate data rows (skip header)
         for _, row in df.iloc[1:].iterrows():
             style = _norm_key(_v(_cv(row, "style")))
             if not style:
                 continue
-            seq_raw = _cv(row, "seq")
-            try:
-                int(float(str(seq_raw)))
-            except (ValueError, TypeError):
-                continue
+            if seq_col_used:
+                seq_raw = _cv(row, "seq")
+                try:
+                    int(float(str(seq_raw)))
+                except (ValueError, TypeError):
+                    continue
 
             color_raw = _v(_cv(row, "color"))
             cn_code_raw = _v(_cv(row, "cn_code"))

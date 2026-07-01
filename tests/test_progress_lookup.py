@@ -582,3 +582,76 @@ def test_build_label_lookup():
     assert label_lookup.get((COMPANY, "BrandX", "Red")) == "红色"
     # Row with empty label_color should not appear
     assert label_lookup.get((COMPANY, "BrandX", "Green")) is None
+
+
+def test_progress_lookup_loads_rows_when_seq_column_is_entirely_blank():
+    """Real-world regression: a 大货进度表 export that never fills 序号.
+
+    ProgressLookup used to require every row to have a numeric 序号 (seq)
+    value as a "is this real data" signal. Some exports never populate that
+    column at all — enforcing the check unconditionally discarded every row
+    in the file, silently losing 合同号 / colour / ex-fty data for the whole
+    sheet. The gate must only apply when the column is actually used as a
+    marker (i.e. at least one row has a numeric value there).
+    """
+    import os as _os
+    from po_extractor.lookups import ProgressLookup
+
+    tmpdir = tempfile.mkdtemp()
+    filepath = _os.path.join(tmpdir, "progress_blank_seq.xlsx")
+
+    data = {
+        "序号":        ["", "", ""],   # ← never populated, matches the real file
+        "合同号":      ["26302-ZA7148", "26302-ZA7149", "26302-ZA7150"],
+        "客人PC NO":   ["HHPPC048", "HHPPC048", "HHPPC048"],
+        "IMAGE":       ["", "", ""],
+        "款式":        ["DR5124", "DR4578", "DR5334"],
+        "BRAND":       ["Anna Field", "Anna Field", "Anna Field"],
+        "英文颜色":    ["NAVY", "Green", "DARK BLUE"],
+        "中文颜色":    ["藏青", "绿色", "藏青色"],
+        "中文颜色代码": ["52#", "4#", ""],
+        "主标颜色":    ["黑色", "黑色", "黑色"],
+        "PO离厂日期":  ["2026-08-11", "2026-08-11", "2026-08-11"],
+    }
+    pd.DataFrame(data).to_excel(filepath, sheet_name="2026 Zalando SS27", index=False)
+    pl = ProgressLookup(filepath)
+    pl._load()
+
+    assert len(pl._by_style) == 3
+    assert pl.get_contract_no("DR5124", "NAVY", pc_no="HHPPC048") == "26302-ZA7148"
+    assert pl.get_contract_no("DR4578", "Green", pc_no="HHPPC048") == "26302-ZA7149"
+
+
+def test_progress_lookup_still_skips_non_numeric_seq_when_column_is_used():
+    """When a sheet DOES use 序号 as a row marker, the original protection
+    (skip rows with a non-numeric/blank seq — e.g. a stray subtotal row that
+    happens to carry a style-like value) must still apply.
+    """
+    import os as _os
+    from po_extractor.lookups import ProgressLookup
+
+    tmpdir = tempfile.mkdtemp()
+    filepath = _os.path.join(tmpdir, "progress_mixed_seq.xlsx")
+
+    data = {
+        "序号":      [1, "", 2],       # ← row 2 has no seq — should be skipped
+        "合同号":    ["26302-ZA0001", "26302-ZA0002", "26302-ZA0003"],
+        "所在PO":    ["HHPPC060", "HHPPC060", "HHPPC060"],
+        "IMAGE":     ["", "", ""],
+        "款式":      ["DR1000", "DR2000", "DR3000"],
+        "颜色":      ["NAVY", "BLACK", "RED"],
+        "主标颜色":  ["", "", ""],
+        "PO离厂日期": ["", "", ""],
+        "数量":      [100, 200, 300],
+        "PO#":       ["", "", ""],
+        "BRAND":     ["Brand1", "Brand1", "Brand1"],
+        "FABRICDETAIL": ["", "", ""],
+    }
+    pd.DataFrame(data).to_excel(filepath, sheet_name="2026 Zalando", index=False)
+    pl = ProgressLookup(filepath)
+    pl._load()
+
+    assert len(pl._by_style) == 2   # DR1000 and DR3000 only — DR2000 skipped
+    assert "DR2000" not in pl._by_style
+    assert pl.get_contract_no("DR1000", "NAVY", pc_no="HHPPC060") == "26302-ZA0001"
+    assert pl.get_contract_no("DR3000", "RED", pc_no="HHPPC060") == "26302-ZA0003"

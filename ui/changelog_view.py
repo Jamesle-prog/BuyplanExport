@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.4.1",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "fix", "text": "**HHN Contract No. (大货进度表) lookup**: `ProgressLookup` required every row to have a numeric **序号** (row sequence number) as an \"is this real data\" signal — but some 大货进度表 exports never populate that column at all. Enforcing the check unconditionally silently discarded **every row in the file**, losing 合同号 (contract no.), colours, and ex-fty dates for the whole sheet with no visible error. The gate now only applies when the file actually uses 序号 as a marker (≥1 row has a numeric value); otherwise a present style number alone is enough. Covered by 2 new tests, one confirming the original protection still holds for files that do use 序号"},
+        ],
+    },
+    {
         "version": "2.4.0",
         "date": "2026-07-01",
         "entries": [
