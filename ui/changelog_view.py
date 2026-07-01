@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.3.1",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "fix", "text": "**📐 Fabric Mapping** import preview: **♻️ Will update** was flagged for any style already in the database, even when its content matched the file exactly (e.g. after a duplicate combo had already been cleaned up) — misleading, since nothing would actually change. Existing styles are now diffed up front and split into **♻️ Will update** (real content difference) vs. a new **✓ Already up to date** count; the style list and the differences expander reflect the same split"},
+        ],
+    },
+    {
         "version": "2.3.0",
         "date": "2026-07-01",
         "entries": [

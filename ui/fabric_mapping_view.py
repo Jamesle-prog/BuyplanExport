@@ -242,61 +242,79 @@ def show_fabric_mapping_tab() -> None:
         )
         return
 
-    # Classify each style in the file
-    preview_rows = []
-    n_new = n_update = n_skip = 0
+    # ── Classify each style in the file ───────────────────────────────────────
+    # Existing styles are diffed against stored data up front so "Will update"
+    # means "content actually differs" — not just "this style already exists
+    # in the DB". Upsert re-writes every matching row regardless of whether
+    # anything differs, but a status of "Will update" when nothing would
+    # actually change is misleading (see: 2026-07-01 duplicate-combo report,
+    # where a style still showed "Will update" after the only real difference
+    # — a stale duplicate combo — had already been cleaned up).
+    will_delete_missing = "Replace all" in import_mode
+    existing_in_file = [s for s in style_parts_map if s in existing_styles]
+    old_parts_map = (
+        get_store().load_fabric_parts_for_styles(existing_in_file, source)
+        if existing_in_file else {}
+    )
+
+    new_rows, changed_rows, unchanged_rows, skip_rows = [], [], [], []
+    diff_by_style: dict[str, list[dict]] = {}
     for style, parts in sorted(style_parts_map.items()):
         valid_parts = [p for p in parts if p.hhn_no]
+        row = {"Style": style, "Fabric Codes": len(valid_parts)}
         if not valid_parts:
-            status = "⚠️ No fabric codes"
-            n_skip += 1
+            row["Status"] = "⚠️ No fabric codes"
+            skip_rows.append(row)
         elif style in existing_styles:
-            status = "♻️ Will update"
-            n_update += 1
+            diff = _diff_fabric_parts(
+                old_parts_map.get(style, []), valid_parts,
+                will_delete_missing=will_delete_missing,
+            )
+            diff_by_style[style] = diff
+            if diff:
+                row["Status"] = "♻️ Will update"
+                changed_rows.append(row)
+            else:
+                row["Status"] = "✓ Up to date"
+                unchanged_rows.append(row)
         else:
-            status = "🆕 New"
-            n_new += 1
-        preview_rows.append({
-            "Style":        style,
-            "Fabric Codes": len(valid_parts),
-            "Status":       status,
-        })
+            row["Status"] = "🆕 New"
+            new_rows.append(row)
+
+    preview_rows = new_rows + changed_rows + unchanged_rows + skip_rows
+    n_new, n_update, n_same, n_skip = (
+        len(new_rows), len(changed_rows), len(unchanged_rows), len(skip_rows)
+    )
 
     # ── Preview ───────────────────────────────────────────────────────────────
     st.markdown(f"**Preview — {fm_file.name}**")
-    mc = st.columns(3)
-    mc[0].metric("🆕 New styles",          n_new)
-    mc[1].metric("♻️ Will update",          n_update)
-    mc[2].metric("⚠️ Skipped (no codes)",  n_skip)
+    mc = st.columns(4)
+    mc[0].metric("🆕 New styles",         n_new)
+    mc[1].metric("♻️ Will update",         n_update)
+    mc[2].metric("✓ Already up to date",  n_same)
+    mc[3].metric("⚠️ Skipped (no codes)", n_skip)
 
     with st.expander("Show full style list", expanded=(len(preview_rows) <= 20)):
         st.dataframe(pd.DataFrame(preview_rows), width="stretch", hide_index=True)
 
     # ── Diff for styles that will update ─────────────────────────────────────
-    update_styles = [r["Style"] for r in preview_rows if r["Status"] == "♻️ Will update"]
-    if update_styles and "Add new only" in import_mode:
+    if existing_in_file and "Add new only" in import_mode:
         # These styles already exist, so Add-new-only skips them entirely —
         # a diff here would suggest changes that will not actually happen.
-        with st.expander(f"🔍 {len(update_styles)} existing style(s) — will be skipped"):
+        with st.expander(f"🔍 {len(existing_in_file)} existing style(s) — will be skipped"):
             st.caption(
                 "Import mode is **Add new only**: styles already in the database are "
                 "left completely unchanged. None of these will be touched by this import."
             )
-    elif update_styles:
-        will_delete_missing = "Replace all" in import_mode
-        old_parts_map = get_store().load_fabric_parts_for_styles(update_styles, source)
-        diff_rows: list[dict] = []
-        changed_styles: set[str] = set()
-        for style in update_styles:
-            old_parts = old_parts_map.get(style, [])
-            new_parts = style_parts_map.get(style, [])
-            for d in _diff_fabric_parts(old_parts, new_parts,
-                                        will_delete_missing=will_delete_missing):
-                diff_rows.append({"Style": style, **d})
-                changed_styles.add(style)
+    elif changed_rows or unchanged_rows:
+        diff_rows = [
+            {"Style": style, **d}
+            for style in (r["Style"] for r in changed_rows)
+            for d in diff_by_style[style]
+        ]
         with st.expander(
             f"🔍 Show differences for updating styles "
-            f"({len(changed_styles)} of {len(update_styles)} actually changed)",
+            f"({n_update} of {n_update + n_same} actually changed)",
             expanded=(0 < len(diff_rows) <= 30),
         ):
             if diff_rows:
@@ -328,7 +346,11 @@ def show_fabric_mapping_tab() -> None:
         )
 
     # ── Import button ─────────────────────────────────────────────────────────
-    import_disabled = (not confirmed_replace) or (n_new + n_update == 0)
+    # n_same ("already up to date") still counts toward "something valid to
+    # import" — Upsert/Replace all writing identical data is a harmless no-op,
+    # and Replace all specifically is how a duplicate-combo style gets fixed
+    # even when its content otherwise matches the file.
+    import_disabled = (not confirmed_replace) or (n_new + n_update + n_same == 0)
     if st.button(
         "💾 Import Fabric Mapping", type="primary",
         key="fm_tab_import_btn",
