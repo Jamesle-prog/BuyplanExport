@@ -45,22 +45,40 @@ Rules:
 """
 
 _MATCH_SYSTEM_PROMPT = """\
-You match one garment colour to a known list of colour names for the same item.
+You match a garment colour string to a known list of colour names for the
+same style, but ONLY when they are the SAME NAME written differently — a
+typo, an abbreviation, extra/missing spacing or punctuation, or a case
+difference. You are NOT deciding whether two colours look similar or belong
+to the same colour family.
+
 You are given a CLIENT colour (from an order form) and a list of CANDIDATE
-colours (the colours actually recorded for that exact style). Decide which
-single candidate refers to the SAME physical colour as the client colour.
+colours (the colours actually recorded for that exact style).
 
 Return ONLY a JSON object: {"match": "<exact candidate string, or empty>"}
 
-Rules:
-- Treat synonyms as the same (e.g. "Navy" = "Dark Blue"), common
-  abbreviations (e.g. "DK Brown" = "Dark Brown"), and obvious typos
-  (e.g. "Daek Blue" = "Dark Blue").
-- The "match" value MUST be one of the CANDIDATE strings copied verbatim,
-  or an empty string.
-- If no candidate clearly refers to the same colour, return {"match": ""} —
-  do NOT guess.
-- Return exactly one JSON object, nothing else.
+Rules — a match is ONLY valid when the candidate is the same underlying name:
+- Obvious typo/misspelling of the identical name: "Daek Blue" = "Dark Blue".
+- Abbreviation that expands to the identical name: "DK Brown" = "Dark Brown".
+- Formatting-only differences: case, spacing, punctuation, a numeric colour
+  code prefix ("52# Navy" = "Navy").
+
+Do NOT match on any of these — they are DIFFERENT colours even if related
+or visually similar, and treating them as the same could assign the wrong
+dye lot/colour code to the wrong item:
+- Different colour-family names: "Navy" vs "Dark Blue", "Cream" vs "White",
+  "Maroon" vs "Burgundy" are NOT the same colour — they are genuinely
+  different names, not spelling variants of one name.
+- Different shades or modifiers: "Dark Blue" vs "Blue", "Light Grey" vs
+  "Grey" are NOT the same colour.
+- Guessing based on visual similarity or general colour-family membership.
+
+When in doubt, or when the candidate is a different colour name rather than
+a spelling/formatting variant of the same name, return {"match": ""} — an
+incorrect match is worse than no match, since it silently assigns the wrong
+colour code to the order.
+
+The "match" value MUST be one of the CANDIDATE strings copied verbatim, or
+an empty string. Return exactly one JSON object, nothing else.
 """
 
 
@@ -119,9 +137,13 @@ def match_color_to_candidates(
     Used when an order-file colour doesn't exact-match any 大货进度表 colour
     for a given 客人PC NO + 款式, but that combo *does* have colour(s) on
     file: rather than guessing an open-ended normalisation, the API is asked
-    to pick which of the *actual* recorded colours the client colour refers
-    to (bridging synonyms like Navy/Dark Blue, abbreviations like DK Brown,
-    and typos like "Daek Blue").
+    to pick which of the *actual* recorded colours is the SAME NAME written
+    differently — a typo ("Daek Blue" -> "Dark Blue") or an abbreviation of
+    the identical name ("DK Brown" -> "Dark Brown"). It is explicitly told
+    NOT to match different-but-related colour names (e.g. "Navy" is a
+    different colour from "Dark Blue", not a synonym) — a wrong pick would
+    silently assign the wrong colour code to the order, which is worse than
+    an honest 未找到.
 
     Returns the chosen candidate **verbatim** (guaranteed to be one of
     *candidates*), or ``""`` when nothing matches / on any error / when the

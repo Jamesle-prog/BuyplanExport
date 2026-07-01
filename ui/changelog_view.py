@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.16.4",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "security", "text": "**Local + AI Enhance was silently matching genuinely different colours as if they were the same** — the AI prompt explicitly told the model to \"treat synonyms as the same (e.g. 'Navy' = 'Dark Blue')\", so a client's \"Dark Blue\" order line got assigned 大货进度表's \"Navy\" colour code, a wrong result presented as a confident match. Rewrote the prompt to allow ONLY spelling/formatting variants of the identical name — typos (\"Daek Blue\" → \"Dark Blue\"), abbreviations of the same name (\"DK Brown\" → \"Dark Brown\"), and formatting differences (case, spacing, a numeric code prefix) — while explicitly forbidding matches across different colour names (Navy/Dark Blue, Cream/White, etc.) even when related or visually similar. An honest 未找到 is safer than a wrong colour code silently assigned to an order"},
+            {"type": "docs", "text": "Renamed/reworked the misleading `test_match_color_to_candidates_picks_synonym` test to test the actually-intended typo-correction case, and added a regression guard directly on the prompt text so the old \"treat synonyms as the same\" instruction can't silently come back"},
+        ],
+    },
+    {
         "version": "2.16.3",
         "date": "2026-07-01",
         "entries": [

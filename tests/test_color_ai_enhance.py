@@ -134,15 +134,20 @@ def test_match_color_to_candidates_returns_empty_with_no_candidates():
     assert color_ai_enhance.match_color_to_candidates("Dark Blue", [], "sk-fake") == ""
 
 
-def test_match_color_to_candidates_picks_synonym(monkeypatch):
+def test_match_color_to_candidates_picks_typo_correction(monkeypatch):
+    """The intended use case: a typo/misspelling of the SAME name, not a
+    different-but-related colour name -- "Daek Blue" -> "Dark Blue" is a
+    spelling correction; "Navy" -> "Dark Blue" would be guessing across two
+    genuinely different colour names, which the prompt explicitly forbids.
+    """
     def _create(**kwargs):
-        return _FakeResponse(json.dumps({"match": "Navy"}))
+        return _FakeResponse(json.dumps({"match": "Dark Blue"}))
 
     _install_fake_openai(monkeypatch, _create)
     result = color_ai_enhance.match_color_to_candidates(
-        "Dark Blue", ["Navy", "Black"], "sk-fake",
+        "Daek Blue", ["Dark Blue", "Black"], "sk-fake",
     )
-    assert result == "Navy"
+    assert result == "Dark Blue"
 
 
 def test_match_color_to_candidates_rejects_hallucinated_answer(monkeypatch):
@@ -191,6 +196,19 @@ def test_match_color_to_candidates_returns_empty_on_api_error(monkeypatch):
     assert color_ai_enhance.match_color_to_candidates(
         "Dark Blue", ["Navy"], "sk-fake",
     ) == ""
+
+
+def test_match_prompt_forbids_cross_name_synonym_matching():
+    """Regression guard on the prompt text itself: "Navy" and "Dark Blue"
+    are different colour names (different dye lots/codes), not spelling
+    variants of one name -- matching them silently assigns the wrong colour
+    code to an order. The prompt must explicitly forbid this, not just
+    permit typo/abbreviation correction.
+    """
+    prompt = color_ai_enhance._MATCH_SYSTEM_PROMPT
+    assert "Navy" in prompt and "Dark Blue" in prompt
+    assert "NOT the same colour" in prompt or "NOT the same" in prompt
+    assert "Treat synonyms as the same" not in prompt
 
 
 # ---------------------------------------------------------------------------

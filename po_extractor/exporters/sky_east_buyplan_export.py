@@ -206,11 +206,14 @@ def _ai_retry_component(
     1. **Constrained candidate match** (progress source only) — when
        ``cn_by_pc_lookup`` is the selected source and the row's 客人PC NO +
        款式 *does* have colour(s) on file, ask the API which of those exact
-       recorded colours *comp* refers to. This bridges the common case where
-       the order file and 大货进度表 simply spell the same colour differently
-       (Navy vs Dark Blue, DK Brown vs Dark Brown, a "Daek Blue" typo). The
-       API only picks among colours already on file, so it can never inject a
-       fabricated value.
+       recorded colours *comp* is the SAME NAME written differently — a
+       typo ("Daek Blue" -> "Dark Blue") or abbreviation of the identical
+       name ("DK Brown" -> "Dark Brown"). The API is explicitly told NOT to
+       match different-but-related colour names (e.g. "Navy" is a different
+       colour from "Dark Blue", not a synonym) — a wrong pick would silently
+       assign the wrong colour code, worse than an honest miss. It also
+       only ever picks among colours already on file, so it can never
+       inject a fabricated value.
     2. **Open-ended recognition** — fall back to asking the API to normalise
        *comp* into candidate colour names, then retry the lookup with each.
        Covers the internal-DB source (which has no per-PC candidate set) and
