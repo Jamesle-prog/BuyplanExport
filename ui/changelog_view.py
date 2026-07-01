@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.7.1",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "Sky East Buy Plan sheet tab names simplified to **\"<running index>_<style>\"** (e.g. `1_DR5124`, `2_DR4578`), matching the Index sheet's own \"No.\" column — the fabric/HHN code is no longer part of the tab name. A style with multiple fabric combos still gets one sheet per combo, disambiguated purely by the index (e.g. `1_DR5009`, `2_DR5009`)"},
+        ],
+    },
+    {
         "version": "2.7.0",
         "date": "2026-07-01",
         "entries": [

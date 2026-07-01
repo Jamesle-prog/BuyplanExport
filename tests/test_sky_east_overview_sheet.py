@@ -6,6 +6,7 @@ name and colour code alongside the English name.
 from __future__ import annotations
 
 import io
+import re
 
 import pandas as pd
 import pytest
@@ -60,7 +61,11 @@ def test_overview_sheet_created_right_after_index(two_style_df, pc_color_lookup,
     wb = load_workbook(path)
     assert wb.sheetnames[0] == "Index"
     assert wb.sheetnames[1] == "Overview"
-    assert set(wb.sheetnames[2:]) == {"DR5124", "DR4578"}
+    # Sheet names are "<index>_<style>" -- verify by suffix, not exact name.
+    style_sheets = wb.sheetnames[2:]
+    assert len(style_sheets) == 2
+    assert any(s.endswith("_DR5124") for s in style_sheets)
+    assert any(s.endswith("_DR4578") for s in style_sheets)
 
 
 def test_overview_rows_include_english_and_chinese_color_plus_code(
@@ -107,8 +112,13 @@ def test_overview_style_cell_hyperlinks_to_its_own_sheet(
     for ri in (2, 3):
         cell = ov.cell(ri, style_col)
         assert cell.hyperlink is not None
-        target_sheet = cell.value
-        assert f"'{target_sheet}'!A1" in cell.hyperlink.target
+        # Sheet names are "<index>_<style>" (e.g. "1_DR5124"), so the cell's
+        # displayed style name is only a suffix of the linked sheet name now.
+        m = re.search(r"#'([^']+)'!A1", cell.hyperlink.target)
+        assert m, cell.hyperlink.target
+        target_sheet = m.group(1)
+        assert target_sheet in wb.sheetnames
+        assert target_sheet.endswith(f"_{cell.value}")
 
 
 def test_overview_includes_fabric_and_display_key_columns(
@@ -215,7 +225,8 @@ def test_buyplan_color_en_has_no_brackets_in_display(tmp_path):
     color_col = headers.index("Color (EN)") + 1
     assert ov.cell(2, color_col).value == "Dark Blue"
 
-    style_ws = wb["DR5124"]
+    style_sheet_name = next(s for s in wb.sheetnames if s.endswith("_DR5124"))
+    style_ws = wb[style_sheet_name]
     col_g_values = [style_ws.cell(r, 7).value for r in range(5, 8)]
     assert not any(v and "(" in str(v) for v in col_g_values)
 
@@ -306,3 +317,63 @@ def test_partial_match_still_uses_na_placeholder_not_error(tmp_path):
     # empty-string cell write as None on reload, which is the correct
     # "blank cell" outcome in Excel.
     assert not row["Color Code"]
+
+
+# ---------------------------------------------------------------------------
+# Sheet naming — "<running index>_<style>", no fabric code
+# ---------------------------------------------------------------------------
+
+def test_sheet_names_are_index_then_style_no_fabric_code(tmp_path):
+    """Per-style sheet names are "<n>_<style>" -- a running 1-based index
+    matching the Index sheet's own "No." column -- with no fabric/HHN code
+    in the name.
+    """
+    from po_extractor.models.fabric_part import FabricPart
+
+    df = pd.DataFrame([
+        {"style": "DR5124", "brand": "Anna Field", "zalando_po": "PO1",
+         "config_sku": "C1", "color_name": "dark blue", "contract_no": "K1",
+         "article_name": "LACE", "xs": 1, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0},
+        {"style": "DR4578", "brand": "Anna Field", "zalando_po": "PO1",
+         "config_sku": "C2", "color_name": "green", "contract_no": "K2",
+         "article_name": "SLEEVE", "xs": 1, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0},
+    ])
+    fabric_parts_by_style = {
+        "DR5124": [FabricPart(combo_idx=0, seq=1, body_part="Main Body", hhn_no="HHN-JA-01715")],
+        "DR4578": [FabricPart(combo_idx=0, seq=1, body_part="Main Body", hhn_no="HHN-JSRSR-04068")],
+    }
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path), label_lookup={}, cn_code_lookup={},
+        fabric_parts_by_style=fabric_parts_by_style,
+    )
+    wb = load_workbook(path)
+    style_sheets = wb.sheetnames[2:]   # skip Index, Overview
+    assert style_sheets == ["1_DR5124", "2_DR4578"]
+    assert not any("HHN" in s for s in style_sheets)
+
+
+def test_sheet_names_disambiguate_multiple_combos_of_same_style(tmp_path):
+    """A style with two fabric combos gets two sheets, disambiguated purely
+    by the running index (e.g. "1_DR5009", "2_DR5009") -- no fabric code
+    needed since the index itself is already unique.
+    """
+    from po_extractor.models.fabric_part import FabricPart
+
+    df = pd.DataFrame([{
+        "style": "DR5009", "brand": "Anna Field", "zalando_po": "PO1",
+        "config_sku": "C1", "color_name": "dark blue", "contract_no": "K1",
+        "article_name": "MAXI", "xs": 1, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    fabric_parts_by_style = {
+        "DR5009": [
+            FabricPart(combo_idx=0, seq=1, body_part="Main Body", hhn_no="HHN-A"),
+            FabricPart(combo_idx=1, seq=1, body_part="Main Body", hhn_no="HHN-B"),
+        ],
+    }
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path), label_lookup={}, cn_code_lookup={},
+        fabric_parts_by_style=fabric_parts_by_style,
+    )
+    wb = load_workbook(path)
+    style_sheets = wb.sheetnames[2:]
+    assert style_sheets == ["1_DR5009", "2_DR5009"]

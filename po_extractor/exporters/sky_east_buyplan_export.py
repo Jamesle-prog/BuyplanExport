@@ -431,6 +431,9 @@ def export_sky_east_buyplan(
     # One entry per item row across the whole workbook — feeds the Overview
     # sheet, a flat cross-check table mirroring the per-style sheets.
     _overview_rows:    list[dict] = []
+    # Running 1-based sheet index — matches the Index sheet's own "No."
+    # column, so a tab name like "3_DR5334" lines up with Index row 3.
+    _sheet_seq = 0
 
     # Trailing-"A" variants share a sheet with their base style (e.g. DR5302A is
     # grouped into the DR5302 sheet) — but only when the base style is itself
@@ -471,16 +474,12 @@ def export_sky_east_buyplan(
 
         for combo_parts in combo_list:
             # ── Unique sheet name ─────────────────────────────────────────
-            # Name after style + first HHN in this combination (most informative).
-            if combo_parts is not None:
-                _first_hhn = next(
-                    (str(fp.hhn_no or "") for fp in combo_parts if fp.hhn_no), ""
-                )
-                _base_sn = _clean_sheet_name(
-                    f"{style}_{_first_hhn}" if _first_hhn else style
-                )
-            else:
-                _base_sn = _clean_sheet_name(style)
+            # "<running index>_<style>" — e.g. "3_DR5334". The index alone
+            # already guarantees uniqueness even when one style has multiple
+            # fabric combos (each combo bumps the counter), so the fabric
+            # code no longer needs to be in the name.
+            _sheet_seq += 1
+            _base_sn = _clean_sheet_name(f"{_sheet_seq}_{style}")
             _sn, _sfx = _base_sn, 2
             while _sn in _used_sheet_names:
                 _suffix = f"_{_sfx}"

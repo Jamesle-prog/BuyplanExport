@@ -279,10 +279,23 @@ def sky_east_output(fabric_in_db, tmp_path):
     return path, load_workbook(path)
 
 
+def _teststyle_ws(wb):
+    """Return the TESTSTYLE sheet — named "<running index>_TESTSTYLE" since
+    sheet names lead with a positional index (e.g. "1_TESTSTYLE")."""
+    name = next(s for s in wb.sheetnames if s.endswith("_TESTSTYLE"))
+    return wb[name]
+
+
+def _style_ws(wb, style: str):
+    """Return the sheet for *style* — named "<running index>_<style>"."""
+    name = next(s for s in wb.sheetnames if s.endswith(f"_{style}"))
+    return wb[name]
+
+
 def test_sky_east_buyplan_dk_lands_in_column_d(sky_east_output, fabric_in_db):
     """综合key must be written to column D, not E (v1.52.0 fix)."""
     _path, wb = sky_east_output
-    ws = wb["TESTSTYLE"]
+    ws = _teststyle_ws(wb)
     assert ws["D2"].value is not None, "D2 (综合key) is empty"
     assert fabric_in_db in str(ws["D2"].value), (
         f"D2 should contain the HHN code, got {ws['D2'].value!r}"
@@ -293,7 +306,7 @@ def test_sky_east_buyplan_e2_is_cleared(sky_east_output):
     """Column E (row 2) must be explicitly empty — old configs put the
     display key there and we want zero ambiguity."""
     _path, wb = sky_east_output
-    ws = wb["TESTSTYLE"]
+    ws = _teststyle_ws(wb)
     assert ws["E2"].value is None, (
         f"E2 should be empty, got {ws['E2'].value!r}"
     )
@@ -303,7 +316,7 @@ def test_sky_east_buyplan_dk_includes_db_gsm_and_width(sky_east_output, fabric_i
     """The 综合key must include weight_gsm + cuttable_width_cm fetched
     from the fabric_master DB (v1.53.0 fix — silent ImportError)."""
     _path, wb = sky_east_output
-    ws = wb["TESTSTYLE"]
+    ws = _teststyle_ws(wb)
     expected = f"{fabric_in_db}|100%TestFiber|220|145"
     assert ws["D2"].value == expected, (
         f"综合key not built from DB.\nExpected: {expected}\n"
@@ -315,7 +328,7 @@ def test_sky_east_buyplan_dates_filled(sky_east_output):
     """K1 (制单日期) and K2 (修改日期) must have a non-empty date string
     (v1.51.1 fix)."""
     _path, wb = sky_east_output
-    ws = wb["TESTSTYLE"]
+    ws = _teststyle_ws(wb)
     assert ws["K1"].value, "K1 (creation date) is empty"
     assert ws["K2"].value, "K2 (modification date) is empty"
 
@@ -324,7 +337,7 @@ def test_sky_east_buyplan_date_cells_merged(sky_east_output):
     """K1:O1 and K2:O2 must be merged so the date is visible across the
     coloured rectangle (v1.51.1 fix)."""
     _path, wb = sky_east_output
-    ws = wb["TESTSTYLE"]
+    ws = _teststyle_ws(wb)
     merges = {str(m) for m in ws.merged_cells.ranges}
     assert "K1:O1" in merges, f"K1:O1 not merged; merges = {merges}"
     assert "K2:O2" in merges, f"K2:O2 not merged; merges = {merges}"
@@ -368,7 +381,7 @@ def test_sky_east_buyplan_format_overrides(sky_east_output):
     """Compact-layout overrides must apply: font 10, widths 20/6,
     row height 28pt (v1.50.2 + v1.53.0)."""
     _path, wb = sky_east_output
-    ws = wb["TESTSTYLE"]
+    ws = _teststyle_ws(wb)
 
     # Font size = 10
     assert ws["A1"].font.size == 10, f"A1 font {ws['A1'].font.size}"
@@ -397,7 +410,7 @@ def test_sky_east_buyplan_workbook_reloads_in_openpyxl(sky_east_output):
     # If anything in the saved zip is malformed (e.g. rels target points
     # at a non-existent path) load_workbook raises here.
     wb2 = load_workbook(path)
-    assert "TESTSTYLE" in wb2.sheetnames
+    assert any(s.endswith("_TESTSTYLE") for s in wb2.sheetnames)
 
 
 def test_sky_east_index_first_style_has_hyperlink_and_total(sky_east_output, fabric_in_db):
@@ -552,13 +565,13 @@ def test_sky_east_buyplan_auto_fills_main_label_color(fabric_in_db, tmp_path):
     # Column I (9) = label_clr; row 9 = first data row in Sky_East template.
     # (Row 8 is the bilingual header row — scanning from there would pick up
     # the literal header "主标色" instead of the data value.)
-    assert wb["S_DARK"].cell(9, 9).value  == "黑色", (
-        f"dark body → expected 黑色, got {wb['S_DARK'].cell(9, 9).value!r}"
+    assert _style_ws(wb, "S_DARK").cell(9, 9).value  == "黑色", (
+        f"dark body → expected 黑色, got {_style_ws(wb, 'S_DARK').cell(9, 9).value!r}"
     )
-    assert wb["S_LIGHT"].cell(9, 9).value == "白色", (
-        f"light body → expected 白色, got {wb['S_LIGHT'].cell(9, 9).value!r}"
+    assert _style_ws(wb, "S_LIGHT").cell(9, 9).value == "白色", (
+        f"light body → expected 白色, got {_style_ws(wb, 'S_LIGHT').cell(9, 9).value!r}"
     )
-    assert wb["S_SKU_IGNORED"].cell(9, 9).value == "黑色", (
+    assert _style_ws(wb, "S_SKU_IGNORED").cell(9, 9).value == "黑色", (
         "colour_code is a Zalando SKU and MUST NOT be used as label colour"
     )
 
@@ -885,7 +898,7 @@ def test_buyplan_uses_db_label_color_over_keyword_derivation(fabric_in_db, tmp_p
         )
         wb = load_workbook(path)
         # Column I row 9 = label_clr
-        actual = wb["S_DB"].cell(9, 9).value
+        actual = _style_ws(wb, "S_DB").cell(9, 9).value
         assert actual == "白色", (
             f"DB label_color override ignored — expected 白色, got {actual!r}"
         )
