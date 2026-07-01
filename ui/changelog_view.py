@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.9.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "**大货进度表 multi-colour rows are now split and independently look-up-able.** A two-tone style's colour code cell (e.g. `52#/白色 3#` for a Dark Blue/White style) used to leave the second colour's code unreachable — an order-file item coloured \"White\" could never match it. Each colour in a two-tone row now becomes its own record (same PC No./Style/contract, distinct colour), so both `get_contract_no()`/`get_color_code()`/etc. and the persisted 大货进度表 store resolve either colour correctly. When the second colour has no isolable English name (an accent/trim colour rather than a second body colour, e.g. \"BLACK WITH WHITE STRAP...\"), its Chinese name and code are still captured, just not matchable by English name alone"},
+            {"type": "fix", "text": "The 色汇总 (colour summary) column was never being detected — its real header wraps onto two lines (`颜色汇总\\n英文 中文 色号 色卡本`), which didn't match any alias exactly. Header matching now collapses embedded newlines/whitespace before comparing, and the exact real-world header text was added as an alias"},
+            {"type": "docs", "text": "5 new tests covering the multi-colour split (both a clean two-tone case and a headerless-accent-colour case), a normal single-colour row staying untouched, and end-to-end resolution through both `ProgressLookup` and the persisted DB store"},
+        ],
+    },
+    {
         "version": "2.8.1",
         "date": "2026-07-01",
         "entries": [

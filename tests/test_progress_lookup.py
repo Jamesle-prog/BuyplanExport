@@ -771,3 +771,85 @@ def test_extra_descriptive_columns_are_parsed_when_present(tmp_path):
     assert records[0]["test_note"] == "test-value"
     assert records[0]["remarks"] == "remark-value"
     assert records[0]["launch_date"] == "2026-02-02"
+
+
+# ---------------------------------------------------------------------------
+# Multi-colour rows -- "52#/白色 3#" style two-tone codes get split into
+# separate, independently look-up-able colour records
+# ---------------------------------------------------------------------------
+
+def test_split_multi_color_extracts_second_color_name_and_code():
+    from po_extractor.lookups.progress_lookup import _split_multi_color
+    parts = _split_multi_color(
+        "Dark BlUE", "藏青", "52#/白色 3#", "Dark BlUE /White 藏青 52#/白色 3#",
+    )
+    assert parts == [
+        {"color": "Dark BlUE", "cn_color": "藏青", "color_code": "52#"},
+        {"color": "White", "cn_color": "白色", "color_code": "3#"},
+    ]
+
+
+def test_split_multi_color_no_space_before_second_code():
+    from po_extractor.lookups.progress_lookup import _split_multi_color
+    parts = _split_multi_color(
+        "BLACK", "黑色", "2#/白色3#", "BLACK 黑色2#/白色3#",
+    )
+    assert parts == [
+        {"color": "BLACK", "cn_color": "黑色", "color_code": "2#"},
+        {"color": "", "cn_color": "白色", "color_code": "3#"},
+    ]
+
+
+def test_split_multi_color_leaves_single_color_rows_untouched():
+    from po_extractor.lookups.progress_lookup import _split_multi_color
+    assert _split_multi_color("NAVY", "藏青", "52#", "NAVY 藏青52#") == [
+        {"color": "NAVY", "cn_color": "藏青", "color_code": "52#"},
+    ]
+    # A code with no "/" at all (e.g. a Pantone-style code) must not split.
+    assert _split_multi_color("BORDEAUX", "酒红色", "19-2025TCX", "") == [
+        {"color": "BORDEAUX", "cn_color": "酒红色", "color_code": "19-2025TCX"},
+    ]
+
+
+def test_parse_progress_rows_splits_two_tone_style_into_two_records(tmp_path):
+    import openpyxl
+    from po_extractor.lookups.progress_lookup import parse_progress_rows
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["序号", "合同号", "所在PO", "IMAGE", "款式",
+              "颜色汇总\n英文 中文 色号 色卡本", "英文颜色", "中文颜色",
+              "中文颜色代码", "主标颜色", "PO离厂日期", "数量", "PO#",
+              "BRAND", "FABRICDETAIL"])
+    ws.append([1, "C1", "HHPPC048", "", "DR5009",
+              "Dark BlUE /White 藏青 52#/白色 3#", "Dark BlUE", "藏青",
+              "52#/白色 3#", "", "", 300, "", "Anna Field", ""])
+    path = tmp_path / "progress.xlsx"
+    wb.save(str(path))
+
+    records = parse_progress_rows(str(path))
+    assert len(records) == 2
+    assert {r["color"] for r in records} == {"Dark BlUE", "White"}
+    assert {r["color_code"] for r in records} == {"52#", "3#"}
+
+
+def test_from_records_resolves_each_split_color_independently(tmp_path):
+    from po_extractor.lookups.progress_lookup import parse_progress_rows, ProgressLookup
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["序号", "合同号", "所在PO", "IMAGE", "款式",
+              "颜色汇总\n英文 中文 色号 色卡本", "英文颜色", "中文颜色",
+              "中文颜色代码", "主标颜色", "PO离厂日期", "数量", "PO#",
+              "BRAND", "FABRICDETAIL"])
+    ws.append([1, "26302-ZA7156", "HHPPC048", "", "DR5009",
+              "Dark BlUE /White 藏青 52#/白色 3#", "Dark BlUE", "藏青",
+              "52#/白色 3#", "", "", 300, "", "Anna Field", ""])
+    path = tmp_path / "progress.xlsx"
+    wb.save(str(path))
+
+    pl = ProgressLookup.from_records(parse_progress_rows(str(path)))
+    assert pl.get_color_code("DR5009", "Dark BlUE", pc_no="HHPPC048") == "52#"
+    assert pl.get_color_code("DR5009", "White", pc_no="HHPPC048") == "3#"
+    assert pl.get_contract_no("DR5009", "White", pc_no="HHPPC048") == "26302-ZA7156"

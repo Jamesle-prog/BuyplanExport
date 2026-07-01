@@ -196,13 +196,80 @@ def _extract_color_code(color: str) -> str:
     return m.group(1) if m else ""
 
 
+# A two-colour code cell looks like "52#/白色 3#" or "2#/白色3#": the primary
+# colour's own code, then a "/", then the *second* colour's Chinese name and
+# its own code (sometimes space-separated, sometimes not).
+_MULTI_COLOR_CODE_RE = re.compile(
+    r'^\s*([^/]+?)\s*/\s*([一-鿿]+)\s*(.+?)\s*$'
+)
+
+
+def _extract_second_color_en(color_summary: str, en1: str, cn1: str) -> str:
+    """Best-effort extraction of the second colour's English name from the
+    combined 色汇总 cell, e.g. ``"Dark BlUE /White 藏青 52#/白色 3#"`` with
+    ``en1="Dark BlUE"``, ``cn1="藏青"`` → ``"White"``.
+
+    Not always possible: some rows describe an accent/trim colour rather
+    than a second body colour (e.g. ``"BLACK WITH WHITE STRAP..."``), where
+    the combined cell has no separate English token for it — returns ``""``.
+    """
+    if not color_summary:
+        return ""
+    s = color_summary
+    if en1 and s.lower().startswith(en1.lower()):
+        s = s[len(en1):]
+    s = s.lstrip(" /\t")
+    if cn1 and cn1 in s:
+        s = s[:s.index(cn1)]
+    return s.strip(" /\t")
+
+
+def _split_multi_color(
+    color_en: str, cn_color: str, color_code: str, color_summary: str,
+) -> list[dict]:
+    """Split a two-colour progress row into its individual colour components.
+
+    Some 大货进度表 rows describe a two-tone style with both colours crammed
+    into the 中文颜色代码 cell, e.g. ``"52#/白色 3#"`` — the primary colour's
+    own code (``"52#"``), then the *second* colour's Chinese name
+    (``"白色"``) and its own code (``"3#"``). Left as one record, the second
+    colour's code is unreachable — an order-file item whose colour is
+    "White" would never match this row on an exact colour lookup, and the
+    combined field is unusable garbage in the buy plan's Color Code cell.
+
+    Splitting into one record per colour lets the existing
+    ``(pc_no, style, colour)`` lookup key resolve each colour independently —
+    no special-casing needed anywhere else in ``ProgressLookup`` or the
+    persistent store (row identity is already keyed by colour, so two
+    colours for one style/PC naturally become two distinct rows).
+
+    Returns a list of ``{"color", "cn_color", "color_code"}`` dicts — one
+    element when no second colour is detected (the common case), two when a
+    second colour's code is found. When the second colour has no isolable
+    English name (an accent/trim colour, not a second body colour), that
+    component's ``"color"`` is ``""`` — it still carries its own Chinese
+    name and code, just can't be matched by English name alone.
+    """
+    m = _MULTI_COLOR_CODE_RE.match(color_code) if color_code else None
+    if not m:
+        return [{"color": color_en, "cn_color": cn_color, "color_code": color_code}]
+
+    code1, cn2, code2 = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
+    en2 = _extract_second_color_en(color_summary, color_en, cn_color)
+    return [
+        {"color": color_en, "cn_color": cn_color, "color_code": code1},
+        {"color": en2, "cn_color": cn2, "color_code": code2},
+    ]
+
+
 # Descriptive-only columns — never used for matching, so (unlike the core
 # aliases below) they get no positional fallback: a header miss just leaves
 # the field blank rather than risking a wrong-column guess.
 _EXTRA_COL_NAMES: dict[str, set[str]] = {
     "test_note":     {"测试"},
     "color_summary": {"色汇总英文中文色号色卡本", "色汇总", "颜色汇总",
-                      "色汇总 英文 中文 色号 色卡本"},
+                      "色汇总 英文 中文 色号 色卡本",
+                      "颜色汇总 英文 中文 色号 色卡本"},
     "launch_date":   {"launch date"},
     "remarks":       {"备注"},
 }
@@ -261,7 +328,10 @@ def parse_progress_rows(source, sheet_name: str | None = None) -> list[dict]:
     col_names = {**ProgressLookup._COL_NAMES, **_EXTRA_COL_NAMES}
     col: dict[str, int] = {}
     for ci, val in enumerate(df.iloc[0]):
-        raw = _v(val).lower().strip()
+        # Collapse embedded newlines/multi-spaces before alias matching — some
+        # headers wrap onto two lines in the source file (e.g. "色汇总\n英文
+        # 中文 色号 色卡本"), which would otherwise never match any alias.
+        raw = re.sub(r'\s+', ' ', _v(val).lower()).strip()
         for key, names in col_names.items():
             if raw in names and key not in col:
                 col[key] = ci
@@ -301,31 +371,42 @@ def parse_progress_rows(source, sheet_name: str | None = None) -> list[dict]:
             except (ValueError, TypeError):
                 continue
 
-        color_raw   = _v(_cv(row, "color"))
-        cn_code_raw = _v(_cv(row, "cn_code"))
+        color_raw     = _v(_cv(row, "color"))
+        cn_code_raw   = _v(_cv(row, "cn_code"))
+        cn_color_raw  = _clean_cn_color(_v(_cv(row, "cn_color")))
+        color_summary = _v(_cv(row, "color_summary"))
         # color_code priority: explicit "中文颜色代码" column > parsed from en_color string
         color_code = cn_code_raw or _extract_color_code(color_raw)
-        records.append({
+
+        shared = {
             "contract_no":   _v(_cv(row, "contract_no")),
             "pc_no":         _v(_cv(row, "pc_no")),
             "image_id":      _dispimg_id(_cv(row, "image")),
             "style":         style,
             "style_display": style_display,
-            "color":         color_raw,
-            "color_norm":    _normalise_color(color_raw),
-            "color_code":    color_code,
             "label_color":   _v(_cv(row, "label_color")),
-            "cn_color":      _clean_cn_color(_v(_cv(row, "cn_color"))),
             "ex_fty":        _v(_cv(row, "ex_fty")),
             "qty":           _cv(row, "qty"),
             "zalando_po":    _v(_cv(row, "zalando_po")),
             "brand":         _v(_cv(row, "brand")),
             "fabric":        _v(_cv(row, "fabric")),
             "test_note":     _v(_cv(row, "test_note")),
-            "color_summary": _v(_cv(row, "color_summary")),
+            "color_summary": color_summary,
             "launch_date":   _v(_cv(row, "launch_date")),
             "remarks":       _v(_cv(row, "remarks")),
-        })
+        }
+        # A two-tone style (e.g. "52#/白色 3#" in the code cell) becomes one
+        # record per colour, so each colour is independently look-up-able —
+        # see _split_multi_color(). The common single-colour case returns
+        # exactly one component, unchanged.
+        for comp in _split_multi_color(color_raw, cn_color_raw, color_code, color_summary):
+            records.append({
+                **shared,
+                "color":      comp["color"],
+                "color_norm": _normalise_color(comp["color"]),
+                "color_code": comp["color_code"],
+                "cn_color":   comp["cn_color"],
+            })
     return records
 
 
