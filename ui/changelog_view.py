@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.4.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "**Sky East order parsing**: a row with 0 total units (a cancelled/blanked-out order line — strikethrough style, PO and price wiped, but the row left in the sheet) is now **ignored** instead of being imported as a phantom item. Each ignored row is reported in the **Processing log** with its row number, style, and PO No., so it's visible rather than silently dropped. Covered by 3 new parser tests"},
+        ],
+    },
+    {
         "version": "2.3.1",
         "date": "2026-07-01",
         "entries": [
