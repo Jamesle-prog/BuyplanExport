@@ -167,3 +167,54 @@ def test_overview_not_created_when_no_items(tmp_path):
     )
     wb = load_workbook(path)
     assert "Overview" not in wb.sheetnames
+
+
+# ---------------------------------------------------------------------------
+# Decorative colour brackets — "(dark blue)" style values from some order files
+# ---------------------------------------------------------------------------
+
+def test_strip_color_brackets_single_wrap():
+    from po_extractor.exporters.sky_east_buyplan_export import _strip_color_brackets
+    assert _strip_color_brackets("(dark blue)") == "dark blue"
+    assert _strip_color_brackets("(black)") == "black"
+
+
+def test_strip_color_brackets_concatenated_two_tone():
+    from po_extractor.exporters.sky_east_buyplan_export import _strip_color_brackets
+    assert _strip_color_brackets("(black)(white)") == "black / white"
+    assert _strip_color_brackets("(dark blue)(white)") == "dark blue / white"
+
+
+def test_strip_color_brackets_passthrough_when_no_brackets():
+    from po_extractor.exporters.sky_east_buyplan_export import _strip_color_brackets
+    assert _strip_color_brackets("BLACK") == "BLACK"
+    assert _strip_color_brackets("BLACK WITH WHITE STRAP AT WAIST AND BOTTOM") == \
+        "BLACK WITH WHITE STRAP AT WAIST AND BOTTOM"
+    assert _strip_color_brackets("") == ""
+    assert _strip_color_brackets(None) is None
+
+
+def test_buyplan_color_en_has_no_brackets_in_display(tmp_path):
+    """Regression: a style whose stored colour is "(dark blue)" must show
+    as plain "Dark Blue" in the buy plan, both on its own sheet and in the
+    Overview sheet -- and must be usable as a lookup key (no leftover
+    parentheses breaking an exact match against 大货进度表 / colour DB data).
+    """
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "DR5124", "brand": "Anna Field",
+        "contract_no": "26302-ZA7148", "article_name": "LACE INSERT DRESS",
+        "zalando_po": "PO001", "config_sku": "C1", "color_name": "(dark blue)",
+        "xs": 30, "s": 82, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path), label_lookup={}, cn_code_lookup={},
+    )
+    wb = load_workbook(path)
+    ov = wb["Overview"]
+    headers = [c.value for c in ov[1]]
+    color_col = headers.index("Color (EN)") + 1
+    assert ov.cell(2, color_col).value == "Dark Blue"
+
+    style_ws = wb["DR5124"]
+    col_g_values = [style_ws.cell(r, 7).value for r in range(5, 8)]
+    assert not any(v and "(" in str(v) for v in col_g_values)

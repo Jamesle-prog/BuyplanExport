@@ -584,7 +584,13 @@ def export_sky_east_buyplan(
                 _row_sty_norm = _sty_norm_cache.get(_row_style)
                 if _row_sty_norm is None:
                     _row_sty_norm = _sty_norm_cache[_row_style] = _norm_key(_row_style)
-                color_en = str(g.get("color_name", "") or "").title()
+                # Strip decorative wrapping brackets some order files store the
+                # colour in, e.g. "(dark blue)" — both for a clean display and
+                # so the value can actually exact-match a 大货进度表 / internal
+                # DB colour key (which never carry brackets).
+                color_en = _strip_color_brackets(
+                    str(g.get("color_name", "") or "")
+                ).title()
                 brand    = str(g.get("brand",      "") or "")
                 color_cn, cn_code, _pc_label, color_cn_display = _resolve_pc_color(
                     g, _row_sty_norm, color_en, brand,

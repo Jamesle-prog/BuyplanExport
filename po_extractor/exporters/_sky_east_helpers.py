@@ -35,7 +35,8 @@ __all__ = [
     "_clear_data_area", "_cn_color", "_create_index_sheet", "_create_overview_sheet",
     "_detect_buyplan_layout", "_detect_fabric_rows", "_detect_nukuryou_layout",
     "_embed_style_photos", "_prep_image_for_embed",
-    "_replace_placeholders", "_set_sheet_column_widths", "_style_data", "_style_total",
+    "_replace_placeholders", "_set_sheet_column_widths", "_strip_color_brackets",
+    "_style_data", "_style_total",
     "derive_main_label_color",
 ]
 
@@ -538,6 +539,35 @@ def _clean_sheet_name(name: str) -> str:
     """
     from ._excel_helpers import clean_sheet_name
     return clean_sheet_name(name, fallback="")
+
+
+_PAREN_GAP_RE    = re.compile(r'\)\s*\(')
+_PAREN_CHARS_RE  = re.compile(r'[()\[\]{}]')
+
+
+def _strip_color_brackets(s: str) -> str:
+    """Strip decorative wrapping brackets/parentheses from a colour string.
+
+    Some Sky East order files store the colour name fully wrapped in
+    parentheses, e.g. ``"(dark blue)"``, or two colours concatenated as
+    ``"(dark blue)(white)"``. Left as-is these:
+      • display with ugly brackets in the buy plan ("(Dark Blue)"), and
+      • never exact-match a lookup key from 大货进度表 or the internal
+        colour DB (both store plain names like "Dark Blue"), so the
+        Chinese colour name / colour code silently come back empty even
+        when the DB has a matching entry.
+
+    Adjacent ")(" boundaries (concatenated multi-colour values) are joined
+    with " / " first so a two-tone label stays readable —
+    ``"(dark blue)(white)"`` → ``"dark blue / white"`` — before every
+    remaining bracket character is dropped. Colours with no brackets at
+    all (the common case) pass through unchanged.
+    """
+    if not s or ("(" not in s and "[" not in s and "{" not in s):
+        return s
+    s = _PAREN_GAP_RE.sub(') / (', s)
+    s = _PAREN_CHARS_RE.sub('', s)
+    return " ".join(s.split())
 
 
 def _cn_color(cn_lookup: dict, brand: str, color_en: str) -> str:

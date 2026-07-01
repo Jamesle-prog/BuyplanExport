@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.5.1",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "fix", "text": "Sky East Buy Plan: some order files store the colour fully wrapped in parentheses (e.g. `(dark blue)`, or two-tone as `(black)(white)`) — this showed as `(Dark Blue)` with ugly brackets in the buy plan, and worse, silently broke every colour-name lookup against 大货进度表 / the internal colour DB (which store plain names like `Dark Blue`), so the Chinese colour name and colour code came back empty even when the DB had a matching entry. Brackets are now stripped before display and lookup — `(dark blue)` → `Dark Blue`, `(black)(white)` → `Black / White` — across both the per-style sheets and the Overview sheet. Note: if Color (CN) / Color Code are still blank after this fix, the colour genuinely has no entry (or a blank one) in the selected colour source — check the 🎨 Colors tab or the loaded 大货进度表"},
+        ],
+    },
+    {
         "version": "2.5.0",
         "date": "2026-07-01",
         "entries": [
