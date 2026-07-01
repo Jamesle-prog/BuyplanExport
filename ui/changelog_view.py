@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.3.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "**📐 Fabric Mapping** tab: new **🩺 Check for duplicate fabric mapping data** section — scans all companies for a style whose fabric combo is stored identically twice under different combo numbers, and a one-click **🧹 Remove all duplicate combos** button to clean them up (only the extra copy is removed; the kept combo is untouched). Backed by two new store methods, `find_duplicate_fabric_combos()` and `delete_fabric_combo()`, covered by 7 new tests"},
+            {"type": "fix", "text": "Cleaned up 2 real duplicate-combo styles found in the live database (**BL3069**, **ZLD060/S24DTR003**) — each was stored twice with byte-for-byte identical fabric data, which would have produced an extra duplicate sheet per style in the next Sky East Buy Plan export"},
+        ],
+    },
+    {
         "version": "2.2.1",
         "date": "2026-07-01",
         "entries": [

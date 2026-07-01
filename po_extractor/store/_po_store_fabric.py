@@ -223,6 +223,105 @@ class _FabricMixin:
             ).fetchall()
         return {r["style"] for r in rows}
 
+    def find_duplicate_fabric_combos(self, source: str | None = None) -> list[dict]:
+        """Find styles with the same fabric combo stored twice under different combo_idx.
+
+        ``save_fabric_parts_batch()`` upserts by ``(source, style, combo_idx, seq)`` —
+        it has no way to know that a *new* combo_idx (e.g. from a style appearing
+        twice in an import file) is actually identical content already stored
+        under an older combo_idx. Left alone, each duplicate combo produces an
+        extra, identical sheet in exports that iterate one sheet per combo
+        (e.g. the Sky East Buy Plan).
+
+        Two combos are "duplicate" when their full ``(seq, body_part, hhn_no,
+        composition, weight_gsm, width_cm)`` sets match exactly.
+
+        Returns one dict per duplicate group::
+
+            {
+                "source": str,
+                "style": str,
+                "keep_combo_idx": int,        # lowest combo_idx — kept as-is
+                "remove_combo_idx": [int, …], # safe to delete via delete_fabric_combo()
+                "parts_preview": str,          # human-readable fabric summary
+            }
+        """
+        from collections import defaultdict
+
+        clauses: list[str] = []
+        params: list = []
+        if source:
+            clauses.append("source = ?")
+            params.append(source)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"""SELECT source, style, combo_idx, seq, body_part, hhn_no,
+                           composition, weight_gsm, width_cm
+                    FROM style_fabric_parts {where}
+                    ORDER BY source, style, combo_idx, seq""",
+                params,
+            ).fetchall()
+
+        # (source, style, combo_idx) -> [(seq, body_part, hhn_no, composition,
+        #                                  weight_gsm, width_cm), ...]
+        by_combo: dict[tuple, list] = defaultdict(list)
+        for r in rows:
+            key = (r["source"], r["style"], r["combo_idx"])
+            by_combo[key].append((
+                r["seq"], r["body_part"] or "", r["hhn_no"] or "",
+                r["composition"] or "", r["weight_gsm"] or 0, r["width_cm"] or 0,
+            ))
+
+        # (source, style) -> {combo_idx: signature}
+        groups: dict[tuple, dict[int, tuple]] = defaultdict(dict)
+        for (src, style, combo_idx), parts in by_combo.items():
+            groups[(src, style)][combo_idx] = tuple(sorted(parts))
+
+        result: list[dict] = []
+        for (src, style), combos in groups.items():
+            if len(combos) < 2:
+                continue
+            seen: dict[tuple, int] = {}
+            dup_map: dict[int, int] = {}   # remove_combo_idx -> keep_combo_idx
+            for combo_idx in sorted(combos):
+                sig = combos[combo_idx]
+                if sig in seen:
+                    dup_map[combo_idx] = seen[sig]
+                else:
+                    seen[sig] = combo_idx
+            if not dup_map:
+                continue
+            by_keep: dict[int, list[int]] = defaultdict(list)
+            for rm, keep in dup_map.items():
+                by_keep[keep].append(rm)
+            for keep_idx, remove_list in by_keep.items():
+                preview = "; ".join(
+                    f"seq{seq}:{bp or '—'}|{hhn}"
+                    for seq, bp, hhn, *_ in combos[keep_idx]
+                )
+                result.append({
+                    "source": src,
+                    "style": style,
+                    "keep_combo_idx": keep_idx,
+                    "remove_combo_idx": sorted(remove_list),
+                    "parts_preview": preview,
+                })
+        return result
+
+    def delete_fabric_combo(self, source: str, style: str, combo_idx: int) -> int:
+        """Delete every part row for one specific ``(source, style, combo_idx)``.
+
+        Used to remove a duplicate combo identified by
+        ``find_duplicate_fabric_combos()`` without touching the other combos
+        of the same style.
+        """
+        with self._conn() as conn:
+            return conn.execute(
+                "DELETE FROM style_fabric_parts WHERE source=? AND style=? AND combo_idx=?",
+                (source, style, combo_idx),
+            ).rowcount
+
     def delete_fabric_parts(self, source: str, styles: list[str] | None = None) -> int:
         """Delete fabric parts for a source, optionally filtered to specific styles."""
         with self._conn() as conn:

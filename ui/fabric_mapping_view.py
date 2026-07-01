@@ -152,6 +152,55 @@ def show_fabric_mapping_tab() -> None:
     else:
         st.info(f"No fabric mapping stored yet for **{fm_company}**.")
 
+    # ── Duplicate-combo health check ──────────────────────────────────────────
+    with st.expander("🩺 Check for duplicate fabric mapping data"):
+        st.caption(
+            "Scans **all companies** for styles whose fabric combo is stored "
+            "identically twice under different combo numbers — a leftover from "
+            "an import that saw the same style row more than once. Left alone, "
+            "each duplicate combo produces an extra, identical sheet in exports "
+            "that iterate one sheet per combo (e.g. the Sky East Buy Plan)."
+        )
+        if st.button("🔍 Scan for duplicates", key="fm_tab_dup_scan"):
+            st.session_state["fm_tab_dup_results"] = get_store().find_duplicate_fabric_combos()
+
+        dup_results = st.session_state.get("fm_tab_dup_results")
+        if dup_results is not None:
+            if not dup_results:
+                st.success("✅ No duplicate fabric combos found.")
+            else:
+                n_styles = len({(d["source"], d["style"]) for d in dup_results})
+                st.warning(
+                    f"⚠️ Found **{len(dup_results)}** duplicate combo group(s) "
+                    f"across **{n_styles}** style(s)."
+                )
+                st.dataframe(
+                    pd.DataFrame([
+                        {
+                            "Source": d["source"], "Style": d["style"],
+                            "Keep Combo": d["keep_combo_idx"],
+                            "Remove Combo(s)": ", ".join(str(c) for c in d["remove_combo_idx"]),
+                            "Fabric": d["parts_preview"],
+                        }
+                        for d in dup_results
+                    ]),
+                    width="stretch", hide_index=True,
+                )
+                if st.button(
+                    "🧹 Remove all duplicate combos shown above",
+                    type="primary", key="fm_tab_dup_cleanup",
+                ):
+                    dstore = get_store()
+                    n_deleted = 0
+                    for d in dup_results:
+                        for cidx in d["remove_combo_idx"]:
+                            n_deleted += dstore.delete_fabric_combo(
+                                d["source"], d["style"], cidx
+                            )
+                    st.success(f"Removed {n_deleted} duplicate fabric part row(s).")
+                    st.session_state["fm_tab_dup_results"] = None
+                    st.rerun()
+
     st.divider()
 
     # ── Import mode ───────────────────────────────────────────────────────────
