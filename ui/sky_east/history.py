@@ -71,18 +71,21 @@ def _build_buyplan_color_lookups() -> BuyplanColorLookups:
     no looser fallback keys bleed into the result.  The Internal DB is still
     used as fallback for colours that have no PC match.
     """
+    from ui.sky_east._shared import get_progress_lookup
+
     color_source  = st.session_state.get(SK.SE_COLOR_SOURCE)
-    progress_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
+    progress_lkup = get_progress_lookup(SOURCE_SKY_EAST)
     cn_lookup     = get_color_translation_store().build_lookup_dict()
 
     if color_source == COLOR_SOURCE_PROGRESS and progress_lkup is None:
-        # User picked 大货进度表 but no file is loaded — make the silent
-        # fallback to the Internal DB explicit so they don't think they
-        # got progress-sourced data.
+        # User picked 大货进度表 but neither an ad-hoc upload this session nor
+        # any saved data exists — make the silent fallback to the Internal DB
+        # explicit so they don't think they got progress-sourced data.
         st.warning(
             "⚠ **大货进度表 not loaded** — falling back to the Internal DB "
-            "for all Chinese colours.  Upload the file above to use "
-            "PC-keyed progress data.",
+            "for all Chinese colours. Upload the file above for a one-off "
+            "override, or save it permanently via **📐 Fabric Mapping → "
+            "HHN Contract Progress**.",
             icon="⚠️",
         )
         return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=None)
@@ -151,7 +154,7 @@ def _se_hist_multi_pc_download(store, pc_options: list[str]) -> None:
             generate = st.button(t("Generate"), type="primary", key="se_dl_gen")
 
         if generate:
-            pcs_label = "_".join(sel_dl_pcs) if len(sel_dl_pcs) <= 3 else f"{len(sel_dl_pcs)}PCs"
+            pcs_label = "_".join(sel_dl_pcs) if len(sel_dl_pcs) <= 4 else f"{len(sel_dl_pcs)}PCs"
             with st.spinner("Building file..."):
                 df_all_items = store.list_items(pc_nos=sel_dl_pcs)
                 df_enriched_all = _enrich_items_df(df_all_items)
@@ -419,8 +422,6 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
     if has_selection:
         if st.button(t("Generate Wash Label"), type="primary", key="se_wl_gen"):
             with st.spinner("Building wash label file..."):
-                import pandas as _pd
-
                 if sel_mode == "PC No.":
                     df_wl_items = store.list_items(pc_nos=sel_wl_pcs)
                     label_parts = sel_wl_pcs
@@ -465,7 +466,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
                 )
                 wl_img_cache = build_image_cache_for_ids(all_wl_pids)
                 safe_label = (
-                    "_".join(label_parts) if len(label_parts) <= 3
+                    "_".join(label_parts) if len(label_parts) <= 4
                     else f"{len(label_parts)}items"
                 )
 
@@ -800,50 +801,42 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         "Generates the main buy plan (Template) and fabric 核料 workbooks (Template_P) "
         "from the selected contracts, matching the VBA output format."
     )
-    # ── Multiselect with shadow-key pattern ────────────────────────────────────
-    # Previous bug: chips showed visually but sel=[] (Streamlit widget-state
-    # desync when key= alone is used).  Fix: use a *widget* key separate from
-    # the *logical* key, populate widget via default=, then capture the
-    # return value as source of truth.
-    _logical_sel = st.session_state.get("se_bp_sel", [])
-    if not isinstance(_logical_sel, list):
-        _logical_sel = []
-    # Filter to options that still exist (replaces the reports_tab stale guard
-    # for this widget — guard upstream is still kept as a safety net).
-    _default = [v for v in _logical_sel if v in pc_options]
+    # ── PC No. multiselect ─────────────────────────────────────────────────────
+    # Stale-value guard: drop any selected PC Nos that are no longer valid options
+    # (e.g. after a contract is deleted in the History tab) BEFORE the widget
+    # renders — otherwise st.multiselect raises StreamlitAPIException.  Same simple
+    # keyed pattern used by the Download / Wash Label multiselects below.
+    _pc_set = set(pc_options)
+    _cur = st.session_state.get("se_bp_sel", [])
+    if isinstance(_cur, list) and any(v not in _pc_set for v in _cur):
+        st.session_state["se_bp_sel"] = [v for v in _cur if v in _pc_set]
 
     _bp_col1, _bp_col2 = st.columns([4, 1])
     with _bp_col1:
-        sel = st.multiselect(
+        _effective_sel = st.multiselect(
             t("PC No.(s) to include:"),
             pc_options,
-            default=_default,
-            key="se_bp_sel_widget",
+            key="se_bp_sel",
             placeholder="Select one or more PC Nos...",
         )
-        # Sync widget value back to the logical key — single source of truth.
-        st.session_state["se_bp_sel"] = sel
     with _bp_col2:
         st.markdown("<br>", unsafe_allow_html=True)
-        def _bp_select_all() -> None:
-            st.session_state["se_bp_sel_widget"] = list(pc_options)
-            st.session_state["se_bp_sel"]        = list(pc_options)
         st.button(
             t("Select all"), key="se_bp_all",
-            on_click=_bp_select_all,
+            on_click=lambda: st.session_state.update({"se_bp_sel": list(pc_options)}),
             use_container_width=True,
         )
 
-    if not sel:
+    if not _effective_sel:
         st.info(t("Select one or more PC Nos. above, then click Generate."))
 
     # ── Total units summary for selection ─────────────────────────────────────
-    if sel and df_contracts is not None and not df_contracts.empty:
-        _sel_df = df_contracts[df_contracts["pc_no"].isin(sel)]
+    if _effective_sel and df_contracts is not None and not df_contracts.empty:
+        _sel_df = df_contracts[df_contracts["pc_no"].isin(_effective_sel)]
         _total_units  = int(_sel_df["total_qty"].sum())    if "total_qty"    in _sel_df.columns else 0
         _total_styles = int(_sel_df["total_styles"].sum()) if "total_styles" in _sel_df.columns else 0
         _m1, _m2, _m3 = st.columns(3)
-        _m1.metric(t("PCs selected"),   len(sel))
+        _m1.metric(t("PCs selected"),   len(_effective_sel))
         _m2.metric(t("Total Styles"),   _total_styles)
         _m3.metric(t("Total Units"),    f"{_total_units:,}")
 
@@ -877,186 +870,209 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                 except Exception as _exc:
                     st.error(f"Could not parse progress file: {_exc}")
 
-        # Show loaded status AFTER potentially processing — reads updated session state
-        _prog_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
-        if _prog_lkup is not None:
-            st.caption(f"✅ 大货进度表 loaded ({len(_prog_lkup)} records).")
-
-    if st.button(t("Generate Buy Plan + 核料"), type="primary",
-                 disabled=not sel, key="se_bp_btn"):
-
-        df_items = store.list_items(pc_nos=sel)
-        if df_items.empty:
-            st.warning(t("No data found for the selected contracts."))
+        # Show loaded status AFTER potentially processing — reads updated session state.
+        # Distinguish an ad-hoc upload this session from the persisted DB fallback so
+        # the user knows exactly which data this run will use.
+        _session_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
+        if _session_lkup is not None:
+            st.caption(f"✅ 大货进度表 loaded for this run ({len(_session_lkup)} records).")
         else:
-            color_lookups = _build_buyplan_color_lookups()
-            import shutil as _shutil
-            out_dir = tempfile.mkdtemp()
-
-            # ── Auto-register new brands in 船样要求 admin ──────────────────────
-            # Any brand that appears in the loaded data but isn't yet in the
-            # boat_sample_req table is added with empty req_text, so it shows up
-            # in Admin → 船样要求 ready for the user to fill in.
-            if "brand" in df_items.columns:
-                _data_brands = (
-                    df_items["brand"].dropna().astype(str).str.strip()
-                    .replace({"": None, "nan": None, "None": None}).dropna()
-                    .unique().tolist()
+            from ui.sky_east._shared import get_progress_lookup
+            _db_lkup = get_progress_lookup(SOURCE_SKY_EAST)
+            if _db_lkup is not None:
+                st.caption(
+                    f"✅ Using saved 大货进度表 data ({len(_db_lkup)} records) — "
+                    "uploaded via **📐 Fabric Mapping → HHN Contract Progress**."
                 )
-                if _data_brands:
-                    from po_extractor.store import get_boat_sample_store
-                    _new_brands = get_boat_sample_store().register_missing_brands(
-                        COMPANY_SKY_EAST, _data_brands
-                    )
-                    if _new_brands:
-                        _list = ", ".join(f"**{b}**" for b in _new_brands[:8])
-                        if len(_new_brands) > 8:
-                            _list += f" … +{len(_new_brands) - 8} more"
-                        st.warning(
-                            f"🆕 {len(_new_brands)} new brand(s) found and added "
-                            f"to **Admin → 🚢 船样要求**: {_list}. "
-                            "Open that admin panel to fill in the boat-sample "
-                            "requirement text — until then column **P** will be "
-                            "blank for these brands.",
-                            icon="🚢",
+            else:
+                st.caption(
+                    "ℹ️ No saved 大货进度表 data for Sky East yet — upload one above "
+                    "for this run, or save it permanently via **📐 Fabric Mapping → "
+                    "HHN Contract Progress**."
+                )
+
+    # Button is always enabled when contracts exist.  Validating selection inside
+    # the handler (rather than via disabled=) avoids the Streamlit 1.57.0 bug
+    # where a multiselect's session-state desync keeps the button permanently
+    # greyed out even though chips are visually shown.
+    if st.button(t("Generate Buy Plan + 核料"), type="primary", key="se_bp_btn"):
+        if not _effective_sel:
+            st.error(t("Please select at least one PC No. above before generating."))
+        else:
+            df_items = store.list_items(pc_nos=_effective_sel)
+            if df_items.empty:
+                st.warning(t("No data found for the selected contracts."))
+            else:
+                color_lookups = _build_buyplan_color_lookups()
+                import shutil as _shutil
+                out_dir = tempfile.mkdtemp()
+                try:
+
+                    # ── Auto-register new brands in 船样要求 admin ──────────────────────
+                    # Any brand that appears in the loaded data but isn't yet in the
+                    # boat_sample_req table is added with empty req_text, so it shows up
+                    # in Admin → 船样要求 ready for the user to fill in.
+                    if "brand" in df_items.columns:
+                        _data_brands = (
+                            df_items["brand"].dropna().astype(str).str.strip()
+                            .replace({"": None, "nan": None, "None": None}).dropna()
+                            .unique().tolist()
                         )
+                        if _data_brands:
+                            from po_extractor.store import get_boat_sample_store
+                            _new_brands = get_boat_sample_store().register_missing_brands(
+                                COMPANY_SKY_EAST, _data_brands
+                            )
+                            if _new_brands:
+                                _list = ", ".join(f"**{b}**" for b in _new_brands[:8])
+                                if len(_new_brands) > 8:
+                                    _list += f" … +{len(_new_brands) - 8} more"
+                                st.warning(
+                                    f"🆕 {len(_new_brands)} new brand(s) found and added "
+                                    f"to **Admin → 🚢 船样要求**: {_list}. "
+                                    "Open that admin panel to fill in the boat-sample "
+                                    "requirement text — until then column **P** will be "
+                                    "blank for these brands.",
+                                    icon="🚢",
+                                )
 
-            styles = (
-                df_items["style"].dropna().unique().tolist()
-                if "style" in df_items.columns else []
-            )
-            fabric_parts_by_style = (
-                get_store().load_fabric_parts_for_styles(styles, source=SOURCE_SKY_EAST)
-                if styles else {}
-            )
-            # Enrich composition / gsm / width from fabric master so
-            # _display_key_for can build the full 综合标识Key (HHN|comp|gsm|width).
-            if fabric_parts_by_style:
-                _enrich_parts_from_fabric_master(fabric_parts_by_style)
-
-            # ── Back-fill fabric_item_no from fabric_parts_by_style ──────────
-            # The raw DB column may be empty when the HHN was imported via the
-            # fabric_parts table (parsed from column E of the Sky East form).
-            # Both export_sky_east_buyplan and export_sky_east_nukuryou group
-            # by fabric_item_no, so we must fill it before calling either.
-            if fabric_parts_by_style and "style" in df_items.columns:
-                # Vectorised: build a {style: hhn_no} map from the first part of
-                # each style, then fill missing fabric_item_no values via map().
-                _style_to_hhn = {
-                    s: (parts[0].hhn_no if parts else "")
-                    for s, parts in fabric_parts_by_style.items()
-                }
-                df_items = df_items.copy()
-                _existing = (
-                    df_items.get("fabric_item_no", pd.Series("", index=df_items.index))
-                    .fillna("").astype(str).str.strip()
-                )
-                _is_blank = _existing.str.lower().isin(("", "none", "nan"))
-                _filled = (
-                    df_items["style"].astype(str).str.strip().map(_style_to_hhn)
-                    .fillna(_existing)
-                )
-                df_items["fabric_item_no"] = _existing.where(~_is_blank, _filled)
-
-            # ── Build style → [front_bytes, back_bytes] image map ────────────
-            # Used for: Index sheet thumbnail (front) + Photo1/Photo2 in each
-            # style sheet.  Looks for {style}_front.png / {style}_back.png on
-            # disk first (saved by save_images_to_disk during processing), then
-            # falls back to the session picture_id cache for front-only.
-            import re as _re2
-            from pathlib import Path as _Path
-            _img_folder = (st.session_state.get(SK.SE_IMAGES_DIR) or "").strip() \
-                          or IMAGES_DIR_DEFAULT
-            style_image_map: dict = {}
-            for _style in styles:
-                _safe = _re2.sub(r'[\\/:*?"<>|]', '_', _style)
-                _pair: list = []
-                for _pos in ("front", "back"):
-                    _disk_path = _Path(_img_folder) / f"{_safe}_{_pos}.png"
-                    try:
-                        # read_bytes() opens, reads, and closes in one call —
-                        # no leaked file handles when missing-file branch fires.
-                        _pair.append(_disk_path.read_bytes() if _disk_path.exists() else None)
-                    except OSError:
-                        _pair.append(None)
-                if any(_pair):
-                    style_image_map[_style] = _pair
-
-            # Fallback: session picture_id cache (front only) for styles
-            # whose on-disk files were not found.
-            if "picture_id" in df_items.columns:
-                _all_pids = df_items["picture_id"].dropna().astype(str).unique().tolist()
-                _pid_cache = build_image_cache_for_ids(_all_pids)
-                for _, _irow in df_items.iterrows():
-                    _s   = str(_irow.get("style",      "") or "").strip()
-                    _pid = str(_irow.get("picture_id", "") or "").strip()
-                    if _s and _pid and _s not in style_image_map:
-                        _img = _pid_cache.get(_pid)
-                        if _img:
-                            style_image_map[_s] = [_img, None]
-
-            with st.status("Generating...", expanded=True) as _status:
-
-                st.write("Building main buy plan (Template)...")
-                try:
-                    bp_path, style_totals = export_sky_east_buyplan(
-                        df_items, color_lookups.cn, out_dir,
-                        fabric_parts_by_style=fabric_parts_by_style,
-                        style_image_map=style_image_map or None,
-                        label_lookup=color_lookups.label,
-                        cn_code_lookup=color_lookups.cn_code,
-                        cn_by_pc_lookup=color_lookups.by_pc,
+                    styles = (
+                        df_items["style"].dropna().unique().tolist()
+                        if "style" in df_items.columns else []
                     )
-                    with open(bp_path, "rb") as f:
-                        st.session_state[SK.SE_BP_BYTES] = f.read()
-                    # Filename: SkyEast_HHPPC040_HHPPC041_BuyPlan.xlsx
-                    _pc_tag = "_".join(sel) if len(sel) <= 4 else f"{len(sel)}PCs"
-                    st.session_state[SK.SE_BP_NAME] = f"SkyEast_{_pc_tag}_BuyPlan.xlsx"
-                except Exception as exc:
-                    st.error(f"Buy plan failed: {exc}")
-                    style_totals = {}
-
-                st.write("Building 核料 workbooks (Template_P)...")
-                try:
-                    nk_paths = export_sky_east_nukuryou(
-                        df_items, color_lookups.cn, out_dir,
-                        cn_code_lookup=color_lookups.cn_code,
-                        cn_by_pc_lookup=color_lookups.by_pc,
+                    fabric_parts_by_style = (
+                        get_store().load_fabric_parts_for_styles(styles, source=SOURCE_SKY_EAST)
+                        if styles else {}
                     )
-                    if nk_paths:
-                        nk_buf = io.BytesIO()
-                        with zipfile.ZipFile(nk_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                            for p in nk_paths:
-                                zf.write(p, os.path.basename(p))
-                        st.session_state[SK.SE_NK_BYTES] = nk_buf.getvalue()
-                        st.session_state[SK.SE_NK_COUNT] = len(nk_paths)
-                        st.session_state[SK.SE_NK_REASON] = None
-                    else:
-                        st.session_state[SK.SE_NK_BYTES] = None
-                        st.session_state[SK.SE_NK_COUNT] = 0
-                        st.session_state[SK.SE_NK_REASON] = check_nukuryou_ready(df_items)
-                except Exception as exc:
-                    st.warning(f"核料 workbooks skipped: {exc}")
-                    st.session_state[SK.SE_NK_BYTES] = None
-                    st.session_state[SK.SE_NK_COUNT] = 0
-                    st.session_state[SK.SE_NK_REASON] = str(exc)
+                    # Enrich composition / gsm / width from fabric master so
+                    # _display_key_for can build the full 综合标识Key (HHN|comp|gsm|width).
+                    if fabric_parts_by_style:
+                        _enrich_parts_from_fabric_master(fabric_parts_by_style)
 
-                if style_totals:
-                    st.write("Running cross-comparison...")
-                    try:
-                        cmp_df = build_cross_comparison(style_totals, df_items)
-                        st.session_state[SK.SE_BP_CMP] = cmp_df
-                    except Exception:
-                        st.session_state[SK.SE_BP_CMP] = None
-                else:
-                    st.session_state[SK.SE_BP_CMP] = None
+                    # ── Back-fill fabric_item_no from fabric_parts_by_style ──────────
+                    # The raw DB column may be empty when the HHN was imported via the
+                    # fabric_parts table (parsed from column E of the Sky East form).
+                    # Both export_sky_east_buyplan and export_sky_east_nukuryou group
+                    # by fabric_item_no, so we must fill it before calling either.
+                    if fabric_parts_by_style and "style" in df_items.columns:
+                        # Vectorised: build a {style: hhn_no} map from the first part of
+                        # each style, then fill missing fabric_item_no values via map().
+                        _style_to_hhn = {
+                            s: (parts[0].hhn_no if parts else "")
+                            for s, parts in fabric_parts_by_style.items()
+                        }
+                        df_items = df_items.copy()
+                        _existing = (
+                            df_items.get("fabric_item_no", pd.Series("", index=df_items.index))
+                            .fillna("").astype(str).str.strip()
+                        )
+                        _is_blank = _existing.str.lower().isin(("", "none", "nan"))
+                        _filled = (
+                            df_items["style"].astype(str).str.strip().map(_style_to_hhn)
+                            .fillna(_existing)
+                        )
+                        df_items["fabric_item_no"] = _existing.where(~_is_blank, _filled)
 
-                _warn_missing_color_translations(df_items, cn_map=color_lookups.cn)
+                    # ── Build style → [front_bytes, back_bytes] image map ────────────
+                    # Used for: Index sheet thumbnail (front) + Photo1/Photo2 in each
+                    # style sheet.  Looks for {style}_front.png / {style}_back.png on
+                    # disk first (saved by save_images_to_disk during processing), then
+                    # falls back to the session picture_id cache for front-only.
+                    import re as _re2
+                    from pathlib import Path as _Path
+                    _img_folder = (st.session_state.get(SK.SE_IMAGES_DIR) or "").strip() \
+                                  or IMAGES_DIR_DEFAULT
+                    style_image_map: dict = {}
+                    for _style in styles:
+                        _safe = _re2.sub(r'[\\/:*?"<>|]', '_', _style)
+                        _pair: list = []
+                        for _pos in ("front", "back"):
+                            _disk_path = _Path(_img_folder) / f"{_safe}_{_pos}.png"
+                            try:
+                                # read_bytes() opens, reads, and closes in one call —
+                                # no leaked file handles when missing-file branch fires.
+                                _pair.append(_disk_path.read_bytes() if _disk_path.exists() else None)
+                            except OSError:
+                                _pair.append(None)
+                        if any(_pair):
+                            style_image_map[_style] = _pair
 
-                _status.update(label="Done!", state="complete")
+                    # Fallback: session picture_id cache (front only) for styles
+                    # whose on-disk files were not found.
+                    if "picture_id" in df_items.columns:
+                        _all_pids = df_items["picture_id"].dropna().astype(str).unique().tolist()
+                        _pid_cache = build_image_cache_for_ids(_all_pids)
+                        for _, _irow in df_items.iterrows():
+                            _s   = str(_irow.get("style",      "") or "").strip()
+                            _pid = str(_irow.get("picture_id", "") or "").strip()
+                            if _s and _pid and _s not in style_image_map:
+                                _img = _pid_cache.get(_pid)
+                                if _img:
+                                    style_image_map[_s] = [_img, None]
 
-            # All file bytes are now in session_state — temp dir no longer needed
-            _shutil.rmtree(out_dir, ignore_errors=True)
+                    with st.status("Generating...", expanded=True) as _status:
+
+                        st.write("Building main buy plan (Template)...")
+                        try:
+                            bp_path, style_totals = export_sky_east_buyplan(
+                                df_items, color_lookups.cn, out_dir,
+                                fabric_parts_by_style=fabric_parts_by_style,
+                                style_image_map=style_image_map or None,
+                                label_lookup=color_lookups.label,
+                                cn_code_lookup=color_lookups.cn_code,
+                                cn_by_pc_lookup=color_lookups.by_pc,
+                            )
+                            with open(bp_path, "rb") as f:
+                                st.session_state[SK.SE_BP_BYTES] = f.read()
+                            # Filename: SkyEast_HHPPC040_HHPPC041_BuyPlan.xlsx
+                            _pc_tag = "_".join(_effective_sel) if len(_effective_sel) <= 4 else f"{len(_effective_sel)}PCs"
+                            st.session_state[SK.SE_BP_NAME] = f"SkyEast_{_pc_tag}_BuyPlan.xlsx"
+                        except Exception as exc:
+                            st.error(f"Buy plan failed: {exc}")
+                            style_totals = {}
+
+                        st.write("Building 核料 workbooks (Template_P)...")
+                        try:
+                            nk_paths = export_sky_east_nukuryou(
+                                df_items, color_lookups.cn, out_dir,
+                                cn_code_lookup=color_lookups.cn_code,
+                                cn_by_pc_lookup=color_lookups.by_pc,
+                            )
+                            if nk_paths:
+                                nk_buf = io.BytesIO()
+                                with zipfile.ZipFile(nk_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                                    for p in nk_paths:
+                                        zf.write(p, os.path.basename(p))
+                                st.session_state[SK.SE_NK_BYTES] = nk_buf.getvalue()
+                                st.session_state[SK.SE_NK_COUNT] = len(nk_paths)
+                                st.session_state[SK.SE_NK_REASON] = None
+                            else:
+                                st.session_state[SK.SE_NK_BYTES] = None
+                                st.session_state[SK.SE_NK_COUNT] = 0
+                                st.session_state[SK.SE_NK_REASON] = check_nukuryou_ready(df_items)
+                        except Exception as exc:
+                            st.warning(f"核料 workbooks skipped: {exc}")
+                            st.session_state[SK.SE_NK_BYTES] = None
+                            st.session_state[SK.SE_NK_COUNT] = 0
+                            st.session_state[SK.SE_NK_REASON] = str(exc)
+
+                        if style_totals:
+                            st.write("Running cross-comparison...")
+                            try:
+                                cmp_df = build_cross_comparison(style_totals, df_items)
+                                st.session_state[SK.SE_BP_CMP] = cmp_df
+                            except Exception:
+                                st.session_state[SK.SE_BP_CMP] = None
+                        else:
+                            st.session_state[SK.SE_BP_CMP] = None
+
+                        _warn_missing_color_translations(df_items, cn_map=color_lookups.cn)
+
+                        _status.update(label="Done!", state="complete")
+
+                finally:
+                    # All file bytes are now in session_state — temp dir no longer needed
+                    _shutil.rmtree(out_dir, ignore_errors=True)
 
     if st.session_state.get(SK.SE_BP_BYTES) or st.session_state.get(SK.SE_NK_BYTES):
         st.divider()
@@ -1100,7 +1116,9 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
 
     if st.session_state.get(SK.SE_BP_CMP) is not None:
         cmp_df = st.session_state[SK.SE_BP_CMP]
-        mismatches = (cmp_df["Match"] == "❌ Mismatch").sum()  # BUG-30: was "Mismatch"
+        # Substring match — robust to the emoji prefix on the "Mismatch" label
+        # changing in build_cross_comparison (BUG-30 was an exact-string break).
+        mismatches = int(cmp_df["Match"].astype(str).str.contains("Mismatch").sum())
         if mismatches:
             st.warning(f"{mismatches} style(s) have unit-total mismatches between buy plan and 核料 data.")
         else:

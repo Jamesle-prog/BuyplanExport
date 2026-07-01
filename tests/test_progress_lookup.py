@@ -702,3 +702,72 @@ def test_progress_lookup_treats_excel_error_strings_as_blank():
     match = pc_lookup[("HHPPC048", "BL4259", "Black")]
     assert match.color_code == ""
     assert match.cn_color == "黑色"
+
+
+# ---------------------------------------------------------------------------
+# parse_progress_rows() / ProgressLookup.from_records() — persistent-store path
+# ---------------------------------------------------------------------------
+
+def test_parse_progress_rows_returns_style_display_and_norm(tmp_path):
+    """Each parsed record must carry both the normalised match key (style)
+    and the original display text (style_display) -- the persistent store
+    needs the raw form for a human-readable UI, ProgressLookup needs the
+    normalised form for indexing.
+    """
+    from po_extractor.lookups.progress_lookup import parse_progress_rows
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["序号", "合同号", "所在PO", "IMAGE", "款式", "颜色",
+              "主标颜色", "PO离厂日期", "数量", "PO#", "BRAND", "FABRICDETAIL"])
+    ws.append([1, "26302-ZA0001", "HHPPC060", "", "ZLD060/S24DTR003", "BLACK",
+              "", "", 100, "", "Brand1", ""])
+    path = tmp_path / "progress.xlsx"
+    wb.save(str(path))
+
+    records = parse_progress_rows(str(path))
+    assert len(records) == 1
+    assert records[0]["style_display"] == "ZLD060/S24DTR003"
+    assert records[0]["style"] == "ZLD060S24DTR003"   # slash stripped by _norm_key
+
+
+def test_from_records_matches_load_behaviour(sample_progress_xlsx):
+    """ProgressLookup(path) (file-based) and ProgressLookup.from_records()
+    (records already parsed) must resolve identically for the same data --
+    the whole point of the refactor is that both paths share one parser.
+    """
+    from po_extractor.lookups import ProgressLookup
+    from po_extractor.lookups.progress_lookup import parse_progress_rows
+
+    file_based = ProgressLookup(sample_progress_xlsx)
+    records = parse_progress_rows(sample_progress_xlsx)
+    from_records_based = ProgressLookup.from_records(records)
+
+    assert (
+        file_based.get_contract_no("DR4532", "52# NAVY", pc_no="HHPPC038")
+        == from_records_based.get_contract_no("DR4532", "52# NAVY", pc_no="HHPPC038")
+        == "26301-ZA7001"
+    )
+    assert len(file_based) == len(from_records_based)
+
+
+def test_extra_descriptive_columns_are_parsed_when_present(tmp_path):
+    from po_extractor.lookups.progress_lookup import parse_progress_rows
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["序号", "合同号", "所在PO", "IMAGE", "款式", "颜色",
+              "测试", "备注", "Launch date", "主标颜色", "PO离厂日期",
+              "数量", "PO#", "BRAND", "FABRICDETAIL"])
+    ws.append([1, "C1", "HHPPC070", "", "DR1111", "RED",
+              "test-value", "remark-value", "2026-02-02", "", "",
+              50, "", "Brand1", ""])
+    path = tmp_path / "progress.xlsx"
+    wb.save(str(path))
+
+    records = parse_progress_rows(str(path))
+    assert records[0]["test_note"] == "test-value"
+    assert records[0]["remarks"] == "remark-value"
+    assert records[0]["launch_date"] == "2026-02-02"

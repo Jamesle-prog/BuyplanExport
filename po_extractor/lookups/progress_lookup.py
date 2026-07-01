@@ -196,6 +196,139 @@ def _extract_color_code(color: str) -> str:
     return m.group(1) if m else ""
 
 
+# Descriptive-only columns — never used for matching, so (unlike the core
+# aliases below) they get no positional fallback: a header miss just leaves
+# the field blank rather than risking a wrong-column guess.
+_EXTRA_COL_NAMES: dict[str, set[str]] = {
+    "test_note":     {"测试"},
+    "color_summary": {"色汇总英文中文色号色卡本", "色汇总", "颜色汇总",
+                      "色汇总 英文 中文 色号 色卡本"},
+    "launch_date":   {"launch date"},
+    "remarks":       {"备注"},
+}
+
+
+def parse_progress_rows(source, sheet_name: str | None = None) -> list[dict]:
+    """Parse a 大货进度表 file into a flat list of record dicts.
+
+    *source* may be a file path (str), raw bytes, or an already-open
+    file-like/BytesIO object. This is the single source of truth for what
+    a 合同号/款式/颜色 row means — shared by ``ProgressLookup`` (loads a
+    session-uploaded file transiently, via ``_load()``/``_index_records()``)
+    and the persistent progress-records store
+    (``po_extractor/store/_po_store_progress.py``, saves a durable copy so
+    the file doesn't need re-uploading every run).
+
+    Each record carries both ``style`` (the normalised key, e.g.
+    ``"ZLD060S24DTR003"`` — used internally for matching) and
+    ``style_display`` (the original text, e.g. ``"ZLD060/S24DTR003"`` — for
+    human-facing display and DB storage).
+    """
+    import io as _io
+
+    import openpyxl as _opxl
+    import pandas as pd
+
+    if isinstance(source, (bytes, bytearray, memoryview)):
+        src: str | _io.BytesIO = _io.BytesIO(bytes(source))
+    elif hasattr(source, "seek") and hasattr(source, "read"):
+        source.seek(0)
+        src = source
+    else:
+        src = source   # file path string
+
+    wb_meta = _opxl.load_workbook(src, read_only=True, data_only=True)
+    resolved_sheet = None
+    if sheet_name and sheet_name in wb_meta.sheetnames:
+        resolved_sheet = sheet_name
+    else:
+        for name in wb_meta.sheetnames:
+            if "zalando" in name.lower() or "2026" in name.lower():
+                resolved_sheet = name
+                break
+        if resolved_sheet is None:
+            resolved_sheet = wb_meta.sheetnames[0]
+    wb_meta.close()
+
+    if hasattr(src, "seek"):
+        src.seek(0)
+
+    df = pd.read_excel(
+        src, sheet_name=resolved_sheet, header=None, dtype=str, engine="openpyxl"
+    )
+    df = df.fillna("")
+
+    col_names = {**ProgressLookup._COL_NAMES, **_EXTRA_COL_NAMES}
+    col: dict[str, int] = {}
+    for ci, val in enumerate(df.iloc[0]):
+        raw = _v(val).lower().strip()
+        for key, names in col_names.items():
+            if raw in names and key not in col:
+                col[key] = ci
+                break
+    for k, v in ProgressLookup._COL_DEFAULTS.items():
+        col.setdefault(k, v - 1)   # 1-based default -> 0-based
+
+    def _cv(row, key):
+        c = col.get(key)
+        if c is not None and c < len(row):
+            return row.iloc[c]
+        return None
+
+    # See the identical guard in ProgressLookup._load()'s history — some
+    # 大货进度表 exports never populate 序号 at all; enforcing the check
+    # unconditionally would then discard every row in the file.
+    seq_col_used = False
+    if "seq" in col:
+        for v in df.iloc[1:, col["seq"]]:
+            try:
+                int(float(str(v)))
+                seq_col_used = True
+                break
+            except (ValueError, TypeError):
+                continue
+
+    records: list[dict] = []
+    for _, row in df.iloc[1:].iterrows():
+        style_display = _v(_cv(row, "style"))
+        style = _norm_key(style_display)
+        if not style:
+            continue
+        if seq_col_used:
+            seq_raw = _cv(row, "seq")
+            try:
+                int(float(str(seq_raw)))
+            except (ValueError, TypeError):
+                continue
+
+        color_raw   = _v(_cv(row, "color"))
+        cn_code_raw = _v(_cv(row, "cn_code"))
+        # color_code priority: explicit "中文颜色代码" column > parsed from en_color string
+        color_code = cn_code_raw or _extract_color_code(color_raw)
+        records.append({
+            "contract_no":   _v(_cv(row, "contract_no")),
+            "pc_no":         _v(_cv(row, "pc_no")),
+            "image_id":      _dispimg_id(_cv(row, "image")),
+            "style":         style,
+            "style_display": style_display,
+            "color":         color_raw,
+            "color_norm":    _normalise_color(color_raw),
+            "color_code":    color_code,
+            "label_color":   _v(_cv(row, "label_color")),
+            "cn_color":      _clean_cn_color(_v(_cv(row, "cn_color"))),
+            "ex_fty":        _v(_cv(row, "ex_fty")),
+            "qty":           _cv(row, "qty"),
+            "zalando_po":    _v(_cv(row, "zalando_po")),
+            "brand":         _v(_cv(row, "brand")),
+            "fabric":        _v(_cv(row, "fabric")),
+            "test_note":     _v(_cv(row, "test_note")),
+            "color_summary": _v(_cv(row, "color_summary")),
+            "launch_date":   _v(_cv(row, "launch_date")),
+            "remarks":       _v(_cv(row, "remarks")),
+        })
+    return records
+
+
 class ProgressLookup:
     """
     Lazy-loading production progress lookup.
@@ -322,116 +455,25 @@ class ProgressLookup:
     def _load(self):
         if self._loaded:
             return
-
-        import pandas as pd
-        import openpyxl as _opxl
-
-        # Resolve the data source — BytesIO (from bytes upload) or file path
-        import io as _io
-        if self._source is not None:
-            self._source.seek(0)
-            _src_meta: str | _io.BytesIO = self._source
-        else:
-            _src_meta = self._path
-
-        # Identify the target sheet name first (openpyxl just for sheet list)
-        wb_meta = _opxl.load_workbook(_src_meta, read_only=True, data_only=True)
-        sheet_name = None
-        if self._sheet_name and self._sheet_name in wb_meta.sheetnames:
-            sheet_name = self._sheet_name
-        else:
-            for name in wb_meta.sheetnames:
-                if "zalando" in name.lower() or "2026" in name.lower():
-                    sheet_name = name
-                    break
-            if sheet_name is None:
-                sheet_name = wb_meta.sheetnames[0]
-        wb_meta.close()
-
-        # Read with pandas — single-pass, C-backed, much faster for large files
-        if self._source is not None:
-            self._source.seek(0)
-            _src_pd: str | _io.BytesIO = self._source
-        else:
-            _src_pd = self._path
-        df = pd.read_excel(
-            _src_pd, sheet_name=sheet_name,
-            header=None, dtype=str, engine="openpyxl"
+        records = parse_progress_rows(
+            self._source if self._source is not None else self._path,
+            self._sheet_name,
         )
-        df = df.fillna("")
+        self._index_records(records)
+        self._loaded = True
 
-        # Map column names from header row (row 0)
-        col: dict[str, int] = {}
-        for ci, val in enumerate(df.iloc[0]):
-            raw = _v(val).lower().strip()
-            for key, names in self._COL_NAMES.items():
-                if raw in names and key not in col:
-                    col[key] = ci
-                    break
-        for k, v in self._COL_DEFAULTS.items():
-            col.setdefault(k, v - 1)  # convert 1-based default to 0-based
+    def _index_records(self, records: list[dict]) -> None:
+        """Populate every lookup index from already-parsed records.
 
-        def _cv(row, key):
-            c = col.get(key)
-            if c is not None and c < len(row):
-                return row.iloc[c]
-            return None
-
-        # The "序号" (seq) column is normally a row-number sanity check — a
-        # non-numeric value there usually flags a subtotal/section-header row
-        # rather than real data. But some 大货进度表 exports never populate
-        # that column at all (blank for every row). Enforcing the check
-        # unconditionally in that case discards *every* row — silently
-        # losing 合同号 / colour / ex-fty data for the whole file. Only
-        # enforce it when at least one row in the sheet actually has a
-        # numeric value there, i.e. the file's author is using it as a
-        # marker; otherwise fall back to "style is present" alone.
-        seq_col_used = False
-        if "seq" in col:
-            for v in df.iloc[1:, col["seq"]]:
-                try:
-                    int(float(str(v)))
-                    seq_col_used = True
-                    break
-                except (ValueError, TypeError):
-                    continue
-
-        # Iterate data rows (skip header)
-        for _, row in df.iloc[1:].iterrows():
-            style = _norm_key(_v(_cv(row, "style")))
-            if not style:
-                continue
-            if seq_col_used:
-                seq_raw = _cv(row, "seq")
-                try:
-                    int(float(str(seq_raw)))
-                except (ValueError, TypeError):
-                    continue
-
-            color_raw = _v(_cv(row, "color"))
-            cn_code_raw = _v(_cv(row, "cn_code"))
-            # color_code priority: explicit "中文颜色代码" column > parsed from en_color string
-            color_code = cn_code_raw or _extract_color_code(color_raw)
-            record = {
-                "contract_no": _v(_cv(row, "contract_no")),
-                "pc_no":       _v(_cv(row, "pc_no")),
-                "image_id":    _dispimg_id(_cv(row, "image")),
-                "style":       style,
-                "color":       color_raw,
-                "color_norm":  _normalise_color(color_raw),
-                "color_code":  color_code,
-                "label_color": _v(_cv(row, "label_color")),
-                "cn_color":    _clean_cn_color(_v(_cv(row, "cn_color"))),
-                "ex_fty":      _v(_cv(row, "ex_fty")),
-                "qty":         _cv(row, "qty"),
-                "zalando_po":  _v(_cv(row, "zalando_po")),
-                "brand":       _v(_cv(row, "brand")),
-                "fabric":      _v(_cv(row, "fabric")),
-            }
-
-            pcn    = _norm_key(record["pc_no"])
-            zpo    = _norm_key(record["zalando_po"])
-            cnorm  = record["color_norm"]
+        Shared by ``_load()`` (session-uploaded file, parsed via
+        ``parse_progress_rows()``) and ``from_records()`` (records already
+        loaded from the persistent DB store — no file parsing needed).
+        """
+        for record in records:
+            style = record["style"]
+            pcn   = _norm_key(record["pc_no"])
+            zpo   = _norm_key(record["zalando_po"])
+            cnorm = record["color_norm"]
             # Index codes in the same normalised form _lookup() uses for the
             # caller's input ("52#" / "52" / "#52" all collapse to "52").
             # Without this, codes stored as "52#" never match callers passing
@@ -453,7 +495,19 @@ class ProgressLookup:
                 self._by_pc_style.setdefault((pcn, style), record)
             self._by_style.setdefault(style, []).append(record)
 
-        self._loaded = True
+    @classmethod
+    def from_records(cls, records: list[dict]) -> "ProgressLookup":
+        """Build a ready-to-query ``ProgressLookup`` directly from
+        already-parsed records — no file I/O.
+
+        Used to serve buy-plan generation from the persistent progress-records
+        DB store (``po_extractor/store/_po_store_progress.py``) instead of
+        requiring the 大货进度表 file to be re-uploaded every run.
+        """
+        obj = cls()
+        obj._index_records(records)
+        obj._loaded = True
+        return obj
 
     # ── Public API ────────────────────────────────────────────────────────────
 

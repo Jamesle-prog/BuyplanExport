@@ -31,6 +31,28 @@ def live_label(db_col: str, fallback: str | None = None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Progress lookup (大货进度表) — session upload with a persisted-DB fallback
+# ---------------------------------------------------------------------------
+
+def get_progress_lookup(source: str = "sky_east"):
+    """Return the effective ``ProgressLookup`` for *source*, or ``None``.
+
+    An ad-hoc file uploaded this session (``SK.SE_PROGRESS_LKUP``) always
+    takes precedence — it lets a user test a draft file for one run without
+    committing it. When nothing was uploaded this session, falls back to the
+    persistent progress-records DB (saved once via Fabric Mapping → HHN
+    Contract Progress), so 大货进度表 doesn't need re-uploading for every run.
+    """
+    session_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
+    if session_lkup is not None:
+        return session_lkup
+    from po_extractor.lookups.progress_lookup import ProgressLookup
+    from ui.stores import get_store
+    db_records = get_store().load_progress_records(source)
+    return ProgressLookup.from_records(db_records) if db_records else None
+
+
+# ---------------------------------------------------------------------------
 # Local wrappers for ui_helpers Excel writers
 # ---------------------------------------------------------------------------
 

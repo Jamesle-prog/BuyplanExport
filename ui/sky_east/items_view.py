@@ -168,7 +168,8 @@ def _enrich_items_df(df_items):
                 return parts[0][1] if parts else fno
         df["fabric_item_no"] = df.apply(_fill_hhn, axis=1)
 
-    pl = st.session_state.get(SK.SE_PROGRESS_LKUP)
+    from ui.sky_east._shared import get_progress_lookup
+    pl = get_progress_lookup()
     if pl is not None and "contract_no" in df.columns and "style" in df.columns:
         def _fill_cno(row):
             cno = str(row.get("contract_no", "") or "").strip()

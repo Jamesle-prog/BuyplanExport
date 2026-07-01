@@ -108,6 +108,18 @@ def _se_init_lookups(ref_info: dict, tracker, log: list[str]):
             log.append(f"Progress lookup: {len(progress_lookup)} records")
         except Exception as exc:
             log.append(f"Progress lookup error: {exc}")
+    else:
+        # No file uploaded for this run — fall back to the saved
+        # progress-records DB (uploaded once via Fabric Mapping → HHN
+        # Contract Progress), so 大货进度表 doesn't need re-uploading here.
+        from ui.sky_east._shared import get_progress_lookup
+        progress_lookup = get_progress_lookup(SOURCE_SKY_EAST)
+        if progress_lookup is not None:
+            st.write(f"  Progress lookup: using {len(progress_lookup)} saved record(s)")
+            log.append(
+                f"Progress lookup: using {len(progress_lookup)} saved record(s) "
+                "from the database (no file uploaded this run)"
+            )
 
     return config_sku_lookup, fabric_lookup, progress_lookup
 

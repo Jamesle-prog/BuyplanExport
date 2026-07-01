@@ -6,6 +6,7 @@ Implementation is split across private sibling modules:
   _po_store_read.py       — read-side mixin (_ReadsMixin)
   _po_store_exceptions.py — exception-queue mixin (_ExceptionsMixin)
   _po_store_fabric.py     — fabric-parts and HHN-cache mixin (_FabricMixin)
+  _po_store_progress.py   — persistent 大货进度表 records mixin (_ProgressMixin)
 """
 from __future__ import annotations
 
@@ -17,9 +18,11 @@ from ._po_store_write import SaveStatus, _WritesMixin  # noqa: F401 (SaveStatus 
 from ._po_store_read import _ReadsMixin
 from ._po_store_exceptions import _ExceptionsMixin
 from ._po_store_fabric import _FabricMixin
+from ._po_store_progress import _ProgressMixin
 
 
-class POStore(_WritesMixin, _ReadsMixin, _ExceptionsMixin, _FabricMixin, BaseSQLiteStore):
+class POStore(_WritesMixin, _ReadsMixin, _ExceptionsMixin, _FabricMixin,
+              _ProgressMixin, BaseSQLiteStore):
     """Persistent SQLite store for PO history with conflict detection."""
 
     def __init__(self, db_path: str | Path):

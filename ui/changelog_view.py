@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.7.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "**大货进度表 (HHN Contract Progress)** can now be uploaded once and saved permanently, the same way **📐 Fabric Mapping** already works — no more re-uploading the same progress file for every Sky East run or buy plan. New **📋 HHN Contract Progress** sub-tab lives right next to Fabric Mapping, with the same Upsert / Add new only / Replace all import modes, a New/Will Update/Already Up to Date/Skipped preview, and a field-level diff for anything that changed (合同号, colors, codes, dates, qty, and more — every column except IMAGE). Row identity is (PC No. · Style · Color), normalised so re-uploading with different casing/whitespace still matches the same saved row instead of duplicating it"},
+            {"type": "feat", "text": "Sky East order processing, the Missing Fields checker, and Buy Plan generation now automatically use the saved 大货进度表 data when no file is uploaded for that specific run — an ad-hoc upload still overrides it for a one-off test, but it's no longer required every time"},
+            {"type": "refactor", "text": "Extracted `parse_progress_rows()` — the 大货进度表 column-detection and row-parsing logic — out of `ProgressLookup._load()` so both the session-upload path and the new persistent-store importer share one parser; added `ProgressLookup.from_records()` to build a lookup directly from saved DB rows with no file I/O. Behavior-preserving: all 26 existing tests pass unchanged. 20 new tests across the store, parser, and diff logic"},
+        ],
+    },
+    {
         "version": "2.6.0",
         "date": "2026-07-01",
         "entries": [

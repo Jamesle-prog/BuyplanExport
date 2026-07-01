@@ -124,6 +124,41 @@ CREATE TABLE IF NOT EXISTS fabric_hhn_cache (
     width_cm    INTEGER DEFAULT 0,
     updated_at  TEXT
 );
+
+-- Persistent copy of 大货进度表 (HHN Contract Progress) rows — uploaded once via
+-- the Fabric Mapping tab's "HHN Contract Progress" section, then reused by
+-- every buy-plan run without re-uploading. Row identity is (pc_no, style,
+-- color) — the same key the app already uses to match a contract line, via
+-- pc_no_norm/style_norm/color_norm (see progress_lookup.py's
+-- _norm_key/_normalise_color) so re-uploading a file with e.g. differently
+-- cased PC numbers still overwrites the same row instead of duplicating it.
+-- No IMAGE column — pictures aren't persisted here (see comments below).
+CREATE TABLE IF NOT EXISTS progress_records (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    source        TEXT    NOT NULL,     -- 'sky_east' | other companies later
+    contract_no   TEXT    DEFAULT '',   -- 合同号
+    pc_no         TEXT    DEFAULT '',   -- 客人PC NO / 所在PO (raw display form)
+    pc_no_norm    TEXT    NOT NULL DEFAULT '',  -- normalised match key
+    style         TEXT    NOT NULL,     -- 款式, display form e.g. "ZLD060/S24DTR003"
+    style_norm    TEXT    NOT NULL,     -- normalised match key (ProgressLookup's internal key)
+    brand         TEXT    DEFAULT '',   -- BRAND
+    test_note     TEXT    DEFAULT '',   -- 测试
+    color_summary TEXT    DEFAULT '',   -- 色汇总英文中文色号色卡本
+    color_en      TEXT    DEFAULT '',   -- 英文颜色 (raw display form)
+    color_norm    TEXT    DEFAULT '',   -- cleaned match key (progress_lookup.clean_color_for_lookup)
+    color_cn      TEXT    DEFAULT '',   -- 中文颜色
+    color_code    TEXT    DEFAULT '',   -- 中文颜色代码
+    label_color   TEXT    DEFAULT '',   -- 主标颜色
+    ex_fty_date   TEXT    DEFAULT '',   -- PO离厂日期
+    launch_date   TEXT    DEFAULT '',   -- Launch date
+    qty           TEXT    DEFAULT '',   -- 数量
+    remarks       TEXT    DEFAULT '',   -- 备注
+    zalando_po    TEXT    DEFAULT '',   -- PO#
+    fabric_detail TEXT    DEFAULT '',   -- FABRICDETAIL
+    updated_at    TEXT,
+    UNIQUE(source, pc_no_norm, style_norm, color_norm)
+);
+CREATE INDEX IF NOT EXISTS idx_pr_style ON progress_records(source, style_norm);
 """
 
 # Columns added after initial release — migrated in POStore.__init__

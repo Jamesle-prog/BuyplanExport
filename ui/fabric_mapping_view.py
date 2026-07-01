@@ -102,9 +102,24 @@ def _diff_fabric_parts(
 # ---------------------------------------------------------------------------
 
 def show_fabric_mapping_tab() -> None:
-    """Fabric Mapping tab — upload, preview, and manage per-company fabric data."""
+    """📐 Fabric Mapping tab — style-to-fabric mapping and HHN Contract Progress.
+
+    Both sub-sections follow the same upload-once / diff-on-update pattern:
+    save data independently of order processing so it doesn't need
+    re-uploading for every run.
+    """
     st.subheader("📐 Fabric Mapping")
 
+    fm_tab, pm_tab = st.tabs(["🧵 Style-Fabric Mapping", "📋 HHN Contract Progress (大货进度表)"])
+    with fm_tab:
+        _show_fabric_mapping_section()
+    with pm_tab:
+        from ui.progress_mapping_view import show_progress_mapping_section
+        show_progress_mapping_section()
+
+
+def _show_fabric_mapping_section() -> None:
+    """Style-Fabric mapping — upload, preview, and manage per-company fabric data."""
     # ── Template download ─────────────────────────────────────────────────────
     _hdr_col, _tpl_col = st.columns([3, 1])
     with _hdr_col:
