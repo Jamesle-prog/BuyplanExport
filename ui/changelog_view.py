@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.15.1",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "fix", "text": "Reverted the brief v2.15.0 \"客户PO + style\" lookup tier — it matched on the wrong 大货进度表 column (a separate \"PO#\" field) instead of 客人PC NO. Confirmed the correct, already-existing join key is **客人PC NO + 款式 + 英文颜色 — an exact match with no fallback tier**, which is exactly how `build_pc_style_color_lookups()` already worked before v2.15.0. No behaviour change from v2.14.1"},
+        ],
+    },
+    {
         "version": "2.14.1",
         "date": "2026-07-01",
         "entries": [
