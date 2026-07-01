@@ -566,3 +566,129 @@ def test_ai_enhance_falls_back_to_local_miss_when_api_also_fails(monkeypatch):
         ai_enhance=True, ai_api_key="sk-fake",
     )
     assert result[0] == _COLOR_NOT_FOUND
+
+
+# ---------------------------------------------------------------------------
+# Both components resolving — Chinese name / code combine, not just the first
+# ---------------------------------------------------------------------------
+
+def test_resolve_pc_color_multi_combines_both_components_when_both_resolve():
+    """A two-tone colour whose BOTH components have a translation must show
+    both in Color (CN) / Color Code, e.g. "藏青 / 白色" and "52# / 3#" --
+    not just whichever component happened to resolve first.
+    """
+    from po_extractor.exporters.sky_east_buyplan_export import _resolve_pc_color_multi
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    cn_by_pc = {
+        ("HHPPC048", "DR5009", "Dark Blue"): PCColorMatch("藏青", "52#", ""),
+        ("HHPPC048", "DR5009", "White"):     PCColorMatch("白色", "3#", ""),
+    }
+    row = {"pc_no": "HHPPC048"}
+    result = _resolve_pc_color_multi(
+        row, "DR5009", "Dark Blue / White", "Anna Field", {}, {}, cn_by_pc,
+    )
+    assert result[0] == "藏青 / 白色"
+    assert result[1] == "52# / 3#"
+
+
+def test_resolve_pc_color_multi_combines_label_color_from_resolved_component():
+    """label_color (主标颜色) isn't itself split/combined -- it's a single
+    physical label -- but must still be carried through from whichever
+    component actually resolved it.
+    """
+    from po_extractor.exporters.sky_east_buyplan_export import _resolve_pc_color_multi
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    cn_by_pc = {
+        ("HHPPC048", "DR5009", "Dark Blue"): PCColorMatch("藏青", "52#", "黑色"),
+        ("HHPPC048", "DR5009", "White"):     PCColorMatch("白色", "3#", ""),
+    }
+    row = {"pc_no": "HHPPC048"}
+    result = _resolve_pc_color_multi(
+        row, "DR5009", "Dark Blue / White", "Anna Field", {}, {}, cn_by_pc,
+    )
+    assert result[2] == "黑色"
+
+
+def test_ai_enhance_recovers_the_missing_component_in_a_two_tone_pair(monkeypatch):
+    """When one of two components misses locally but AI enhance recognises
+    it, the recovered component's translation must still be combined with
+    the component that already resolved locally -- not discarded.
+    """
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.exporters.sky_east_buyplan_export import _resolve_pc_color_multi
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    def _fake_recognize(raw_color, api_key, model="deepseek-chat"):
+        assert raw_color == "White"   # only the missing component is sent
+        return ("Ivory",)
+
+    monkeypatch.setattr(_ai, "recognize_colors", _fake_recognize)
+
+    cn_by_pc = {
+        ("HHPPC048", "DR5009", "Dark Blue"): PCColorMatch("藏青", "52#", ""),
+        ("HHPPC048", "DR5009", "Ivory"):     PCColorMatch("米白", "3#", ""),
+    }
+    row = {"pc_no": "HHPPC048"}
+    result = _resolve_pc_color_multi(
+        row, "DR5009", "Dark Blue / White", "Anna Field", {}, {}, cn_by_pc,
+        ai_enhance=True, ai_api_key="sk-fake",
+    )
+    assert result[0] == "藏青 / 米白"
+    assert result[1] == "52# / 3#"
+
+
+def test_order_file_two_tone_shows_combined_chinese_names_end_to_end(tmp_path):
+    """Overview sheet for a two-tone order-file colour whose both components
+    resolve must show both Chinese names combined, not just one.
+    """
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "DR5009", "brand": "Anna Field",
+        "contract_no": "26302-ZA7156", "article_name": "MAXI DRESS",
+        "zalando_po": "PO001", "config_sku": "C1", "color_name": "(dark blue)(white)",
+        "xs": 22, "s": 61, "m": 90, "l": 77, "xl": 50, "xxl": 0,
+    }])
+    cn_by_pc = {
+        ("HHPPC048", "DR5009", "Dark Blue"): PCColorMatch("藏青", "52#", ""),
+        ("HHPPC048", "DR5009", "White"):     PCColorMatch("白色", "3#", ""),
+    }
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=cn_by_pc,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    row = dict(zip(headers, [ov.cell(2, c + 1).value for c in range(len(headers))]))
+    assert row["Color (EN)"] == "Dark Blue / White"
+    assert row["Color (CN)"] == "藏青 / 白色"
+    assert row["Color Code"] == "52# / 3#"
+
+
+# ---------------------------------------------------------------------------
+# Overview sheet — 客人PC NO and 主标颜色 columns
+# ---------------------------------------------------------------------------
+
+def test_overview_includes_pc_no_next_to_contract_no_and_label_color(tmp_path):
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "DR5124", "brand": "Anna Field",
+        "contract_no": "26302-ZA7148", "article_name": "LACE DRESS",
+        "zalando_po": "PO001", "config_sku": "C1", "color_name": "dark blue",
+        "xs": 30, "s": 82, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    cn_by_pc = {("HHPPC048", "DR5124", "Dark Blue"): PCColorMatch("藏青", "503", "黑色")}
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=cn_by_pc,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    # 客人PC NO sits immediately after Contract No.
+    assert headers[headers.index("Contract No.") + 1] == "客人PC NO"
+    row = dict(zip(headers, [ov.cell(2, c + 1).value for c in range(len(headers))]))
+    assert row["客人PC NO"] == "HHPPC048"
+    assert row["主标颜色"] == "黑色"

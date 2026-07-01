@@ -878,8 +878,10 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
     overview_rows  : one dict per item row::
 
                          {
-                             "contract_no": str, "style": str, "sheet_name": str,
+                             "contract_no": str, "pc_no": str, "style": str,
+                             "sheet_name": str,
                              "color_en": str, "color_cn": str, "color_code": str,
+                             "label_color": str,
                              "brand": str, "po": str, "config_sku": str,
                              "article_name": str,
                              "xs": int, "s": int, "m": int, "l": int,
@@ -899,11 +901,12 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
     has_photos = any(r.get("photo") for r in overview_rows)
 
     _base_headers = [
-        "No.", "Contract No.", "Style", "Color (EN)", "Color (CN)", "Color Code",
+        "No.", "Contract No.", "客人PC NO", "Style", "Color (EN)", "Color (CN)",
+        "Color Code", "主标颜色",
         "Brand", "PO No.", "Config SKU", "Article Name",
         "XS", "S", "M", "L", "XL", "2XL", "Total Qty", "Ex-Fty",
     ]
-    headers = (_base_headers[:2] + ["Photo"] + _base_headers[2:]
+    headers = (_base_headers[:3] + ["Photo"] + _base_headers[3:]
               if has_photos else list(_base_headers))
     for i in range(1, n_fabric_slots + 1):
         headers += [f"Fabric {i}", f"综合标识 Key {i}"]
@@ -921,24 +924,26 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
     _off        = 1 if has_photos else 0
     _C_NO       = 1
     _C_CONTRACT = 2
-    _C_IMG      = 3 if has_photos else None
-    _C_STYLE    = 3 + _off
-    _C_COLOR_EN = 4 + _off
-    _C_COLOR_CN = 5 + _off
-    _C_CODE     = 6 + _off
-    _C_BRAND    = 7 + _off
-    _C_PO       = 8 + _off
-    _C_CONFIG   = 9 + _off
-    _C_ARTICLE  = 10 + _off
-    _C_XS       = 11 + _off
-    _C_S        = 12 + _off
-    _C_M        = 13 + _off
-    _C_L        = 14 + _off
-    _C_XL       = 15 + _off
-    _C_XXL      = 16 + _off
-    _C_TOTAL    = 17 + _off
-    _C_EXFTY    = 18 + _off
-    _FAB_START  = 19 + _off
+    _C_PCNO     = 3
+    _C_IMG      = 4 if has_photos else None
+    _C_STYLE    = 4 + _off
+    _C_COLOR_EN = 5 + _off
+    _C_COLOR_CN = 6 + _off
+    _C_CODE     = 7 + _off
+    _C_LABEL    = 8 + _off
+    _C_BRAND    = 9 + _off
+    _C_PO       = 10 + _off
+    _C_CONFIG   = 11 + _off
+    _C_ARTICLE  = 12 + _off
+    _C_XS       = 13 + _off
+    _C_S        = 14 + _off
+    _C_M        = 15 + _off
+    _C_L        = 16 + _off
+    _C_XL       = 17 + _off
+    _C_XXL      = 18 + _off
+    _C_TOTAL    = 19 + _off
+    _C_EXFTY    = 20 + _off
+    _FAB_START  = 21 + _off
 
     _IMG_PX = 60   # small thumbnail — this sheet is one row per item, potentially
     _ROW_PT = 46   # far more rows than the style-level Index sheet
@@ -946,6 +951,7 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
     for ri, row in enumerate(overview_rows, start=2):
         ov_ws.cell(ri, _C_NO,       value=ri - 1)
         ov_ws.cell(ri, _C_CONTRACT, value=row.get("contract_no", ""))
+        ov_ws.cell(ri, _C_PCNO,     value=row.get("pc_no", ""))
         style_cell = ov_ws.cell(ri, _C_STYLE, value=row.get("style", ""))
         sheet_name = row.get("sheet_name", "")
         if sheet_name and sheet_name in wb.sheetnames:
@@ -955,6 +961,7 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
         ov_ws.cell(ri, _C_COLOR_EN, value=row.get("color_en", ""))
         ov_ws.cell(ri, _C_COLOR_CN, value=row.get("color_cn", ""))
         ov_ws.cell(ri, _C_CODE,     value=row.get("color_code", ""))
+        ov_ws.cell(ri, _C_LABEL,    value=row.get("label_color", ""))
         ov_ws.cell(ri, _C_BRAND,    value=row.get("brand", ""))
         ov_ws.cell(ri, _C_PO,       value=row.get("po", ""))
         ov_ws.cell(ri, _C_CONFIG,   value=row.get("config_sku", ""))
@@ -1001,8 +1008,8 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
 
     # ── Column widths ─────────────────────────────────────────────────────
     _fixed_widths: dict[int, float] = {
-        _C_NO: 6, _C_CONTRACT: 16, _C_STYLE: 20, _C_COLOR_EN: 14, _C_COLOR_CN: 12,
-        _C_CODE: 10, _C_BRAND: 14, _C_PO: 16, _C_CONFIG: 16, _C_ARTICLE: 22,
+        _C_NO: 6, _C_CONTRACT: 16, _C_PCNO: 14, _C_STYLE: 20, _C_COLOR_EN: 14, _C_COLOR_CN: 12,
+        _C_CODE: 10, _C_LABEL: 10, _C_BRAND: 14, _C_PO: 16, _C_CONFIG: 16, _C_ARTICLE: 22,
         _C_XS: 6, _C_S: 6, _C_M: 6, _C_L: 6, _C_XL: 6, _C_XXL: 6,
         _C_TOTAL: 10, _C_EXFTY: 12,
     }

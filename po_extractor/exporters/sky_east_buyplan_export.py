@@ -169,6 +169,27 @@ def _resolve_pc_color(
     return color_cn, cn_code, "", _format_body_color_cn(cn_code, color_cn)
 
 
+def _ai_retry_component(
+    row, sty_norm: str, comp: str, brand: str,
+    cn_lookup: dict, cn_code_lookup: dict | None,
+    cn_by_pc_lookup: dict | None,
+    ai_api_key: str, ai_model: str,
+) -> tuple[str, str, str, str] | None:
+    """Ask the AI to recognise *comp* and retry the local lookup with each
+    candidate name it returns.  Returns the first candidate result that
+    resolves, or ``None`` when the API found nothing usable.
+    """
+    from ..lookups.color_ai_enhance import recognize_colors
+    for cand in recognize_colors(comp, ai_api_key, ai_model):
+        result = _resolve_pc_color(
+            row, sty_norm, cand, brand,
+            cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+        )
+        if result[0] != _COLOR_NOT_FOUND:
+            return result
+    return None
+
+
 def _resolve_pc_color_multi(
     row, sty_norm: str, color_en: str, brand: str,
     cn_lookup: dict, cn_code_lookup: dict | None,
@@ -185,48 +206,58 @@ def _resolve_pc_color_multi(
 
     Mirrors the "detect and separate, then look up on this" approach already
     used for 大货进度表 rows (see ``progress_lookup._split_multi_color``):
-    each ``" / "``-separated component is tried against the same lookup in
-    order, and the first component that actually resolves wins. The combined
-    string is never itself used as a lookup key once split, since neither
-    大货进度表 nor the internal colour DB store combined two-tone keys.
+    each ``" / "``-separated component is resolved independently, and the
+    Chinese name / code of every component that actually resolves are
+    combined with ``" / "`` — a two-tone "Dark Blue / White" item shows
+    "藏青 / 白色", not just whichever component happened to resolve first.
+    A component that never resolves (even after AI enhance) is silently
+    omitted from the combination rather than blanking the whole result.
 
     A single-colour value (the common case — no ``" / "`` present) is passed
     straight through to :func:`_resolve_pc_color` unchanged.
 
-    ``ai_enhance`` ("Local + AI Enhance" mode): when every local component
-    misses and an API key is configured, the *original* raw ``color_en`` is
-    sent to :func:`~po_extractor.lookups.color_ai_enhance.recognize_colors`
-    to ask an LLM to identify the colour(s) — the resulting candidate names
-    are retried against the same local lookup, same as any other component.
-    The API is never consulted before local resolution has already failed,
+    ``ai_enhance`` ("Local + AI Enhance" mode): whenever an individual
+    component fails to resolve locally and an API key is configured, that
+    component's raw text is sent to
+    :func:`~po_extractor.lookups.color_ai_enhance.recognize_colors` to ask
+    an LLM to identify the colour — candidate names are retried against the
+    same local lookup, same as any other component. The API is never
+    consulted before local resolution of that component has already failed,
     and never for anything other than a colour miss.
     """
     components = [c.strip() for c in color_en.split(" / ") if c.strip()]
     if len(components) <= 1:
         components = [color_en]
 
-    first_result = None
+    resolved = []
     for comp in components:
         result = _resolve_pc_color(
             row, sty_norm, comp, brand,
             cn_lookup, cn_code_lookup, cn_by_pc_lookup,
         )
-        if first_result is None:
-            first_result = result
-        if result[0] != _COLOR_NOT_FOUND:
-            return result
-
-    if ai_enhance and ai_api_key:
-        from ..lookups.color_ai_enhance import recognize_colors
-        for cand in recognize_colors(color_en, ai_api_key, ai_model):
-            result = _resolve_pc_color(
-                row, sty_norm, cand, brand,
+        if result[0] == _COLOR_NOT_FOUND and ai_enhance and ai_api_key:
+            improved = _ai_retry_component(
+                row, sty_norm, comp, brand,
                 cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                ai_api_key, ai_model,
             )
-            if result[0] != _COLOR_NOT_FOUND:
-                return result
+            if improved is not None:
+                result = improved
+        resolved.append(result)
 
-    return first_result
+    if len(resolved) == 1:
+        return resolved[0]
+
+    cn_names = [r[0] for r in resolved if r[0] and r[0] != _COLOR_NOT_FOUND]
+    cn_codes = [r[1] for r in resolved if r[1] and r[1] not in (_COLOR_NOT_FOUND, "NA")]
+    label    = next((r[2] for r in resolved if r[2]), "")
+
+    if not cn_names and not cn_codes:
+        return (_COLOR_NOT_FOUND, _COLOR_NOT_FOUND, "", _COLOR_NOT_FOUND)
+
+    combined_cn   = " / ".join(cn_names) if cn_names else _COLOR_NOT_FOUND
+    combined_code = " / ".join(cn_codes) if cn_codes else "NA"
+    return combined_cn, combined_code, label, _format_body_color_cn(combined_code, combined_cn)
 
 
 def _apply_sky_east_compact_layout(ws, *, last_row: int) -> None:
@@ -762,11 +793,13 @@ def export_sky_east_buyplan(
 
                 _overview_rows.append({
                     "contract_no":  str(g.get("contract_no", "") or ""),
+                    "pc_no":        str(g.get("pc_no", "") or ""),
                     "style":        _row_style,
                     "sheet_name":   sheet_title,
                     "color_en":     color_en,
                     "color_cn":     color_cn,
                     "color_code":   cn_code if cn_code != "NA" else "",
+                    "label_color":  _label_clr,
                     "brand":        brand,
                     "po":           str(g.get("zalando_po", "") or ""),
                     "config_sku":   str(g.get("config_sku", "") or ""),

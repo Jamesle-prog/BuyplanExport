@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.12.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "fix", "text": "**Two-tone order-file colours now show BOTH Chinese names/codes, not just one.** A colour like \"Dark Blue / White\" used to display only whichever component happened to resolve first (e.g. \"藏青\" alone) — it now combines every component that resolves into one string, e.g. \"藏青 / 白色\" and \"52# / 3#\", matching the already-combined \"Dark Blue / White\" shown in Color (EN). A component that still can't be matched (even after AI Enhance) is silently omitted from the combination rather than blanking the whole result. \"Local + AI Enhance\" retries are now attempted per component, not just once against the full combined string, so a two-tone item with one missing colour can recover just that one"},
+            {"type": "feat", "text": "**Overview sheet gains 客人PC NO and 主标颜色 columns.** 客人PC NO sits right next to Contract No. (the PC No. used for all 大货进度表 lookups, previously visible only via the underlying data, never in the sheet itself); 主标颜色 sits next to Color Code, mirroring the column that was already present on every per-style sheet but missing from the flat cross-check table"},
+            {"type": "docs", "text": "6 new tests: combined-both-components resolution, label-colour passthrough when combining, AI-enhance recovering just the missing half of a two-tone pair, and end-to-end Overview checks for the combined Chinese names and the two new columns"},
+        ],
+    },
+    {
         "version": "2.11.0",
         "date": "2026-07-01",
         "entries": [
