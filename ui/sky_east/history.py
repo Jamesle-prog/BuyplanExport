@@ -53,11 +53,19 @@ class BuyplanColorLookups(NamedTuple):
         ``{(pc_no_norm, style_norm, en_color_norm): PCColorMatch}`` — populated
         only when the user selects 大货进度表 as the color source AND a file is
         loaded.  ``None`` skips the PC-keyed tier inside the exporter.
+    by_po : dict | None
+        ``{(zalando_po_norm, style_norm): PCColorMatch}`` — tried *before*
+        ``by_pc``: the client's PO number + style number are a more reliable
+        join key than colour name (the same style can carry the same English
+        colour name under different POs but a different Chinese colour/code).
+        Populated alongside ``by_pc`` from the same 大货进度表 source; ``None``
+        skips this tier (rows with no PO recorded fall through to ``by_pc``).
     """
     cn:      dict
     label:   dict | None
     cn_code: dict | None
     by_pc:   dict | None
+    by_po:   dict | None
 
 
 def _build_buyplan_color_lookups() -> BuyplanColorLookups:
@@ -65,11 +73,12 @@ def _build_buyplan_color_lookups() -> BuyplanColorLookups:
 
     Always starts from the canonical Color-Translation DB.  When the user has
     chosen ``COLOR_SOURCE_PROGRESS`` *and* a 大货进度表 is loaded in this session,
-    the PC-No.-keyed lookup from the progress file is added on top.  Flat
-    brand-keyed data from the progress file is intentionally NOT merged so
-    that only an exact (PC No · 款式 · 颜色) match returns a progress value —
-    no looser fallback keys bleed into the result.  The Internal DB is still
-    used as fallback for colours that have no PC match.
+    the PC-No.-keyed lookup and the PO-keyed lookup from the progress file are
+    added on top.  Flat brand-keyed data from the progress file is
+    intentionally NOT merged so that only an exact (PC No · 款式 · 颜色) or
+    (客户PO · 款式) match returns a progress value — no looser fallback keys
+    bleed into the result.  The Internal DB is still used as fallback for
+    colours that have no PC/PO match.
     """
     from ui.sky_east._shared import get_progress_lookup
 
@@ -88,14 +97,18 @@ def _build_buyplan_color_lookups() -> BuyplanColorLookups:
             "HHN Contract Progress**.",
             icon="⚠️",
         )
-        return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=None)
+        return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=None, by_po=None)
 
     if color_source != COLOR_SOURCE_PROGRESS:
-        return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=None)
+        return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=None, by_po=None)
 
     by_pc = progress_lkup.build_pc_style_color_lookups()
-    st.caption("🗂 Chinese colors sourced from 大货进度表 (PC No. · style · color match only).")
-    return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=by_pc)
+    by_po = progress_lkup.build_po_style_lookup()
+    st.caption(
+        "🗂 Chinese colors sourced from 大货进度表 (客户PO · style match, "
+        "falling back to PC No. · style · color match)."
+    )
+    return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=by_pc, by_po=by_po)
 
 
 def _se_hist_summary_table(df_contracts) -> None:
@@ -1021,6 +1034,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 label_lookup=color_lookups.label,
                                 cn_code_lookup=color_lookups.cn_code,
                                 cn_by_pc_lookup=color_lookups.by_pc,
+                                cn_by_po_lookup=color_lookups.by_po,
                             )
                             with open(bp_path, "rb") as f:
                                 st.session_state[SK.SE_BP_BYTES] = f.read()
@@ -1037,6 +1051,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 df_items, color_lookups.cn, out_dir,
                                 cn_code_lookup=color_lookups.cn_code,
                                 cn_by_pc_lookup=color_lookups.by_pc,
+                                cn_by_po_lookup=color_lookups.by_po,
                             )
                             if nk_paths:
                                 nk_buf = io.BytesIO()

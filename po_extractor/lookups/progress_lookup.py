@@ -864,6 +864,56 @@ class ProgressLookup:
                         )
         return result
 
+    def build_po_style_lookup(self) -> dict:
+        """Build a lookup keyed by (客户PO, 款号) alone — no colour needed.
+
+        The client's PO number + style number together are a more reliable
+        join key than (PC No. · style · colour): the same style can carry
+        the *same* English colour name under different POs but a *different*
+        Chinese colour/code (a reorder with a corrected dye lot, a different
+        customer's naming convention, etc.) — colour-name matching can't
+        tell those apart, but PO + style is guaranteed unique per PO.
+
+        Tried by the exporter *before* the colour-keyed
+        ``build_pc_style_color_lookups()`` tier — rows with no PO recorded
+        (common in 大货进度表) are simply absent here, so that tier remains
+        the fallback for those.
+
+        A two-tone style (see ``_split_multi_color``) yields two colour
+        records that share the same PO + style — their names/codes are
+        recombined with ``" / "`` (same convention as the exporter's own
+        multi-colour combine) rather than one being arbitrarily dropped.
+
+        Returns ``{(zalando_po_norm, style_norm): PCColorMatch}``.
+        """
+        self._load()
+        grouped: dict[tuple, list[tuple[str, str, str]]] = {}
+        for records in self._by_style.values():
+            for rec in records:
+                zpo = _norm_key(rec.get("zalando_po") or "")
+                sn  = _norm_key(rec.get("style")       or "")
+                if not (zpo and sn):
+                    continue
+                cn_color    = (rec.get("cn_color")    or "").strip()
+                code        = (rec.get("color_code")  or "").strip()
+                label_color = (rec.get("label_color") or "").strip()
+                if not (cn_color or code or label_color):
+                    continue
+                grouped.setdefault((zpo, sn), []).append((cn_color, code, label_color))
+
+        result: dict = {}
+        for key, entries in grouped.items():
+            if len(entries) == 1:
+                cn_color, code, label_color = entries[0]
+            else:
+                cn_names = list(dict.fromkeys(e[0] for e in entries if e[0]))
+                codes    = list(dict.fromkeys(e[1] for e in entries if e[1]))
+                cn_color = " / ".join(cn_names)
+                code     = " / ".join(codes)
+                label_color = next((e[2] for e in entries if e[2]), "")
+            result[key] = PCColorMatch(cn_color, code, label_color)
+        return result
+
     def build_all_color_lookups(
         self, company: str,
     ) -> tuple[dict, dict, dict, dict]:

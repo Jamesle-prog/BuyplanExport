@@ -147,6 +147,7 @@ def _resolve_pc_color(
     row, sty_norm: str, color_en: str, brand: str,
     cn_lookup: dict, cn_code_lookup: dict | None,
     cn_by_pc_lookup: dict | None,
+    cn_by_po_lookup: dict | None = None,
 ) -> tuple[str, str, str, str]:
     """Resolve (color_cn, cn_code, label_color, color_cn_display) for one row.
 
@@ -155,9 +156,20 @@ def _resolve_pc_color(
 
       • ``cn_by_pc_lookup`` is not ``None`` → 大货进度表 is the selected
         source (the user's "Chinese color mapping source" radio picked it
-        and a file is loaded).  A miss on the exact (pc_no, style, color)
-        key is reported as an explicit ``_COLOR_NOT_FOUND`` error — it does
-        **not** fall through to the internal colour DB.
+        and a file is loaded). Within this source, two tiers are tried in
+        order (never crossing into the internal DB):
+          1. ``cn_by_po_lookup`` — (客户PO, 款号) alone, no colour needed.
+             The client's PO number + style number are a more reliable join
+             key than colour name: the same style can carry the *same*
+             English colour name under different POs but a *different*
+             Chinese colour/code (a reorder with a corrected dye lot, etc.),
+             which colour-name matching can't tell apart. Skipped when the
+             row has no PO recorded (common in 大货进度表) or that PO isn't
+             on file.
+          2. ``cn_by_pc_lookup`` — (pc_no, style, colour) — the original
+             tier, used as fallback when tier 1 doesn't apply.
+        A miss on both is reported as an explicit ``_COLOR_NOT_FOUND``
+        error — it does **not** fall through to the internal colour DB.
       • ``cn_by_pc_lookup`` is ``None`` → the internal colour DB
         (``cn_lookup`` / ``cn_code_lookup``) is the selected source.  A miss
         there is reported the same way.
@@ -175,6 +187,15 @@ def _resolve_pc_color(
     norm_en = _nz_color(color_en)
 
     if cn_by_pc_lookup is not None:
+        if cn_by_po_lookup:
+            po_norm = _norm_key(row.get("zalando_po") or "")
+            po_match = cn_by_po_lookup.get((po_norm, sty_norm)) if po_norm else None
+            if po_match is not None:
+                color_cn    = po_match.cn_color
+                cn_code     = po_match.color_code or "NA"
+                label_color = po_match.label_color
+                return color_cn, cn_code, label_color, _format_body_color_cn(cn_code, color_cn)
+
         pc_match = cn_by_pc_lookup.get(
             (_norm_key(row.get("pc_no") or ""), sty_norm, norm_en)
         )
@@ -219,6 +240,7 @@ def _resolve_pc_color_multi(
     cn_lookup: dict, cn_code_lookup: dict | None,
     cn_by_pc_lookup: dict | None,
     *,
+    cn_by_po_lookup: dict | None = None,
     ai_enhance: bool = False,
     ai_api_key: str = "",
     ai_model: str = "deepseek-chat",
@@ -240,6 +262,11 @@ def _resolve_pc_color_multi(
     A single-colour value (the common case — no ``" / "`` present) is passed
     straight through to :func:`_resolve_pc_color` unchanged.
 
+    ``cn_by_po_lookup`` (客户PO + 款号 tier) is tried once upfront — it
+    doesn't depend on colour at all, so there's no point repeating it per
+    split component. Only when it misses (or isn't provided) does the
+    per-component colour-matching cascade below run.
+
     ``ai_enhance`` ("Local + AI Enhance" mode): whenever an individual
     component fails to resolve locally and an API key is configured, that
     component's raw text is sent to
@@ -249,6 +276,14 @@ def _resolve_pc_color_multi(
     consulted before local resolution of that component has already failed,
     and never for anything other than a colour miss.
     """
+    if cn_by_pc_lookup is not None and cn_by_po_lookup:
+        po_result = _resolve_pc_color(
+            row, sty_norm, color_en, brand,
+            cn_lookup, cn_code_lookup, cn_by_pc_lookup, cn_by_po_lookup,
+        )
+        if po_result[0] != _COLOR_NOT_FOUND:
+            return po_result
+
     components = [c.strip() for c in color_en.split(" / ") if c.strip()]
     if len(components) <= 1:
         components = [color_en]
@@ -339,6 +374,7 @@ def export_sky_east_buyplan(
     label_lookup: dict | None = None,
     cn_code_lookup: dict | None = None,
     cn_by_pc_lookup: dict | None = None,
+    cn_by_po_lookup: dict | None = None,
     ai_enhance: bool | None = None,
     ai_api_key: str | None = None,
     ai_model: str | None = None,
@@ -377,6 +413,14 @@ def export_sky_east_buyplan(
                            resolved in one lookup with PC No. + style + color priority
                            (more specific than the brand + color flat lookup).
                            None → skipped.
+    cn_by_po_lookup       : optional ``{(zalando_po_norm, style_norm): PCColorMatch}``
+                           from ``ProgressLookup.build_po_style_lookup()``. Tried
+                           *before* ``cn_by_pc_lookup`` — the client's PO number +
+                           style number are a more reliable join key than colour
+                           name (the same style can carry the same English colour
+                           name under different POs but a different Chinese
+                           colour/code). Rows with no PO recorded fall through to
+                           ``cn_by_pc_lookup``. None → skipped.
     ai_enhance            : optional override for the "Local + AI Enhance" colour
                            recognition mode.  When None, read from the admin
                            **Color Recognition** setting.  The API is only ever
@@ -787,6 +831,7 @@ def export_sky_east_buyplan(
                 color_cn, cn_code, _pc_label, color_cn_display = _resolve_pc_color_multi(
                     g, _row_sty_norm, color_en, brand,
                     cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                    cn_by_po_lookup=cn_by_po_lookup,
                     ai_enhance=ai_enhance, ai_api_key=ai_api_key, ai_model=ai_model,
                 )
                 _raw_client_color = str(g.get("color_name", "") or "")
@@ -998,6 +1043,7 @@ def export_sky_east_nukuryou(
     output_dir: str,
     cn_code_lookup: dict | None = None,
     cn_by_pc_lookup: dict | None = None,
+    cn_by_po_lookup: dict | None = None,
     ai_enhance: bool | None = None,
     ai_api_key: str | None = None,
     ai_model: str | None = None,
@@ -1016,6 +1062,9 @@ def export_sky_east_nukuryou(
     cn_by_pc_lookup : optional ``{(pc_no_norm, style_norm, en_color_norm): (cn_color, color_code)}``
                       from ``ProgressLookup.build_pc_style_color_lookups()``.
                       Both values resolved in one lookup.  None → skipped.
+    cn_by_po_lookup : optional ``{(zalando_po_norm, style_norm): PCColorMatch}``
+                      from ``ProgressLookup.build_po_style_lookup()`` — tried
+                      before ``cn_by_pc_lookup``, see ``export_sky_east_buyplan``.
     ai_enhance, ai_api_key, ai_model : same "Local + AI Enhance" overrides as
                       ``export_sky_east_buyplan`` — auto-fetched from the admin
                       Color Recognition / DeepSeek settings when None.
@@ -1126,22 +1175,29 @@ def export_sky_east_nukuryou(
                 ws.cell(nuk_header_row, sz_col).value = sz_key.upper().replace("XXL", "2XL")
 
             # Aggregate sizes by color (style invariant — normalise once).
-            # Resolve color display labels once per distinct (color_name, brand)
-            # pair, then aggregate sizes vectorised — avoids iterrows overhead.
+            # Resolve color display labels once per distinct (color_name, brand,
+            # zalando_po) combo, then aggregate sizes vectorised — avoids
+            # iterrows overhead. zalando_po is part of the cache key (not just
+            # a display-cache optimisation detail) because cn_by_po_lookup can
+            # resolve the *same* English colour name differently across POs —
+            # merging them under one (color_en, brand) key would silently
+            # collapse two materially different colours into one row.
             _sty_norm = _norm_key(style)
             color_totals: dict[str, dict[str, int]] = {}
-            # Build display-label map for distinct color+brand combos
+            # Build display-label map for distinct color+brand+PO combos
             _color_display_map: dict[tuple, str] = {}
             for item in style_df.itertuples(index=False):
                 color_en = _strip_color_brackets(
                     str(getattr(item, "color_name", "") or "")
                 ).title()
                 brand    = str(getattr(item, "brand", "") or "")
-                key      = (color_en, brand)
+                zpo_norm = _norm_key(str(getattr(item, "zalando_po", "") or ""))
+                key      = (color_en, brand, zpo_norm)
                 if key not in _color_display_map:
                     _, _, _, color_cn_display = _resolve_pc_color_multi(
                         item._asdict(), _sty_norm, color_en, brand,
                         cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                        cn_by_po_lookup=cn_by_po_lookup,
                         ai_enhance=ai_enhance, ai_api_key=ai_api_key, ai_model=ai_model,
                     )
                     _color_display_map[key] = (

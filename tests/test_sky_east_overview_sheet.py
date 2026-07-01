@@ -926,3 +926,90 @@ def test_not_found_comment_omits_progress_line_for_internal_db_source(tmp_path):
     headers = [c.value for c in ov[1]]
     cn_cell = ov.cell(2, headers.index("Color (CN)") + 1)
     assert "大货进度表" not in cn_cell.comment.text
+
+
+# ---------------------------------------------------------------------------
+# 客户PO + 款号 lookup tier — more reliable than (PC No · style · colour)
+# ---------------------------------------------------------------------------
+
+def test_resolve_pc_color_multi_prefers_po_style_over_pc_style_color():
+    """Same style, same English colour, same PC No. -- but the PO-keyed
+    entry and the PC-keyed entry disagree. PO + style must win, since it's
+    the more reliable identity per the client's own PO/style structure.
+    """
+    from po_extractor.exporters.sky_east_buyplan_export import _resolve_pc_color_multi
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    cn_by_pc = {("HHPPC048", "DR5124", "Dark Blue"): PCColorMatch("错误颜色", "99#", "")}
+    cn_by_po = {("PO2333438C", "DR5124"): PCColorMatch("藏青", "52#", "")}
+    row = {"pc_no": "HHPPC048", "zalando_po": "PO2333438C"}
+    result = _resolve_pc_color_multi(
+        row, "DR5124", "Dark Blue", "Anna Field", {}, {}, cn_by_pc,
+        cn_by_po_lookup=cn_by_po,
+    )
+    assert result[0] == "藏青"
+    assert result[1] == "52#"
+
+
+def test_resolve_pc_color_multi_falls_back_to_pc_style_color_when_po_absent():
+    """A row with no zalando_po (common in 大货进度表) must fall through to
+    the (PC No · style · colour) tier rather than failing outright.
+    """
+    from po_extractor.exporters.sky_east_buyplan_export import _resolve_pc_color_multi
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    cn_by_pc = {("HHPPC048", "DR5124", "Dark Blue"): PCColorMatch("藏青", "52#", "")}
+    cn_by_po = {("PO9999999X", "DR5124"): PCColorMatch("深蓝", "58#", "")}
+    row = {"pc_no": "HHPPC048", "zalando_po": ""}   # no PO on this row
+    result = _resolve_pc_color_multi(
+        row, "DR5124", "Dark Blue", "Anna Field", {}, {}, cn_by_pc,
+        cn_by_po_lookup=cn_by_po,
+    )
+    assert result[0] == "藏青"
+    assert result[1] == "52#"
+
+
+def test_resolve_pc_color_multi_falls_back_when_po_not_on_file():
+    """The row's PO doesn't appear in cn_by_po_lookup at all -- falls
+    through to (PC No · style · colour), same as a blank PO.
+    """
+    from po_extractor.exporters.sky_east_buyplan_export import _resolve_pc_color_multi
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    cn_by_pc = {("HHPPC048", "DR5124", "Dark Blue"): PCColorMatch("藏青", "52#", "")}
+    cn_by_po = {("PO9999999X", "DR5124"): PCColorMatch("深蓝", "58#", "")}
+    row = {"pc_no": "HHPPC048", "zalando_po": "PO_NOT_ON_FILE"}
+    result = _resolve_pc_color_multi(
+        row, "DR5124", "Dark Blue", "Anna Field", {}, {}, cn_by_pc,
+        cn_by_po_lookup=cn_by_po,
+    )
+    assert result[0] == "藏青"
+    assert result[1] == "52#"
+
+
+def test_order_file_po_style_match_bypasses_english_color_mismatch(tmp_path):
+    """End-to-end: the order-file colour is "Navy" but 大货进度表 has this
+    exact PO + style filed under "Dark Blue" -- (PC · style · colour)
+    matching would miss entirely, but (客户PO · 款号) resolves it directly,
+    proving PO+style genuinely bypasses colour-name matching altogether.
+    """
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "DR5124", "brand": "Anna Field",
+        "contract_no": "26302-ZA7148", "article_name": "LACE DRESS",
+        "zalando_po": "PO2333438C", "config_sku": "C1", "color_name": "Navy",
+        "xs": 30, "s": 82, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    cn_by_po = {("PO2333438C", "DR5124"): PCColorMatch("藏青", "52#", "黑色")}
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup={},
+        cn_by_po_lookup=cn_by_po,
+        sky_east_store=None,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    row = dict(zip(headers, [ov.cell(2, c + 1).value for c in range(len(headers))]))
+    assert row["Color (CN)"] == "藏青"
+    assert row["Color Code"] == "52#"
