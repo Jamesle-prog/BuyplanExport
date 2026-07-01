@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.1.2",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "docs", "text": "Added `docs/HOW_TO_START.md` — a run guide covering how to start the server (foreground / background / fully-detached), the correct Python 3.13 interpreter, health check, how to stop by PID, when a restart is needed after module changes, and troubleshooting for the app not staying up"},
+        ],
+    },
+    {
         "version": "2.1.1",
         "date": "2026-06-19",
         "entries": [
