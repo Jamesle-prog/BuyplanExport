@@ -436,6 +436,11 @@ def test_sky_east_index_first_style_has_hyperlink_and_total(sky_east_output, fab
         "This is the v1.54.x regression: cleaned sheet name collided "
         "with the master template and was silently auto-renamed."
     )
+    # WPS compatibility: internal links must use `location`, not a plain
+    # string `target="#'Sheet'!A1"` (that's written as an *external*
+    # relationship; Excel follows it internally as a leniency, WPS doesn't).
+    assert style_cell.hyperlink.target is None
+    assert style_cell.hyperlink.location, "hyperlink has no `location` set"
     # The 订单数合计 column (E in no-image layout, F with images) must
     # carry a SUM formula referencing the actual sheet.
     qty_col = None

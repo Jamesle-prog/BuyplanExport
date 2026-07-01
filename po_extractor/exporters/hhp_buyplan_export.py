@@ -44,7 +44,10 @@ from openpyxl.utils import get_column_letter
 
 from ..utils.file_utils import versioned_path
 from ..config import EXCEL_PALETTE as _P
-from ._excel_helpers import clean_sheet_name, stable_unique, cell_value, apply_print_settings
+from ._excel_helpers import (
+    clean_sheet_name, stable_unique, cell_value, apply_print_settings,
+    set_internal_hyperlink,
+)
 from ._image_inject import inject_style_photos
 from ._photo_utils import resolve_photo_pair
 
@@ -548,7 +551,7 @@ def _fill_index_row(ws_index, index_row: int, sheet_name: str,
 
     link_cell = ws_index.cell(index_row, 2)
     link_cell.value = style
-    link_cell.hyperlink = f"#'{sheet_name}'!A1"
+    set_internal_hyperlink(link_cell, sheet_name)
     link_cell.font = Font(color="FF0000FF", underline="single")
 
     ws_index.cell(index_row, 3).value = cell_value(first_row, "Brand")

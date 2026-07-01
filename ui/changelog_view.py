@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.13.1",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "fix", "text": "**Style hyperlinks in the buy plan (Index and Overview sheets) didn't work in WPS Office.** They were written as `cell.hyperlink = \"#'Sheet'!A1\"` — a plain string, which openpyxl always saves as an *external* relationship (`TargetMode=\"External\"`) whose literal target is that `\"#...\"` text. Excel has an undocumented leniency that follows a `\"#\"`-prefixed external target as an internal jump anyway, but that's Excel-specific, not part of the OOXML spec — WPS (and other readers) take the target literally, so the link silently did nothing. Fixed by writing the link's `location` attribute directly instead (`Hyperlink(location=\"'Sheet'!A1\", target=None)`), the spec-correct way to express a same-workbook link with no relationship at all — works the same in Excel and is now portable to WPS/LibreOffice/etc. Affects the Sky East buy plan (Index + Overview) and the HHP/Zalando buy plan Index sheet — all three shared the same pattern"},
+            {"type": "docs", "text": "New shared `set_internal_hyperlink()` helper in `_excel_helpers.py` (single source of truth for all 3 call sites, was previously duplicated). 6 new tests: unit tests for the helper (location vs target, round-trips through a real save/load with zero relationships written, custom anchor, doesn't clobber an existing cell value) plus updated Index/Overview hyperlink-shape assertions"},
+        ],
+    },
+    {
         "version": "2.13.0",
         "date": "2026-07-01",
         "entries": [

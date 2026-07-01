@@ -126,10 +126,14 @@ def test_overview_style_cell_hyperlinks_to_its_own_sheet(
     for ri in (2, 3):
         cell = ov.cell(ri, style_col)
         assert cell.hyperlink is not None
+        # Internal links use `location` (not `target`) -- a plain-string
+        # `target="#'Sheet'!A1"` is written as an *external* relationship,
+        # which Excel follows internally as a leniency but WPS does not.
+        assert cell.hyperlink.target is None
+        m = re.search(r"^'([^']+)'!A1$", cell.hyperlink.location)
+        assert m, cell.hyperlink.location
         # Sheet names are "<index>_<style>" (e.g. "1_DR5124"), so the cell's
         # displayed style name is only a suffix of the linked sheet name now.
-        m = re.search(r"#'([^']+)'!A1", cell.hyperlink.target)
-        assert m, cell.hyperlink.target
         target_sheet = m.group(1)
         assert target_sheet in wb.sheetnames
         assert target_sheet.endswith(f"_{cell.value}")

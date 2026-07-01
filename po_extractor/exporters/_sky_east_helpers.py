@@ -13,6 +13,7 @@ from pathlib import Path
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from auth.companies import COMPANY_SKY_EAST
+from ._excel_helpers import set_internal_hyperlink
 
 __all__ = [
     # Template paths
@@ -806,9 +807,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
         idx_ws.cell(ri, _C_NO).value = ri - 1
         cell_style = idx_ws.cell(ri, _C_STYLE, value=style_name)
         if sheet_name in wb.sheetnames:
-            # BUG-41 mitigation: quote the sheet name for hyperlinks so spaces
-            # and other legal-but-tricky characters don't break the target.
-            cell_style.hyperlink = f"#'{sheet_name}'!A1"
+            set_internal_hyperlink(cell_style, sheet_name)
             cell_style.style = "Hyperlink"
 
         # ── Style picture thumbnail (front image only for Index) ──────────
@@ -974,8 +973,7 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
         style_cell = ov_ws.cell(ri, _C_STYLE, value=row.get("style", ""))
         sheet_name = row.get("sheet_name", "")
         if sheet_name and sheet_name in wb.sheetnames:
-            # Quote the sheet name so spaces / special chars don't break the target.
-            style_cell.hyperlink = f"#'{sheet_name}'!A1"
+            set_internal_hyperlink(style_cell, sheet_name)
             style_cell.style = "Hyperlink"
         ov_ws.cell(ri, _C_COLOR_EN, value=row.get("color_en", ""))
         color_cn_cell = ov_ws.cell(ri, _C_COLOR_CN, value=row.get("color_cn", ""))
