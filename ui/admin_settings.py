@@ -12,6 +12,7 @@ from po_extractor.store.app_settings_store import (
     KEY_DEEPSEEK_API_KEY,
     KEY_EXTRACTION_METHOD,
     KEY_DEEPSEEK_MODEL,
+    KEY_COLOR_AI_ENHANCE,
 )
 
 # ---------------------------------------------------------------------------
@@ -89,6 +90,10 @@ def show_settings_admin() -> None:
     # ── DeepSeek AI Extraction ───────────────────────────────────────────────
     st.markdown("---")
     _show_deepseek_settings(store)
+
+    # ── Colour Recognition — Local + AI Enhance ─────────────────────────────
+    st.markdown("---")
+    _show_color_ai_enhance_settings(store)
 
     # ── Fabric Master Database ───────────────────────────────────────────────
     st.markdown("---")
@@ -174,6 +179,55 @@ def _test_deepseek(api_key: str, model: str) -> tuple[bool, str]:
         return True, f"API reachable — model={model}, reply='{reply.strip()}'"
     except Exception as exc:
         return False, str(exc)
+
+
+# ---------------------------------------------------------------------------
+# Colour Recognition — Local + AI Enhance sub-section
+# ---------------------------------------------------------------------------
+
+_COLOR_AI_MODE_OPTIONS: dict[str, str] = {
+    "local":            "🔍 Local only (regex, no API)",
+    "local_ai_enhance": "🤖 Local + AI Enhance",
+}
+
+
+def _show_color_ai_enhance_settings(store) -> None:
+    st.markdown("#### 🎨 Colour Recognition — Local + AI Enhance")
+    st.caption(
+        "Controls how Sky East order-file colours (e.g. a two-tone cell like "
+        "\"(dark blue)(white)\") are matched against 大货进度表 / the internal "
+        "colour DB. **Local only** relies purely on regex detection and never "
+        "makes a network call. **Local + AI Enhance** falls back to the "
+        "DeepSeek API, but *only* when a colour has already failed to resolve "
+        "locally — it is never called for anything else (dates, quantities, "
+        "other fields), to avoid spending API tokens unnecessarily. "
+        "Uses the same DeepSeek API key/model configured above."
+    )
+
+    current_mode = store.get(KEY_COLOR_AI_ENHANCE, "local")
+    chosen_mode  = st.radio(
+        "Colour recognition mode",
+        list(_COLOR_AI_MODE_OPTIONS.keys()),
+        index=0 if current_mode == "local" else 1,
+        format_func=lambda k: _COLOR_AI_MODE_OPTIONS[k],
+        key="admin_color_ai_enhance_mode",
+    )
+
+    has_key = bool(store.get(KEY_DEEPSEEK_API_KEY, ""))
+    if chosen_mode == "local_ai_enhance" and not has_key:
+        st.warning(
+            "⚠️ No DeepSeek API key configured above — AI Enhance will have "
+            "no effect until one is saved.",
+            icon="⚠️",
+        )
+
+    if st.button("💾 Save colour recognition mode", key="admin_color_ai_enhance_save",
+                 type="primary"):
+        store.set(
+            KEY_COLOR_AI_ENHANCE, chosen_mode,
+            updated_by=st.session_state.get(SK.USERNAME, ""),
+        )
+        st.success(f"✅ Colour recognition mode saved: **{_COLOR_AI_MODE_OPTIONS[chosen_mode]}**")
 
 
 # ---------------------------------------------------------------------------

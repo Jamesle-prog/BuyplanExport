@@ -469,3 +469,100 @@ def test_order_file_concatenated_bracket_colors_resolve_via_second_component(tmp
     assert row["Color (EN)"] == "Dark Blue / White"
     assert row["Color (CN)"] == "白色"
     assert row["Color Code"] == "003"
+
+
+# ---------------------------------------------------------------------------
+# "Local + AI Enhance" — API is only ever a last resort after a local miss
+# ---------------------------------------------------------------------------
+
+def test_ai_enhance_not_called_when_disabled(monkeypatch):
+    """ai_enhance=False (the default) must never reach the API, even on a
+    total local miss -- prevents any surprise token spend for users who
+    haven't opted in.
+    """
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.exporters.sky_east_buyplan_export import (
+        _COLOR_NOT_FOUND, _resolve_pc_color_multi,
+    )
+
+    def _boom(*a, **k):
+        raise AssertionError("recognize_colors must not be called when ai_enhance is False")
+
+    monkeypatch.setattr(_ai, "recognize_colors", _boom)
+
+    row = {"pc_no": "HHPPC048"}
+    result = _resolve_pc_color_multi(
+        row, "DR5124", "Mystery Hue", "Anna Field", {}, {}, {},
+        ai_enhance=False, ai_api_key="sk-fake",
+    )
+    assert result[0] == _COLOR_NOT_FOUND
+
+
+def test_ai_enhance_not_called_when_local_component_already_resolves(monkeypatch):
+    """A colour that already resolves locally must never trigger the API --
+    the whole point of "only on unresolved colour" is that a working match
+    costs zero tokens.
+    """
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.exporters.sky_east_buyplan_export import _resolve_pc_color_multi
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    def _boom(*a, **k):
+        raise AssertionError("recognize_colors must not be called on a local hit")
+
+    monkeypatch.setattr(_ai, "recognize_colors", _boom)
+
+    cn_by_pc = {("HHPPC048", "DR5124", "Dark Blue"): PCColorMatch("藏青", "503", "")}
+    row = {"pc_no": "HHPPC048"}
+    result = _resolve_pc_color_multi(
+        row, "DR5124", "Dark Blue", "Anna Field", {}, {}, cn_by_pc,
+        ai_enhance=True, ai_api_key="sk-fake",
+    )
+    assert result[0] == "藏青"
+
+
+def test_ai_enhance_used_only_after_local_miss(monkeypatch):
+    """When every local component misses and ai_enhance is on, the raw
+    (unsplit) colour string is sent to recognize_colors(), and its returned
+    candidates are retried against the same local lookup.
+    """
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.exporters.sky_east_buyplan_export import _resolve_pc_color_multi
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    calls = []
+
+    def _fake_recognize(raw_color, api_key, model="deepseek-chat"):
+        calls.append((raw_color, api_key, model))
+        return ("Navy",)
+
+    monkeypatch.setattr(_ai, "recognize_colors", _fake_recognize)
+
+    cn_by_pc = {("HHPPC048", "DR5124", "Navy"): PCColorMatch("藏青", "503", "")}
+    row = {"pc_no": "HHPPC048"}
+    result = _resolve_pc_color_multi(
+        row, "DR5124", "Chocolate Brown With Navy Trim", "Anna Field", {}, {}, cn_by_pc,
+        ai_enhance=True, ai_api_key="sk-fake", ai_model="deepseek-chat",
+    )
+    assert result[0] == "藏青"
+    assert result[1] == "503"
+    assert calls == [("Chocolate Brown With Navy Trim", "sk-fake", "deepseek-chat")]
+
+
+def test_ai_enhance_falls_back_to_local_miss_when_api_also_fails(monkeypatch):
+    """If the API returns no usable candidates, the original not-found
+    result is kept -- never crash, never fabricate a match.
+    """
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.exporters.sky_east_buyplan_export import (
+        _COLOR_NOT_FOUND, _resolve_pc_color_multi,
+    )
+
+    monkeypatch.setattr(_ai, "recognize_colors", lambda *a, **k: ())
+
+    row = {"pc_no": "HHPPC048"}
+    result = _resolve_pc_color_multi(
+        row, "DR5124", "Unmappable Hue", "Anna Field", {}, {}, {},
+        ai_enhance=True, ai_api_key="sk-fake",
+    )
+    assert result[0] == _COLOR_NOT_FOUND

@@ -173,6 +173,10 @@ def _resolve_pc_color_multi(
     row, sty_norm: str, color_en: str, brand: str,
     cn_lookup: dict, cn_code_lookup: dict | None,
     cn_by_pc_lookup: dict | None,
+    *,
+    ai_enhance: bool = False,
+    ai_api_key: str = "",
+    ai_model: str = "deepseek-chat",
 ) -> tuple[str, str, str, str]:
     """Same resolution as :func:`_resolve_pc_color`, but tolerant of an order
     file colour that names two colours in one string, e.g. ``"Dark Blue /
@@ -188,13 +192,18 @@ def _resolve_pc_color_multi(
 
     A single-colour value (the common case — no ``" / "`` present) is passed
     straight through to :func:`_resolve_pc_color` unchanged.
+
+    ``ai_enhance`` ("Local + AI Enhance" mode): when every local component
+    misses and an API key is configured, the *original* raw ``color_en`` is
+    sent to :func:`~po_extractor.lookups.color_ai_enhance.recognize_colors`
+    to ask an LLM to identify the colour(s) — the resulting candidate names
+    are retried against the same local lookup, same as any other component.
+    The API is never consulted before local resolution has already failed,
+    and never for anything other than a colour miss.
     """
     components = [c.strip() for c in color_en.split(" / ") if c.strip()]
     if len(components) <= 1:
-        return _resolve_pc_color(
-            row, sty_norm, color_en, brand,
-            cn_lookup, cn_code_lookup, cn_by_pc_lookup,
-        )
+        components = [color_en]
 
     first_result = None
     for comp in components:
@@ -206,6 +215,17 @@ def _resolve_pc_color_multi(
             first_result = result
         if result[0] != _COLOR_NOT_FOUND:
             return result
+
+    if ai_enhance and ai_api_key:
+        from ..lookups.color_ai_enhance import recognize_colors
+        for cand in recognize_colors(color_en, ai_api_key, ai_model):
+            result = _resolve_pc_color(
+                row, sty_norm, cand, brand,
+                cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+            )
+            if result[0] != _COLOR_NOT_FOUND:
+                return result
+
     return first_result
 
 
@@ -264,6 +284,9 @@ def export_sky_east_buyplan(
     label_lookup: dict | None = None,
     cn_code_lookup: dict | None = None,
     cn_by_pc_lookup: dict | None = None,
+    ai_enhance: bool | None = None,
+    ai_api_key: str | None = None,
+    ai_model: str | None = None,
 ) -> str:
     """Generate the main Sky East buy plan.
 
@@ -298,6 +321,18 @@ def export_sky_east_buyplan(
                            resolved in one lookup with PC No. + style + color priority
                            (more specific than the brand + color flat lookup).
                            None → skipped.
+    ai_enhance            : optional override for the "Local + AI Enhance" colour
+                           recognition mode.  When None, read from the admin
+                           **Color Recognition** setting.  The API is only ever
+                           consulted after local resolution of a colour has
+                           already failed — never for anything else.
+    ai_api_key            : optional override for the DeepSeek API key used by
+                           AI-enhanced colour recognition.  When None, read from
+                           the admin DeepSeek settings (the same key used for AI
+                           PO extraction).
+    ai_model              : optional override for the DeepSeek model used by
+                           AI-enhanced colour recognition.  When None, read from
+                           the admin DeepSeek settings.
 
     Returns
     -------
@@ -320,6 +355,28 @@ def export_sky_east_buyplan(
                 label_lookup = {}
             if cn_code_lookup is None:
                 cn_code_lookup = {}
+
+    # Auto-fetch "Local + AI Enhance" settings when not explicitly overridden.
+    if ai_enhance is None or ai_api_key is None or ai_model is None:
+        try:
+            from ..store import get_app_settings_store
+            from ..store.app_settings_store import (
+                KEY_COLOR_AI_ENHANCE, KEY_DEEPSEEK_API_KEY, KEY_DEEPSEEK_MODEL,
+            )
+            _settings = get_app_settings_store()
+            if ai_enhance is None:
+                ai_enhance = _settings.get(KEY_COLOR_AI_ENHANCE, "local") == "local_ai_enhance"
+            if ai_api_key is None:
+                ai_api_key = _settings.get(KEY_DEEPSEEK_API_KEY, "")
+            if ai_model is None:
+                ai_model = _settings.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
+        except Exception as exc:
+            import warnings as _w
+            _w.warn(f"[sky_east buyplan] AI-enhance settings fetch failed: {exc!r}")
+            ai_enhance = bool(ai_enhance)
+            ai_api_key = ai_api_key or ""
+            ai_model   = ai_model or "deepseek-chat"
+
     if not _SE_TEMPLATE.exists():
         raise FileNotFoundError(f"Sky East template not found: {_SE_TEMPLATE}")
 
@@ -657,6 +714,7 @@ def export_sky_east_buyplan(
                 color_cn, cn_code, _pc_label, color_cn_display = _resolve_pc_color_multi(
                     g, _row_sty_norm, color_en, brand,
                     cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                    ai_enhance=ai_enhance, ai_api_key=ai_api_key, ai_model=ai_model,
                 )
 
                 xs  = int(grp_df["xs"].sum()  if "xs"  in grp_df.columns else 0)
@@ -833,6 +891,9 @@ def export_sky_east_nukuryou(
     output_dir: str,
     cn_code_lookup: dict | None = None,
     cn_by_pc_lookup: dict | None = None,
+    ai_enhance: bool | None = None,
+    ai_api_key: str | None = None,
+    ai_model: str | None = None,
 ) -> list[str]:
     """Generate 核料 (material-allocation) workbooks — one per distinct fabric.
 
@@ -848,6 +909,9 @@ def export_sky_east_nukuryou(
     cn_by_pc_lookup : optional ``{(pc_no_norm, style_norm, en_color_norm): (cn_color, color_code)}``
                       from ``ProgressLookup.build_pc_style_color_lookups()``.
                       Both values resolved in one lookup.  None → skipped.
+    ai_enhance, ai_api_key, ai_model : same "Local + AI Enhance" overrides as
+                      ``export_sky_east_buyplan`` — auto-fetched from the admin
+                      Color Recognition / DeepSeek settings when None.
 
     Returns list of saved file paths (empty if Template_P not found or no fabric codes).
     """
@@ -860,6 +924,26 @@ def export_sky_east_nukuryou(
             import warnings as _w
             _w.warn(f"[sky_east nukuryou] cn_code_lookup fetch failed: {_exc!r}")
             cn_code_lookup = {}
+
+    if ai_enhance is None or ai_api_key is None or ai_model is None:
+        try:
+            from ..store import get_app_settings_store
+            from ..store.app_settings_store import (
+                KEY_COLOR_AI_ENHANCE, KEY_DEEPSEEK_API_KEY, KEY_DEEPSEEK_MODEL,
+            )
+            _settings = get_app_settings_store()
+            if ai_enhance is None:
+                ai_enhance = _settings.get(KEY_COLOR_AI_ENHANCE, "local") == "local_ai_enhance"
+            if ai_api_key is None:
+                ai_api_key = _settings.get(KEY_DEEPSEEK_API_KEY, "")
+            if ai_model is None:
+                ai_model = _settings.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
+        except Exception as _exc:
+            import warnings as _w
+            _w.warn(f"[sky_east nukuryou] AI-enhance settings fetch failed: {_exc!r}")
+            ai_enhance = bool(ai_enhance)
+            ai_api_key = ai_api_key or ""
+            ai_model   = ai_model or "deepseek-chat"
 
     if not _SE_TEMPLATE_P.exists():
         return []
@@ -951,6 +1035,7 @@ def export_sky_east_nukuryou(
                     _, _, _, color_cn_display = _resolve_pc_color_multi(
                         item._asdict(), _sty_norm, color_en, brand,
                         cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                        ai_enhance=ai_enhance, ai_api_key=ai_api_key, ai_model=ai_model,
                     )
                     _color_display_map[key] = (
                         _NUKURYOU_LABEL_FMT.format(en=color_en, cn=color_cn_display)

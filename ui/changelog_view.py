@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.11.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "**New optional \"Local + AI Enhance\" colour recognition mode.** When a Sky East order-file colour still fails to resolve locally (against the selected 大货进度表/internal-DB source) even after the multi-colour split, the DeepSeek API can now be asked to recognize the colour name(s) so a second local-lookup attempt can succeed — the API never supplies the Chinese translation or code itself, so a bad AI guess can only fail to help, never inject wrong data. The API is called **only** on a genuine colour-lookup miss, is never used for anything else (dates, quantities, other fields), and results are cached per raw colour string for the session so a repeated colour across many rows only costs one API call. Reuses the existing DeepSeek API key/model already configured for AI PO extraction — no new credential to manage"},
+            {"type": "feat", "text": "New **Admin Settings → 🎨 Colour Recognition — Local + AI Enhance** toggle: **Local only** (default, no network calls) vs **Local + AI Enhance**"},
+            {"type": "docs", "text": "10 new tests: `recognize_colors()` unit tests (success, cache hit, API error, malformed JSON, missing key/input) and `_resolve_pc_color_multi` AI-enhance wiring tests (disabled mode never calls the API, a local hit never calls the API, a local miss calls the API exactly once with the raw combined string, an API miss still falls back to the not-found result)"},
+        ],
+    },
+    {
         "version": "2.10.0",
         "date": "2026-07-01",
         "entries": [

@@ -23,6 +23,7 @@ KEY_DEFAULT_COLOR_SOURCE = "default_color_source"
 KEY_DEEPSEEK_API_KEY     = "deepseek_api_key"
 KEY_EXTRACTION_METHOD    = "extraction_method"   # "regex" | "deepseek"
 KEY_DEEPSEEK_MODEL       = "deepseek_model"
+KEY_COLOR_AI_ENHANCE     = "color_ai_enhance_mode"   # "local" | "local_ai_enhance"
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +61,7 @@ _DEFAULTS: dict[str, str] = {
     KEY_EXTRACTION_METHOD:    "regex",      # "regex" | "deepseek"
     KEY_DEEPSEEK_MODEL:       "deepseek-chat",
     KEY_DEEPSEEK_API_KEY:     "",
+    KEY_COLOR_AI_ENHANCE:     "local",      # "local" | "local_ai_enhance"
 }
 
 
