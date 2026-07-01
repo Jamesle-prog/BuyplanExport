@@ -455,6 +455,24 @@ def test_sky_east_index_first_style_has_hyperlink_and_total(sky_east_output, fab
     )
 
 
+def test_sky_east_index_includes_pc_no_next_to_style(sky_east_output):
+    """The Index sheet must carry 客人PC NO (right after 款号 / 图片), mirroring
+    the same column already on the Overview sheet -- the PC No. used for every
+    大货进度表 lookup should be visible without opening a different tab.
+    """
+    _path, wb = sky_east_output
+    idx = wb["Index"]
+    headers = [c.value for c in idx[1]]
+    assert "客人PC NO" in headers
+    pcno_col = headers.index("客人PC NO") + 1
+    # Immediately after 款号 (and 图片, if present) -- never buried among the
+    # schedule/planning columns.
+    style_col = headers.index("款号") + 1
+    assert pcno_col > style_col
+    assert pcno_col <= style_col + 2   # style [, 图片] , 客人PC NO
+    assert idx.cell(2, pcno_col).value == "TESTPC"
+
+
 def test_sky_east_index_no_redundant_fabric_label_column(sky_east_output):
     """The Index header must NOT contain the redundant 面料_大身 column —
     it duplicated 面料_大身_编号 (which already implies 大身 in its name)."""

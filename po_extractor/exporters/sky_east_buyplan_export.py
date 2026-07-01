@@ -893,6 +893,7 @@ def export_sky_east_buyplan(
                 "hhn_no":      _idx_hhn,
                 "display_key": _idx_dk,
                 "ex_fty_date": str(first.get("ex_fty_date", "") or ""),
+                "pc_no":       str(first.get("pc_no",       "") or ""),
             })
 
     # ── Remove master template sheet ─────────────────────────────────────

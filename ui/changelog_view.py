@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.14.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "**Index sheet now includes 客人PC NO**, right after 款号 (and 图片, if photos are enabled) — mirrors the same column already added to the Overview sheet, so the PC No. used for every 大货进度表 lookup is visible without switching tabs"},
+            {"type": "docs", "text": "1 new test locking in the column's presence, position, and value on the Index sheet"},
+        ],
+    },
+    {
         "version": "2.13.1",
         "date": "2026-07-01",
         "entries": [

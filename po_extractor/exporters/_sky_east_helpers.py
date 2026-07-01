@@ -705,6 +705,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                                "body_part":   str,   # fabric body part label
                                "hhn_no":      str,   # HHN fabric code
                                "ex_fty_date": str,
+                               "pc_no":       str,   # 客人PC NO — optional
                            }
 
                        When supplied this is used directly (one Index row per
@@ -724,7 +725,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
     # label "Main Body / 大身" and the next column already says 面料_大身_编号
     # (i.e. the body-part identity is encoded in the header itself).
     _base_headers = [
-        "No.", "款号", "客户品牌", "面料_大身_编号",
+        "No.", "款号", "客人PC NO", "客户品牌", "面料_大身_编号",
         "订单数合计", "离厂时间", "生产工厂", "工厂交期",
         "面料（计划）到厂时间", "辅料（计划）到厂时间", "样衣（计划）确认时间",
         "大货版（计划）完成时间", "全码版（计划）完成时间",
@@ -732,7 +733,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
         "裁剪数", "车位（计划）完成时间", "后道（计划）完成时间", "出货数",
     ]
     if has_images:
-        # Insert "图片" between "款号" and "客户品牌"
+        # Insert "图片" between "款号" and "客人PC NO"
         headers = _base_headers[:2] + ["图片"] + _base_headers[2:]
     else:
         headers = _base_headers
@@ -746,16 +747,17 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
 
     # ── Column index map (1-based) — shifts right by 1 when image col present ─
     # Layout (no image col / with image col):
-    #   No.    | 款号   | [图片] | 客户品牌 | 面料_大身_编号 | 订单数合计 | 离厂时间
-    #     1        2       (3)      3/4         4/5            5/6        6/7
+    #   No.    | 款号   | [图片] | 客人PC NO | 客户品牌 | 面料_大身_编号 | 订单数合计 | 离厂时间
+    #     1        2       (3)      3/4          4/5        5/6            6/7        7/8
     _off = 1 if has_images else 0
     _C_NO    = 1
     _C_STYLE = 2
     _C_IMG   = 3 if has_images else None
-    _C_BRAND = 3 + _off
-    _C_FABNO = 4 + _off
-    _C_QTY   = 5 + _off
-    _C_EXFTY = 6 + _off
+    _C_PCNO  = 3 + _off
+    _C_BRAND = 4 + _off
+    _C_FABNO = 5 + _off
+    _C_QTY   = 6 + _off
+    _C_EXFTY = 7 + _off
 
     from openpyxl.utils import get_column_letter as _gcl
     _IMG_PX  = 160  # thumbnail size in pixels (larger = sharper rendering)
@@ -774,19 +776,23 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                 meta.get("body_part",   ""),
                 meta.get("display_key") or meta.get("hhn_no", ""),
                 meta.get("ex_fty_date", ""),
+                meta.get("pc_no",       ""),
             )
             for meta in sheet_meta_list
         ]
     else:
         # Legacy path: one row per unique style, aggregated from df_items.
+        _agg_kwargs = dict(
+            brand          = ("brand",          "first"),
+            fabrication    = ("fabrication",    "first"),
+            fabric_item_no = ("fabric_item_no", "first"),
+            ex_fty_date    = ("ex_fty_date",    "first"),
+        )
+        if "pc_no" in df_items.columns:
+            _agg_kwargs["pc_no"] = ("pc_no", "first")
         agg = (
             df_items.groupby("style", sort=False)
-            .agg(
-                brand          = ("brand",          "first"),
-                fabrication    = ("fabrication",    "first"),
-                fabric_item_no = ("fabric_item_no", "first"),
-                ex_fty_date    = ("ex_fty_date",    "first"),
-            )
+            .agg(**_agg_kwargs)
             .reset_index()
         )
         rows_iter = [
@@ -797,11 +803,12 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                 str(row.fabrication    or ""),
                 str(row.fabric_item_no or ""),
                 str(row.ex_fty_date    or ""),
+                str(getattr(row, "pc_no", "") or ""),
             )
             for row in agg.itertuples(index=False)
         ]
 
-    for ri, (style_name, sheet_name, brand, body_part, fab_key, ex_fty_date) in \
+    for ri, (style_name, sheet_name, brand, body_part, fab_key, ex_fty_date, pc_no) in \
             enumerate(rows_iter, start=2):
 
         idx_ws.cell(ri, _C_NO).value = ri - 1
@@ -809,6 +816,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
         if sheet_name in wb.sheetnames:
             set_internal_hyperlink(cell_style, sheet_name)
             cell_style.style = "Hyperlink"
+        idx_ws.cell(ri, _C_PCNO).value = pc_no
 
         # ── Style picture thumbnail (front image only for Index) ──────────
         if has_images and _C_IMG:
@@ -848,6 +856,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
     _idx_fixed_widths: dict[int, float] = {
         _C_NO:    6,
         _C_STYLE: 20,   # 款号  style names can be 15-18 chars
+        _C_PCNO:  14,   # 客人PC NO
         _C_BRAND: 16,   # 客户品牌
         _C_FABNO: 44,   # 面料_大身_编号  综合标识Key e.g. "HHN-JA-01715|100%POLYESTER|280|150"
         _C_QTY:   12,   # 订单数合计
