@@ -377,3 +377,95 @@ def test_sheet_names_disambiguate_multiple_combos_of_same_style(tmp_path):
     wb = load_workbook(path)
     style_sheets = wb.sheetnames[2:]
     assert style_sheets == ["1_DR5009", "2_DR5009"]
+
+
+# ---------------------------------------------------------------------------
+# Order-file multi-colour resolution — "(dark blue)(white)" style cells
+# ---------------------------------------------------------------------------
+
+def test_resolve_pc_color_multi_passes_through_single_color_unchanged():
+    """A plain single colour (the common case, no ' / ' separator) must
+    resolve identically through the multi-aware wrapper and the original
+    single-colour resolver.
+    """
+    from po_extractor.exporters.sky_east_buyplan_export import (
+        _resolve_pc_color, _resolve_pc_color_multi,
+    )
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    cn_by_pc = {("HHPPC048", "DR5124", "Dark Blue"): PCColorMatch("藏青", "503", "")}
+    row = {"pc_no": "HHPPC048"}
+    expected = _resolve_pc_color(row, "DR5124", "Dark Blue", "Anna Field", {}, {}, cn_by_pc)
+    actual   = _resolve_pc_color_multi(row, "DR5124", "Dark Blue", "Anna Field", {}, {}, cn_by_pc)
+    assert actual == expected
+    assert actual[0] == "藏青"
+
+
+def test_resolve_pc_color_multi_uses_first_matching_component():
+    from po_extractor.exporters.sky_east_buyplan_export import _resolve_pc_color_multi
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    cn_by_pc = {("HHPPC048", "DR5124", "Dark Blue"): PCColorMatch("藏青", "503", "")}
+    row = {"pc_no": "HHPPC048"}
+    result = _resolve_pc_color_multi(
+        row, "DR5124", "Dark Blue / White", "Anna Field", {}, {}, cn_by_pc,
+    )
+    assert result[0] == "藏青"
+    assert result[1] == "503"
+
+
+def test_resolve_pc_color_multi_falls_back_to_second_component():
+    """First component ("Dark Blue") isn't in the lookup, but the second
+    ("White") is -- detect-and-separate must try each component in turn
+    rather than giving up after the first miss.
+    """
+    from po_extractor.exporters.sky_east_buyplan_export import _resolve_pc_color_multi
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    cn_by_pc = {("HHPPC048", "DR5124", "White"): PCColorMatch("白色", "003", "")}
+    row = {"pc_no": "HHPPC048"}
+    result = _resolve_pc_color_multi(
+        row, "DR5124", "Dark Blue / White", "Anna Field", {}, {}, cn_by_pc,
+    )
+    assert result[0] == "白色"
+    assert result[1] == "003"
+
+
+def test_resolve_pc_color_multi_neither_component_matches_shows_not_found():
+    from po_extractor.exporters.sky_east_buyplan_export import (
+        _COLOR_NOT_FOUND, _resolve_pc_color_multi,
+    )
+
+    row = {"pc_no": "HHPPC048"}
+    result = _resolve_pc_color_multi(
+        row, "DR5124", "Dark Blue / White", "Anna Field", {}, {}, {},
+    )
+    assert result[0] == _COLOR_NOT_FOUND
+    assert result[1] == _COLOR_NOT_FOUND
+
+
+def test_order_file_concatenated_bracket_colors_resolve_via_second_component(tmp_path):
+    """End-to-end: an order-file colour cell like "(dark blue)(white)" is
+    stripped to "Dark Blue / White" and, since only "White" is in the
+    selected 大货进度表 source, the Overview sheet must show White's
+    translation rather than an outright miss.
+    """
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "DR5124", "brand": "Anna Field",
+        "contract_no": "26302-ZA7148", "article_name": "TWO TONE DRESS",
+        "zalando_po": "PO001", "config_sku": "C1", "color_name": "(dark blue)(white)",
+        "xs": 30, "s": 82, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    cn_by_pc = {("HHPPC048", "DR5124", "White"): PCColorMatch("白色", "003", "")}
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=cn_by_pc,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    row = dict(zip(headers, [ov.cell(2, c + 1).value for c in range(len(headers))]))
+    assert row["Color (EN)"] == "Dark Blue / White"
+    assert row["Color (CN)"] == "白色"
+    assert row["Color Code"] == "003"

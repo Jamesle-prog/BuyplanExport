@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.10.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "**Order-file multi-colour cells now use the same detect-and-separate logic as 大货进度表.** A two-tone item like `\"(dark blue)(white)\"` used to become one combined `\"Dark Blue / White\"` lookup key that could never exact-match either 大货进度表 or the internal colour DB (both store single-colour keys), silently showing 未找到/blank even when one of the two colours was mapped. The buy plan and 核料 exporters now try each colour component individually and use the first one that resolves — the combined display string is unchanged, only the lookup behaviour is smarter"},
+            {"type": "docs", "text": "6 new tests covering the multi-colour resolver directly (single-colour passthrough, first-component match, second-component fallback, neither-matches) plus an end-to-end Overview-sheet check for a `\"(dark blue)(white)\"` order-file cell"},
+        ],
+    },
+    {
         "version": "2.9.0",
         "date": "2026-07-01",
         "entries": [

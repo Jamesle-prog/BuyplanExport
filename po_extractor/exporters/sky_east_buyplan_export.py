@@ -169,6 +169,46 @@ def _resolve_pc_color(
     return color_cn, cn_code, "", _format_body_color_cn(cn_code, color_cn)
 
 
+def _resolve_pc_color_multi(
+    row, sty_norm: str, color_en: str, brand: str,
+    cn_lookup: dict, cn_code_lookup: dict | None,
+    cn_by_pc_lookup: dict | None,
+) -> tuple[str, str, str, str]:
+    """Same resolution as :func:`_resolve_pc_color`, but tolerant of an order
+    file colour that names two colours in one string, e.g. ``"Dark Blue /
+    White"`` (produced by :func:`_strip_color_brackets` from a source cell
+    like ``"(dark blue)(white)"``).
+
+    Mirrors the "detect and separate, then look up on this" approach already
+    used for 大货进度表 rows (see ``progress_lookup._split_multi_color``):
+    each ``" / "``-separated component is tried against the same lookup in
+    order, and the first component that actually resolves wins. The combined
+    string is never itself used as a lookup key once split, since neither
+    大货进度表 nor the internal colour DB store combined two-tone keys.
+
+    A single-colour value (the common case — no ``" / "`` present) is passed
+    straight through to :func:`_resolve_pc_color` unchanged.
+    """
+    components = [c.strip() for c in color_en.split(" / ") if c.strip()]
+    if len(components) <= 1:
+        return _resolve_pc_color(
+            row, sty_norm, color_en, brand,
+            cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+        )
+
+    first_result = None
+    for comp in components:
+        result = _resolve_pc_color(
+            row, sty_norm, comp, brand,
+            cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+        )
+        if first_result is None:
+            first_result = result
+        if result[0] != _COLOR_NOT_FOUND:
+            return result
+    return first_result
+
+
 def _apply_sky_east_compact_layout(ws, *, last_row: int) -> None:
     """User-requested compact layout overrides applied after data is filled.
 
@@ -611,7 +651,10 @@ def export_sky_east_buyplan(
                     str(g.get("color_name", "") or "")
                 ).title()
                 brand    = str(g.get("brand",      "") or "")
-                color_cn, cn_code, _pc_label, color_cn_display = _resolve_pc_color(
+                # color_en may combine two colours (e.g. "Dark Blue / White")
+                # when the source cell wrapped each in its own brackets —
+                # _resolve_pc_color_multi tries each component individually.
+                color_cn, cn_code, _pc_label, color_cn_display = _resolve_pc_color_multi(
                     g, _row_sty_norm, color_en, brand,
                     cn_lookup, cn_code_lookup, cn_by_pc_lookup,
                 )
@@ -899,11 +942,13 @@ def export_sky_east_nukuryou(
             # Build display-label map for distinct color+brand combos
             _color_display_map: dict[tuple, str] = {}
             for item in style_df.itertuples(index=False):
-                color_en = str(getattr(item, "color_name", "") or "").title()
+                color_en = _strip_color_brackets(
+                    str(getattr(item, "color_name", "") or "")
+                ).title()
                 brand    = str(getattr(item, "brand", "") or "")
                 key      = (color_en, brand)
                 if key not in _color_display_map:
-                    _, _, _, color_cn_display = _resolve_pc_color(
+                    _, _, _, color_cn_display = _resolve_pc_color_multi(
                         item._asdict(), _sty_norm, color_en, brand,
                         cn_lookup, cn_code_lookup, cn_by_pc_lookup,
                     )
