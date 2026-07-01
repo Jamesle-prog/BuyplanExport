@@ -48,8 +48,7 @@ def _show_se_upload_section():
                 ),
             )
             st.caption(
-                "💡 Upload fabric mapping independently in **Contract History → "
-                "🧵 Fabric Mapping**."
+                "💡 Upload fabric mapping independently in the **📐 Fabric Mapping** tab."
             )
         with ref_r:
             progress_file = st.file_uploader(

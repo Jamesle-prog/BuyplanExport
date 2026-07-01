@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.2.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "**📐 Fabric Mapping** import preview: styles flagged **♻️ Will update** now have a field-level diff against the currently stored data — shows Stored vs. In File for each changed Body Part / HHN No. / Composition / Weight / Width, plus added or removed fabric slots. Styles whose file content is identical to what's stored are called out separately, so a 'Will update' count no longer means a guaranteed change"},
+            {"type": "fix", "text": "Sky East upload page: the fabric-mapping hint pointed at a stale location (**Contract History → 🧵 Fabric Mapping**) that no longer matches the app's tab layout — corrected to the actual top-level **📐 Fabric Mapping** tab"},
+        ],
+    },
+    {
         "version": "2.1.2",
         "date": "2026-07-01",
         "entries": [

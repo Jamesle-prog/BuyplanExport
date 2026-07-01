@@ -39,6 +39,48 @@ def _load_mapped_styles(source: str) -> set[str]:
     return {r["style"] for r in rows}
 
 
+# Fields compared between the stored FabricPart and the incoming one, in
+# display order.
+_DIFF_FIELDS = [
+    ("body_part",   "Body Part"),
+    ("hhn_no",      "HHN No."),
+    ("composition", "Composition"),
+    ("weight_gsm",  "Weight (gsm)"),
+    ("width_cm",    "Width (cm)"),
+]
+
+
+def _diff_fabric_parts(old_parts: list, new_parts: list) -> list[dict]:
+    """Field-level diff between the stored and incoming parts of one style.
+
+    Matched by ``(combo_idx, seq)`` — stable slot positions assigned at parse
+    time (see ``fabric_mapping_parse.py``), so slot 1 in the old data lines up
+    with slot 1 in the new file even when other slots were skipped.  Returns
+    one row per changed field, plus one row for an entirely added/removed
+    combo/seq slot. Empty list means the stored data already matches the file.
+    """
+    old_map = {(p.combo_idx, p.seq): p for p in old_parts}
+    new_map = {(p.combo_idx, p.seq): p for p in new_parts}
+    rows: list[dict] = []
+    for combo, seq in sorted(set(old_map) | set(new_map)):
+        op = old_map.get((combo, seq))
+        npart = new_map.get((combo, seq))
+        if op is None:
+            rows.append({"Combo": combo, "Seq": seq, "Field": "(new fabric slot)",
+                        "Stored": "—", "In File": npart.display()})
+            continue
+        if npart is None:
+            rows.append({"Combo": combo, "Seq": seq, "Field": "(slot removed)",
+                        "Stored": op.display(), "In File": "—"})
+            continue
+        for attr, label in _DIFF_FIELDS:
+            ov, nv = getattr(op, attr), getattr(npart, attr)
+            if ov != nv:
+                rows.append({"Combo": combo, "Seq": seq, "Field": label,
+                            "Stored": ov or "—", "In File": nv or "—"})
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Main view
 # ---------------------------------------------------------------------------
@@ -164,6 +206,30 @@ def show_fabric_mapping_tab() -> None:
 
     with st.expander("Show full style list", expanded=(len(preview_rows) <= 20)):
         st.dataframe(pd.DataFrame(preview_rows), width="stretch", hide_index=True)
+
+    # ── Diff for styles that will update ─────────────────────────────────────
+    update_styles = [r["Style"] for r in preview_rows if r["Status"] == "♻️ Will update"]
+    if update_styles:
+        old_parts_map = get_store().load_fabric_parts_for_styles(update_styles, source)
+        diff_rows: list[dict] = []
+        changed_styles: set[str] = set()
+        for style in update_styles:
+            old_parts = old_parts_map.get(style, [])
+            new_parts = style_parts_map.get(style, [])
+            for d in _diff_fabric_parts(old_parts, new_parts):
+                diff_rows.append({"Style": style, **d})
+                changed_styles.add(style)
+        with st.expander(
+            f"🔍 Show differences for updating styles "
+            f"({len(changed_styles)} of {len(update_styles)} actually changed)",
+            expanded=(0 < len(diff_rows) <= 30),
+        ):
+            if diff_rows:
+                st.dataframe(pd.DataFrame(diff_rows), width="stretch", hide_index=True)
+            else:
+                st.caption(
+                    "No field-level differences — the stored data already matches the file."
+                )
 
     # ── Confirmation for Replace all ─────────────────────────────────────────
     confirmed_replace = True
