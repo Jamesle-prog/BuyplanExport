@@ -827,3 +827,102 @@ def test_sky_east_store_none_disables_logging_without_breaking_export(tmp_path):
     ov = load_workbook(path)["Overview"]
     headers = [c.value for c in ov[1]]
     assert ov.cell(2, headers.index("Color (CN)") + 1).value == "未找到"
+
+
+# ---------------------------------------------------------------------------
+# Not-found comment also lists 大货进度表's own colour(s) for that PC/Style
+# ---------------------------------------------------------------------------
+
+def test_color_miss_comment_text_includes_progress_colors_when_present():
+    from po_extractor.exporters._sky_east_helpers import _color_miss_comment_text
+
+    text = _color_miss_comment_text("Dark Blue", ["Navy", "Sky Blue"])
+    assert 'Client\'s PO colour: "Dark Blue"' in text
+    assert "大货进度表 colour(s) on file: Navy, Sky Blue" in text
+
+
+def test_color_miss_comment_text_notes_no_colors_on_file():
+    from po_extractor.exporters._sky_east_helpers import _color_miss_comment_text
+
+    text = _color_miss_comment_text("Dark Blue", [])
+    assert "大货进度表 has no colour recorded for this PC No./Style" in text
+
+
+def test_color_miss_comment_text_omits_second_line_for_internal_db_source():
+    """None means the internal DB (not 大货进度表) was the selected source --
+    there's no "大货进度表 colour" to show, so the second line is skipped
+    entirely rather than showing a misleading empty list.
+    """
+    from po_extractor.exporters._sky_east_helpers import _color_miss_comment_text
+
+    text = _color_miss_comment_text("Dark Blue", None)
+    assert text == 'Client\'s PO colour: "Dark Blue"'
+
+
+def test_available_progress_colors_scoped_to_pc_and_style():
+    from po_extractor.exporters.sky_east_buyplan_export import _available_progress_colors
+
+    cn_by_pc = {
+        ("HHPPC048", "DR5124", "Navy"):  object(),
+        ("HHPPC048", "DR5124", "Green"): object(),
+        ("HHPPC048", "BL4257", "Black"): object(),   # different style — excluded
+        ("HHPPC099", "DR5124", "White"): object(),   # different PC — excluded
+    }
+    result = _available_progress_colors(cn_by_pc, "HHPPC048", "DR5124")
+    assert result == ["Green", "Navy"]   # sorted
+
+
+def test_available_progress_colors_empty_when_no_lookup():
+    from po_extractor.exporters.sky_east_buyplan_export import _available_progress_colors
+
+    assert _available_progress_colors(None, "HHPPC048", "DR5124") == []
+    assert _available_progress_colors({}, "HHPPC048", "DR5124") == []
+
+
+def test_not_found_comment_lists_progress_colors_for_naming_mismatch(tmp_path):
+    """End-to-end: client's PO says "Dark Brown" but 大货进度表 has this
+    style under "Chocolate" -- the comment must show 大货进度表's own colour
+    so the mismatch is obvious without opening the source file.
+    """
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "BL4257", "brand": "Anna Field",
+        "contract_no": "26302-ZA7158", "article_name": "LONG SLEEVE BLOUSE",
+        "zalando_po": "PO2338263C", "config_sku": "C1", "color_name": "Dark Brown",
+        "xs": 28, "s": 69, "m": 90, "l": 67, "xl": 46, "xxl": 0,
+    }])
+    cn_by_pc = {("HHPPC048", "BL4257", "Chocolate"): PCColorMatch("巧克力色", "12#", "")}
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=cn_by_pc,
+        sky_east_store=None,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    cn_cell = ov.cell(2, headers.index("Color (CN)") + 1)
+    assert cn_cell.value == "未找到"
+    assert 'Dark Brown' in cn_cell.comment.text
+    assert "Chocolate" in cn_cell.comment.text
+
+
+def test_not_found_comment_omits_progress_line_for_internal_db_source(tmp_path):
+    """When the internal DB is the active source (cn_by_pc_lookup=None), the
+    comment must not mention 大货进度表 at all -- that source wasn't consulted.
+    """
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "DR9999", "brand": "Anna Field",
+        "contract_no": "C1", "article_name": "TEST",
+        "zalando_po": "PO001", "config_sku": "C1", "color_name": "chartreuse",
+        "xs": 10, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={},
+        cn_by_pc_lookup=None,   # internal DB is the selected source
+        sky_east_store=None,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    cn_cell = ov.cell(2, headers.index("Color (CN)") + 1)
+    assert "大货进度表" not in cn_cell.comment.text

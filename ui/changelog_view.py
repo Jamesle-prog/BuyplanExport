@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.14.1",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "**未找到 cell comments now also show 大货进度表's own colour(s) for that PC No./Style**, alongside the client's PO colour already shown — so a naming mismatch (e.g. client says \"Dark Brown\", 大货进度表 says \"Chocolate\") is visible at a glance instead of requiring the source file to be reopened. When 大货进度表 has no colour recorded at all for that PC/Style, the comment says so explicitly. When the internal DB (not 大货进度表) is the selected source, the extra line is omitted — that source was never consulted, so there's nothing to compare"},
+            {"type": "docs", "text": "New shared `_color_miss_comment_text()` / `_available_progress_colors()` helpers (single source of truth for the per-style-sheet and Overview-sheet comments). 8 new tests covering both helpers directly plus end-to-end naming-mismatch and internal-DB-source cases"},
+        ],
+    },
+    {
         "version": "2.14.0",
         "date": "2026-07-01",
         "entries": [

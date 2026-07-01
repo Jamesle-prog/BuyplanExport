@@ -39,7 +39,7 @@ __all__ = [
     "_replace_placeholders", "_set_sheet_column_widths", "_strip_color_brackets",
     "_style_data", "_style_total",
     "derive_main_label_color",
-    "_COLOR_NOT_FOUND",
+    "_COLOR_NOT_FOUND", "_color_miss_comment_text",
 ]
 
 # ---------------------------------------------------------------------------
@@ -51,6 +51,26 @@ __all__ = [
 # Overview sheet builder below, which attaches a diagnostic comment to any
 # cell showing this value.
 _COLOR_NOT_FOUND = "未找到"
+
+
+def _color_miss_comment_text(client_po_color: str, progress_colors: list[str] | None) -> str:
+    """Build the diagnostic comment text for a 未找到 colour cell.
+
+    Always shows the client's PO colour exactly as the order file had it
+    (before bracket-stripping / splitting). When *progress_colors* is a
+    (possibly empty) list — meaning 大货进度表 is the selected source — a
+    second line lists the colour name(s) 大货进度表 actually has on file for
+    that PC No./Style, so a reviewer can spot a naming mismatch (e.g. client
+    says "Dark Blue", 大货进度表 says "Navy") without opening the source file.
+    ``None`` (the internal-DB-source case) omits that second line entirely.
+    """
+    lines = [f"Client's PO colour: \"{client_po_color}\""]
+    if progress_colors is not None:
+        if progress_colors:
+            lines.append(f"大货进度表 colour(s) on file: {', '.join(progress_colors)}")
+        else:
+            lines.append("大货进度表 has no colour recorded for this PC No./Style")
+    return "\n".join(lines)
 
 # ---------------------------------------------------------------------------
 # Template paths
@@ -900,7 +920,9 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
                              "contract_no": str, "pc_no": str, "style": str,
                              "sheet_name": str,
                              "color_en": str, "color_cn": str, "color_code": str,
-                             "client_po_color": str, "label_color": str,
+                             "client_po_color": str,
+                             "progress_colors": list[str] | None,
+                             "label_color": str,
                              "brand": str, "po": str, "config_sku": str,
                              "article_name": str,
                              "xs": int, "s": int, "m": int, "l": int,
@@ -911,10 +933,14 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
 
                      ``client_po_color`` is the colour text exactly as the
                      client's order file had it, before bracket-stripping or
-                     multi-colour splitting -- when ``color_cn``/``color_code``
-                     is :data:`_COLOR_NOT_FOUND`, it's attached as a cell
-                     comment so a reviewer can see what was actually searched
-                     for without opening the source order file.
+                     multi-colour splitting. ``progress_colors`` is the list of
+                     colour name(s) 大货进度表 actually has on file for that PC
+                     No./Style (``None`` when the internal DB, not 大货进度表, is
+                     the selected source). When ``color_cn``/``color_code`` is
+                     :data:`_COLOR_NOT_FOUND`, both are combined into a cell
+                     comment so a reviewer can spot a naming mismatch (client
+                     says "Dark Blue", 大货进度表 says "Navy") without opening
+                     the source order file.
 
     n_fabric_slots : number of Fabric / 综合标识 Key column pairs to render —
                      matches the template's fabric-header row count, so every
@@ -989,7 +1015,7 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
         color_code_cell = ov_ws.cell(ri, _C_CODE, value=row.get("color_code", ""))
         if row.get("color_cn") == _COLOR_NOT_FOUND:
             _client_color = row.get("client_po_color") or row.get("color_en", "")
-            _note_text = f"Client's PO colour: \"{_client_color}\""
+            _note_text = _color_miss_comment_text(_client_color, row.get("progress_colors"))
             color_cn_cell.comment   = _Comment(_note_text, "PO Extractor")
             color_code_cell.comment = _Comment(_note_text, "PO Extractor")
         ov_ws.cell(ri, _C_LABEL,    value=row.get("label_color", ""))

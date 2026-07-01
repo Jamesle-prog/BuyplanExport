@@ -123,6 +123,26 @@ def _brand_keyed_get(
     return lookup.get((company, brand, norm_en)) or default
 
 
+def _available_progress_colors(
+    cn_by_pc_lookup: dict | None, pc_no_norm: str, sty_norm: str,
+) -> list[str]:
+    """Return the distinct colour names 大货进度表 actually has on file for
+    (pc_no_norm, sty_norm) — used to build a diagnostic comment when the
+    order-file colour doesn't match any of them, so a reviewer can see the
+    client's PO colour and 大货进度表's own colour(s) side by side instead of
+    having to open the source file to check for a naming mismatch (e.g.
+    client says "Dark Blue", 大货进度表 says "Navy").
+
+    Cheap by construction: only ever called on a miss (rare), not per row.
+    """
+    if not cn_by_pc_lookup:
+        return []
+    return sorted({
+        key[2] for key in cn_by_pc_lookup
+        if key[0] == pc_no_norm and key[1] == sty_norm and key[2]
+    })
+
+
 def _resolve_pc_color(
     row, sty_norm: str, color_en: str, brand: str,
     cn_lookup: dict, cn_code_lookup: dict | None,
@@ -770,19 +790,27 @@ def export_sky_east_buyplan(
                     ai_enhance=ai_enhance, ai_api_key=ai_api_key, ai_model=ai_model,
                 )
                 _raw_client_color = str(g.get("color_name", "") or "")
-                if color_cn == _COLOR_NOT_FOUND and _se_store is not None:
-                    try:
-                        _se_store.log_color_miss(
-                            pc_no=str(g.get("pc_no", "") or ""),
-                            contract_no=str(g.get("contract_no", "") or ""),
-                            style=_row_style,
-                            po_no=str(g.get("zalando_po", "") or ""),
-                            client_po_color=_raw_client_color,
-                            attempted_color=color_en,
-                            source=_color_source,
+                _progress_colors = None
+                if color_cn == _COLOR_NOT_FOUND:
+                    if cn_by_pc_lookup is not None:
+                        _progress_colors = _available_progress_colors(
+                            cn_by_pc_lookup,
+                            _norm_key(str(g.get("pc_no", "") or "")),
+                            _row_sty_norm,
                         )
-                    except Exception:
-                        pass   # diagnostic logging must never break export
+                    if _se_store is not None:
+                        try:
+                            _se_store.log_color_miss(
+                                pc_no=str(g.get("pc_no", "") or ""),
+                                contract_no=str(g.get("contract_no", "") or ""),
+                                style=_row_style,
+                                po_no=str(g.get("zalando_po", "") or ""),
+                                client_po_color=_raw_client_color,
+                                attempted_color=color_en,
+                                source=_color_source,
+                            )
+                        except Exception:
+                            pass   # diagnostic logging must never break export
 
                 xs  = int(grp_df["xs"].sum()  if "xs"  in grp_df.columns else 0)
                 s   = int(grp_df["s"].sum()   if "s"   in grp_df.columns else 0)
@@ -805,7 +833,8 @@ def export_sky_east_buyplan(
                 if color_cn == _COLOR_NOT_FOUND:
                     from openpyxl.comments import Comment as _Comment
                     _color_cn_cell.comment = _Comment(
-                        f"Client's PO colour: \"{_raw_client_color}\"", "PO Extractor",
+                        _color_miss_comment_text(_raw_client_color, _progress_colors),
+                        "PO Extractor",
                     )
                 # 主标颜色 resolution order:
                 #   1. 大货进度表 PC-keyed (most specific — same contract)
@@ -842,6 +871,7 @@ def export_sky_east_buyplan(
                     "color_cn":     color_cn,
                     "color_code":   cn_code if cn_code != "NA" else "",
                     "client_po_color": _raw_client_color,
+                    "progress_colors": _progress_colors,
                     "label_color":  _label_clr,
                     "brand":        brand,
                     "po":           str(g.get("zalando_po", "") or ""),
