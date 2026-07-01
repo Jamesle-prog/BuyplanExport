@@ -56,6 +56,14 @@ _NUKURYOU_LABEL_FMT = "{en}({cn})"
 # Centralised so changes propagate to every dict that follows the convention.
 _BRAND_AGNOSTIC = ""
 
+# Shown in the 中文颜色 / 中文颜色代码 cells when the *selected* colour source
+# (大货进度表 or the internal DB — whichever the caller wired in) has no entry
+# at all for this (style, colour) — an explicit miss, not a soft blank/"NA".
+# Deliberately distinct from "NA" (which means "matched, but that one field
+# happened to be empty in the source row") so the two situations aren't
+# confused with each other.
+_COLOR_NOT_FOUND = "未找到"
+
 
 def _se_base_style_key(style: str, known_styles: set[str]) -> str:
     """Map a trailing-"A" variant onto its base style when the base exists.
@@ -118,35 +126,47 @@ def _resolve_pc_color(
 ) -> tuple[str, str, str, str]:
     """Resolve (color_cn, cn_code, label_color, color_cn_display) for one row.
 
-    Primary-only resolution — no brand-agnostic or cross-source fallbacks:
-      1. ``cn_by_pc_lookup`` — exact (pc_no, style, color) match from 大货进度表
-      2. ``cn_code_lookup``  — exact (company, brand, color) match from DB
+    The *selected* colour source is authoritative — whichever one the caller
+    wired in is used exclusively, with no fallback to the other:
 
-    When a field cannot be found in its primary source, ``cn_code`` is set to
-    ``"NA"`` so the cell clearly signals a missing mapping rather than silently
-    inheriting a wrong value from another brand.
+      • ``cn_by_pc_lookup`` is not ``None`` → 大货进度表 is the selected
+        source (the user's "Chinese color mapping source" radio picked it
+        and a file is loaded).  A miss on the exact (pc_no, style, color)
+        key is reported as an explicit ``_COLOR_NOT_FOUND`` error — it does
+        **not** fall through to the internal colour DB.
+      • ``cn_by_pc_lookup`` is ``None`` → the internal colour DB
+        (``cn_lookup`` / ``cn_code_lookup``) is the selected source.  A miss
+        there is reported the same way.
 
-    ``label_color`` is non-empty only when tier 1 hits.  The buyplan caller
-    falls back to ``label_lookup`` and ``derive_main_label_color`` when blank;
-    nukuryou ignores ``label_color`` altogether (核料 doesn't render it).
+    Silently trying a different source than the one the user explicitly
+    picked would show data that looks legitimate but didn't come from where
+    they expect it to — an explicit error is more useful than a
+    plausible-looking value from the wrong place.
+
+    ``label_color`` (主标颜色) is exempt from this rule: the buyplan caller
+    always falls back through ``label_lookup`` → the light/dark heuristic
+    regardless of source, since a label colour is always derivable from the
+    English body colour and withholding it would just break wash labels.
     """
-    norm_en  = _nz_color(color_en)
-    pc_match = (
-        cn_by_pc_lookup.get((_norm_key(row.get("pc_no") or ""), sty_norm, norm_en))
-        if cn_by_pc_lookup else None
-    )
-    if pc_match is not None:
-        # Use PC row values directly — no cross-source fallback.
+    norm_en = _nz_color(color_en)
+
+    if cn_by_pc_lookup is not None:
+        pc_match = cn_by_pc_lookup.get(
+            (_norm_key(row.get("pc_no") or ""), sty_norm, norm_en)
+        )
+        if pc_match is None:
+            return (_COLOR_NOT_FOUND, _COLOR_NOT_FOUND, "", _COLOR_NOT_FOUND)
         color_cn    = pc_match.cn_color
         cn_code     = pc_match.color_code or "NA"
         label_color = pc_match.label_color
-    else:
-        color_cn    = _cn_color(cn_lookup, brand, color_en)
-        cn_code     = _brand_keyed_get(
-            cn_code_lookup, COMPANY_SKY_EAST, brand, norm_en, default="NA",
-        )
-        label_color = ""
-    return color_cn, cn_code, label_color, _format_body_color_cn(cn_code, color_cn)
+        return color_cn, cn_code, label_color, _format_body_color_cn(cn_code, color_cn)
+
+    color_cn = _cn_color(cn_lookup, brand, color_en)
+    cn_code  = _brand_keyed_get(cn_code_lookup, COMPANY_SKY_EAST, brand, norm_en, default="")
+    if not color_cn and not cn_code:
+        return (_COLOR_NOT_FOUND, _COLOR_NOT_FOUND, "", _COLOR_NOT_FOUND)
+    cn_code = cn_code or "NA"
+    return color_cn, cn_code, "", _format_body_color_cn(cn_code, color_cn)
 
 
 def _apply_sky_east_compact_layout(ws, *, last_row: int) -> None:

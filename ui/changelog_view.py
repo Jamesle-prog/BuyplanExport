@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.6.0",
+        "date": "2026-07-01",
+        "entries": [
+            {"type": "feat", "text": "Sky East Buy Plan Chinese-colour resolution now respects the **Chinese color mapping source** radio exclusively — when 大货进度表 is selected and a style/colour isn't in it, the internal Colors DB is no longer silently tried as a fallback (even if it happens to have a matching entry). A genuine miss now shows an explicit **未找到** (\"not found\") marker in both Color (CN) and Color Code, on the per-style sheets and the Overview sheet, so a missing translation is visible rather than looking like it quietly came from a different, unselected source. A row matched in the selected source whose code field is simply blank still shows the existing `NA` placeholder — that's a different, legitimate case from a full miss. 3 new tests"},
+        ],
+    },
+    {
         "version": "2.5.1",
         "date": "2026-07-01",
         "entries": [

@@ -218,3 +218,91 @@ def test_buyplan_color_en_has_no_brackets_in_display(tmp_path):
     style_ws = wb["DR5124"]
     col_g_values = [style_ws.cell(r, 7).value for r in range(5, 8)]
     assert not any(v and "(" in str(v) for v in col_g_values)
+
+
+# ---------------------------------------------------------------------------
+# Colour source is authoritative — no silent cross-source fallback
+# ---------------------------------------------------------------------------
+
+def test_progress_source_miss_does_not_fall_back_to_internal_db(tmp_path):
+    """When 大货进度表 is the selected source (cn_by_pc_lookup provided) and a
+    style/colour isn't in it, the internal DB must NOT be consulted even if
+    it has a matching entry -- that would silently show data from a source
+    other than the one the user picked.
+    """
+    from po_extractor.exporters.sky_east_buyplan_export import _COLOR_NOT_FOUND
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "DR5124", "brand": "Anna Field",
+        "contract_no": "26302-ZA7148", "article_name": "LACE DRESS",
+        "zalando_po": "PO001", "config_sku": "C1", "color_name": "dark blue",
+        "xs": 30, "s": 82, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    # cn_lookup/cn_code_lookup DO have a matching entry -- but must be ignored
+    # because cn_by_pc_lookup (the selected source) is provided and misses.
+    poisoned_cn      = {("Sky East", "Anna Field", "Dark Blue"): "藏青"}
+    poisoned_cn_code = {("Sky East", "Anna Field", "Dark Blue"): "999"}
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup=poisoned_cn, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup=poisoned_cn_code,
+        cn_by_pc_lookup={},   # progress source selected, but empty/no match
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    row = dict(zip(headers, [ov.cell(2, c + 1).value for c in range(len(headers))]))
+    assert row["Color (CN)"] == _COLOR_NOT_FOUND
+    assert row["Color Code"] == _COLOR_NOT_FOUND
+
+
+def test_internal_db_source_miss_shows_error_not_blank(tmp_path):
+    """When the internal DB is the selected source (cn_by_pc_lookup is None)
+    and neither cn_lookup nor cn_code_lookup has an entry, that must show as
+    an explicit error -- not silent blank/"NA" as if nothing was even tried.
+    """
+    from po_extractor.exporters.sky_east_buyplan_export import _COLOR_NOT_FOUND
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "DR9999", "brand": "Anna Field",
+        "contract_no": "C1", "article_name": "TEST",
+        "zalando_po": "PO001", "config_sku": "C1", "color_name": "chartreuse",
+        "xs": 10, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={},
+        cn_by_pc_lookup=None,   # internal DB is the selected source
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    row = dict(zip(headers, [ov.cell(2, c + 1).value for c in range(len(headers))]))
+    assert row["Color (CN)"] == _COLOR_NOT_FOUND
+    assert row["Color Code"] == _COLOR_NOT_FOUND
+
+
+def test_partial_match_still_uses_na_placeholder_not_error(tmp_path):
+    """A genuine match whose colour-code field happens to be blank in the
+    source row is a different situation from a full miss -- it must keep
+    showing the existing "NA" placeholder, not the new error marker.
+    """
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC048", "style": "DR5124", "brand": "Anna Field",
+        "contract_no": "26302-ZA7148", "article_name": "LACE DRESS",
+        "zalando_po": "PO001", "config_sku": "C1", "color_name": "dark blue",
+        "xs": 30, "s": 82, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    # Matched in 大货进度表, but its colour-code field is blank.
+    cn_by_pc = {("HHPPC048", "DR5124", "Dark Blue"): PCColorMatch("藏青", "", "")}
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=cn_by_pc,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    row = dict(zip(headers, [ov.cell(2, c + 1).value for c in range(len(headers))]))
+    assert row["Color (CN)"] == "藏青"
+    # Overview blanks the internal "NA" sentinel -- openpyxl round-trips an
+    # empty-string cell write as None on reload, which is the correct
+    # "blank cell" outcome in Excel.
+    assert not row["Color Code"]
