@@ -10,15 +10,6 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
-        "version": "2.15.0",
-        "date": "2026-07-01",
-        "entries": [
-            {"type": "feat", "text": "**大货进度表 Chinese colour lookup now matches on 客户PO + 款号 first, before falling back to PC No. + style + colour name.** Colour-name matching can't tell apart the case where the same style carries the same English colour name under different POs but a genuinely different Chinese colour/code (e.g. a reorder with a corrected dye lot) — the client's PO number + style number are unique per PO and sidestep the whole English-name-matching problem (spelling, casing, splitting) entirely. Rows with no PO recorded on file simply fall through to the existing (PC No. · style · colour) tier, so nothing regresses for data that predates this. A two-tone style split across two colour records (see the earlier multi-colour split feature) is recombined the same way under this tier too"},
-            {"type": "feat", "text": "New `ProgressLookup.build_po_style_lookup()` returning `{(zalando_po_norm, style_norm): PCColorMatch}`, wired through `BuyplanColorLookups.by_po` → `cn_by_po_lookup` on both the buy plan and 核料 exporters"},
-            {"type": "docs", "text": "9 new tests: `build_po_style_lookup()` (PO-vs-PC disagreement, blank PO excluded, two-tone recombine) and end-to-end resolver tests (PO tier wins over PC+style+colour, falls back when PO blank or not on file, order-file colour text can differ entirely from 大货进度表's own colour and still resolve correctly via PO+style alone)"},
-        ],
-    },
-    {
         "version": "2.14.1",
         "date": "2026-07-01",
         "entries": [
