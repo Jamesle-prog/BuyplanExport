@@ -397,6 +397,47 @@ def test_sheet_names_disambiguate_multiple_combos_of_same_style(tmp_path):
     assert style_sheets == ["1_DR5009", "2_DR5009"]
 
 
+def test_multi_combo_index_links_and_totals_resolve(tmp_path):
+    """A style with two fabric combos yields two Index rows; each row's style
+    hyperlink is WPS-safe (internal, ``target is None``) and points at a real,
+    distinct sheet, and the same row's 订单数合计 formula references that sheet.
+    """
+    from po_extractor.models.fabric_part import FabricPart
+
+    df = pd.DataFrame([{
+        "style": "DR5009", "brand": "Anna Field", "zalando_po": "PO1",
+        "config_sku": "C1", "color_name": "dark blue", "contract_no": "K1",
+        "article_name": "MAXI", "xs": 1, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    fabric_parts_by_style = {
+        "DR5009": [
+            FabricPart(combo_idx=0, seq=1, body_part="Main Body", hhn_no="HHN-A"),
+            FabricPart(combo_idx=1, seq=1, body_part="Main Body", hhn_no="HHN-B"),
+        ],
+    }
+    path, _ = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path), label_lookup={}, cn_code_lookup={},
+        fabric_parts_by_style=fabric_parts_by_style, sky_east_store=None,
+    )
+    wb = load_workbook(path)
+    idx = wb["Index"]
+    linked_rows = [idx.cell(r, 2) for r in range(2, idx.max_row + 1)
+                   if idx.cell(r, 2).hyperlink is not None]
+    assert len(linked_rows) == 2               # one Index row per combo sheet
+
+    sheets_pointed_at = set()
+    for cell in linked_rows:
+        assert cell.hyperlink.target is None                 # internal (WPS-safe)
+        sheet = cell.hyperlink.location.split("!")[0].strip("'")
+        assert sheet in wb.sheetnames                        # points at a real sheet
+        sheets_pointed_at.add(sheet)
+        # the 订单数合计 total formula on the same row references the same sheet
+        row_formulas = [c.value for c in idx[cell.row]
+                        if isinstance(c.value, str) and c.value.startswith("=")]
+        assert any(f"'{sheet}'!" in f for f in row_formulas)
+    assert sheets_pointed_at == {"1_DR5009", "2_DR5009"}      # two distinct sheets
+
+
 # ---------------------------------------------------------------------------
 # Order-file multi-colour resolution — "(dark blue)(white)" style cells
 # ---------------------------------------------------------------------------

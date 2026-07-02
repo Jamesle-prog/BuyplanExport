@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.17.0",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "fix", "text": "**核料 (Template_P) workbooks now flag unresolved colours the same way the buy plan does.** Previously a colour that failed to resolve was written into the 核料 label as e.g. `Black(未找到)`, with no entry in the colour-resolution log — so a mismatch that was loud in the buy plan was silent (and messy) in 核料. Now the cell shows the English colour alone, carries a diagnostic comment (client's PO colour + 大货进度表's own colour on file), and is recorded in the colour-miss log, mirroring the main buy plan"},
+            {"type": "fix", "text": "**核料 workbooks are no longer produced with a malformed stylesheet.** The per-fabric copy used `copy.deepcopy()`, which yielded a workbook whose saved stylesheet referenced a non-existent font — openpyxl (and Excel's repair check) rejected it on reload. It now re-opens the template from an in-memory buffer instead: clean, reloadable output, still no disk re-read, ~1 ms/fabric slower"},
+            {"type": "refactor", "text": "De-duplicated the ~19-line \"Local + AI Enhance\" settings auto-fetch that was copy-pasted across both Sky East exporters into one `_resolve_ai_enhance_settings()` helper; de-magic'd the hardcoded 船样要求 column (now resolved from the detected template layout, falling back to column P). Fixed the `export_sky_east_buyplan` docstring, which claimed it returns a path when it returns a `(path, style_totals)` tuple"},
+        ],
+    },
+    {
         "version": "2.16.5",
         "date": "2026-07-01",
         "entries": [

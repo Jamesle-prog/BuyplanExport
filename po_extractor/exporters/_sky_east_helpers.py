@@ -24,7 +24,7 @@ __all__ = [
     "_COL_CONTRACT", "_COL_STYLE", "_COL_BRAND", "_COL_ARTICLE", "_COL_PO",
     "_COL_CONFIG", "_COL_COLOR_EN", "_COL_COLOR_CN", "_COL_LABEL_CLR",
     "_COL_XS", "_COL_S", "_COL_M", "_COL_L", "_COL_XL", "_COL_XXL",
-    "_COL_TOTAL", "_COL_EXFTY",
+    "_COL_BOAT_SAMPLE", "_COL_TOTAL", "_COL_EXFTY",
     # Fabric header fallback column positions
     "_COL_COMPOSITION", "_COL_DISPLAY_KEY",
     "_DATA_ROW_FB",
@@ -103,7 +103,7 @@ _COL_M         = 12   # L  M
 _COL_L         = 13   # M  L
 _COL_XL        = 14   # N  XL
 _COL_XXL       = 15   # O  XXL
-# col 16 = P  船样要求 (left blank)
+_COL_BOAT_SAMPLE = 16 # P  船样要求 (populated from BoatSampleStore when available)
 _COL_TOTAL     = 17   # Q  Total
 _COL_EXFTY     = 18   # R  离厂时间
 _DATA_ROW_FB   =  8   # Fallback data start row
@@ -133,6 +133,7 @@ _BUY_PLAN_COL_ALIASES: dict[str, set[str]] = {
     "l":         {"l"},
     "xl":        {"xl"},
     "xxl":       {"xxl", "2xl", "2xl"},
+    "boat_sample": {"船样要求", "boat sample", "boat sample req", "船样"},
     "total":     {"total", "订单数合计", "qty", "total qty", "数量合计"},
     "ex_fty":    {"离厂时间", "ex-fty", "ex fty", "exfty", "ex_fty"},
 }
@@ -195,6 +196,7 @@ def _detect_buyplan_layout(ws) -> tuple[dict[str, int], int]:
         "label_clr":_COL_LABEL_CLR,
         "xs": _COL_XS, "s": _COL_S, "m": _COL_M, "l": _COL_L,
         "xl": _COL_XL, "xxl": _COL_XXL,
+        "boat_sample": _COL_BOAT_SAMPLE,
         "total": _COL_TOTAL, "ex_fty": _COL_EXFTY,
     }
     for field, col in fallbacks.items():

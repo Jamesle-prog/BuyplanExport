@@ -321,6 +321,42 @@ def _resolve_pc_color_multi(
     return combined_cn, combined_code, label, _format_body_color_cn(combined_code, combined_cn)
 
 
+def _resolve_ai_enhance_settings(
+    ai_enhance: bool | None,
+    ai_api_key: str | None,
+    ai_model: str | None,
+) -> tuple[bool, str, str]:
+    """Resolve the "Local + AI Enhance" colour-recognition settings.
+
+    Any argument left as ``None`` is read from the admin **AppSettings** store
+    (``KEY_COLOR_AI_ENHANCE`` / ``KEY_DEEPSEEK_API_KEY`` / ``KEY_DEEPSEEK_MODEL``
+    — the same DeepSeek key/model used for AI PO extraction).  An explicit
+    non-``None`` argument always wins (used by tests / callers that override).
+
+    Never raises: on any store/import error it warns and falls back to safe
+    defaults (AI disabled, no key, ``deepseek-chat``).  Returns a fully
+    resolved ``(ai_enhance, ai_api_key, ai_model)`` tuple.
+    """
+    if ai_enhance is not None and ai_api_key is not None and ai_model is not None:
+        return bool(ai_enhance), ai_api_key, ai_model
+    try:
+        from ..store import get_app_settings_store
+        from ..store.app_settings_store import (
+            KEY_COLOR_AI_ENHANCE, KEY_DEEPSEEK_API_KEY, KEY_DEEPSEEK_MODEL,
+        )
+        _settings = get_app_settings_store()
+        if ai_enhance is None:
+            ai_enhance = _settings.get(KEY_COLOR_AI_ENHANCE, "local") == "local_ai_enhance"
+        if ai_api_key is None:
+            ai_api_key = _settings.get(KEY_DEEPSEEK_API_KEY, "")
+        if ai_model is None:
+            ai_model = _settings.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
+    except Exception as exc:
+        import warnings as _w
+        _w.warn(f"[sky_east] AI-enhance settings fetch failed: {exc!r}")
+    return bool(ai_enhance), ai_api_key or "", ai_model or "deepseek-chat"
+
+
 def _apply_sky_east_compact_layout(ws, *, last_row: int) -> None:
     """User-requested compact layout overrides applied after data is filled.
 
@@ -435,7 +471,9 @@ def export_sky_east_buyplan(
 
     Returns
     -------
-    Absolute path of the saved .xlsx file.
+    ``(path, style_totals)`` — the absolute path of the saved .xlsx file and a
+    ``{style: total_units}`` dict (the per-style buy-plan totals, consumed by
+    :func:`build_cross_comparison`).
     """
     # Auto-fetch label_lookup and cn_code_lookup from the canonical store.
     # Single source of truth: the same DB as cn_lookup.
@@ -456,25 +494,9 @@ def export_sky_east_buyplan(
                 cn_code_lookup = {}
 
     # Auto-fetch "Local + AI Enhance" settings when not explicitly overridden.
-    if ai_enhance is None or ai_api_key is None or ai_model is None:
-        try:
-            from ..store import get_app_settings_store
-            from ..store.app_settings_store import (
-                KEY_COLOR_AI_ENHANCE, KEY_DEEPSEEK_API_KEY, KEY_DEEPSEEK_MODEL,
-            )
-            _settings = get_app_settings_store()
-            if ai_enhance is None:
-                ai_enhance = _settings.get(KEY_COLOR_AI_ENHANCE, "local") == "local_ai_enhance"
-            if ai_api_key is None:
-                ai_api_key = _settings.get(KEY_DEEPSEEK_API_KEY, "")
-            if ai_model is None:
-                ai_model = _settings.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
-        except Exception as exc:
-            import warnings as _w
-            _w.warn(f"[sky_east buyplan] AI-enhance settings fetch failed: {exc!r}")
-            ai_enhance = bool(ai_enhance)
-            ai_api_key = ai_api_key or ""
-            ai_model   = ai_model or "deepseek-chat"
+    ai_enhance, ai_api_key, ai_model = _resolve_ai_enhance_settings(
+        ai_enhance, ai_api_key, ai_model,
+    )
 
     # Colour-miss diagnostic log — best-effort, never blocks export.
     if sky_east_store is _AUTO_STORE:
@@ -516,7 +538,9 @@ def export_sky_east_buyplan(
     style_totals: dict[str, int] = {}
 
     # ── Pre-fetch 船样要求 for all brands in one batch ────────────────────────
-    _BOAT_SAMPLE_COL = 16   # column P
+    # Column resolved from the detected layout (falls back to P/16 via the
+    # _COL_BOAT_SAMPLE default baked into _detect_buyplan_layout).
+    _BOAT_SAMPLE_COL = col.get("boat_sample", _COL_BOAT_SAMPLE)
     bsr_cache: dict[str, str] = {}
     try:
         if "brand" in df_items.columns:
@@ -1039,6 +1063,7 @@ def export_sky_east_nukuryou(
     ai_enhance: bool | None = None,
     ai_api_key: str | None = None,
     ai_model: str | None = None,
+    sky_east_store=_AUTO_STORE,
 ) -> list[str]:
     """Generate 核料 (material-allocation) workbooks — one per distinct fabric.
 
@@ -1057,6 +1082,11 @@ def export_sky_east_nukuryou(
     ai_enhance, ai_api_key, ai_model : same "Local + AI Enhance" overrides as
                       ``export_sky_east_buyplan`` — auto-fetched from the admin
                       Color Recognition / DeepSeek settings when None.
+    sky_east_store  : optional override for the store used to log colour
+                      resolution misses (see ``SkyEastStore.log_color_miss``),
+                      mirroring ``export_sky_east_buyplan``.  When omitted, the
+                      canonical store is auto-fetched.  Pass ``None`` explicitly
+                      to disable colour-miss logging (e.g. in tests).
 
     Returns list of saved file paths (empty if Template_P not found or no fabric codes).
     """
@@ -1070,25 +1100,22 @@ def export_sky_east_nukuryou(
             _w.warn(f"[sky_east nukuryou] cn_code_lookup fetch failed: {_exc!r}")
             cn_code_lookup = {}
 
-    if ai_enhance is None or ai_api_key is None or ai_model is None:
+    ai_enhance, ai_api_key, ai_model = _resolve_ai_enhance_settings(
+        ai_enhance, ai_api_key, ai_model,
+    )
+
+    # Colour-miss diagnostic log — best-effort, never blocks export.  Mirrors
+    # export_sky_east_buyplan so a colour that fails to resolve is logged (and
+    # commented) here too, not just in the main buy plan.
+    if sky_east_store is _AUTO_STORE:
         try:
-            from ..store import get_app_settings_store
-            from ..store.app_settings_store import (
-                KEY_COLOR_AI_ENHANCE, KEY_DEEPSEEK_API_KEY, KEY_DEEPSEEK_MODEL,
-            )
-            _settings = get_app_settings_store()
-            if ai_enhance is None:
-                ai_enhance = _settings.get(KEY_COLOR_AI_ENHANCE, "local") == "local_ai_enhance"
-            if ai_api_key is None:
-                ai_api_key = _settings.get(KEY_DEEPSEEK_API_KEY, "")
-            if ai_model is None:
-                ai_model = _settings.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
-        except Exception as _exc:
-            import warnings as _w
-            _w.warn(f"[sky_east nukuryou] AI-enhance settings fetch failed: {_exc!r}")
-            ai_enhance = bool(ai_enhance)
-            ai_api_key = ai_api_key or ""
-            ai_model   = ai_model or "deepseek-chat"
+            from ..store import get_sky_east_store
+            _se_store = get_sky_east_store()
+        except Exception:
+            _se_store = None
+    else:
+        _se_store = sky_east_store
+    _color_source = "progress" if cn_by_pc_lookup is not None else "db"
 
     if not _SE_TEMPLATE_P.exists():
         return []
@@ -1099,12 +1126,19 @@ def export_sky_east_nukuryou(
 
     output_paths: list[str] = []
 
-    # ── Load template ONCE and detect layout ONCE outside the loop ───────────
+    # ── Read the template bytes ONCE and detect layout ONCE outside the loop ─
     # Each fabric group previously re-parsed the template from disk (ZIP+XML
-    # decompression) — with N groups that was N × 100-500 ms.  Now we load
-    # once, detect layout once, then copy.deepcopy() per iteration.
-    import copy as _copy
-    _master_wb = load_workbook(str(_SE_TEMPLATE_P))
+    # decompression) — with N groups that was N × 100-500 ms.  We now read the
+    # file into memory once and re-open it per iteration from that buffer.
+    #
+    # NOTE: an earlier version used copy.deepcopy(_master_wb) here for speed,
+    # but deepcopy produces a workbook whose saved stylesheet has a named style
+    # pointing at a non-existent fontId — openpyxl (and Excel's repair check)
+    # reject it on reload.  load_workbook(BytesIO(bytes)) yields a clean,
+    # reloadable copy for only ~1 ms more per fabric while still avoiding disk.
+    import io as _io
+    _master_bytes = _SE_TEMPLATE_P.read_bytes()
+    _master_wb = load_workbook(_io.BytesIO(_master_bytes))
     _master_ws = _master_wb.worksheets[0]
 
     color_col, size_col_map, nuk_data_row = _detect_nukuryou_layout(_master_ws)
@@ -1142,8 +1176,9 @@ def export_sky_east_nukuryou(
         if not fabric_no:
             continue
 
-        # Fast in-memory copy — avoids re-parsing ZIP+XML from disk
-        tpl_wb = _copy.deepcopy(_master_wb)
+        # Fresh clean copy per fabric from the cached template bytes — avoids
+        # re-reading from disk and (unlike deepcopy) reloads/opens correctly.
+        tpl_wb = load_workbook(_io.BytesIO(_master_bytes))
         tpl_ws = tpl_wb.worksheets[0]
 
         _replace_placeholders(tpl_ws, {"created_at": created_at, "fabric": fabric_no})
@@ -1170,6 +1205,9 @@ def export_sky_east_nukuryou(
             color_totals: dict[str, dict[str, int]] = {}
             # Build display-label map for distinct color+brand combos
             _color_display_map: dict[tuple, str] = {}
+            # Displays whose colour failed to resolve → (client_colour,
+            # progress_colours) for the diagnostic comment attached at write time.
+            _miss_info: dict[str, tuple[str, list | None]] = {}
             for item in style_df.itertuples(index=False):
                 color_en = _strip_color_brackets(
                     str(getattr(item, "color_name", "") or "")
@@ -1177,15 +1215,45 @@ def export_sky_east_nukuryou(
                 brand    = str(getattr(item, "brand", "") or "")
                 key      = (color_en, brand)
                 if key not in _color_display_map:
-                    _, _, _, color_cn_display = _resolve_pc_color_multi(
+                    color_cn, _, _, color_cn_display = _resolve_pc_color_multi(
                         item._asdict(), _sty_norm, color_en, brand,
                         cn_lookup, cn_code_lookup, cn_by_pc_lookup,
                         ai_enhance=ai_enhance, ai_api_key=ai_api_key, ai_model=ai_model,
                     )
-                    _color_display_map[key] = (
-                        _NUKURYOU_LABEL_FMT.format(en=color_en, cn=color_cn_display)
-                        if color_cn_display else color_en
-                    )
+                    if color_cn == _COLOR_NOT_FOUND:
+                        # Colour miss — show the English colour alone (never
+                        # embed 未找到 into the label), and record a diagnostic
+                        # comment + colour-miss-log entry mirroring the buy plan.
+                        display = color_en
+                        _raw_client_color = str(getattr(item, "color_name", "") or "")
+                        _progress_colors = None
+                        if cn_by_pc_lookup is not None:
+                            _progress_colors = _available_progress_colors(
+                                cn_by_pc_lookup,
+                                _norm_key(str(getattr(item, "pc_no", "") or "")),
+                                _sty_norm,
+                            )
+                        _miss_info[display] = (_raw_client_color, _progress_colors)
+                        if _se_store is not None:
+                            try:
+                                _se_store.log_color_miss(
+                                    pc_no=str(getattr(item, "pc_no", "") or ""),
+                                    contract_no=str(getattr(item, "contract_no", "") or ""),
+                                    style=style,
+                                    po_no=str(getattr(item, "zalando_po", "") or ""),
+                                    client_po_color=_raw_client_color,
+                                    attempted_color=color_en,
+                                    progress_colors=_progress_colors,
+                                    source=_color_source,
+                                )
+                            except Exception:
+                                pass   # diagnostic logging must never break export
+                    else:
+                        display = (
+                            _NUKURYOU_LABEL_FMT.format(en=color_en, cn=color_cn_display)
+                            if color_cn_display else color_en
+                        )
+                    _color_display_map[key] = display
                 display = _color_display_map[key]
                 if display not in color_totals:
                     color_totals[display] = {sz: 0 for sz in _SIZES_LC}
@@ -1195,7 +1263,14 @@ def export_sky_east_nukuryou(
             # Write color rows starting at the detected data row
             out_row = nuk_data_row
             for color_display, sizes in color_totals.items():
-                ws.cell(out_row, color_col).value = color_display
+                _color_cell = ws.cell(out_row, color_col)
+                _color_cell.value = color_display
+                if color_display in _miss_info:
+                    from openpyxl.comments import Comment as _Comment
+                    _cc, _pc = _miss_info[color_display]
+                    _color_cell.comment = _Comment(
+                        _color_miss_comment_text(_cc, _pc), "PO Extractor",
+                    )
                 for sz_key, sz_col in size_col_map.items():
                     ws.cell(out_row, sz_col).value = sizes.get(sz_key, 0)
                 out_row += 1
