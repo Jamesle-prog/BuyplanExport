@@ -1048,6 +1048,29 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             _warnings.catch_warnings(record=True) as _wrec:
                         _warnings.simplefilter("always")
 
+                        # Show which colour source + recognition mode this run uses.
+                        _src_label = "大货进度表" if color_lookups.by_pc is not None else "Internal DB"
+                        try:
+                            from ui.stores import get_app_settings_store
+                            from po_extractor.store.app_settings_store import (
+                                KEY_COLOR_AI_ENHANCE, KEY_DEEPSEEK_API_KEY,
+                            )
+                            _asx = get_app_settings_store()
+                            _ai_on   = _asx.get(KEY_COLOR_AI_ENHANCE, "local") == "local_ai_enhance"
+                            _has_key = bool(_asx.get(KEY_DEEPSEEK_API_KEY, ""))
+                        except Exception:
+                            _ai_on, _has_key = False, False
+                        if _ai_on and _has_key:
+                            _reco_label = "Local + AI Enhance"
+                        elif _ai_on:
+                            _reco_label = "Local (⚠ AI Enhance on, but no API key)"
+                        else:
+                            _reco_label = "Local only"
+                        st.write(
+                            f"🎨 Colour source: **{_src_label}** · "
+                            f"Recognition: **{_reco_label}**"
+                        )
+
                         st.write("Building main buy plan (Template)...")
                         try:
                             bp_path, style_totals = export_sky_east_buyplan(

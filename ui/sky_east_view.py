@@ -76,7 +76,7 @@ def _show_se_upload_section():
     show_color_source_radio("se_color_src_radio")
     st.caption(
         "↑ Sets the default colour source used when you **generate the Buy Plan** "
-        "(📊 Reports tab). It doesn't change this Process step."
+        "(📤 Generate / Export tab). It doesn't change this Process step."
     )
 
     show_image_folder_expander("se_images_dir", "se_images_dir_apply")
@@ -124,7 +124,7 @@ def _show_se_upload_section():
         _n_saved = len(st.session_state.se_results)
         st.success(
             f"✅ Saved {_n_saved} PC No.(s). **Next step →** open the "
-            "**📊 Reports** tab → **Buy Plan + 核料** to generate outputs "
+            "**📤 Generate / Export** tab → **Buy Plan + 核料** to generate outputs "
             "(or **Contract History** to review saved data).",
             icon="✅",
         )
@@ -149,18 +149,21 @@ def show_sky_east_tab() -> None:
     _mf = t("Missing Fields")
     missing_label = (f"{_mf}  {_missing_count}" if _missing_count else _mf)
 
-    se_tab_upload, se_tab_history, se_tab_reports, se_tab_missing = st.tabs(
-        [t("New Contracts"), t("Contract History"), "📊 Reports", missing_label]
+    # "Generate / Export" sits right after "New Contracts" so the natural flow
+    # is Upload → Generate; it's the primary output step and shouldn't be buried
+    # behind Contract History.
+    se_tab_upload, se_tab_reports, se_tab_history, se_tab_missing = st.tabs(
+        [t("New Contracts"), "📤 Generate / Export", t("Contract History"), missing_label]
     )
 
     with se_tab_upload:
         _show_se_upload_section()
 
-    with se_tab_history:
-        _show_se_history_section()
-
     with se_tab_reports:
         _show_se_reports_tab()
+
+    with se_tab_history:
+        _show_se_history_section()
 
     with se_tab_missing:
         _show_se_missing_fields_section(_missing_df)

@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.20.1",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "feat", "text": "**The \"Generating…\" box now states which colour source and recognition mode the run is using** — e.g. \"🎨 Colour source: **大货进度表** · Recognition: **Local + AI Enhance**\" (or \"Local only\", or a warning if AI Enhance is on but no API key is configured) — so it's clear at a glance whether the AI fallback is active"},
+            {"type": "feat", "text": "**Renamed the Sky East \"📊 Reports\" tab to \"📤 Generate / Export\" and moved it to second position** (right after New Contracts), so the primary output step reads as an action and follows the natural Upload → Generate flow instead of being buried after Contract History"},
+        ],
+    },
+    {
         "version": "2.20.0",
         "date": "2026-07-02",
         "entries": [
