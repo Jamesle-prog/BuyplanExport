@@ -49,6 +49,7 @@ class SK:
     SE_NK_COUNT      = "se_nk_count"
     SE_NK_REASON     = "se_nk_reason"   # human-readable reason when 核料 is empty
     SE_BP_CMP        = "se_bp_cmp"
+    SE_BP_DIAGS      = "se_bp_diags"    # [sky_east ...] warnings captured during generation
 
     # ── Sky East — color mapping source preference ────────────────────────────
     SE_COLOR_SOURCE  = "se_color_source"   # value: COLOR_SOURCE_DB | COLOR_SOURCE_PROGRESS

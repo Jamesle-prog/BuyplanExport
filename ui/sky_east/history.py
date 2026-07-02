@@ -4,7 +4,9 @@ import base64
 import io
 import os
 import tempfile
+import warnings as _warnings
 import zipfile
+from datetime import datetime
 from typing import NamedTuple
 import pandas as pd
 import streamlit as st
@@ -110,7 +112,7 @@ def _se_hist_summary_table(df_contracts) -> None:
     st.dataframe(
         df_view.rename(columns=_tr({
             "pc_no": "PC No.", "pc_date": "PC Date", "buyer": "Buyer",
-            "seller": "Seller", "total_styles": "Styles",
+            "seller": "Seller", "total_styles": "Style·Colours",
             "total_qty": "Total Qty", "currency": "Currency",
             "trade_term": "Trade Term", "extracted_at": "Extracted At",
             "source_file": "Source File",
@@ -829,15 +831,68 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
     if not _effective_sel:
         st.info(t("Select one or more PC Nos. above, then click Generate."))
 
-    # ── Total units summary for selection ─────────────────────────────────────
+    # ── Selection summary + pre-flight checks ──────────────────────────────────
     if _effective_sel and df_contracts is not None and not df_contracts.empty:
         _sel_df = df_contracts[df_contracts["pc_no"].isin(_effective_sel)]
-        _total_units  = int(_sel_df["total_qty"].sum())    if "total_qty"    in _sel_df.columns else 0
-        _total_styles = int(_sel_df["total_styles"].sum()) if "total_styles" in _sel_df.columns else 0
-        _m1, _m2, _m3 = st.columns(3)
-        _m1.metric(t("PCs selected"),   len(_effective_sel))
-        _m2.metric(t("Total Styles"),   _total_styles)
-        _m3.metric(t("Total Units"),    f"{_total_units:,}")
+        _total_units = int(_sel_df["total_qty"].sum()) if "total_qty" in _sel_df.columns else 0
+        # NOTE: the DB's "total_styles" is COUNT(DISTINCT style|colour) — i.e.
+        # style·colour combos, NOT distinct style numbers. Show both, labelled
+        # honestly, so "Styles: 8" can't be mistaken for the combo count.
+        _combos = int(_sel_df["total_styles"].sum()) if "total_styles" in _sel_df.columns else 0
+
+        # Load the selected items once — reused for the distinct-style count and
+        # the fabric-code pre-flight below.
+        _sel_items = store.list_items(pc_nos=_effective_sel)
+        _sty_series = (
+            _sel_items["style"].fillna("").astype(str).str.strip()
+            if "style" in _sel_items.columns else pd.Series([], dtype=str)
+        )
+        _distinct_styles = int(_sty_series[_sty_series != ""].nunique())
+
+        _m1, _m2, _m3, _m4 = st.columns(4)
+        _m1.metric(t("PCs selected"), len(_effective_sel))
+        _m2.metric(t("Styles"), _distinct_styles,
+                   help="Distinct style numbers (a style offered in several colours counts once).")
+        _m3.metric("Style·Colours", _combos,
+                   help="Distinct style·colour combinations — a style in 3 colours counts as 3.")
+        _m4.metric(t("Total Units"), f"{_total_units:,}")
+
+        # Pre-flight: 核料 is grouped by fabric code, so a style with no fabric
+        # code (and no saved fabric mapping to back-fill it) is silently skipped
+        # in 核料. Flag those up-front, accounting for the fabric mapping so we
+        # don't false-alarm on styles that will be back-filled at generation.
+        if "style" in _sel_items.columns:
+            _styles_set = sorted({s for s in _sty_series if s})
+            try:
+                _fab_map = (get_store().load_fabric_parts_for_styles(
+                    _styles_set, source=SOURCE_SKY_EAST) if _styles_set else {})
+            except Exception:
+                _fab_map = {}
+            _mapped = {
+                s for s, parts in (_fab_map or {}).items()
+                if parts and str(getattr(parts[0], "hhn_no", "") or "").strip()
+            }
+            _tmp = _sel_items.assign(
+                _sty=_sty_series,
+                _fab=(_sel_items.get("fabric_item_no", pd.Series("", index=_sel_items.index))
+                      .fillna("").astype(str).str.strip().str.lower()),
+            )
+            _tmp = _tmp[_tmp["_sty"] != ""]
+            _has_code = _tmp.groupby("_sty")["_fab"].apply(
+                lambda s: any(v not in ("", "none", "nan") for v in s)
+            )
+            _uncovered = sorted(
+                s for s, ok in _has_code.items() if not ok and s not in _mapped
+            )
+            if _uncovered:
+                _prev = ", ".join(_uncovered[:6]) + (
+                    f" … +{len(_uncovered) - 6} more" if len(_uncovered) > 6 else "")
+                st.info(
+                    f"ℹ️ {len(_uncovered)} style(s) have **no fabric code** on file "
+                    f"({_prev}) — 核料 will skip them. Add the 面料编号 (HHN No.) via "
+                    "the **Missing Fields** tab or **📐 Reference Data** first.",
+                    icon="🧩",
+                )
 
     # ── Color mapping source ──────────────────────────────────────────────────
     show_color_source_radio("se_bp_color_src_radio")
@@ -982,7 +1037,16 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 if _img:
                                     style_image_map[_s] = [_img, None]
 
-                    with st.status("Generating...", expanded=True) as _status:
+                    # Timestamp the output filenames so regenerating doesn't
+                    # silently overwrite the previous download.
+                    _ts = datetime.now().strftime("%Y%m%d-%H%M")
+
+                    # Capture the exporters' diagnostic warnings (missing HHN
+                    # codes, 主标颜色 mismatch/missing, …) — otherwise they only
+                    # reach the server log.  Surfaced to the user below.
+                    with st.status("Generating...", expanded=True) as _status, \
+                            _warnings.catch_warnings(record=True) as _wrec:
+                        _warnings.simplefilter("always")
 
                         st.write("Building main buy plan (Template)...")
                         try:
@@ -996,9 +1060,9 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             )
                             with open(bp_path, "rb") as f:
                                 st.session_state[SK.SE_BP_BYTES] = f.read()
-                            # Filename: SkyEast_HHPPC040_HHPPC041_BuyPlan.xlsx
+                            # Filename: SkyEast_HHPPC040_HHPPC041_BuyPlan_20260702-1530.xlsx
                             _pc_tag = "_".join(_effective_sel) if len(_effective_sel) <= 4 else f"{len(_effective_sel)}PCs"
-                            st.session_state[SK.SE_BP_NAME] = f"SkyEast_{_pc_tag}_BuyPlan.xlsx"
+                            st.session_state[SK.SE_BP_NAME] = f"SkyEast_{_pc_tag}_BuyPlan_{_ts}.xlsx"
                         except Exception as exc:
                             st.error(f"Buy plan failed: {exc}")
                             style_totals = {}
@@ -1040,15 +1104,36 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
 
                         _warn_missing_color_translations(df_items, cn_map=color_lookups.cn)
 
+                        # Collect the exporters' [sky_east …] diagnostic warnings
+                        # so they can be shown in the UI (not just the server log).
+                        st.session_state[SK.SE_BP_DIAGS] = [
+                            str(w.message) for w in _wrec
+                            if str(w.message).startswith("[sky_east")
+                        ]
+
                         _status.update(label="Done!", state="complete")
 
                 finally:
                     # All file bytes are now in session_state — temp dir no longer needed
                     _shutil.rmtree(out_dir, ignore_errors=True)
 
+    # ── Diagnostics captured during generation (missing HHN, 主标颜色, …) ──────
+    _diags = st.session_state.get(SK.SE_BP_DIAGS) or []
+    for _d in _diags:
+        # Strip the internal "[sky_east buyplan] " prefix for a cleaner message.
+        _msg = _d.split("] ", 1)[1] if "] " in _d else _d
+        st.warning(_msg, icon="⚠️")
+
     if st.session_state.get(SK.SE_BP_BYTES) or st.session_state.get(SK.SE_NK_BYTES):
         st.divider()
         dl_cols = st.columns(2)
+
+        # Unresolved-colour count from the most recent run — reflected in the
+        # buy-plan caption so a green download button doesn't hide misses.
+        try:
+            _miss_n = len(get_sky_east_store().list_color_misses())
+        except Exception:
+            _miss_n = 0
 
         with dl_cols[0]:
             if st.session_state.get(SK.SE_BP_BYTES):
@@ -1061,15 +1146,25 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                     use_container_width=True,
                     type="primary",
                 )
-                st.caption("Main buy plan -- one sheet per style + Index")
+                if _miss_n:
+                    st.caption(f"⚠️ {_miss_n} unresolved colour(s) — see the log below")
+                else:
+                    st.caption("Main buy plan -- one sheet per style + Index")
 
         with dl_cols[1]:
             if st.session_state.get(SK.SE_NK_BYTES):
                 n = st.session_state.get(SK.SE_NK_COUNT, 0)
+                # Tie the 核料 zip name to the same timestamped buy-plan run.
+                _bp_name = st.session_state.get(SK.SE_BP_NAME, "")
+                _nk_name = (
+                    _bp_name.replace("_BuyPlan_", "_核料_").replace(".xlsx", ".zip")
+                    if _bp_name.endswith(".xlsx") and "_BuyPlan_" in _bp_name
+                    else "Sky_East_核料.zip"
+                )
                 st.download_button(
                     f"核料 Workbooks (.zip) -- {n} file(s)",
                     data=st.session_state[SK.SE_NK_BYTES],
-                    file_name="Sky_East_核料.zip",
+                    file_name=_nk_name,
                     mime=ZIP_MIME,
                     key="se_nk_dl",
                     use_container_width=True,
@@ -1093,6 +1188,26 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         mismatches = int(cmp_df["Match"].astype(str).str.contains("Mismatch").sum())
         if mismatches:
             st.warning(f"{mismatches} style(s) have unit-total mismatches between buy plan and 核料 data.")
+            # Most common cause: a style produced no 核料 output because it has
+            # no fabric code (核料 is grouped by fabric_item_no).  Surface that
+            # concretely and point at where to fix it.
+            _nk_col = "Total (核料)"
+            if _nk_col in cmp_df.columns:
+                _skipped = cmp_df[
+                    cmp_df["Match"].astype(str).str.contains("Mismatch")
+                    & (pd.to_numeric(cmp_df[_nk_col], errors="coerce").fillna(0) == 0)
+                ]["Style"].astype(str).tolist()
+                if _skipped:
+                    _preview = ", ".join(_skipped[:6]) + (
+                        f" … +{len(_skipped) - 6} more" if len(_skipped) > 6 else ""
+                    )
+                    st.info(
+                        f"ℹ️ {len(_skipped)} of these produced **no 核料 output** — most "
+                        f"likely no fabric code on file ({_preview}). Add the 面料编号 "
+                        "(HHN No.) via the **Missing Fields** tab or **📐 Reference Data**, "
+                        "then regenerate.",
+                        icon="🧩",
+                    )
         else:
             st.success("All style totals match between buy plan and 核料 workbooks.")
         with st.expander("Cross-comparison detail"):

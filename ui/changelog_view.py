@@ -10,6 +10,18 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.20.0",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "feat", "text": "**Sky East ease-of-use pass.** After processing new contracts, a clear \"✅ Saved N PC No.(s) — next step: 📊 Reports → Buy Plan + 核料\" hand-off now points users to the generation step (previously it wasn't obvious that generation lived in a different tab)"},
+            {"type": "feat", "text": "**Exporter diagnostics now surface in the UI, not just the server log.** Missing fabric-master HHN codes and the 主标颜色 mismatch/missing warnings are captured during generation and shown as ⚠️ warnings under the buy plan. The buy-plan download caption now reads \"⚠️ N unresolved colour(s)\" when colours failed to resolve, so a green download button can't hide misses"},
+            {"type": "feat", "text": "**Pre-flight fabric-code check.** Before you generate, the Buy Plan panel now flags styles with no fabric code (accounting for saved fabric mappings) — \"N style(s) have no fabric code — 核料 will skip them\" — so 核料 gaps are caught up-front instead of being discovered as a silent omission"},
+            {"type": "feat", "text": "**Cross-comparison mismatches are now actionable** — when buy-plan and 核料 totals disagree, the UI names the styles that produced no 核料 output (the usual \"no fabric code\" cause) and points at where to fix them"},
+            {"type": "fix", "text": "**Clarified the misleading \"Total Styles\" metric.** It counted style·colour combinations, not distinct styles. The Buy Plan panel now shows both **Styles** (distinct style numbers) and **Style·Colours** (combos) with tooltips, and the Contract History summary column is renamed to **Style·Colours**"},
+            {"type": "fix", "text": "**Buy-plan / 核料 filenames now carry a date-time stamp** (e.g. `SkyEast_..._BuyPlan_20260702-1530.xlsx`) so regenerating doesn't silently overwrite the previous download. Also clarified that the New Contracts colour-source radio only sets the Buy Plan default, and that the 大货进度表 uploaded there is one-off (save it in 📐 Reference Data to reuse)"},
+        ],
+    },
+    {
         "version": "2.19.2",
         "date": "2026-07-02",
         "entries": [

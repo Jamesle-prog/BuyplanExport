@@ -67,9 +67,17 @@ def _show_se_upload_section():
                     "Column positions are auto-detected by header name."
                 ),
             )
+            st.caption(
+                "💡 One-off for this run. To reuse the 大货进度表 across runs, save it "
+                "in the **📐 Reference Data → HHN Contract Progress** tab."
+            )
 
     # ── Chinese color mapping source ──────────────────────────────────────────
     show_color_source_radio("se_color_src_radio")
+    st.caption(
+        "↑ Sets the default colour source used when you **generate the Buy Plan** "
+        "(📊 Reports tab). It doesn't change this Process step."
+    )
 
     show_image_folder_expander("se_images_dir", "se_images_dir_apply")
 
@@ -113,6 +121,13 @@ def _show_se_upload_section():
         )
 
     if st.session_state.se_results:
+        _n_saved = len(st.session_state.se_results)
+        st.success(
+            f"✅ Saved {_n_saved} PC No.(s). **Next step →** open the "
+            "**📊 Reports** tab → **Buy Plan + 核料** to generate outputs "
+            "(or **Contract History** to review saved data).",
+            icon="✅",
+        )
         _show_se_results(st.session_state.se_results, st.session_state.se_image_cache)
 
 
