@@ -114,6 +114,34 @@ def _tr(mapping: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Processing-log expander
+# ---------------------------------------------------------------------------
+
+_LOG_ISSUE_MARKERS = ("⚠", "❌", "error", "warning", "failed")
+
+
+def show_processing_log(lines, *, title: str = "Processing log") -> None:
+    """Render a processing-log expander that can't hide failures.
+
+    Collapsed with a plain label when the log is clean; auto-expanded with the
+    issue count in the label (e.g. "Processing log (2 ⚠️)") when any line
+    carries an error/warning marker — a run with problems must not look
+    identical to a clean one.
+    """
+    if not lines:
+        return
+    from ui.i18n import t as _t
+    n_issues = sum(
+        1 for line in lines
+        if any(m in str(line).lower() for m in _LOG_ISSUE_MARKERS)
+    )
+    label = f"{_t(title)} ({n_issues} ⚠️)" if n_issues else _t(title)
+    with st.expander(label, expanded=bool(n_issues)):
+        for line in lines:
+            st.markdown(line, unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
 # Progress tracker
 # ---------------------------------------------------------------------------
 

@@ -109,6 +109,11 @@ def show_fabric_mapping_tab() -> None:
     re-uploading for every run.
     """
     st.subheader("📐 Reference Data")
+    st.caption(
+        "💡 This tab holds **style→fabric assignments** and the **大货进度表** "
+        "(HHN contract progress). Fabric properties (composition · gsm · width) "
+        "live in **🧵 Fabric DB**; colour translations live in **🎨 Colors**."
+    )
 
     fm_tab, pm_tab = st.tabs(["🧵 Style-Fabric Mapping", "📋 HHN Contract Progress (大货进度表)"])
     with fm_tab:
@@ -327,9 +332,15 @@ def _show_fabric_mapping_section() -> None:
             for style in (r["Style"] for r in changed_rows)
             for d in diff_by_style[style]
         ]
+        if len(diff_rows) > 30:
+            st.caption(
+                f"⚠️ Large changeset — open the panel below to review all "
+                f"{len(diff_rows)} field-level changes before importing."
+            )
         with st.expander(
             f"🔍 Show differences for updating styles "
-            f"({n_update} of {n_update + n_same} actually changed)",
+            f"({n_update} of {n_update + n_same} actually changed — "
+            f"{len(diff_rows)} field change(s))",
             expanded=(0 < len(diff_rows) <= 30),
         ):
             if diff_rows:

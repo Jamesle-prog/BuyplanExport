@@ -3,7 +3,7 @@ from __future__ import annotations
 import streamlit as st
 from ui.i18n import t
 from ui.session_keys import SK, COLOR_SOURCE_DB, COLOR_SOURCE_PROGRESS
-from ui.shared import ZIP_MIME, show_image_folder_expander
+from ui.shared import ZIP_MIME, show_image_folder_expander, show_processing_log
 from ui.sky_east._shared import live_label, show_color_source_radio
 from ui.sky_east.processing import _run_sky_east_processing, _compute_se_missing_df
 from ui.sky_east.items_view import _show_se_results, _show_se_missing_fields_section
@@ -67,17 +67,17 @@ def _show_se_upload_section():
                     "Column positions are auto-detected by header name."
                 ),
             )
-            st.caption(
+            st.caption(t(
                 "💡 One-off for this run. To reuse the 大货进度表 across runs, save it "
                 "in the **📐 Reference Data → HHN Contract Progress** tab."
-            )
+            ))
 
     # ── Chinese color mapping source ──────────────────────────────────────────
     show_color_source_radio("se_color_src_radio")
-    st.caption(
+    st.caption(t(
         "↑ Sets the default colour source used when you **generate the Buy Plan** "
-        "(📤 Generate / Export tab). It doesn't change this Process step."
-    )
+        "(📦 Generate / Export tab). It doesn't change this Process step."
+    ))
 
     show_image_folder_expander("se_images_dir", "se_images_dir_apply")
 
@@ -106,9 +106,7 @@ def _show_se_upload_section():
         st.rerun()
 
     if st.session_state.se_log:
-        with st.expander(t("Processing log"), expanded=False):
-            for line in st.session_state.se_log:
-                st.markdown(line, unsafe_allow_html=True)
+        show_processing_log(st.session_state.se_log)
 
     if st.session_state.get(SK.SE_MASKED_ZIP):
         st.download_button(
@@ -123,9 +121,11 @@ def _show_se_upload_section():
     if st.session_state.se_results:
         _n_saved = len(st.session_state.se_results)
         st.success(
-            f"✅ Saved {_n_saved} PC No.(s). **Next step →** open the "
-            "**📤 Generate / Export** tab → **Buy Plan + 核料** to generate outputs "
-            "(or **Contract History** to review saved data).",
+            f"✅ {t('Saved')} {_n_saved} PC No.(s). " + t(
+                "**Next step →** open the **📦 Generate / Export** tab → "
+                "**Buy Plan + 核料** to generate outputs "
+                "(or **Contract History** to review saved data)."
+            ),
             icon="✅",
         )
         _show_se_results(st.session_state.se_results, st.session_state.se_image_cache)
@@ -153,7 +153,8 @@ def show_sky_east_tab() -> None:
     # is Upload → Generate; it's the primary output step and shouldn't be buried
     # behind Contract History.
     se_tab_upload, se_tab_reports, se_tab_history, se_tab_missing = st.tabs(
-        [t("New Contracts"), "📤 Generate / Export", t("Contract History"), missing_label]
+        [t("New Contracts"), f"📦 {t('Generate / Export')}",
+         t("Contract History"), missing_label]
     )
 
     with se_tab_upload:

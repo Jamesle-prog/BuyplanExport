@@ -240,9 +240,15 @@ def show_progress_mapping_section() -> None:
             if key in diff_by_key
             for d in diff_by_key[key]
         ]
+        if len(diff_rows) > 30:
+            st.caption(
+                f"⚠️ Large changeset — open the panel below to review all "
+                f"{len(diff_rows)} field-level changes before importing."
+            )
         with st.expander(
             f"🔍 Show differences for updating records "
-            f"({n_update} of {n_update + n_same} actually changed)",
+            f"({n_update} of {n_update + n_same} actually changed — "
+            f"{len(diff_rows)} field change(s))",
             expanded=(0 < len(diff_rows) <= 30),
         ):
             if diff_rows:

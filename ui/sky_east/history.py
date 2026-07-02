@@ -95,7 +95,7 @@ def _build_buyplan_color_lookups() -> BuyplanColorLookups:
         return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=None)
 
     by_pc = progress_lkup.build_pc_style_color_lookups()
-    st.caption("🗂 Chinese colors sourced from 大货进度表 (PC No. · style · color match only).")
+    st.caption(t("🗂 Chinese colors sourced from 大货进度表 (PC No. · style · color match only)."))
     return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=by_pc)
 
 
@@ -852,9 +852,9 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         _m1, _m2, _m3, _m4 = st.columns(4)
         _m1.metric(t("PCs selected"), len(_effective_sel))
         _m2.metric(t("Styles"), _distinct_styles,
-                   help="Distinct style numbers (a style offered in several colours counts once).")
-        _m3.metric("Style·Colours", _combos,
-                   help="Distinct style·colour combinations — a style in 3 colours counts as 3.")
+                   help=t("Distinct style numbers (a style offered in several colours counts once)."))
+        _m3.metric(t("Style·Colours"), _combos,
+                   help=t("Distinct style·colour combinations — a style in 3 colours counts as 3."))
         _m4.metric(t("Total Units"), f"{_total_units:,}")
 
         # Pre-flight: 核料 is grouped by fabric code, so a style with no fabric
@@ -888,9 +888,11 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                 _prev = ", ".join(_uncovered[:6]) + (
                     f" … +{len(_uncovered) - 6} more" if len(_uncovered) > 6 else "")
                 st.info(
-                    f"ℹ️ {len(_uncovered)} style(s) have **no fabric code** on file "
-                    f"({_prev}) — 核料 will skip them. Add the 面料编号 (HHN No.) via "
-                    "the **Missing Fields** tab or **📐 Reference Data** first.",
+                    f"ℹ️ {len(_uncovered)} "
+                    + t("style(s) have **no fabric code** on file")
+                    + f" ({_prev}) — "
+                    + t("核料 will skip them. Add the 面料编号 (HHN No.) via the "
+                        "**Missing Fields** tab or **📐 Reference Data** first."),
                     icon="🧩",
                 )
 
@@ -903,20 +905,22 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
     if st.session_state.get(SK.SE_COLOR_SOURCE) == COLOR_SOURCE_PROGRESS:
         _session_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
         if _session_lkup is not None:
-            st.caption(f"✅ 大货进度表 loaded for this run ({len(_session_lkup)} records).")
+            st.caption(
+                f"✅ {t('大货进度表 loaded for this run')} ({len(_session_lkup)} {t('records')})."
+            )
         else:
             from ui.sky_east._shared import get_progress_lookup
             _db_lkup = get_progress_lookup(SOURCE_SKY_EAST)
             if _db_lkup is not None:
                 st.caption(
-                    f"✅ Using saved 大货进度表 data ({len(_db_lkup)} records) — "
-                    "uploaded via **📐 Reference Data → HHN Contract Progress**."
+                    f"✅ {t('Using saved 大货进度表 data')} ({len(_db_lkup)} {t('records')}) — "
+                    + t("uploaded via **📐 Reference Data → HHN Contract Progress**.")
                 )
             else:
-                st.caption(
+                st.caption(t(
                     "ℹ️ No saved 大货进度表 data for Sky East yet — upload it via "
                     "**📐 Reference Data → HHN Contract Progress**."
-                )
+                ))
 
     # Button is always enabled when contracts exist.  Validating selection inside
     # the handler (rather than via disabled=) avoids the Streamlit 1.57.0 bug
@@ -1067,8 +1071,8 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                         else:
                             _reco_label = "Local only"
                         st.write(
-                            f"🎨 Colour source: **{_src_label}** · "
-                            f"Recognition: **{_reco_label}**"
+                            f"🎨 {t('Colour source')}: **{_src_label}** · "
+                            f"{t('Recognition')}: **{_reco_label}**"
                         )
 
                         st.write("Building main buy plan (Template)...")
@@ -1170,9 +1174,9 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                     type="primary",
                 )
                 if _miss_n:
-                    st.caption(f"⚠️ {_miss_n} unresolved colour(s) — see the log below")
+                    st.caption(f"⚠️ {_miss_n} " + t("unresolved colour(s) — see the log below"))
                 else:
-                    st.caption("Main buy plan -- one sheet per style + Index")
+                    st.caption(t("Main buy plan -- one sheet per style + Index"))
 
         with dl_cols[1]:
             if st.session_state.get(SK.SE_NK_BYTES):
@@ -1192,7 +1196,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                     key="se_nk_dl",
                     use_container_width=True,
                 )
-                st.caption("One workbook per fabric -- Color x Size per style")
+                st.caption(t("One workbook per fabric -- Color x Size per style"))
             elif st.session_state.get(SK.SE_BP_BYTES):
                 _nk_reason = st.session_state.get(SK.SE_NK_REASON)
                 if _nk_reason:
@@ -1210,7 +1214,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         # changing in build_cross_comparison (BUG-30 was an exact-string break).
         mismatches = int(cmp_df["Match"].astype(str).str.contains("Mismatch").sum())
         if mismatches:
-            st.warning(f"{mismatches} style(s) have unit-total mismatches between buy plan and 核料 data.")
+            st.warning(f"{mismatches} " + t("style(s) have unit-total mismatches between buy plan and 核料 data."))
             # Most common cause: a style produced no 核料 output because it has
             # no fabric code (核料 is grouped by fabric_item_no).  Surface that
             # concretely and point at where to fix it.
@@ -1225,15 +1229,17 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                         f" … +{len(_skipped) - 6} more" if len(_skipped) > 6 else ""
                     )
                     st.info(
-                        f"ℹ️ {len(_skipped)} of these produced **no 核料 output** — most "
-                        f"likely no fabric code on file ({_preview}). Add the 面料编号 "
-                        "(HHN No.) via the **Missing Fields** tab or **📐 Reference Data**, "
-                        "then regenerate.",
+                        f"ℹ️ {len(_skipped)} "
+                        + t("of these produced **no 核料 output** — most likely no "
+                            "fabric code on file")
+                        + f" ({_preview}). "
+                        + t("Add the 面料编号 (HHN No.) via the **Missing Fields** tab "
+                            "or **📐 Reference Data**, then regenerate."),
                         icon="🧩",
                     )
         else:
-            st.success("All style totals match between buy plan and 核料 workbooks.")
-        with st.expander("Cross-comparison detail"):
+            st.success(t("All style totals match between buy plan and 核料 workbooks."))
+        with st.expander(t("Cross-comparison detail")):
             st.dataframe(cmp_df, width="stretch", hide_index=True)
 
     if st.session_state.get(SK.SE_BP_BYTES):

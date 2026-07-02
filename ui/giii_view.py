@@ -29,7 +29,9 @@ from auth.users import get_user_companies
 
 from ui.shared import (
     show_image_folder_expander as _show_image_folder_expander,
+    show_processing_log as _show_processing_log,
 )
+from ui.i18n import t
 from ui.stores import get_store, get_app_settings_store
 
 from ui.giii._shared import _XLSX_MIME, _CONF_BADGE
@@ -142,9 +144,7 @@ def _show_excel_tab():
         )
 
     if st.session_state.excel_log:
-        with st.expander("Processing log", expanded=False):
-            for line in st.session_state.excel_log:
-                st.markdown(line, unsafe_allow_html=True)
+        _show_processing_log(st.session_state.excel_log)
 
     if st.session_state.excel_results:
         _show_excel_downloads(st.session_state.excel_results)
@@ -262,9 +262,7 @@ def _show_giii_upload_section():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
     if st.session_state.smart_log:
-        with st.expander("Processing log", expanded=False):
-            for line in st.session_state.smart_log:
-                st.markdown(line, unsafe_allow_html=True)
+        _show_processing_log(st.session_state.smart_log)
 
     if st.session_state.smart_results:
         _show_smart_downloads(st.session_state.smart_results)
@@ -301,16 +299,20 @@ def show_smart_upload_tab():
     _exc_df   = _store.list_exceptions(companies=_user_cos if _user_cos else None)
     _exc_count = (len(_exc_df[_exc_df["status"] == "pending"])
                   if not _exc_df.empty and "status" in _exc_df.columns else 0)
-    history_label = "📚 PO History" + (f"  🔴 {_exc_count}" if _exc_count else "")
+    history_label = f"📚 {t('PO History')}" + (f"  🔴 {_exc_count}" if _exc_count else "")
 
     _missing_df    = _compute_giii_missing_df()
     _missing_count = len(_missing_df)
-    missing_label  = (
-        f"✏️ Missing Fields  🔴 {_missing_count}" if _missing_count else "✏️ Missing Fields"
+    missing_label  = f"✏️ {t('Missing Fields')}" + (
+        f"  🔴 {_missing_count}" if _missing_count else ""
     )
 
+    # "Generate / Export" (not "Reports") — same name as Sky East's output tab,
+    # since both regenerate downloadable files from stored data. 📦 is the
+    # output emoji app-wide; 📤 stays reserved for uploads.
     tab_upload, tab_history, tab_reports, tab_missing = st.tabs(
-        ["📤 Upload", history_label, "📊 Reports", missing_label]
+        [f"📤 {t('Upload')}", history_label,
+         f"📦 {t('Generate / Export')}", missing_label]
     )
 
     with tab_upload:

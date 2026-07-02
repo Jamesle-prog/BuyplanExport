@@ -101,13 +101,18 @@ def show_color_translation_tab() -> None:
         "(e.g. GIII / Karl Lagerfeld, Sky East / Anna Field). "
         "Use the editor below to add/edit entries, or bulk-import from Excel."
     )
+    st.caption(
+        "💡 This tab holds **colour translations** only. Fabric properties live in "
+        "**🧵 Fabric DB**; style→fabric assignments and the 大货进度表 live in "
+        "**📐 Reference Data**."
+    )
 
     # Stats bar + quick-load button
     brands_all = store.list_brands()
     m1, m2, m3, m4 = st.columns([1, 1, 1, 2])
     m1.metric("Total entries", f"{count:,}")
-    m2.metric("Clients", str(len(clients)))
-    m3.metric("Brands", str(len(brands_all)))
+    m2.metric("Clients", f"{len(clients):,}")
+    m3.metric("Brands", f"{len(brands_all):,}")
     if m4.button("🔄 Load colors from PO database",
                  help=f"Scans all {COMPANY_GIII} PO size rows and {COMPANY_SKY_EAST} items for distinct "
                       "color names and adds any not already in this table. "
@@ -414,22 +419,35 @@ def show_color_translation_tab() -> None:
             st.info("No audit entries match the current filter.")
 
         if audit_count > 0:
-            cclr1, _ = st.columns([1, 5])
+            # Two-step confirm: while armed, the warning stays visible across
+            # reruns and the button itself says what a second click will do —
+            # the old transient warning was easy to miss, and the armed flag
+            # silently persisted so a much later click deleted immediately.
+            _armed = st.session_state.get("_ct_audit_confirm", False)
+            if _armed:
+                st.warning(
+                    f"⚠️ This will erase the entire change history "
+                    f"({audit_count:,} entries). Click **Confirm clear** to "
+                    "proceed, or Cancel to keep it."
+                )
+            cclr1, cclr2, _ = st.columns([1.6, 1, 3.4])
+            _clr_label = (f"🧹 Confirm clear ({audit_count:,} entries)"
+                          if _armed else "🧹 Clear audit history")
             if cclr1.button(
-                "🧹 Clear audit history",
+                _clr_label,
                 key="ct_audit_clear",
+                type="primary" if _armed else "secondary",
                 help="Permanently delete all audit-log entries.  "
                      "Does NOT touch the colour-translation rows themselves.",
             ):
-                # Two-step confirm via a session flag
-                if st.session_state.get("_ct_audit_confirm"):
+                if _armed:
                     n = store.clear_audit_log()
                     st.session_state.pop("_ct_audit_confirm", None)
                     st.success(f"Cleared {n} audit entries.")
                     st.rerun()
                 else:
                     st.session_state["_ct_audit_confirm"] = True
-                    st.warning(
-                        "This will erase the entire change history.  Click "
-                        "the button again to confirm."
-                    )
+                    st.rerun()
+            if _armed and cclr2.button("Cancel", key="ct_audit_clear_cancel"):
+                st.session_state.pop("_ct_audit_confirm", None)
+                st.rerun()

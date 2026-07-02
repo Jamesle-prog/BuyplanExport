@@ -38,6 +38,11 @@ def show_fabric_db_tab() -> None:
         "Upload a new version of the file below to refresh all records. "
         "Use the search box to look up any fabric by code, composition, or supplier."
     )
+    st.caption(
+        "💡 This tab holds **fabric properties** (composition · gsm · width per HHN "
+        "code). Style→fabric assignments and the 大货进度表 live in "
+        "**📐 Reference Data**; colour translations live in **🎨 Colors**."
+    )
 
     _fabric_db_stats_bar(count, last)
     st.divider()

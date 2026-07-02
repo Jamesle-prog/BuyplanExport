@@ -10,6 +10,18 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.21.0",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "feat", "text": "**Processing logs can no longer hide failures.** The GIII and Sky East \"Processing log\" expanders now auto-open with an issue count in the label (e.g. \"Processing log (2 ⚠️)\") whenever any log line carries an error/warning marker — a run with problems no longer looks identical to a clean one. Shared helper `show_processing_log()` in `ui/shared.py`"},
+            {"type": "feat", "text": "**GIII's \"📊 Reports\" sub-tab is renamed \"📦 Generate / Export\"** to match Sky East (both regenerate downloadable files from stored data), and the 📦 emoji now consistently means output while 📤 stays reserved for uploads. GIII/Sky East sub-tab labels are wrapped in `t()` so the 🌐 Chinese toggle can translate the navigation"},
+            {"type": "fix", "text": "**Chinese-mode i18n gaps closed** in the Sky East results screen (Processing Results, New/Amended item headings, style-photo captions), the buy-plan panel's newer strings (hand-off, pre-flight fabric-code note, colour source/recognition mode line, cross-comparison hints, 大货进度表 status), and the Tracking QC labels — all now wrapped in `t()` with English fallback"},
+            {"type": "fix", "text": "**Consistent thousands separators** on Tracking dashboard and Colors tab metrics; Tracking's Edit Record selector now shows how many records it holds"},
+            {"type": "fix", "text": "**Large import changesets are no longer invisible**: the Reference Data diff panels keep auto-collapsing above 30 changes, but the label now carries the full field-change count plus a visible \"open to review all N changes\" caption. The Colors audit-log clear now uses a persistent two-step confirm — the button changes to \"Confirm clear (N entries)\" with a Cancel option, instead of a transient warning that silently stayed armed"},
+            {"type": "feat", "text": "**\"What lives where\" captions** on the three reference-data tabs (🧵 Fabric DB · 📐 Reference Data · 🎨 Colors) so it's clear which tab holds fabric properties vs style→fabric assignments vs colour translations"},
+        ],
+    },
+    {
         "version": "2.20.1",
         "date": "2026-07-02",
         "entries": [
