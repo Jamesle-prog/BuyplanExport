@@ -122,23 +122,32 @@ def _se_hist_summary_table(df_contracts) -> None:
     )
 
 
-def _se_hist_multi_pc_download(store, pc_options: list[str]) -> None:
-    """Multi-PC items download section (Excel or CSV)."""
+def _se_hist_multi_pc_download(store, pc_options: list[str],
+                               sel_pcs: list | None = None) -> None:
+    """Multi-PC items download section (Excel or CSV).
+
+    ``sel_pcs`` — when provided, the Generate/Export screen has already
+    rendered a shared PC selector; use it directly instead of rendering a
+    section-local multiselect. ``None`` keeps the legacy standalone selector.
+    """
     st.markdown(f"**{t('Download items by PC No.')}**")
-    dl_col1, dl_col2 = st.columns([3, 1])
-    with dl_col1:
-        sel_dl_pcs = st.multiselect(
-            t("Select PC No.(s) to download:"),
-            pc_options,
-            placeholder="Choose one or more PC No.(s)...",
-            key="se_dl_pcs",
-        )
-    with dl_col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.button(
-            t("Select all"), key="se_dl_all",
-            on_click=lambda: st.session_state.update({"se_dl_pcs": pc_options}),
-        )
+    if sel_pcs is not None:
+        sel_dl_pcs = sel_pcs
+    else:
+        dl_col1, dl_col2 = st.columns([3, 1])
+        with dl_col1:
+            sel_dl_pcs = st.multiselect(
+                t("Select PC No.(s) to download:"),
+                pc_options,
+                placeholder="Choose one or more PC No.(s)...",
+                key="se_dl_pcs",
+            )
+        with dl_col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.button(
+                t("Select all"), key="se_dl_all",
+                on_click=lambda: st.session_state.update({"se_dl_pcs": pc_options}),
+            )
 
     if not sel_dl_pcs:
         st.info(t("Select one or more PC Nos. above, then click Generate."))
@@ -315,10 +324,16 @@ def _enrich_parts_from_fabric_master(fabric_parts_by_style: dict) -> dict:
     return fm_cache
 
 
-def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
-    """Wash-label download section — select by PC No., stored Fabric Mapping, or uploaded file."""
+def _se_hist_wash_label_download(store, pc_options: list[str],
+                                 sel_pcs: list | None = None) -> None:
+    """Wash-label download section — select by PC No., stored Fabric Mapping, or uploaded file.
+
+    ``sel_pcs`` — shared PC selection from the Generate/Export screen; used
+    only by the "PC No." select-mode (Style / Upload modes select their own
+    inputs). ``None`` keeps the legacy section-local PC multiselect.
+    """
     st.markdown(f"**{t('Download Wash Label Content')}**")
-    st.caption("Style · Photo · Seq · Body Part · Fabric Code · Composition — up to 4 rows per style")
+    st.caption(t("Style · Photo · Seq · Body Part · Fabric Code · Composition — up to 4 rows per style"))
 
     # ── Selection mode toggle ─────────────────────────────────────────────────
     sel_mode = st.radio(
@@ -333,25 +348,30 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
     upload_fabric_map: dict = {}   # {style: [FabricPart]} from ad-hoc upload
 
     if sel_mode == "PC No.":
-        wl_col1, wl_col2 = st.columns([3, 1])
-        with wl_col1:
-            sel_wl_pcs = st.multiselect(
-                t("Select PC No.(s) for wash label:"),
-                pc_options,
-                placeholder="Choose one or more PC No.(s)...",
-                key="se_wl_pcs",
-            )
-        with wl_col2:
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.button(
-                t("Select all"), key="se_wl_all",
-                on_click=lambda: st.session_state.update({"se_wl_pcs": pc_options}),
-            )
+        if sel_pcs is not None:
+            sel_wl_pcs = sel_pcs
+        else:
+            wl_col1, wl_col2 = st.columns([3, 1])
+            with wl_col1:
+                sel_wl_pcs = st.multiselect(
+                    t("Select PC No.(s) for wash label:"),
+                    pc_options,
+                    placeholder="Choose one or more PC No.(s)...",
+                    key="se_wl_pcs",
+                )
+            with wl_col2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.button(
+                    t("Select all"), key="se_wl_all",
+                    on_click=lambda: st.session_state.update({"se_wl_pcs": pc_options}),
+                )
         if not sel_wl_pcs:
             st.info(t("Select one or more PC Nos. above, then click Generate."))
         has_selection = bool(sel_wl_pcs)
 
     elif sel_mode == "Style (Fabric Mapping)":
+        if sel_pcs is not None:
+            st.caption(t("ℹ️ The PC selection above is not used in this mode — pick styles below."))
         # Styles come from the stored Fabric Mapping DB (Sky East source).
         # Composition is sourced from fabric_master at generation time.
         mapped_styles = _wl_mapped_styles(SOURCE_SKY_EAST)
@@ -386,10 +406,12 @@ def _se_hist_wash_label_download(store, pc_options: list[str]) -> None:
             has_selection = bool(sel_wl_styles)
 
     else:  # "Upload Mapping File"
-        st.caption(
+        if sel_pcs is not None:
+            st.caption(t("ℹ️ The PC selection above is not used in this mode — the uploaded file decides the styles."))
+        st.caption(t(
             "Upload a fabric mapping file to generate wash labels for all styles in that file. "
             "This file is used only for this download and is **not** saved to the database."
-        )
+        ))
         wl_upload_file = st.file_uploader(
             "Fabric mapping file (.xlsx / .xls)",
             type=_EXCEL_FILE_TYPES,
@@ -795,38 +817,47 @@ def _se_hist_delete_section(store, pc_options: list[str]) -> None:
 
 
 def _se_hist_buyplan_section(store, pc_options: list[str],
-                              df_contracts=None) -> None:
-    """Generate Sky East buy plan + 核料 workbooks for selected contracts."""
+                              df_contracts=None,
+                              sel_pcs: list | None = None) -> None:
+    """Generate Sky East buy plan + 核料 workbooks for selected contracts.
+
+    ``sel_pcs`` — when provided, the Generate/Export screen has already
+    rendered a shared PC selector; use it directly instead of rendering a
+    section-local multiselect. ``None`` keeps the legacy standalone selector.
+    """
     st.markdown(f"**{t('Create Buy Plan')}**")
-    st.caption(
+    st.caption(t(
         "Generates the main buy plan (Template) and fabric 核料 workbooks (Template_P) "
         "from the selected contracts, matching the VBA output format."
-    )
-    # ── PC No. multiselect ─────────────────────────────────────────────────────
-    # Stale-value guard: drop any selected PC Nos that are no longer valid options
-    # (e.g. after a contract is deleted in the History tab) BEFORE the widget
-    # renders — otherwise st.multiselect raises StreamlitAPIException.  Same simple
-    # keyed pattern used by the Download / Wash Label multiselects below.
-    _pc_set = set(pc_options)
-    _cur = st.session_state.get("se_bp_sel", [])
-    if isinstance(_cur, list) and any(v not in _pc_set for v in _cur):
-        st.session_state["se_bp_sel"] = [v for v in _cur if v in _pc_set]
+    ))
+    if sel_pcs is not None:
+        _effective_sel = sel_pcs
+    else:
+        # ── PC No. multiselect ────────────────────────────────────────────────
+        # Stale-value guard: drop any selected PC Nos that are no longer valid
+        # options (e.g. after a contract is deleted in the History tab) BEFORE
+        # the widget renders — otherwise st.multiselect raises
+        # StreamlitAPIException.
+        _pc_set = set(pc_options)
+        _cur = st.session_state.get("se_bp_sel", [])
+        if isinstance(_cur, list) and any(v not in _pc_set for v in _cur):
+            st.session_state["se_bp_sel"] = [v for v in _cur if v in _pc_set]
 
-    _bp_col1, _bp_col2 = st.columns([4, 1])
-    with _bp_col1:
-        _effective_sel = st.multiselect(
-            t("PC No.(s) to include:"),
-            pc_options,
-            key="se_bp_sel",
-            placeholder="Select one or more PC Nos...",
-        )
-    with _bp_col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.button(
-            t("Select all"), key="se_bp_all",
-            on_click=lambda: st.session_state.update({"se_bp_sel": list(pc_options)}),
-            use_container_width=True,
-        )
+        _bp_col1, _bp_col2 = st.columns([4, 1])
+        with _bp_col1:
+            _effective_sel = st.multiselect(
+                t("PC No.(s) to include:"),
+                pc_options,
+                key="se_bp_sel",
+                placeholder="Select one or more PC Nos...",
+            )
+        with _bp_col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.button(
+                t("Select all"), key="se_bp_all",
+                on_click=lambda: st.session_state.update({"se_bp_sel": list(pc_options)}),
+                use_container_width=True,
+            )
 
     if not _effective_sel:
         st.info(t("Select one or more PC Nos. above, then click Generate."))

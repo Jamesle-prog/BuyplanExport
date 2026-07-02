@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.22.0",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "feat", "text": "**Sky East Generate / Export is now one flat screen.** The three sub-tabs (Buy Plan + 核料 · Item Data · Wash Labels) are replaced by a single \"What do you want to generate?\" selector, and ONE shared PC-No. selector serves every output type — switching between buy plan, item downloads, and wash labels no longer loses your PC selection or requires re-picking it three times. Wash Labels keeps its own \"Select by\" modes (PC No. / Style / Upload); when a non-PC mode is chosen a caption clarifies the shared PC selection isn't used. A selection made under the old sub-tabs is migrated automatically"},
+        ],
+    },
+    {
         "version": "2.21.0",
         "date": "2026-07-02",
         "entries": [
