@@ -249,29 +249,43 @@ def _render_readiness_badge(label: str, readiness: str) -> None:
 
 # ── Section renderers ─────────────────────────────────────────────────────────
 
+def _group_progress(record: dict, stages: list[str]) -> tuple[int, int]:
+    """Return ``(done, total)`` across *stages* — status "Done" counts."""
+    done = sum(
+        1 for s in stages
+        if (record.get(f"{s}_status") or "Not Started") == "Done"
+    )
+    return done, len(stages)
+
+
 def _render_group_a_section(record: dict, rid: int, readiness: dict[str, str]) -> None:
     """Render Group A — Pre-Production (8 parallel stages).
 
     ``readiness`` is the full readiness map for this record.  Trim Purchase and
     Fabric Purchase show a badge because they are gated by Trim Layout and
-    Fabric Color (LD) respectively.
+    Fabric Color (LD) respectively.  Fully-done groups collapse so the ~40-row
+    edit form stays focused on stages that still need work.
     """
     # Stages that receive a readiness badge inside Group A.
     _GATED = {"trim_purchase", "fabric_purchase"}
 
-    st.subheader("🧵 Group A — Pre-Production (Parallel)")
-    _stage_col_headers()
-    for stage in STAGES_GROUP_A:
-        if stage in _GATED and stage in readiness:
-            _render_readiness_badge(
-                {
-                    "trim_purchase":   "Trim Purchase",
-                    "fabric_purchase": "Fabric Purchase",
-                }[stage],
-                readiness[stage],
-            )
-        _render_stage_row(stage, record, rid)
-        _render_dep_row(stage, record, rid)
+    _done, _total = _group_progress(record, list(STAGES_GROUP_A))
+    with st.expander(
+        f"🧵 Group A — Pre-Production (Parallel) · {_done}/{_total} ✅",
+        expanded=_done < _total,
+    ):
+        _stage_col_headers()
+        for stage in STAGES_GROUP_A:
+            if stage in _GATED and stage in readiness:
+                _render_readiness_badge(
+                    {
+                        "trim_purchase":   "Trim Purchase",
+                        "fabric_purchase": "Fabric Purchase",
+                    }[stage],
+                    readiness[stage],
+                )
+            _render_stage_row(stage, record, rid)
+            _render_dep_row(stage, record, rid)
     st.divider()
 
 
@@ -307,8 +321,17 @@ def _render_optional_samples_section(record: dict, rid: int) -> None:
 
 
 def _render_pp_sample_section(record: dict, rid: int, readiness: str) -> None:
-    """Render the PP Sample section with readiness badge and substitute toggle."""
-    st.subheader("🧪 Group B — Samples")
+    """Render the PP Sample section with readiness badge and substitute toggle.
+
+    NOTE: unlike Groups A/C/D this section is NOT wrapped in an expander —
+    it contains the "Optional Samples" expander and Streamlit forbids nested
+    expanders. The subheader carries the same done-count instead.
+    """
+    _b_stages = ["pp_sample"] + [
+        s for s in STAGES_GROUP_B_OPTIONAL if record.get(f"{s}_applicable", 0)
+    ]
+    _done, _total = _group_progress(record, _b_stages)
+    st.subheader(f"🧪 Group B — Samples · {_done}/{_total} ✅")
 
     # ── Substitute materials toggle ──────────────────────────────────────────
     use_sub = st.toggle(
@@ -343,29 +366,36 @@ def _render_pp_sample_section(record: dict, rid: int, readiness: str) -> None:
 
 
 def _render_group_c_section(record: dict, rid: int, readiness_cutting: str) -> None:
-    """Render Group C — Production (sequential)."""
-    st.subheader("🏭 Group C — Production (Sequential)")
-
-    # Cutting gets a readiness badge
-    st.markdown("#### Cutting")
-    _render_readiness_badge("Cutting", readiness_cutting)
-    _stage_col_headers()
-    _render_stage_row("cutting", record, rid)
-
-    # Remaining production stages
-    for stage in STAGES_GROUP_C[1:]:  # sewing, top_sample, packing, qa, final_qa
+    """Render Group C — Production (sequential); collapses when fully done."""
+    _done, _total = _group_progress(record, list(STAGES_GROUP_C))
+    with st.expander(
+        f"🏭 Group C — Production (Sequential) · {_done}/{_total} ✅",
+        expanded=_done < _total,
+    ):
+        # Cutting gets a readiness badge
+        st.markdown("#### Cutting")
+        _render_readiness_badge("Cutting", readiness_cutting)
         _stage_col_headers()
-        _render_stage_row(stage, record, rid)
+        _render_stage_row("cutting", record, rid)
+
+        # Remaining production stages
+        for stage in STAGES_GROUP_C[1:]:  # sewing, top_sample, packing, qa, final_qa
+            _stage_col_headers()
+            _render_stage_row(stage, record, rid)
 
     st.divider()
 
 
 def _render_group_d_section(record: dict, rid: int) -> None:
-    """Render Group D — Post-Production (sequential)."""
-    st.subheader("📦 Group D — Post-Production")
-    _stage_col_headers()
-    for stage in STAGES_GROUP_D:
-        _render_stage_row(stage, record, rid)
+    """Render Group D — Post-Production (sequential); collapses when fully done."""
+    _done, _total = _group_progress(record, list(STAGES_GROUP_D))
+    with st.expander(
+        f"📦 Group D — Post-Production · {_done}/{_total} ✅",
+        expanded=_done < _total,
+    ):
+        _stage_col_headers()
+        for stage in STAGES_GROUP_D:
+            _render_stage_row(stage, record, rid)
     st.divider()
 
 
@@ -777,6 +807,11 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
     st.divider()
 
     # ── Stage sections ───────────────────────────────────────────────────────
+    st.caption(t(
+        "Stage groups: 🧵 **A** pre-production prep (parallel) · 🧪 **B** samples · "
+        "🏭 **C** production (sequential) · 📦 **D** post-production/shipping. "
+        "Fully-completed groups are collapsed — open them to review."
+    ))
     _render_group_a_section(record, rid, readiness)
     _render_pp_sample_section(record, rid, readiness["pp_sample"])
     _render_group_c_section(record, rid, readiness["cutting"])

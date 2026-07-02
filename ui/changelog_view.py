@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.22.1",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "feat", "text": "**Tracking → Edit Record is no longer a ~40-row wall.** Stage groups A (Pre-Production), C (Production), and D (Post-Production) are now collapsible panels whose labels carry a live done-count (e.g. \"🧵 Group A — Pre-Production · 5/8 ✅\"); fully-completed groups collapse automatically so the form stays focused on stages that still need work (values in collapsed groups are still saved). Group B keeps its heading (it hosts the Optional Samples panel, which can't nest) but shows the same done-count. A one-line legend above the groups explains what A/B/C/D mean"},
+        ],
+    },
+    {
         "version": "2.22.0",
         "date": "2026-07-02",
         "entries": [
