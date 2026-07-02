@@ -413,6 +413,24 @@ def _apply_sky_east_compact_layout(ws, *, last_row: int) -> None:
 # Pre-fetch caches (extracted from export_sky_east_buyplan for testability)
 # ---------------------------------------------------------------------------
 
+def _present_order_sizes(df_items: pd.DataFrame) -> list[str]:
+    """Return the sizes (canonical XS→XXL order) that carry any non-zero
+    quantity anywhere in *df_items* — i.e. the order's actual size range.
+
+    Used to lay out the 核料 size columns dynamically so a size the order never
+    uses isn't shown as an empty column, and a size the template's header omits
+    (e.g. XS / XXL) is no longer silently dropped.  Falls back to the full
+    canonical set when the frame carries no size data at all.
+    """
+    present: list[str] = []
+    for sz in _SIZES_LC:
+        if sz in df_items.columns:
+            vals = pd.to_numeric(df_items[sz], errors="coerce").fillna(0)
+            if bool((vals != 0).any()):
+                present.append(sz)
+    return present or list(_SIZES_LC)
+
+
 def _prefetch_boat_sample_cache(df_items: pd.DataFrame) -> dict[str, str]:
     """Batch-fetch 船样要求 (boat-sample requirement) text for every brand in
     *df_items*, returning ``{brand: requirement}``.  Best-effort: any store
@@ -1236,10 +1254,13 @@ def export_sky_east_nukuryou(
 
     color_col, size_col_map, nuk_data_row = _detect_nukuryou_layout(_master_ws)
     # Apply user-configured overrides (Sky_East_P_config.json)
+    _size_cfg_explicit = False   # admin pinned specific size columns → keep static
     try:
         from . import template_config as _tc
         _nuk_cfg = _tc.load_config("sky_east_nukuryou")
-        for sz, raw in (_nuk_cfg.get("size_column_map") or {}).items():
+        _cfg_size_map = _nuk_cfg.get("size_column_map") or {}
+        _size_cfg_explicit = bool(_cfg_size_map)
+        for sz, raw in _cfg_size_map.items():
             k = str(sz).strip().lower()
             k = "xxl" if k in ("2xl", "xxl") else k
             if k in {"xs", "s", "m", "l", "xl", "xxl"}:
@@ -1261,6 +1282,20 @@ def export_sky_east_nukuryou(
                 pass
     except Exception:
         pass
+
+    # ── Dynamic size columns — follow the order's actual size range ───────────
+    # By default the 核料 size columns are laid out from the sizes that actually
+    # appear in the order (canonical XS→XXL order), anchored at the template's
+    # first size column.  This stops the template's fixed header (often only
+    # S/M/L/XL) from silently dropping XS / XXL quantities, and hides sizes the
+    # order never uses.  An explicit size_column_map in the config still wins.
+    if not _size_cfg_explicit:
+        _first_size_col = min(size_col_map.values()) if size_col_map else (color_col + 1)
+        size_col_map = {
+            sz: _first_size_col + i
+            for i, sz in enumerate(_present_order_sizes(df_items))
+        }
+
     nuk_header_row = nuk_data_row - 1   # row where size headers are written
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1287,6 +1322,13 @@ def export_sky_east_nukuryou(
             # Clear data area (keep template header rows intact)
             _clear_data_area(ws, nuk_data_row)
 
+            # Clear any stale template size headers first (the template may ship
+            # with a fixed S/M/L/XL header row), then write the dynamic set — so
+            # trimming to fewer sizes leaves no orphaned "L"/"XL" labels.
+            if size_col_map:
+                _first_sc = min(size_col_map.values())
+                for _c in range(_first_sc, _first_sc + len(_SIZES_LC)):
+                    ws.cell(nuk_header_row, _c).value = None
             # Write size headers at the detected header row
             for sz_key, sz_col in size_col_map.items():
                 ws.cell(nuk_header_row, sz_col).value = sz_key.upper().replace("XXL", "2XL")

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.18.0",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "feat", "text": "**核料 (Template_P) size columns now follow the order's actual size range instead of the template's fixed header.** The shipped Template_P header only defines S/M/L/XL, so any XS or XXL/2XL quantities were silently dropped from the 核料 workbooks. The size columns are now laid out from the sizes that actually appear in the order (canonical XS→XXL order, anchored at the template's first size column): a size the order uses always gets a column, and a size it never uses isn't shown as an empty column (and leaves no orphaned L/XL header). An explicit `size_column_map` in `Sky_East_P_config.json` still wins for admins who pin columns"},
+        ],
+    },
+    {
         "version": "2.17.1",
         "date": "2026-07-02",
         "entries": [

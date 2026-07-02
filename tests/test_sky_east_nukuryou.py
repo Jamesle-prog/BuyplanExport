@@ -99,6 +99,45 @@ def test_size_headers_written(tmp_path):
     assert len(headers & size_vocab) >= 3
 
 
+def test_size_columns_follow_order_including_xs_and_xxl(tmp_path):
+    """The 核料 size columns follow the order's actual size range: an order that
+    uses XS and XXL must show those columns (regression — the template header
+    only ships S/M/L/XL, which used to silently drop XS/XXL quantities).
+    """
+    df = pd.DataFrame([_row(xs=5, s=10, m=20, l=15, xl=8, xxl=3)])
+    paths = export_sky_east_nukuryou(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        cn_code_lookup={}, cn_by_pc_lookup=None, ai_enhance=False,
+        ai_api_key="", ai_model="deepseek-chat", sky_east_store=None,
+    )
+    wb = load_workbook(paths[0])
+    ws = wb[wb.sheetnames[0]]
+    headers = {str(c.value).upper() for row in ws.iter_rows() for c in row if c.value}
+    assert {"XS", "S", "M", "L", "XL", "2XL"} <= headers
+    # the XS (5) and 2XL (3) quantities are written, not dropped
+    row_vals = [c.value for row in ws.iter_rows() for c in row
+                if isinstance(c.value, int)]
+    assert 5 in row_vals and 3 in row_vals
+
+
+def test_size_columns_trim_to_present_sizes(tmp_path):
+    """Sizes the order never uses aren't shown as empty columns, and no stale
+    template header (L/XL) is left behind when the order only spans S/M.
+    """
+    df = pd.DataFrame([_row(xs=0, s=10, m=20, l=0, xl=0, xxl=0)])
+    paths = export_sky_east_nukuryou(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        cn_code_lookup={}, cn_by_pc_lookup=None, ai_enhance=False,
+        ai_api_key="", ai_model="deepseek-chat", sky_east_store=None,
+    )
+    wb = load_workbook(paths[0])
+    ws = wb[wb.sheetnames[0]]
+    size_headers = {str(c.value).upper() for row in ws.iter_rows() for c in row
+                    if c.value and str(c.value).upper() in
+                    {"XS", "S", "M", "L", "XL", "2XL"}}
+    assert size_headers == {"S", "M"}   # only the sizes present, no orphaned L/XL
+
+
 def test_colour_quantities_aggregate_across_rows(tmp_path):
     # Put quantities across S/M (present in the shipped Template_P) with unique
     # per-size sums so aggregation — not passthrough — is what we assert.

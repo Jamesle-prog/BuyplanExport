@@ -12,8 +12,28 @@ from openpyxl import Workbook
 
 from po_extractor.exporters.sky_east_buyplan_export import (
     _FabricMasterCache, _prefetch_boat_sample_cache, _prefetch_fabric_master_cache,
-    _RowContext, _fill_one_style_row, _COLOR_NOT_FOUND,
+    _RowContext, _fill_one_style_row, _COLOR_NOT_FOUND, _present_order_sizes,
 )
+
+
+# ── _present_order_sizes (drives dynamic 核料 size columns) ──────────────────
+
+def test_present_order_sizes_returns_only_nonzero_in_canonical_order():
+    df = pd.DataFrame([
+        {"xs": 0, "s": 5, "m": 0, "l": 2, "xl": 0, "xxl": 0},
+        {"xs": 1, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0},
+    ])
+    assert _present_order_sizes(df) == ["xs", "s", "l"]
+
+
+def test_present_order_sizes_falls_back_to_full_set_when_no_size_data():
+    assert _present_order_sizes(pd.DataFrame([{"style": "S1"}])) == \
+        ["xs", "s", "m", "l", "xl", "xxl"]
+
+
+def test_present_order_sizes_all_zero_falls_back_to_full_set():
+    df = pd.DataFrame([{"xs": 0, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0}])
+    assert _present_order_sizes(df) == ["xs", "s", "m", "l", "xl", "xxl"]
 
 
 def _basic_col() -> dict:
