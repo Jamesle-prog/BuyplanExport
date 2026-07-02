@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.22.2",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "fix", "text": "**The colour-resolution issues log no longer shows the same miss over and over.** The log is append-only (a fresh row per generation run), so re-running the buy plan stacked identical rows — e.g. DR5124 \"(dark blue)\"→Navy appeared once per run. The table now shows one row per distinct miss (same PC · contract · style · PO · colour · source), keeping the most recent timestamp; the \"N unresolved colour(s)\" counts reflect the de-duplicated total. The underlying log stays a full audit trail, and 🗑️ Clear still wipes it"},
+        ],
+    },
+    {
         "version": "2.22.1",
         "date": "2026-07-02",
         "entries": [

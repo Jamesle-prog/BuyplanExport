@@ -156,3 +156,54 @@ def test_existing_db_migrates_progress_colors_column(tmp_path):
     df2 = store.list_color_misses()
     assert len(df2) == 2
     assert df2.iloc[0]["progress_colors"] == "Navy"   # newest first
+
+
+# ---------------------------------------------------------------------------
+# Display-time de-duplication (the append-only log stacks the same miss across
+# re-runs; the UI shows one row per distinct miss, most recent kept).
+# ---------------------------------------------------------------------------
+
+def test_dedupe_color_misses_collapses_repeats_keeping_latest():
+    import pandas as pd
+    from ui.sky_east.history import _dedupe_color_misses
+
+    df = pd.DataFrame([
+        {"logged_at": "2026-07-02 16:38:22", "pc_no": "HHPPC048",
+         "contract_no": "C1", "style": "DR5124", "po_no": "PO2333438C",
+         "client_po_color": "(dark blue)", "attempted_color": "Dark Blue",
+         "progress_colors": "Navy", "source": "progress"},
+        {"logged_at": "2026-07-02 13:37:18", "pc_no": "HHPPC048",
+         "contract_no": "C1", "style": "DR5124", "po_no": "PO2333438C",
+         "client_po_color": "(dark blue)", "attempted_color": "Dark Blue",
+         "progress_colors": "Navy", "source": "progress"},
+        {"logged_at": "2026-07-02 11:13:42", "pc_no": "HHPPC040",
+         "contract_no": "C2", "style": "ZLD", "po_no": "PO2285193C",
+         "client_po_color": "BLACK", "attempted_color": "Black",
+         "progress_colors": "", "source": "progress"},
+    ])
+    out = _dedupe_color_misses(df)
+    assert len(out) == 2                                   # the two DR5124 rows collapse
+    dr = out[out["style"] == "DR5124"]
+    assert dr["logged_at"].iloc[0] == "2026-07-02 16:38:22"   # most recent kept
+
+
+def test_dedupe_color_misses_distinguishes_different_colours():
+    import pandas as pd
+    from ui.sky_east.history import _dedupe_color_misses
+
+    df = pd.DataFrame([
+        {"logged_at": "2026-07-02 10:00:00", "pc_no": "P", "contract_no": "C",
+         "style": "S", "po_no": "PO", "client_po_color": "Dark Blue",
+         "attempted_color": "Dark Blue", "progress_colors": "", "source": "progress"},
+        {"logged_at": "2026-07-02 10:00:01", "pc_no": "P", "contract_no": "C",
+         "style": "S", "po_no": "PO", "client_po_color": "Bordeaux",
+         "attempted_color": "Bordeaux", "progress_colors": "", "source": "progress"},
+    ])
+    assert len(_dedupe_color_misses(df)) == 2   # different colours are NOT duplicates
+
+
+def test_dedupe_color_misses_empty_passthrough():
+    import pandas as pd
+    from ui.sky_east.history import _dedupe_color_misses
+
+    assert _dedupe_color_misses(pd.DataFrame()).empty

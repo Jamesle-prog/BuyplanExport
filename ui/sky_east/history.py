@@ -1186,10 +1186,11 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         st.divider()
         dl_cols = st.columns(2)
 
-        # Unresolved-colour count from the most recent run — reflected in the
-        # buy-plan caption so a green download button doesn't hide misses.
+        # Unresolved-colour count (distinct, de-duplicated across re-runs) —
+        # reflected in the buy-plan caption so a green download button doesn't
+        # hide misses.
         try:
-            _miss_n = len(get_sky_east_store().list_color_misses())
+            _miss_n = len(_dedupe_color_misses(get_sky_east_store().list_color_misses()))
         except Exception:
             _miss_n = 0
 
@@ -1279,6 +1280,26 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
     _se_hist_email_section()
 
 
+def _dedupe_color_misses(df):
+    """Collapse the append-only colour-miss log to one row per distinct miss.
+
+    The store appends a fresh row every generation run, so the same
+    (PC · contract · style · PO · colour) miss stacks up across re-runs. For
+    display we keep only the most recent occurrence of each — the DB stays a
+    full audit trail; only the shown table is de-duplicated.
+    """
+    if df is None or df.empty:
+        return df
+    _key = [c for c in ("pc_no", "contract_no", "style", "po_no",
+                        "client_po_color", "attempted_color", "source")
+            if c in df.columns]
+    if not _key or "logged_at" not in df.columns:
+        return df
+    return (df.sort_values("logged_at", ascending=False)
+              .drop_duplicates(subset=_key, keep="first")
+              .reset_index(drop=True))
+
+
 def _se_color_miss_log_section() -> None:
     """Show colours that failed to resolve during the most recent buy plan
     generation -- mirrors the "Client's PO colour" comment attached to the
@@ -1288,16 +1309,19 @@ def _se_color_miss_log_section() -> None:
     from ui.stores import get_sky_east_store
 
     store = get_sky_east_store()
-    misses_df = store.list_color_misses()
+    misses_df = _dedupe_color_misses(store.list_color_misses())
     if misses_df.empty:
         return
 
     st.warning(
-        f"⚠️ {len(misses_df)} colour(s) could not be resolved in recent buy plan runs "
-        "-- see the cell comments on the Overview sheet's 未找到 cells, or the detail below.",
+        f"⚠️ {len(misses_df)} " + t(
+            "distinct colour(s) could not be resolved across recent buy plan runs "
+            "-- see the cell comments on the Overview sheet's 未找到 cells, or the "
+            "detail below."
+        ),
         icon="⚠️",
     )
-    with st.expander(f"Colour resolution issues ({len(misses_df)})", expanded=False):
+    with st.expander(f"{t('Colour resolution issues')} ({len(misses_df)})", expanded=False):
         _display_df = misses_df.copy()
         _display_df["progress_colors"] = _display_df["progress_colors"].fillna("")
         st.dataframe(
