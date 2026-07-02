@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.19.2",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "refactor", "text": "Removed the redundant 大货进度表 file-uploader from the Sky East Buy Plan panel. The 大货进度表 is managed centrally in **📐 Reference Data → HHN Contract Progress**, so the buy-plan panel now only reports which saved data the run will use (colour resolution already fell back to the saved data automatically — this just removes a duplicate, confusing second upload point)"},
+        ],
+    },
+    {
         "version": "2.19.1",
         "date": "2026-07-02",
         "entries": [

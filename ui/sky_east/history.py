@@ -83,8 +83,7 @@ def _build_buyplan_color_lookups() -> BuyplanColorLookups:
         # explicit so they don't think they got progress-sourced data.
         st.warning(
             "⚠ **大货进度表 not loaded** — falling back to the Internal DB "
-            "for all Chinese colours. Upload the file above for a one-off "
-            "override, or save it permanently via **📐 Reference Data → "
+            "for all Chinese colours. Upload it via **📐 Reference Data → "
             "HHN Contract Progress**.",
             icon="⚠️",
         )
@@ -843,36 +842,10 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
     # ── Color mapping source ──────────────────────────────────────────────────
     show_color_source_radio("se_bp_color_src_radio")
 
-    # ── 大货进度表 uploader (shown whenever progress source is selected) ───────
+    # ── 大货进度表 status (uploaded via Reference Data → HHN Contract Progress) ─
+    # The 大货进度表 is managed centrally in Reference Data, not uploaded here —
+    # this panel only reports which saved data the run will use.
     if st.session_state.get(SK.SE_COLOR_SOURCE) == COLOR_SOURCE_PROGRESS:
-        _prog_upload = st.file_uploader(
-            "📂 Upload 大货进度表 (HHN Contract No. file)",
-            type=_EXCEL_FILE_TYPES,
-            key="se_bp_progress_uploader",
-            help="Upload or replace the 大货进度表 to use as the Chinese color source.",
-        )
-        if _prog_upload is not None:
-            # Process only when the file is new (fingerprint changed).
-            # NOTE: no st.rerun() here — the file-upload event itself already
-            # triggered this script run, so processing in-place is sufficient.
-            # Calling st.rerun() would cause an extra cycle where se_bp_sel
-            # may still be [] (if the file was uploaded before PC Nos were
-            # selected), keeping the Generate button permanently disabled.
-            _fp = getattr(_prog_upload, "file_id", None) or f"{_prog_upload.name}-{_prog_upload.size}"
-            if st.session_state.get("_se_bp_prog_fp") != _fp:
-                try:
-                    from po_extractor.lookups import ProgressLookup as _PL
-                    # Pass raw bytes directly — no temp file written to disk
-                    _new_lkup = _PL(data=_prog_upload.getvalue())
-                    len(_new_lkup)  # trigger lazy load into memory
-                    st.session_state[SK.SE_PROGRESS_LKUP] = _new_lkup
-                    st.session_state["_se_bp_prog_fp"] = _fp  # mark as processed
-                except Exception as _exc:
-                    st.error(f"Could not parse progress file: {_exc}")
-
-        # Show loaded status AFTER potentially processing — reads updated session state.
-        # Distinguish an ad-hoc upload this session from the persisted DB fallback so
-        # the user knows exactly which data this run will use.
         _session_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
         if _session_lkup is not None:
             st.caption(f"✅ 大货进度表 loaded for this run ({len(_session_lkup)} records).")
@@ -886,9 +859,8 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                 )
             else:
                 st.caption(
-                    "ℹ️ No saved 大货进度表 data for Sky East yet — upload one above "
-                    "for this run, or save it permanently via **📐 Reference Data → "
-                    "HHN Contract Progress**."
+                    "ℹ️ No saved 大货进度表 data for Sky East yet — upload it via "
+                    "**📐 Reference Data → HHN Contract Progress**."
                 )
 
     # Button is always enabled when contracts exist.  Validating selection inside
