@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.24.0",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "feat", "text": "**Memory management** to keep RAM and disk bounded (`ui/memory.py`). Automatic: the persistent `extracted_images` folder is pruned to a file-count + total-size cap (oldest first) after each processing run, and the in-memory style-photo cache is trimmed to a cap after processing / buy-plan generation (safe — misses reload from disk). Manual: a new sidebar **🧹 Memory (~N MB)** control shows the approximate size of held blobs (cached downloads + photo cache) and a **Free memory now** button that drops them and clears the AI colour caches without signing out"},
+        ],
+    },
+    {
         "version": "2.23.0",
         "date": "2026-07-02",
         "entries": [

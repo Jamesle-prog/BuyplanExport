@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.23.0"
+APP_VERSION = "2.24.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -288,6 +288,11 @@ def show_main():
             _clear_i18n(_new_lang)
             st.rerun()
         st.caption("中文" if _lang_now == "zh" else "English")
+
+        st.divider()
+        # ── Memory management ─────────────────────────────────────────────
+        from ui.memory import render_sidebar_memory
+        render_sidebar_memory()
 
     # ---- Tabs ----
     admin_mode = is_admin(st.session_state.username)

@@ -408,6 +408,13 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             _style_pid_map,
             img_dir=EXTRACTED_IMAGES_DIR,
         )
+        # Keep memory + the extracted-images folder bounded (best-effort).
+        try:
+            from ui.memory import prune_extracted_images, trim_image_cache
+            prune_extracted_images()
+            trim_image_cache()
+        except Exception:
+            pass
     finally:
         # Clean up temp directory — all data is now in memory / DB / disk images
         _shutil.rmtree(tmpdir, ignore_errors=True)

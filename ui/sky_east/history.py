@@ -1173,6 +1173,13 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                 finally:
                     # All file bytes are now in session_state — temp dir no longer needed
                     _shutil.rmtree(out_dir, ignore_errors=True)
+                    # The image lookup accumulates decoded photos in the session
+                    # cache; keep it bounded (misses reload from disk).
+                    try:
+                        from ui.memory import trim_image_cache
+                        trim_image_cache()
+                    except Exception:
+                        pass
 
     # ── Diagnostics captured during generation (missing HHN, 主标颜色, …) ──────
     _diags = st.session_state.get(SK.SE_BP_DIAGS) or []
