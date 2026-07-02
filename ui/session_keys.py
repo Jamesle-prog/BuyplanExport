@@ -50,6 +50,7 @@ class SK:
     SE_NK_REASON     = "se_nk_reason"   # human-readable reason when 核料 is empty
     SE_BP_CMP        = "se_bp_cmp"
     SE_BP_DIAGS      = "se_bp_diags"    # [sky_east ...] warnings captured during generation
+    SE_BP_NOPHOTO    = "se_bp_nophoto"  # styles with no photo in the generated buy plan
 
     # ── Sky East — color mapping source preference ────────────────────────────
     SE_COLOR_SOURCE  = "se_color_source"   # value: COLOR_SOURCE_DB | COLOR_SOURCE_PROGRESS

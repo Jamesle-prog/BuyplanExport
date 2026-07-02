@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.23.0",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "feat", "text": "**Style photos now survive restarts.** Images extracted from Sky East source spreadsheets are saved to a persistent `data/extracted_images` folder (as well as your configured image folder), and the buy-plan generator falls back to it when a photo isn't in the primary folder. Previously extracted images lived only in memory + the configured folder, so a server restart (or a changed/emptied folder) left the buy plan with no pictures until you re-processed"},
+            {"type": "feat", "text": "**The buy plan now warns exactly which styles have no photo** — e.g. \"🖼 3 style(s) have no photo in the buy plan: DR5124, DR4578, …\" — instead of silently shipping an image-less workbook, with a hint to re-run Process or drop a `<style>_front.png` into the image folder"},
+        ],
+    },
+    {
         "version": "2.22.2",
         "date": "2026-07-02",
         "entries": [

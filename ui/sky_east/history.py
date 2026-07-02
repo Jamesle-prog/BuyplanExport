@@ -23,6 +23,7 @@ from ui.shared import (
     DEFAULT_XLSX_EXT as _DEFAULT_XLSX_EXT,
     _th, _tr,
     build_image_cache_for_ids,
+    load_style_photo_pair,
     persisted_download,
 )
 from ui.stores import get_store, get_sky_east_store, get_color_translation_store, get_fabric_master_store, IMAGES_DIR_DEFAULT
@@ -1037,30 +1038,20 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
 
                     # ── Build style → [front_bytes, back_bytes] image map ────────────
                     # Used for: Index sheet thumbnail (front) + Photo1/Photo2 in each
-                    # style sheet.  Looks for {style}_front.png / {style}_back.png on
-                    # disk first (saved by save_images_to_disk during processing), then
-                    # falls back to the session picture_id cache for front-only.
-                    import re as _re2
-                    from pathlib import Path as _Path
+                    # style sheet.  For each style: {style}_front.png / _back.png in
+                    # the configured folder, else the persistent extracted-images
+                    # fallback (load_style_photo_pair handles both), else the session
+                    # picture_id cache (which also falls back to the extracted folder).
                     _img_folder = (st.session_state.get(SK.SE_IMAGES_DIR) or "").strip() \
                                   or IMAGES_DIR_DEFAULT
                     style_image_map: dict = {}
                     for _style in styles:
-                        _safe = _re2.sub(r'[\\/:*?"<>|]', '_', _style)
-                        _pair: list = []
-                        for _pos in ("front", "back"):
-                            _disk_path = _Path(_img_folder) / f"{_safe}_{_pos}.png"
-                            try:
-                                # read_bytes() opens, reads, and closes in one call —
-                                # no leaked file handles when missing-file branch fires.
-                                _pair.append(_disk_path.read_bytes() if _disk_path.exists() else None)
-                            except OSError:
-                                _pair.append(None)
+                        _pair = load_style_photo_pair(_style, _img_folder)
                         if any(_pair):
                             style_image_map[_style] = _pair
 
-                    # Fallback: session picture_id cache (front only) for styles
-                    # whose on-disk files were not found.
+                    # Fallback: session / extracted picture_id cache (front only) for
+                    # styles whose {style}_front.png files were not found.
                     if "picture_id" in df_items.columns:
                         _all_pids = df_items["picture_id"].dropna().astype(str).unique().tolist()
                         _pid_cache = build_image_cache_for_ids(_all_pids)
@@ -1071,6 +1062,14 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 _img = _pid_cache.get(_pid)
                                 if _img:
                                     style_image_map[_s] = [_img, None]
+
+                    # Record styles with NO photo so the user is warned (below)
+                    # exactly which style pictures are missing from the buy plan.
+                    _styles_no_photo = sorted(
+                        str(s).strip() for s in styles
+                        if str(s).strip() and str(s).strip() not in style_image_map
+                    )
+                    st.session_state[SK.SE_BP_NOPHOTO] = _styles_no_photo
 
                     # Timestamp the output filenames so regenerating doesn't
                     # silently overwrite the previous download.
@@ -1181,6 +1180,19 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         # Strip the internal "[sky_east buyplan] " prefix for a cleaner message.
         _msg = _d.split("] ", 1)[1] if "] " in _d else _d
         st.warning(_msg, icon="⚠️")
+
+    # ── Missing style photos — name exactly which styles have no picture ──────
+    _nophoto = st.session_state.get(SK.SE_BP_NOPHOTO) or []
+    if _nophoto:
+        _prev = ", ".join(_nophoto[:10]) + (
+            f" … +{len(_nophoto) - 10} more" if len(_nophoto) > 10 else "")
+        st.warning(
+            f"🖼 {len(_nophoto)} " + t("style(s) have no photo in the buy plan")
+            + f": {_prev}. "
+            + t("Re-run **Process** on New Contracts to (re)extract images, or drop "
+                "`<style>_front.png` into the image folder."),
+            icon="🖼",
+        )
 
     if st.session_state.get(SK.SE_BP_BYTES) or st.session_state.get(SK.SE_NK_BYTES):
         st.divider()

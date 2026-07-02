@@ -11,7 +11,7 @@ import streamlit as st
 from auth.companies import SOURCE_SKY_EAST
 from po_extractor.utils.price_mask import mask_prices_excel_batch
 from ui.session_keys import SK
-from ui.shared import ProgressTracker, save_images_to_disk
+from ui.shared import ProgressTracker, save_images_to_disk, EXTRACTED_IMAGES_DIR
 from ui.stores import get_store, get_sky_east_store
 from ui.sky_east._shared import _parse_fabric_mapping_file, live_label
 from ui.sky_east._validators import _se_report_sku_conflicts, _se_validate_contracts
@@ -395,9 +395,18 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             for img_id in image_cache.all_ids()
             if image_cache.get(img_id)
         }
+        _style_pid_map = _se_build_style_pid_map(contracts)
+        # Save to the user's configured image folder (existing behaviour) …
         save_images_to_disk(
             st.session_state.se_image_cache,
-            _se_build_style_pid_map(contracts),
+            _style_pid_map,
+        )
+        # … and ALWAYS to the persistent extracted-images fallback, so a later
+        # buy-plan run can still find them after a restart or a changed folder.
+        save_images_to_disk(
+            st.session_state.se_image_cache,
+            _style_pid_map,
+            img_dir=EXTRACTED_IMAGES_DIR,
         )
     finally:
         # Clean up temp directory — all data is now in memory / DB / disk images
