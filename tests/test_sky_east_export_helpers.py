@@ -48,7 +48,7 @@ def _ctx(**overrides) -> _RowContext:
         col=_basic_col(), cn_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=None,
         label_lookup={}, ai_enhance=False, ai_api_key="", ai_model="deepseek-chat",
         bsr_cache={}, boat_sample_col=18, se_store=None, color_source="db",
-        sty_norm_cache={}, label_warnings=[],
+        sty_norm_cache={}, label_warnings=[], label_missing=[],
     )
     base.update(overrides)
     return _RowContext(**base)
@@ -141,7 +141,7 @@ def test_fill_one_style_row_writes_cells_and_returns_overview():
     assert ov["style"] == "DR1"
     assert ov["color_en"] == "Dark Blue"                # bracket-strip + title
     assert ov["total"] == 7
-    assert ov["label_color"] == "黑色"                   # dark → black label
+    assert ov["label_color"] == ""                      # no label on file → blank, not derived
     assert ws.cell(2, col["style"]).value == "DR1"
     assert ws.cell(2, col["color_en"]).value == "Dark Blue"
     assert ws.cell(2, col["total"]).value == 7
@@ -243,15 +243,20 @@ def test_label_no_warning_when_progress_agrees_with_derived():
     assert warnings == []
 
 
-def test_label_derives_only_as_last_resort_without_warning():
-    # No 大货进度表 / DB value → derived heuristic fills it, but that is not a
-    # "mismatch" (there was nothing authoritative to disagree with).
+def test_label_missing_leaves_cell_blank_and_flags_it():
+    # No 大货进度表 / DB value → the cell is genuinely blank (never derived),
+    # gets a "missing" comment, and is collected in label_missing — not treated
+    # as a mismatch (there was nothing authoritative to disagree with).
     ws = Workbook().active
     col = _basic_col()
-    warnings: list = []
-    ctx = _ctx(col=col, cn_by_pc_lookup=None, label_warnings=warnings)
+    mismatches: list = []
+    missing: list = []
+    ctx = _ctx(col=col, cn_by_pc_lookup=None,
+               label_warnings=mismatches, label_missing=missing)
     _, ov = _fill_one_style_row(ws, 2, _navy_row().iloc[0], _navy_row(),
                                 "DR1", "1_DR1", None, [], ctx)
-    assert ov["label_color"] == "黑色"                     # derived fallback
-    assert ws.cell(2, col["label_clr"]).comment is None
-    assert warnings == []
+    assert ov["label_color"] == ""                        # blank, not derived 黑色
+    assert ws.cell(2, col["label_clr"]).value in ("", None)
+    assert ws.cell(2, col["label_clr"]).comment is not None   # "missing" comment
+    assert mismatches == []
+    assert missing == [("DR1", "Navy")]

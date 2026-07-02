@@ -546,12 +546,14 @@ def test_derive_main_label_color(en_color, expected):
     )
 
 
-def test_sky_east_buyplan_auto_fills_main_label_color(fabric_in_db, tmp_path):
-    """End-to-end: column I (主标颜色) is derived from the body colour.
+def test_sky_east_buyplan_leaves_main_label_blank_when_not_on_file(fabric_in_db, tmp_path):
+    """End-to-end: column I (主标颜色) is left BLANK when no label colour is on
+    file — it is NOT derived from the body colour (v2.19.1).
 
-    ``colour_code`` is a Zalando SKU code (e.g. "802") and MUST NOT be used
-    as the label colour. With no DB label_color override, the resolution
-    falls through to ``derive_main_label_color()``: dark→黑色, light→白色.
+    ``colour_code`` is a Zalando SKU code (e.g. "802") and MUST NOT be used as
+    the label colour either.  With no 大货进度表 and an empty DB label lookup,
+    the cell stays empty (a guessed label can't be mistaken for a confirmed
+    one) — the light/dark heuristic is only a cross-check, never a fill.
     """
     from openpyxl import load_workbook
     from po_extractor.exporters.sky_east_buyplan_export import export_sky_east_buyplan
@@ -587,6 +589,7 @@ def test_sky_east_buyplan_auto_fills_main_label_color(fabric_in_db, tmp_path):
     path, _ = export_sky_east_buyplan(
         df, {}, str(tmp_path),
         fabric_parts_by_style=None, style_image_map=None,
+        label_lookup={},       # no DB label overrides → nothing on file
         sky_east_store=None,   # keep colour-miss diagnostics out of the real DB
     )
     wb = load_workbook(path)
@@ -594,15 +597,14 @@ def test_sky_east_buyplan_auto_fills_main_label_color(fabric_in_db, tmp_path):
     # Column I (9) = label_clr; row 9 = first data row in Sky_East template.
     # (Row 8 is the bilingual header row — scanning from there would pick up
     # the literal header "主标色" instead of the data value.)
-    assert _style_ws(wb, "S_DARK").cell(9, 9).value  == "黑色", (
-        f"dark body → expected 黑色, got {_style_ws(wb, 'S_DARK').cell(9, 9).value!r}"
-    )
-    assert _style_ws(wb, "S_LIGHT").cell(9, 9).value == "白色", (
-        f"light body → expected 白色, got {_style_ws(wb, 'S_LIGHT').cell(9, 9).value!r}"
-    )
-    assert _style_ws(wb, "S_SKU_IGNORED").cell(9, 9).value == "黑色", (
-        "colour_code is a Zalando SKU and MUST NOT be used as label colour"
-    )
+    # Nothing on file → blank, NOT a derived 黑色/白色 guess.
+    for style in ("S_DARK", "S_LIGHT", "S_SKU_IGNORED"):
+        val = _style_ws(wb, style).cell(9, 9).value
+        assert val in ("", None), (
+            f"{style}: main label should be blank when not on file, got {val!r}"
+        )
+    # And the Zalando SKU code must never leak into the label colour.
+    assert _style_ws(wb, "S_SKU_IGNORED").cell(9, 9).value not in ("802",)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

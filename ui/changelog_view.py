@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.19.1",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "feat", "text": "**主标颜色 is now left genuinely blank when no label colour is on file, instead of being auto-derived.** Following on from the cross-check in v2.19.0: the light/dark heuristic is no longer used to *fill* the value at all — only to cross-check an on-file value. When neither 大货进度表 nor the internal DB has a 主标颜色 for an item, the cell stays empty (not a guessed 白色/黑色), gets a \"missing — enter manually\" comment, and the export raises an end-of-run warning listing the affected items. A guessed label can no longer be mistaken for a confirmed one"},
+        ],
+    },
+    {
         "version": "2.19.0",
         "date": "2026-07-02",
         "entries": [

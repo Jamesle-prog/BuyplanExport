@@ -638,6 +638,9 @@ class _RowContext(NamedTuple):
     # Mutable collector: (style, color_en, progress_label, derived_label) for
     # every row where 大货进度表's 主标颜色 disagrees with the derived heuristic.
     label_warnings: list
+    # Mutable collector: (style, color_en) for every row that has NO 主标颜色 on
+    # file (大货进度表 / DB) — the cell is left blank (never derived) and flagged.
+    label_missing: list
 
 
 def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
@@ -718,25 +721,30 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
             "PO Extractor",
         )
     # 主标颜色: read from 大货进度表 (authoritative), then the DB label lookup.
-    # The derived light/dark heuristic does NOT override a value 大货进度表
-    # provides — it only *cross-checks* it: when 大货进度表's value disagrees
-    # with the heuristic, 大货进度表 wins but the row is flagged (a cell comment
-    # + an end-of-run warning) for human review.  The heuristic is still used as
-    # a last-resort fill only when neither 大货进度表 nor the DB has a value, so
-    # wash labels aren't left blank.
+    # The value is NEVER derived — the light/dark heuristic is used only to
+    # *cross-check* an on-file value:
+    #   • On file + agrees with the heuristic → written, no flag.
+    #   • On file + disagrees → 大货进度表's value is kept, but the cell gets a
+    #     comment and the export raises an end-of-run mismatch warning.
+    #   • Not on file at all → the cell is left genuinely blank (not derived)
+    #     and flagged as a missing label for manual entry.
     _label_clr = _pc_label  # 大货进度表 主标颜色 (may be "" outside progress mode)
     if not _label_clr:
         _label_clr = _brand_keyed_get(
             ctx.label_lookup, COMPANY_SKY_EAST, brand, _nz_color(color_en),
         )
-    _label_from_source = bool(_label_clr)   # from 大货进度表 / DB, not derived
     _derived_label = derive_main_label_color(color_en)
-    if not _label_clr:
-        _label_clr = _derived_label         # last-resort safety net
     _label_cell = ws.cell(out_row, col["label_clr"])
-    _style_data(_label_cell, _label_clr)
-    if _label_from_source and _derived_label and _label_clr != _derived_label:
-        from openpyxl.comments import Comment as _Comment
+    _style_data(_label_cell, _label_clr)   # blank when nothing is on file
+    from openpyxl.comments import Comment as _Comment
+    if not _label_clr:
+        _label_cell.comment = _Comment(
+            f"主标颜色 missing — no label colour on file for body colour "
+            f"\"{color_en}\". Not derived; please enter manually.",
+            "PO Extractor",
+        )
+        ctx.label_missing.append((_row_style, color_en))
+    elif _derived_label and _label_clr != _derived_label:
         _label_cell.comment = _Comment(
             f"主标颜色 mismatch — 大货进度表: \"{_label_clr}\"; body colour "
             f"\"{color_en}\" suggests \"{_derived_label}\". Using 大货进度表's "
@@ -936,7 +944,7 @@ def export_sky_east_buyplan(
         ai_enhance=ai_enhance, ai_api_key=ai_api_key, ai_model=ai_model,
         bsr_cache=bsr_cache, boat_sample_col=_BOAT_SAMPLE_COL,
         se_store=_se_store, color_source=_color_source, sty_norm_cache={},
-        label_warnings=[],
+        label_warnings=[], label_missing=[],
     )
 
     # Each (style, fabric-part) combination gets its own sheet.
@@ -1169,6 +1177,20 @@ def export_sky_east_buyplan(
             f"[sky_east buyplan] 主标颜色 cross-check — {n} item(s) where "
             f"大货进度表's label colour disagrees with the derived value "
             f"(大货进度表 kept; please verify): {preview}"
+        )
+
+    # ── 主标颜色 missing — no label colour on file (blank cells, not derived) ──
+    if _row_ctx.label_missing:
+        import warnings as _w
+        n = len(_row_ctx.label_missing)
+        preview = "; ".join(
+            f"{sty} \"{ce}\"" for sty, ce in _row_ctx.label_missing[:6]
+        )
+        if n > 6:
+            preview += f" … +{n - 6} more"
+        _w.warn(
+            f"[sky_east buyplan] 主标颜色 missing — {n} item(s) have no label "
+            f"colour on file (left blank, not derived; enter manually): {preview}"
         )
     return str(path), style_totals
 
