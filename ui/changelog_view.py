@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.19.0",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "feat", "text": "**主标颜色 (main label colour) is now cross-checked against the light/dark heuristic and flags disagreements.** 大货进度表's 主标颜色 is used verbatim (it was already authoritative), but the derived light/dark value is no longer just a silent fallback — it now cross-checks 大货进度表's value. When they disagree (e.g. 大货进度表 records 白色 for a \"Navy\" body colour, which the heuristic reads as 黑色), 大货进度表's value is kept but the cell gets a diagnostic comment and the export raises an end-of-run warning listing every mismatch, so a data-entry slip in 大货进度表 surfaces for review instead of shipping unnoticed. The heuristic is still used only as a last-resort fill when neither 大货进度表 nor the internal DB has a label colour"},
+        ],
+    },
+    {
         "version": "2.18.0",
         "date": "2026-07-02",
         "entries": [

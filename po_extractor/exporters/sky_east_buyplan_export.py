@@ -635,6 +635,9 @@ class _RowContext(NamedTuple):
     se_store: object
     color_source: str
     sty_norm_cache: dict
+    # Mutable collector: (style, color_en, progress_label, derived_label) for
+    # every row where 大货进度表's 主标颜色 disagrees with the derived heuristic.
+    label_warnings: list
 
 
 def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
@@ -714,18 +717,33 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
             _color_miss_comment_text(_raw_client_color, _progress_colors),
             "PO Extractor",
         )
-    # 主标颜色 resolution order:
-    #   1. 大货进度表 PC-keyed (most specific — same contract)
-    #   2. label_lookup (brand-keyed DB or progress fallback)
-    #   3. Auto-derive from the English body colour (light/dark heuristic)
-    _label_clr = _pc_label  # may be "" when no PC-keyed match
+    # 主标颜色: read from 大货进度表 (authoritative), then the DB label lookup.
+    # The derived light/dark heuristic does NOT override a value 大货进度表
+    # provides — it only *cross-checks* it: when 大货进度表's value disagrees
+    # with the heuristic, 大货进度表 wins but the row is flagged (a cell comment
+    # + an end-of-run warning) for human review.  The heuristic is still used as
+    # a last-resort fill only when neither 大货进度表 nor the DB has a value, so
+    # wash labels aren't left blank.
+    _label_clr = _pc_label  # 大货进度表 主标颜色 (may be "" outside progress mode)
     if not _label_clr:
         _label_clr = _brand_keyed_get(
             ctx.label_lookup, COMPANY_SKY_EAST, brand, _nz_color(color_en),
         )
+    _label_from_source = bool(_label_clr)   # from 大货进度表 / DB, not derived
+    _derived_label = derive_main_label_color(color_en)
     if not _label_clr:
-        _label_clr = derive_main_label_color(color_en)
-    _style_data(ws.cell(out_row, col["label_clr"]), _label_clr)
+        _label_clr = _derived_label         # last-resort safety net
+    _label_cell = ws.cell(out_row, col["label_clr"])
+    _style_data(_label_cell, _label_clr)
+    if _label_from_source and _derived_label and _label_clr != _derived_label:
+        from openpyxl.comments import Comment as _Comment
+        _label_cell.comment = _Comment(
+            f"主标颜色 mismatch — 大货进度表: \"{_label_clr}\"; body colour "
+            f"\"{color_en}\" suggests \"{_derived_label}\". Using 大货进度表's "
+            f"value; please verify.",
+            "PO Extractor",
+        )
+        ctx.label_warnings.append((_row_style, color_en, _label_clr, _derived_label))
     _style_data(ws.cell(out_row, col["xs"]),  xs)
     _style_data(ws.cell(out_row, col["s"]),   s)
     _style_data(ws.cell(out_row, col["m"]),   m)
@@ -918,6 +936,7 @@ def export_sky_east_buyplan(
         ai_enhance=ai_enhance, ai_api_key=ai_api_key, ai_model=ai_model,
         bsr_cache=bsr_cache, boat_sample_col=_BOAT_SAMPLE_COL,
         se_store=_se_store, color_source=_color_source, sty_norm_cache={},
+        label_warnings=[],
     )
 
     # Each (style, fabric-part) combination gets its own sheet.
@@ -1131,6 +1150,25 @@ def export_sky_east_buyplan(
         _w.warn(
             f"[sky_east buyplan] 综合key partial — {len(_fm.misses)} HHN code(s) "
             f"not in fabric_master DB: {preview}"
+        )
+
+    # ── 主标颜色 cross-check — surface 大货进度表 label-colour disagreements ──
+    # 大货进度表's 主标颜色 is used verbatim, but where it disagrees with the
+    # light/dark heuristic derived from the body colour the row is flagged so a
+    # reviewer can confirm the 大货进度表 entry isn't a data-entry slip.
+    if _row_ctx.label_warnings:
+        import warnings as _w
+        n = len(_row_ctx.label_warnings)
+        preview = "; ".join(
+            f"{sty} \"{ce}\": 大货进度表={lc} vs derived={dv}"
+            for sty, ce, lc, dv in _row_ctx.label_warnings[:6]
+        )
+        if n > 6:
+            preview += f" … +{n - 6} more"
+        _w.warn(
+            f"[sky_east buyplan] 主标颜色 cross-check — {n} item(s) where "
+            f"大货进度表's label colour disagrees with the derived value "
+            f"(大货进度表 kept; please verify): {preview}"
         )
     return str(path), style_totals
 

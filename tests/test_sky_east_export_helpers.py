@@ -48,7 +48,7 @@ def _ctx(**overrides) -> _RowContext:
         col=_basic_col(), cn_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=None,
         label_lookup={}, ai_enhance=False, ai_api_key="", ai_model="deepseek-chat",
         bsr_cache={}, boat_sample_col=18, se_store=None, color_source="db",
-        sty_norm_cache={},
+        sty_norm_cache={}, label_warnings=[],
     )
     base.update(overrides)
     return _RowContext(**base)
@@ -194,3 +194,64 @@ def test_fill_one_style_row_injects_boat_sample_from_cache():
     ctx = _ctx(col=col, bsr_cache={"Anna Field": "confirm boat sample"}, boat_sample_col=18)
     _fill_one_style_row(ws, 2, grp.iloc[0], grp, "DR1", "1_DR1", None, [], ctx)
     assert ws.cell(2, 18).value == "confirm boat sample"
+
+
+# ── 主标颜色: 大货进度表 authoritative, derived heuristic only cross-checks ────
+
+def _navy_row():
+    return pd.DataFrame([{
+        "style": "DR1", "brand": "B", "pc_no": "PC1", "color_name": "Navy",
+        "xs": 1, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+
+
+def test_label_uses_progress_value_and_flags_mismatch_with_derived():
+    """大货进度表 says 白色 for a "Navy" body colour; the derived heuristic says
+    黑色.  大货进度表's value is kept (not overridden), a cell comment is
+    attached, and the disagreement is collected for the end-of-run warning.
+    """
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+    from po_extractor.store.color_translation_store import _normalize_color_name as _nz
+
+    ws = Workbook().active
+    col = _basic_col()
+    cn_by_pc = {("PC1", "DR1", _nz("Navy")): PCColorMatch("藏青", "52#", "白色")}
+    warnings: list = []
+    ctx = _ctx(col=col, cn_by_pc_lookup=cn_by_pc, color_source="progress",
+               label_warnings=warnings)
+    _, ov = _fill_one_style_row(ws, 2, _navy_row().iloc[0], _navy_row(),
+                                "DR1", "1_DR1", None, [], ctx)
+    assert ov["label_color"] == "白色"                     # 大货进度表 kept, not derived 黑色
+    assert ws.cell(2, col["label_clr"]).comment is not None
+    assert warnings == [("DR1", "Navy", "白色", "黑色")]
+
+
+def test_label_no_warning_when_progress_agrees_with_derived():
+    from po_extractor.lookups.progress_lookup import PCColorMatch
+    from po_extractor.store.color_translation_store import _normalize_color_name as _nz
+
+    ws = Workbook().active
+    col = _basic_col()
+    cn_by_pc = {("PC1", "DR1", _nz("Navy")): PCColorMatch("藏青", "52#", "黑色")}
+    warnings: list = []
+    ctx = _ctx(col=col, cn_by_pc_lookup=cn_by_pc, color_source="progress",
+               label_warnings=warnings)
+    _, ov = _fill_one_style_row(ws, 2, _navy_row().iloc[0], _navy_row(),
+                                "DR1", "1_DR1", None, [], ctx)
+    assert ov["label_color"] == "黑色"
+    assert ws.cell(2, col["label_clr"]).comment is None
+    assert warnings == []
+
+
+def test_label_derives_only_as_last_resort_without_warning():
+    # No 大货进度表 / DB value → derived heuristic fills it, but that is not a
+    # "mismatch" (there was nothing authoritative to disagree with).
+    ws = Workbook().active
+    col = _basic_col()
+    warnings: list = []
+    ctx = _ctx(col=col, cn_by_pc_lookup=None, label_warnings=warnings)
+    _, ov = _fill_one_style_row(ws, 2, _navy_row().iloc[0], _navy_row(),
+                                "DR1", "1_DR1", None, [], ctx)
+    assert ov["label_color"] == "黑色"                     # derived fallback
+    assert ws.cell(2, col["label_clr"]).comment is None
+    assert warnings == []
