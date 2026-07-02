@@ -89,6 +89,33 @@ def clean_sheet_name(name: str | None, *, fallback: str = "Sheet") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Internal (same-workbook) hyperlinks
+# ---------------------------------------------------------------------------
+
+def set_internal_hyperlink(cell, sheet_name: str, anchor: str = "A1") -> None:
+    """Point *cell* at ``anchor`` on *sheet_name* within the same workbook.
+
+    Do NOT do this with ``cell.hyperlink = f"#'{sheet_name}'!{anchor}"`` (a
+    plain string) — openpyxl always writes a plain-string hyperlink as an
+    *external* relationship (``TargetMode="External"``) with that string as
+    the literal ``Target``.  Excel special-cases a target starting with
+    ``"#"`` and follows it as an internal jump anyway, but that's an
+    Excel-only leniency, not part of the OOXML spec — WPS (and other
+    readers) take the target literally and the link does nothing.
+
+    The portable, spec-correct way to express a same-workbook link is the
+    hyperlink's ``location`` attribute with no relationship at all — pass an
+    explicit ``Hyperlink(location=..., target=None)`` object instead of a
+    string, which is what this helper does.
+    """
+    from openpyxl.worksheet.hyperlink import Hyperlink
+
+    cell.hyperlink = Hyperlink(
+        ref=cell.coordinate, location=f"'{sheet_name}'!{anchor}", target=None,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Sequence helpers
 # ---------------------------------------------------------------------------
 

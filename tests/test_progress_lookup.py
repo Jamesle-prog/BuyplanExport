@@ -582,3 +582,274 @@ def test_build_label_lookup():
     assert label_lookup.get((COMPANY, "BrandX", "Red")) == "红色"
     # Row with empty label_color should not appear
     assert label_lookup.get((COMPANY, "BrandX", "Green")) is None
+
+
+def test_progress_lookup_loads_rows_when_seq_column_is_entirely_blank():
+    """Real-world regression: a 大货进度表 export that never fills 序号.
+
+    ProgressLookup used to require every row to have a numeric 序号 (seq)
+    value as a "is this real data" signal. Some exports never populate that
+    column at all — enforcing the check unconditionally discarded every row
+    in the file, silently losing 合同号 / colour / ex-fty data for the whole
+    sheet. The gate must only apply when the column is actually used as a
+    marker (i.e. at least one row has a numeric value there).
+    """
+    import os as _os
+    from po_extractor.lookups import ProgressLookup
+
+    tmpdir = tempfile.mkdtemp()
+    filepath = _os.path.join(tmpdir, "progress_blank_seq.xlsx")
+
+    data = {
+        "序号":        ["", "", ""],   # ← never populated, matches the real file
+        "合同号":      ["26302-ZA7148", "26302-ZA7149", "26302-ZA7150"],
+        "客人PC NO":   ["HHPPC048", "HHPPC048", "HHPPC048"],
+        "IMAGE":       ["", "", ""],
+        "款式":        ["DR5124", "DR4578", "DR5334"],
+        "BRAND":       ["Anna Field", "Anna Field", "Anna Field"],
+        "英文颜色":    ["NAVY", "Green", "DARK BLUE"],
+        "中文颜色":    ["藏青", "绿色", "藏青色"],
+        "中文颜色代码": ["52#", "4#", ""],
+        "主标颜色":    ["黑色", "黑色", "黑色"],
+        "PO离厂日期":  ["2026-08-11", "2026-08-11", "2026-08-11"],
+    }
+    pd.DataFrame(data).to_excel(filepath, sheet_name="2026 Zalando SS27", index=False)
+    pl = ProgressLookup(filepath)
+    pl._load()
+
+    assert len(pl._by_style) == 3
+    assert pl.get_contract_no("DR5124", "NAVY", pc_no="HHPPC048") == "26302-ZA7148"
+    assert pl.get_contract_no("DR4578", "Green", pc_no="HHPPC048") == "26302-ZA7149"
+
+
+def test_progress_lookup_still_skips_non_numeric_seq_when_column_is_used():
+    """When a sheet DOES use 序号 as a row marker, the original protection
+    (skip rows with a non-numeric/blank seq — e.g. a stray subtotal row that
+    happens to carry a style-like value) must still apply.
+    """
+    import os as _os
+    from po_extractor.lookups import ProgressLookup
+
+    tmpdir = tempfile.mkdtemp()
+    filepath = _os.path.join(tmpdir, "progress_mixed_seq.xlsx")
+
+    data = {
+        "序号":      [1, "", 2],       # ← row 2 has no seq — should be skipped
+        "合同号":    ["26302-ZA0001", "26302-ZA0002", "26302-ZA0003"],
+        "所在PO":    ["HHPPC060", "HHPPC060", "HHPPC060"],
+        "IMAGE":     ["", "", ""],
+        "款式":      ["DR1000", "DR2000", "DR3000"],
+        "颜色":      ["NAVY", "BLACK", "RED"],
+        "主标颜色":  ["", "", ""],
+        "PO离厂日期": ["", "", ""],
+        "数量":      [100, 200, 300],
+        "PO#":       ["", "", ""],
+        "BRAND":     ["Brand1", "Brand1", "Brand1"],
+        "FABRICDETAIL": ["", "", ""],
+    }
+    pd.DataFrame(data).to_excel(filepath, sheet_name="2026 Zalando", index=False)
+    pl = ProgressLookup(filepath)
+    pl._load()
+
+    assert len(pl._by_style) == 2   # DR1000 and DR3000 only — DR2000 skipped
+    assert "DR2000" not in pl._by_style
+    assert pl.get_contract_no("DR1000", "NAVY", pc_no="HHPPC060") == "26302-ZA0001"
+    assert pl.get_contract_no("DR3000", "RED", pc_no="HHPPC060") == "26302-ZA0003"
+
+
+def test_progress_lookup_treats_excel_error_strings_as_blank():
+    """A broken formula in the source file (e.g. a 中文颜色代码 VLOOKUP that
+    can't extract a numeric code from a colour cell with no code suffix,
+    such as "BLACK 黑色" with nothing after it) is cached by openpyxl as the
+    literal string "#N/A" -- not None. That must not leak through as a real
+    colour code (or any other field): it should be treated as blank so
+    lookups fall back to matching by colour name alone.
+    """
+    import os as _os
+    from po_extractor.lookups import ProgressLookup
+
+    tmpdir = tempfile.mkdtemp()
+    filepath = _os.path.join(tmpdir, "progress_excel_error.xlsx")
+
+    data = {
+        "序号":        [1, 2],
+        "合同号":      ["26302-ZA7150", "26302-ZA7163"],
+        "所在PO":      ["HHPPC048", "HHPPC048"],
+        "IMAGE":       ["", ""],
+        "款式":        ["DR5334", "BL4259"],
+        "颜色":        ["DARK BLUE", "BLACK"],
+        "中文颜色":    ["藏青色", "黑色"],
+        "中文颜色代码": ["#N/A", "#N/A"],   # ← literal Excel error, not blank
+        "主标颜色":    ["黑色", "黑色"],
+        "PO离厂日期":  ["2026-08-26", "2026-08-26"],
+        "数量":        [300, 500],
+        "PO#":         ["", ""],
+        "BRAND":       ["Anna Field", "Anna Field"],
+        "FABRICDETAIL": ["", ""],
+    }
+    pd.DataFrame(data).to_excel(filepath, sheet_name="2026 Zalando", index=False)
+    pl = ProgressLookup(filepath)
+
+    # Contract number and colour name still resolve correctly...
+    assert pl.get_contract_no("BL4259", "BLACK", pc_no="HHPPC048") == "26302-ZA7163"
+    assert pl.get_cn_color("BL4259", "BLACK", pc_no="HHPPC048") == "黑色"
+    # ...but the colour code must NOT be the literal "#N/A" string.
+    assert pl.get_color_code("BL4259", "BLACK", pc_no="HHPPC048") == ""
+
+    # build_pc_style_color_lookups() keys colour by _normalize_color_name()
+    # (title-case), not the raw uppercase input used by get_contract_no().
+    pc_lookup = pl.build_pc_style_color_lookups()
+    match = pc_lookup[("HHPPC048", "BL4259", "Black")]
+    assert match.color_code == ""
+    assert match.cn_color == "黑色"
+
+
+# ---------------------------------------------------------------------------
+# parse_progress_rows() / ProgressLookup.from_records() — persistent-store path
+# ---------------------------------------------------------------------------
+
+def test_parse_progress_rows_returns_style_display_and_norm(tmp_path):
+    """Each parsed record must carry both the normalised match key (style)
+    and the original display text (style_display) -- the persistent store
+    needs the raw form for a human-readable UI, ProgressLookup needs the
+    normalised form for indexing.
+    """
+    from po_extractor.lookups.progress_lookup import parse_progress_rows
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["序号", "合同号", "所在PO", "IMAGE", "款式", "颜色",
+              "主标颜色", "PO离厂日期", "数量", "PO#", "BRAND", "FABRICDETAIL"])
+    ws.append([1, "26302-ZA0001", "HHPPC060", "", "ZLD060/S24DTR003", "BLACK",
+              "", "", 100, "", "Brand1", ""])
+    path = tmp_path / "progress.xlsx"
+    wb.save(str(path))
+
+    records = parse_progress_rows(str(path))
+    assert len(records) == 1
+    assert records[0]["style_display"] == "ZLD060/S24DTR003"
+    assert records[0]["style"] == "ZLD060S24DTR003"   # slash stripped by _norm_key
+
+
+def test_from_records_matches_load_behaviour(sample_progress_xlsx):
+    """ProgressLookup(path) (file-based) and ProgressLookup.from_records()
+    (records already parsed) must resolve identically for the same data --
+    the whole point of the refactor is that both paths share one parser.
+    """
+    from po_extractor.lookups import ProgressLookup
+    from po_extractor.lookups.progress_lookup import parse_progress_rows
+
+    file_based = ProgressLookup(sample_progress_xlsx)
+    records = parse_progress_rows(sample_progress_xlsx)
+    from_records_based = ProgressLookup.from_records(records)
+
+    assert (
+        file_based.get_contract_no("DR4532", "52# NAVY", pc_no="HHPPC038")
+        == from_records_based.get_contract_no("DR4532", "52# NAVY", pc_no="HHPPC038")
+        == "26301-ZA7001"
+    )
+    assert len(file_based) == len(from_records_based)
+
+
+def test_extra_descriptive_columns_are_parsed_when_present(tmp_path):
+    from po_extractor.lookups.progress_lookup import parse_progress_rows
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["序号", "合同号", "所在PO", "IMAGE", "款式", "颜色",
+              "测试", "备注", "Launch date", "主标颜色", "PO离厂日期",
+              "数量", "PO#", "BRAND", "FABRICDETAIL"])
+    ws.append([1, "C1", "HHPPC070", "", "DR1111", "RED",
+              "test-value", "remark-value", "2026-02-02", "", "",
+              50, "", "Brand1", ""])
+    path = tmp_path / "progress.xlsx"
+    wb.save(str(path))
+
+    records = parse_progress_rows(str(path))
+    assert records[0]["test_note"] == "test-value"
+    assert records[0]["remarks"] == "remark-value"
+    assert records[0]["launch_date"] == "2026-02-02"
+
+
+# ---------------------------------------------------------------------------
+# Multi-colour rows -- "52#/白色 3#" style two-tone codes get split into
+# separate, independently look-up-able colour records
+# ---------------------------------------------------------------------------
+
+def test_split_multi_color_extracts_second_color_name_and_code():
+    from po_extractor.lookups.progress_lookup import _split_multi_color
+    parts = _split_multi_color(
+        "Dark BlUE", "藏青", "52#/白色 3#", "Dark BlUE /White 藏青 52#/白色 3#",
+    )
+    assert parts == [
+        {"color": "Dark BlUE", "cn_color": "藏青", "color_code": "52#"},
+        {"color": "White", "cn_color": "白色", "color_code": "3#"},
+    ]
+
+
+def test_split_multi_color_no_space_before_second_code():
+    from po_extractor.lookups.progress_lookup import _split_multi_color
+    parts = _split_multi_color(
+        "BLACK", "黑色", "2#/白色3#", "BLACK 黑色2#/白色3#",
+    )
+    assert parts == [
+        {"color": "BLACK", "cn_color": "黑色", "color_code": "2#"},
+        {"color": "", "cn_color": "白色", "color_code": "3#"},
+    ]
+
+
+def test_split_multi_color_leaves_single_color_rows_untouched():
+    from po_extractor.lookups.progress_lookup import _split_multi_color
+    assert _split_multi_color("NAVY", "藏青", "52#", "NAVY 藏青52#") == [
+        {"color": "NAVY", "cn_color": "藏青", "color_code": "52#"},
+    ]
+    # A code with no "/" at all (e.g. a Pantone-style code) must not split.
+    assert _split_multi_color("BORDEAUX", "酒红色", "19-2025TCX", "") == [
+        {"color": "BORDEAUX", "cn_color": "酒红色", "color_code": "19-2025TCX"},
+    ]
+
+
+def test_parse_progress_rows_splits_two_tone_style_into_two_records(tmp_path):
+    import openpyxl
+    from po_extractor.lookups.progress_lookup import parse_progress_rows
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["序号", "合同号", "所在PO", "IMAGE", "款式",
+              "颜色汇总\n英文 中文 色号 色卡本", "英文颜色", "中文颜色",
+              "中文颜色代码", "主标颜色", "PO离厂日期", "数量", "PO#",
+              "BRAND", "FABRICDETAIL"])
+    ws.append([1, "C1", "HHPPC048", "", "DR5009",
+              "Dark BlUE /White 藏青 52#/白色 3#", "Dark BlUE", "藏青",
+              "52#/白色 3#", "", "", 300, "", "Anna Field", ""])
+    path = tmp_path / "progress.xlsx"
+    wb.save(str(path))
+
+    records = parse_progress_rows(str(path))
+    assert len(records) == 2
+    assert {r["color"] for r in records} == {"Dark BlUE", "White"}
+    assert {r["color_code"] for r in records} == {"52#", "3#"}
+
+
+def test_from_records_resolves_each_split_color_independently(tmp_path):
+    from po_extractor.lookups.progress_lookup import parse_progress_rows, ProgressLookup
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["序号", "合同号", "所在PO", "IMAGE", "款式",
+              "颜色汇总\n英文 中文 色号 色卡本", "英文颜色", "中文颜色",
+              "中文颜色代码", "主标颜色", "PO离厂日期", "数量", "PO#",
+              "BRAND", "FABRICDETAIL"])
+    ws.append([1, "26302-ZA7156", "HHPPC048", "", "DR5009",
+              "Dark BlUE /White 藏青 52#/白色 3#", "Dark BlUE", "藏青",
+              "52#/白色 3#", "", "", 300, "", "Anna Field", ""])
+    path = tmp_path / "progress.xlsx"
+    wb.save(str(path))
+
+    pl = ProgressLookup.from_records(parse_progress_rows(str(path)))
+    assert pl.get_color_code("DR5009", "Dark BlUE", pc_no="HHPPC048") == "52#"
+    assert pl.get_color_code("DR5009", "White", pc_no="HHPPC048") == "3#"
+    assert pl.get_contract_no("DR5009", "White", pc_no="HHPPC048") == "26302-ZA7156"

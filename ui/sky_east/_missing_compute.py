@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import pandas as pd
-import streamlit as st
 
-from ui.session_keys import SK
 from ui.stores import get_sky_east_store
 
 
@@ -20,7 +18,8 @@ def _compute_se_missing_df() -> pd.DataFrame:
     if "contract_no" not in all_items.columns:
         all_items["contract_no"] = ""
 
-    pl = st.session_state.get(SK.SE_PROGRESS_LKUP)
+    from ui.sky_east._shared import get_progress_lookup
+    pl = get_progress_lookup()
     if pl is not None and "contract_no" in all_items.columns:
         def _fill_cno(row):
             cno = str(row.get("contract_no", "") or "").strip()

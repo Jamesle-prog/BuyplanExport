@@ -74,8 +74,22 @@ CREATE TABLE IF NOT EXISTS sky_east_item_history (
     archived_at     TEXT
 );
 
+CREATE TABLE IF NOT EXISTS sky_east_color_misses (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    pc_no           TEXT,
+    contract_no     TEXT,
+    style           TEXT,
+    po_no           TEXT,
+    client_po_color TEXT,   -- raw client colour text, before bracket-strip/split
+    attempted_color TEXT,   -- the specific component the lookup was tried with
+    progress_colors TEXT,   -- 大货进度表's own colour(s) on file for this PC/style, comma-joined
+    source          TEXT,   -- "progress" | "db" — which source was selected
+    logged_at       TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_sei_pc_no  ON sky_east_items(pc_no);
 CREATE INDEX IF NOT EXISTS idx_seih_pc_no ON sky_east_item_history(pc_no);
+CREATE INDEX IF NOT EXISTS idx_secm_pc_no ON sky_east_color_misses(pc_no);
 """
 
 

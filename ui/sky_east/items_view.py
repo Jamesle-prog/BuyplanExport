@@ -7,6 +7,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import XLSX_MIME, CSV_MIME, _th, _tr, build_image_cache_for_ids, persisted_download
 from ui.stores import get_store, get_sky_east_store, get_fabric_master_store
@@ -21,7 +22,7 @@ from ui.sky_east._missing import _show_se_missing_fields_section  # re-export
 def _show_se_results(results: list, image_cache: dict):
     """Render per-PC summary cards with amendment diffs."""
     st.divider()
-    st.subheader("Processing Results")
+    st.subheader(t("Processing Results"))
 
     for r in results:
         pc_no     = r["pc_no"]
@@ -32,22 +33,22 @@ def _show_se_results(results: list, image_cache: dict):
         total = len(new_items) + len(upd_items) + len(dup_items)
         label = (
             f"PC {pc_no}  --  "
-            f"{'New ' + str(len(new_items)) if new_items else ''}"
-            f"{'  Amended ' + str(len(upd_items)) if upd_items else ''}"
-            f"{'  Duplicate(s) ' + str(len(dup_items)) if dup_items else ''}"
-            f"  ({total} item(s) total)"
+            f"{t('New') + ' ' + str(len(new_items)) if new_items else ''}"
+            f"{'  ' + t('Amended') + ' ' + str(len(upd_items)) if upd_items else ''}"
+            f"{'  ' + t('Duplicate(s)') + ' ' + str(len(dup_items)) if dup_items else ''}"
+            f"  ({total} {t('item(s) total')})"
         ).strip("  ")
 
         with st.expander(label, expanded=bool(upd_items)):
             if new_items:
-                st.markdown(f"**{len(new_items)} New Item(s)**")
+                st.markdown(f"**{len(new_items)} {t('New Item(s)')}**")
                 rows = [{"Style": s, "Color": c, "Zalando PO": po}
                         for s, c, po in new_items]
                 st.dataframe(pd.DataFrame(rows), hide_index=True,
                              use_container_width=True)
 
             if upd_items:
-                st.markdown(f"**{len(upd_items)} Amended Item(s)**")
+                st.markdown(f"**{len(upd_items)} {t('Amended Item(s)')}**")
                 sz_keys = ["XS", "S", "M", "L", "XL", "2XL"]
                 for row in upd_items:
                     if len(row) == 6:
@@ -99,8 +100,8 @@ def _show_se_results(results: list, image_cache: dict):
 
             if dup_items:
                 st.markdown(
-                    f"{len(dup_items)} item(s) were identical to stored "
-                    "records and were skipped."
+                    f"{len(dup_items)} "
+                    + t("item(s) were identical to stored records and were skipped.")
                 )
 
             if image_cache:
@@ -121,7 +122,7 @@ def _show_se_results(results: list, image_cache: dict):
 
                 styles_with_pics = [(s, ids) for s, ids in style_pics.items() if ids]
                 if styles_with_pics:
-                    st.markdown(f"**Style Photos ({len(styles_with_pics)} style(s))**")
+                    st.markdown(f"**{t('Style Photos')} ({len(styles_with_pics)} {t('style(s)')})**")
                     STYLES_PER_ROW = 3
                     for row_start in range(0, len(styles_with_pics), STYLES_PER_ROW):
                         batch = styles_with_pics[row_start: row_start + STYLES_PER_ROW]
@@ -133,7 +134,7 @@ def _show_se_results(results: list, image_cache: dict):
                                 for j, pid in enumerate(pic_ids):
                                     img_bytes = image_cache.get(pid)
                                     if img_bytes:
-                                        lbl = "Front" if j == 0 else "Back"
+                                        lbl = t("Front") if j == 0 else t("Back")
                                         img_cols[j].image(img_bytes,
                                                           caption=lbl,
                                                           use_container_width=True)
@@ -168,7 +169,8 @@ def _enrich_items_df(df_items):
                 return parts[0][1] if parts else fno
         df["fabric_item_no"] = df.apply(_fill_hhn, axis=1)
 
-    pl = st.session_state.get(SK.SE_PROGRESS_LKUP)
+    from ui.sky_east._shared import get_progress_lookup
+    pl = get_progress_lookup()
     if pl is not None and "contract_no" in df.columns and "style" in df.columns:
         def _fill_cno(row):
             cno = str(row.get("contract_no", "") or "").strip()

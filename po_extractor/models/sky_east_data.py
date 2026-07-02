@@ -42,3 +42,6 @@ class SkyEastContract:
     parse_confidence: int | None = None
     source_file_hash: str | None = None
     processed_by: str | None = None
+    # Rows dropped for having 0 total units — {"row": int, "style": str, "po": str}.
+    # Surfaced in the upload log so a blanked-out/cancelled line isn't silently lost.
+    skipped_zero_qty: list = field(default_factory=list)

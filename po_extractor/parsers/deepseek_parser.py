@@ -16,6 +16,7 @@ from datetime import datetime
 
 from ..config import FORMAT_INFOR_NEXUS, FORMAT_LEGACY
 from ..models import POData, POMetadata, SizeRow
+from ..utils.deepseek_client import chat_kwargs
 
 PARSER_VERSION = "ds-1.0"
 
@@ -57,9 +58,9 @@ def _call_deepseek(text: str, api_key: str, model: str = "deepseek-chat") -> dic
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user",   "content": text[:12000]},  # cap tokens
         ],
-        temperature=0,
         max_tokens=2048,
         response_format={"type": "json_object"},
+        **chat_kwargs(model),
     )
     raw = response.choices[0].message.content or "{}"
     return json.loads(raw)

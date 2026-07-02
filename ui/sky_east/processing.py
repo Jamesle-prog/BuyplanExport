@@ -11,7 +11,7 @@ import streamlit as st
 from auth.companies import SOURCE_SKY_EAST
 from po_extractor.utils.price_mask import mask_prices_excel_batch
 from ui.session_keys import SK
-from ui.shared import ProgressTracker, save_images_to_disk
+from ui.shared import ProgressTracker, save_images_to_disk, EXTRACTED_IMAGES_DIR
 from ui.stores import get_store, get_sky_east_store
 from ui.sky_east._shared import _parse_fabric_mapping_file, live_label
 from ui.sky_east._validators import _se_report_sku_conflicts, _se_validate_contracts
@@ -108,6 +108,18 @@ def _se_init_lookups(ref_info: dict, tracker, log: list[str]):
             log.append(f"Progress lookup: {len(progress_lookup)} records")
         except Exception as exc:
             log.append(f"Progress lookup error: {exc}")
+    else:
+        # No file uploaded for this run — fall back to the saved
+        # progress-records DB (uploaded once via Fabric Mapping → HHN
+        # Contract Progress), so 大货进度表 doesn't need re-uploading here.
+        from ui.sky_east._shared import get_progress_lookup
+        progress_lookup = get_progress_lookup(SOURCE_SKY_EAST)
+        if progress_lookup is not None:
+            st.write(f"  Progress lookup: using {len(progress_lookup)} saved record(s)")
+            log.append(
+                f"Progress lookup: using {len(progress_lookup)} saved record(s) "
+                "from the database (no file uploaded this run)"
+            )
 
     return config_sku_lookup, fabric_lookup, progress_lookup
 
@@ -267,115 +279,142 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
     log: list[str] = []
     contracts = []
     image_cache = ImageCache()
+    try:
 
-    n_order  = len(order_files)
-    n_refs   = sum(1 for f in [ean_file, progress_file] if f is not None)
-    n_steps  = n_order + n_refs + n_refs + 3
+        n_order  = len(order_files)
+        n_refs   = sum(1 for f in [ean_file, progress_file] if f is not None)
+        n_steps  = n_order + n_refs + n_refs + 3
 
-    with st.status("Processing Sky East files...", expanded=True) as status:
-        tracker = ProgressTracker(n_steps)
+        with st.status("Processing Sky East files...", expanded=True) as status:
+            tracker = ProgressTracker(n_steps)
 
-        order_paths = []
-        for uf in order_files:
-            p = os.path.join(tmpdir, uf.name)
-            with open(p, "wb") as f:
-                f.write(uf.getbuffer())
-            order_paths.append((uf.name, p))
-
-        for fname, path in order_paths:
-            tracker.step(f"Parsing {fname}")
-            st.write(f"Parsing {fname}...")
-            try:
-                contract = se_parse(path,
-                                    processed_by=st.session_state.get(SK.USERNAME, ""))
-                contracts.append(contract)
-                pc = contract.pc_no or "(no PC No.)"
-                n  = len(contract.items)
-                st.write(f"  {fname} -> PC {pc}, {n} item(s)")
-                log.append(
-                    f'<span style="color:#198754">{fname}</span> '
-                    f'-> PC <b>{pc}</b>, {n} item(s)'
-                )
-                added = image_cache.add_file(path)
-                if added:
-                    st.write(f"  {added} image(s) extracted from {fname}")
-                    log.append(f"{added} image(s) from {fname}")
-            except Exception as exc:
-                st.write(f"  {fname}: {exc}")
-                log.append(f'<span style="color:#dc3545">{fname}</span>: {exc}')
-
-        if not contracts:
-            status.update(label="No valid contracts could be parsed.", state="error")
-            st.session_state.se_log = log
-            return
-
-        ref_info: dict[str, str] = {}
-        for label, uf, key in [
-            ("Config SKU", ean_file,      "ean"),
-            ("Progress",   progress_file, "progress"),
-        ]:
-            if uf is not None:
-                tracker.step(f"Loading {label} file")
-                rpath = os.path.join(tmpdir, uf.name)
-                with open(rpath, "wb") as f:
+            order_paths = []
+            for uf in order_files:
+                p = os.path.join(tmpdir, uf.name)
+                with open(p, "wb") as f:
                     f.write(uf.getbuffer())
-                ref_info[key] = rpath
-                added = image_cache.add_file(rpath)
-                st.write(f"  {label} reference loaded ({uf.name})"
-                         + (f", {added} image(s)" if added else ""))
-                log.append(f"{label} file loaded: {uf.name}"
-                           + (f" -- {added} image(s)" if added else ""))
+                order_paths.append((uf.name, p))
 
-        config_sku_lookup, fabric_lookup, progress_lookup = _se_init_lookups(
-            ref_info, tracker, log
+            for fname, path in order_paths:
+                tracker.step(f"Parsing {fname}")
+                st.write(f"Parsing {fname}...")
+                try:
+                    contract = se_parse(path,
+                                        processed_by=st.session_state.get(SK.USERNAME, ""))
+                    contracts.append(contract)
+                    pc = contract.pc_no or "(no PC No.)"
+                    n  = len(contract.items)
+                    st.write(f"  {fname} -> PC {pc}, {n} item(s)")
+                    log.append(
+                        f'<span style="color:#198754">{fname}</span> '
+                        f'-> PC <b>{pc}</b>, {n} item(s)'
+                    )
+                    added = image_cache.add_file(path)
+                    if added:
+                        st.write(f"  {added} image(s) extracted from {fname}")
+                        log.append(f"{added} image(s) from {fname}")
+                    if contract.skipped_zero_qty:
+                        n_skip = len(contract.skipped_zero_qty)
+                        st.write(f"  ⚠️ {n_skip} zero-unit row(s) ignored in {fname}")
+                        for s in contract.skipped_zero_qty:
+                            log.append(
+                                f'<span style="color:#fd7e14">⚠️ Ignored (0 units)</span> '
+                                f'{fname} row {s["row"]}: style <b>{s["style"] or "—"}</b>'
+                                + (f", PO {s['po']}" if s["po"] else "")
+                            )
+                except Exception as exc:
+                    st.write(f"  {fname}: {exc}")
+                    log.append(f'<span style="color:#dc3545">{fname}</span>: {exc}')
+
+            if not contracts:
+                status.update(label="No valid contracts could be parsed.", state="error")
+                st.session_state.se_log = log
+                return
+
+            ref_info: dict[str, str] = {}
+            for label, uf, key in [
+                ("Config SKU", ean_file,      "ean"),
+                ("Progress",   progress_file, "progress"),
+            ]:
+                if uf is not None:
+                    tracker.step(f"Loading {label} file")
+                    rpath = os.path.join(tmpdir, uf.name)
+                    with open(rpath, "wb") as f:
+                        f.write(uf.getbuffer())
+                    ref_info[key] = rpath
+                    added = image_cache.add_file(rpath)
+                    st.write(f"  {label} reference loaded ({uf.name})"
+                             + (f", {added} image(s)" if added else ""))
+                    log.append(f"{label} file loaded: {uf.name}"
+                               + (f" -- {added} image(s)" if added else ""))
+
+            config_sku_lookup, fabric_lookup, progress_lookup = _se_init_lookups(
+                ref_info, tracker, log
+            )
+
+            tracker.step("Enriching items")
+            _se_enrich_items(contracts, config_sku_lookup, fabric_lookup, progress_lookup, log)
+
+            _se_report_sku_conflicts(config_sku_lookup, log)
+
+            tracker.step("Validating import data")
+            st.write("Validating import data...")
+            _se_validate_contracts(contracts, log)
+
+            tracker.step("Saving to database")
+            st.write("Saving to database...")
+            store   = get_sky_east_store()
+            results = store.save_many_contracts_checked(contracts)
+
+            total_new  = sum(len(r["new_items"])       for r in results)
+            total_upd  = sum(len(r["updated_items"])   for r in results)
+            total_dup  = sum(len(r["duplicate_items"]) for r in results)
+            st.write(
+                f"  {total_new} new, {total_upd} updated, "
+                f"{total_dup} duplicate(s) skipped"
+            )
+            log.append(
+                f"Stored: {total_new} new, {total_upd} updated, "
+                f"{total_dup} duplicates skipped"
+            )
+
+            _se_save_fabric_parts_universal(contracts, fabric_lookup, log)
+            _se_patch_contract_numbers(store, contracts, progress_lookup, log)
+
+            masked_zip_bytes = _se_mask_order_files(order_paths, log) if mask_prices else None
+
+            tracker.done()
+            status.update(label="Done!", state="complete")
+
+        st.session_state.se_results    = results
+        st.session_state.se_log        = log
+        st.session_state.se_contracts  = contracts
+        st.session_state.se_masked_zip = masked_zip_bytes
+        st.session_state.se_image_cache = {
+            img_id: image_cache.get(img_id)
+            for img_id in image_cache.all_ids()
+            if image_cache.get(img_id)
+        }
+        _style_pid_map = _se_build_style_pid_map(contracts)
+        # Save to the user's configured image folder (existing behaviour) …
+        save_images_to_disk(
+            st.session_state.se_image_cache,
+            _style_pid_map,
         )
-
-        tracker.step("Enriching items")
-        _se_enrich_items(contracts, config_sku_lookup, fabric_lookup, progress_lookup, log)
-
-        _se_report_sku_conflicts(config_sku_lookup, log)
-
-        tracker.step("Validating import data")
-        st.write("Validating import data...")
-        _se_validate_contracts(contracts, log)
-
-        tracker.step("Saving to database")
-        st.write("Saving to database...")
-        store   = get_sky_east_store()
-        results = store.save_many_contracts_checked(contracts)
-
-        total_new  = sum(len(r["new_items"])       for r in results)
-        total_upd  = sum(len(r["updated_items"])   for r in results)
-        total_dup  = sum(len(r["duplicate_items"]) for r in results)
-        st.write(
-            f"  {total_new} new, {total_upd} updated, "
-            f"{total_dup} duplicate(s) skipped"
+        # … and ALWAYS to the persistent extracted-images fallback, so a later
+        # buy-plan run can still find them after a restart or a changed folder.
+        save_images_to_disk(
+            st.session_state.se_image_cache,
+            _style_pid_map,
+            img_dir=EXTRACTED_IMAGES_DIR,
         )
-        log.append(
-            f"Stored: {total_new} new, {total_upd} updated, "
-            f"{total_dup} duplicates skipped"
-        )
-
-        _se_save_fabric_parts_universal(contracts, fabric_lookup, log)
-        _se_patch_contract_numbers(store, contracts, progress_lookup, log)
-
-        masked_zip_bytes = _se_mask_order_files(order_paths, log) if mask_prices else None
-
-        tracker.done()
-        status.update(label="Done!", state="complete")
-
-    st.session_state.se_results    = results
-    st.session_state.se_log        = log
-    st.session_state.se_contracts  = contracts
-    st.session_state.se_masked_zip = masked_zip_bytes
-    st.session_state.se_image_cache = {
-        img_id: image_cache.get(img_id)
-        for img_id in image_cache.all_ids()
-        if image_cache.get(img_id)
-    }
-    save_images_to_disk(
-        st.session_state.se_image_cache,
-        _se_build_style_pid_map(contracts),
-    )
-    # Clean up temp directory — all data is now in memory / DB / disk images
-    _shutil.rmtree(tmpdir, ignore_errors=True)
+        # Keep memory + the extracted-images folder bounded (best-effort).
+        try:
+            from ui.memory import prune_extracted_images, trim_image_cache
+            prune_extracted_images()
+            trim_image_cache()
+        except Exception:
+            pass
+    finally:
+        # Clean up temp directory — all data is now in memory / DB / disk images
+        _shutil.rmtree(tmpdir, ignore_errors=True)

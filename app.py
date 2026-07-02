@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "1.14.8"
+APP_VERSION = "2.24.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -142,6 +142,12 @@ for key, default in [
     (SK.GIII_MAPPING,    None),    # result of last mapping import
     # Sky East — color mapping source (None = resolve from admin default on first render)
     (SK.SE_COLOR_SOURCE, None),
+    # Production Tracking
+    (SK.PT_SELECTED_EDIT,  None),   # int — record id selected in Edit tab
+    (SK.PT_SELECTED_PLAN,  None),   # int — record id selected in Plan tab
+    (SK.PT_PLAN_OVERRIDE,  {}),     # dict[stage, int] — what-if day overrides
+    (SK.PT_DELETE_CONFIRM, False),  # bool — delete confirmation shown
+    (SK.PT_ACTIVE_TAB,     0),      # int — active sub-tab (0 = Dashboard)
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -283,9 +289,14 @@ def show_main():
             st.rerun()
         st.caption("中文" if _lang_now == "zh" else "English")
 
+        st.divider()
+        # ── Memory management ─────────────────────────────────────────────
+        from ui.memory import render_sidebar_memory
+        render_sidebar_memory()
+
     # ---- Tabs ----
     admin_mode = is_admin(st.session_state.username)
-    tab_labels = ["📋 GIII", "🛍 Sky East", "🧵 Fabric DB", "📐 Fabric Mapping", "🎨 Colors", "📊 Summary", "🔖 Releases"]
+    tab_labels = ["📋 GIII", "🛍 Sky East", "🧵 Fabric DB", "📐 Reference Data", "🎨 Colors", "📊 Summary", "🏭 Tracking", "🔖 Releases"]
     if admin_mode:
         tab_labels.append("⚙️ Admin")
     tabs = st.tabs(tab_labels)
@@ -304,18 +315,34 @@ def show_main():
         _show_summary_tab(user_cos=get_user_companies(st.session_state.username),
                           admin_mode=admin_mode)
     with tabs[6]:
+        _show_production_tracking_tab(
+            user_cos=get_user_companies(st.session_state.username),
+            admin_mode=admin_mode,
+        )
+    with tabs[7]:
         _show_changelog_tab()
     if admin_mode:
-        with tabs[7]:
+        with tabs[8]:
             _show_admin_panel()
 
 
 # -- Summary tab ---------------------------------------------------------
 
 
+@st.fragment
 def _show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
     from ui.summary_view import show_summary_tab
     show_summary_tab(user_cos=user_cos, admin_mode=admin_mode)
+
+
+@st.fragment
+def _show_production_tracking_tab(user_cos: list[str], admin_mode: bool) -> None:
+    from ui.production_tracking_view import show_production_tracking_tab
+    show_production_tracking_tab(
+        user_cos=user_cos,
+        username=st.session_state.username,
+        admin_mode=admin_mode,
+    )
 
 
 def _show_admin_panel():
@@ -415,6 +442,7 @@ def _show_user_admin():
 # ---------------------------------------------------------------------------
 
 
+@st.fragment
 def _show_smart_upload_tab() -> None:
     from ui.giii_view import show_smart_upload_tab
     show_smart_upload_tab()
@@ -425,6 +453,7 @@ def _show_smart_upload_tab() -> None:
 # ---------------------------------------------------------------------------
 
 
+@st.fragment
 def _show_sky_east_tab() -> None:
     from ui.sky_east_view import show_sky_east_tab
     show_sky_east_tab()
@@ -437,11 +466,13 @@ def _show_sky_east_tab() -> None:
 # ---------------------------------------------------------------------------
 
 
+@st.fragment
 def _show_fabric_db_tab() -> None:
     from ui.fabric_db_view import show_fabric_db_tab
     show_fabric_db_tab()
 
 
+@st.fragment
 def _show_fabric_mapping_tab() -> None:
     from ui.fabric_mapping_view import show_fabric_mapping_tab
     show_fabric_mapping_tab()
@@ -452,6 +483,7 @@ def _show_fabric_mapping_tab() -> None:
 # ---------------------------------------------------------------------------
 
 
+@st.fragment
 def _show_color_translation_tab() -> None:
     from ui.color_translation_view import show_color_translation_tab
     show_color_translation_tab()
@@ -462,6 +494,7 @@ def _show_color_translation_tab() -> None:
 # ---------------------------------------------------------------------------
 
 
+@st.fragment
 def _show_changelog_tab() -> None:
     from ui.changelog_view import show_changelog_tab
     show_changelog_tab()

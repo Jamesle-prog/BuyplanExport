@@ -143,7 +143,9 @@ def _se_missing_edit_grid(df_a, pid_b64_a: dict) -> None:
     if st.button("Save Changes", key="se_missing_save"):
         store = get_sky_east_store()
         rev = {v: k for k, v in drename.items()}
-        ei  = edited.drop(columns=["Photo"], errors="ignore").rename(columns=rev)
+        # Drop the locale-aware Photo column (_th("Photo")), not the literal
+        # "Photo" — under the Chinese UI the header is translated.
+        ei  = edited.drop(columns=[_photo_col], errors="ignore").rename(columns=rev)
         saved = sum(
             store.update_item_fields(
                 str(r.get("pc_no", "")), str(r.get("style", "")),
@@ -220,8 +222,9 @@ def _show_se_missing_fields_section(missing_df) -> None:
     if df_a.empty:
         st.success("All items have Fabric No. and HHN Contract No.")
     else:
+        from ui.sky_east._shared import get_progress_lookup
         fl = st.session_state.get(SK.SE_FABRIC_LOOKUP)
-        pl = st.session_state.get(SK.SE_PROGRESS_LKUP)
+        pl = get_progress_lookup()
         orig_a, af_mask = _se_missing_apply_auto_fill(df_a, fl, pl)
         _se_missing_show_autofill_controls(df_a, orig_a, af_mask, fl, pl)
         st.divider()

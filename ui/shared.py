@@ -18,6 +18,13 @@ from ui.session_keys import SK as _SK
 
 from ui.stores import IMAGES_DIR_DEFAULT
 
+# Persistent fallback folder for images extracted from source spreadsheets.
+# Processing saves every extracted image here (in addition to the user's
+# configured image folder), so a later buy-plan run can still find them after a
+# restart clears the in-memory cache, or when the configured folder was changed
+# or emptied.  Image lookups fall back to this folder when the primary misses.
+EXTRACTED_IMAGES_DIR = os.path.join(os.path.dirname(IMAGES_DIR_DEFAULT), "extracted_images")
+
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CSV_MIME  = "text/csv"
 ZIP_MIME  = "application/zip"
@@ -111,6 +118,34 @@ def _th(label: str) -> str:
 def _tr(mapping: dict) -> dict:
     """Apply _th() to all values in a rename dict."""
     return {k: _th(v) for k, v in mapping.items()}
+
+
+# ---------------------------------------------------------------------------
+# Processing-log expander
+# ---------------------------------------------------------------------------
+
+_LOG_ISSUE_MARKERS = ("⚠", "❌", "error", "warning", "failed")
+
+
+def show_processing_log(lines, *, title: str = "Processing log") -> None:
+    """Render a processing-log expander that can't hide failures.
+
+    Collapsed with a plain label when the log is clean; auto-expanded with the
+    issue count in the label (e.g. "Processing log (2 ⚠️)") when any line
+    carries an error/warning marker — a run with problems must not look
+    identical to a clean one.
+    """
+    if not lines:
+        return
+    from ui.i18n import t as _t
+    n_issues = sum(
+        1 for line in lines
+        if any(m in str(line).lower() for m in _LOG_ISSUE_MARKERS)
+    )
+    label = f"{_t(title)} ({n_issues} ⚠️)" if n_issues else _t(title)
+    with st.expander(label, expanded=bool(n_issues)):
+        for line in lines:
+            st.markdown(line, unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -349,12 +384,45 @@ def load_image(picture_id: str,
     cache = st.session_state.get(session_cache_key) or {}
     if picture_id in cache:
         return cache[picture_id]
-    folder = img_dir if img_dir is not None else images_dir()
-    path = os.path.join(folder, f"{picture_id}.png")
-    if os.path.exists(path):
-        with open(path, "rb") as f:
-            return f.read()
+    primary = img_dir if img_dir is not None else images_dir()
+    # Primary (configured) folder first, then the persistent extracted-images
+    # fallback so images survive restarts / a changed image folder.
+    for folder in (primary, EXTRACTED_IMAGES_DIR):
+        path = os.path.join(folder, f"{picture_id}.png")
+        if os.path.exists(path):
+            try:
+                with open(path, "rb") as f:
+                    return f.read()
+            except OSError:
+                pass
     return None
+
+
+def load_style_photo_pair(style: str, primary_dir: str | None = None) -> list:
+    """Return ``[front_bytes|None, back_bytes|None]`` for *style*.
+
+    Looks in the primary (configured) folder first, then the persistent
+    :data:`EXTRACTED_IMAGES_DIR` fallback, for ``{safe_style}_front.png`` /
+    ``{safe_style}_back.png``.  Used by the buy-plan generator so photos still
+    embed after a restart or a changed image folder.
+    """
+    import re as _re
+    safe = _re.sub(r'[\\/:*?"<>|]', '_', str(style or ""))
+    primary = primary_dir if primary_dir is not None else images_dir()
+    pair: list = []
+    for pos in ("front", "back"):
+        data = None
+        for folder in (primary, EXTRACTED_IMAGES_DIR):
+            p = os.path.join(folder, f"{safe}_{pos}.png")
+            if os.path.exists(p):
+                try:
+                    with open(p, "rb") as fh:
+                        data = fh.read()
+                    break
+                except OSError:
+                    pass
+        pair.append(data)
+    return pair
 
 
 def save_images_to_disk(image_dict: dict,
@@ -409,15 +477,18 @@ def build_image_cache_for_ids(picture_ids,
             # Already in session — free hit
             result[pid] = session_cache[pid]
             continue
-        # Not cached yet — load from disk and populate session cache
-        folder = img_dir if img_dir is not None else images_dir()
-        path = os.path.join(folder, f"{pid}.png")
-        if os.path.exists(path):
-            try:
-                with open(path, "rb") as _f:
-                    b = _f.read()
-                session_cache[pid] = b
-                result[pid] = b
-            except OSError:
-                pass
+        # Not cached yet — try the configured folder, then the persistent
+        # extracted-images fallback; populate the session cache on a hit.
+        primary = img_dir if img_dir is not None else images_dir()
+        for folder in (primary, EXTRACTED_IMAGES_DIR):
+            path = os.path.join(folder, f"{pid}.png")
+            if os.path.exists(path):
+                try:
+                    with open(path, "rb") as _f:
+                        b = _f.read()
+                    session_cache[pid] = b
+                    result[pid] = b
+                    break
+                except OSError:
+                    pass
     return result

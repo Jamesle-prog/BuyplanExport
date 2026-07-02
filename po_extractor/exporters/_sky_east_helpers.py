@@ -13,6 +13,7 @@ from pathlib import Path
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from auth.companies import COMPANY_SKY_EAST
+from ._excel_helpers import set_internal_hyperlink
 
 __all__ = [
     # Template paths
@@ -23,7 +24,7 @@ __all__ = [
     "_COL_CONTRACT", "_COL_STYLE", "_COL_BRAND", "_COL_ARTICLE", "_COL_PO",
     "_COL_CONFIG", "_COL_COLOR_EN", "_COL_COLOR_CN", "_COL_LABEL_CLR",
     "_COL_XS", "_COL_S", "_COL_M", "_COL_L", "_COL_XL", "_COL_XXL",
-    "_COL_TOTAL", "_COL_EXFTY",
+    "_COL_BOAT_SAMPLE", "_COL_TOTAL", "_COL_EXFTY",
     # Fabric header fallback column positions
     "_COL_COMPOSITION", "_COL_DISPLAY_KEY",
     "_DATA_ROW_FB",
@@ -32,12 +33,44 @@ __all__ = [
     # Helper functions
     "_norm", "_thin",
     "_apply_config_overrides", "_clean_sheet_name",
-    "_clear_data_area", "_cn_color", "_create_index_sheet",
+    "_clear_data_area", "_cn_color", "_create_index_sheet", "_create_overview_sheet",
     "_detect_buyplan_layout", "_detect_fabric_rows", "_detect_nukuryou_layout",
     "_embed_style_photos", "_prep_image_for_embed",
-    "_replace_placeholders", "_set_sheet_column_widths", "_style_data", "_style_total",
+    "_replace_placeholders", "_set_sheet_column_widths", "_strip_color_brackets",
+    "_style_data", "_style_total",
     "derive_main_label_color",
+    "_COLOR_NOT_FOUND", "_color_miss_comment_text",
 ]
+
+# ---------------------------------------------------------------------------
+# Colour resolution — explicit "not found" marker
+# ---------------------------------------------------------------------------
+# Distinct from a soft blank/"NA" (matched, but that field was empty in the
+# source row) — this means the selected colour source has no entry at all
+# for the (style, colour) key.  Shared by both buyplan exporters and the
+# Overview sheet builder below, which attaches a diagnostic comment to any
+# cell showing this value.
+_COLOR_NOT_FOUND = "未找到"
+
+
+def _color_miss_comment_text(client_po_color: str, progress_colors: list[str] | None) -> str:
+    """Build the diagnostic comment text for a 未找到 colour cell.
+
+    Always shows the client's PO colour exactly as the order file had it
+    (before bracket-stripping / splitting). When *progress_colors* is a
+    (possibly empty) list — meaning 大货进度表 is the selected source — a
+    second line lists the colour name(s) 大货进度表 actually has on file for
+    that PC No./Style, so a reviewer can spot a naming mismatch (e.g. client
+    says "Dark Blue", 大货进度表 says "Navy") without opening the source file.
+    ``None`` (the internal-DB-source case) omits that second line entirely.
+    """
+    lines = [f"Client's PO colour: \"{client_po_color}\""]
+    if progress_colors is not None:
+        if progress_colors:
+            lines.append(f"大货进度表 colour(s) on file: {', '.join(progress_colors)}")
+        else:
+            lines.append("大货进度表 has no colour recorded for this PC No./Style")
+    return "\n".join(lines)
 
 # ---------------------------------------------------------------------------
 # Template paths
@@ -70,7 +103,7 @@ _COL_M         = 12   # L  M
 _COL_L         = 13   # M  L
 _COL_XL        = 14   # N  XL
 _COL_XXL       = 15   # O  XXL
-# col 16 = P  船样要求 (left blank)
+_COL_BOAT_SAMPLE = 16 # P  船样要求 (populated from BoatSampleStore when available)
 _COL_TOTAL     = 17   # Q  Total
 _COL_EXFTY     = 18   # R  离厂时间
 _DATA_ROW_FB   =  8   # Fallback data start row
@@ -100,6 +133,7 @@ _BUY_PLAN_COL_ALIASES: dict[str, set[str]] = {
     "l":         {"l"},
     "xl":        {"xl"},
     "xxl":       {"xxl", "2xl", "2xl"},
+    "boat_sample": {"船样要求", "boat sample", "boat sample req", "船样"},
     "total":     {"total", "订单数合计", "qty", "total qty", "数量合计"},
     "ex_fty":    {"离厂时间", "ex-fty", "ex fty", "exfty", "ex_fty"},
 }
@@ -162,6 +196,7 @@ def _detect_buyplan_layout(ws) -> tuple[dict[str, int], int]:
         "label_clr":_COL_LABEL_CLR,
         "xs": _COL_XS, "s": _COL_S, "m": _COL_M, "l": _COL_L,
         "xl": _COL_XL, "xxl": _COL_XXL,
+        "boat_sample": _COL_BOAT_SAMPLE,
         "total": _COL_TOTAL, "ex_fty": _COL_EXFTY,
     }
     for field, col in fallbacks.items():
@@ -540,6 +575,35 @@ def _clean_sheet_name(name: str) -> str:
     return clean_sheet_name(name, fallback="")
 
 
+_PAREN_GAP_RE    = re.compile(r'\)\s*\(')
+_PAREN_CHARS_RE  = re.compile(r'[()\[\]{}]')
+
+
+def _strip_color_brackets(s: str) -> str:
+    """Strip decorative wrapping brackets/parentheses from a colour string.
+
+    Some Sky East order files store the colour name fully wrapped in
+    parentheses, e.g. ``"(dark blue)"``, or two colours concatenated as
+    ``"(dark blue)(white)"``. Left as-is these:
+      • display with ugly brackets in the buy plan ("(Dark Blue)"), and
+      • never exact-match a lookup key from 大货进度表 or the internal
+        colour DB (both store plain names like "Dark Blue"), so the
+        Chinese colour name / colour code silently come back empty even
+        when the DB has a matching entry.
+
+    Adjacent ")(" boundaries (concatenated multi-colour values) are joined
+    with " / " first so a two-tone label stays readable —
+    ``"(dark blue)(white)"`` → ``"dark blue / white"`` — before every
+    remaining bracket character is dropped. Colours with no brackets at
+    all (the common case) pass through unchanged.
+    """
+    if not s or ("(" not in s and "[" not in s and "{" not in s):
+        return s
+    s = _PAREN_GAP_RE.sub(') / (', s)
+    s = _PAREN_CHARS_RE.sub('', s)
+    return " ".join(s.split())
+
+
 def _cn_color(cn_lookup: dict, brand: str, color_en: str) -> str:
     """Look up Chinese color — primary (brand-specific) key only, no fallback.
 
@@ -663,6 +727,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                                "body_part":   str,   # fabric body part label
                                "hhn_no":      str,   # HHN fabric code
                                "ex_fty_date": str,
+                               "pc_no":       str,   # 客人PC NO — optional
                            }
 
                        When supplied this is used directly (one Index row per
@@ -682,7 +747,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
     # label "Main Body / 大身" and the next column already says 面料_大身_编号
     # (i.e. the body-part identity is encoded in the header itself).
     _base_headers = [
-        "No.", "款号", "客户品牌", "面料_大身_编号",
+        "No.", "款号", "客人PC NO", "客户品牌", "面料_大身_编号",
         "订单数合计", "离厂时间", "生产工厂", "工厂交期",
         "面料（计划）到厂时间", "辅料（计划）到厂时间", "样衣（计划）确认时间",
         "大货版（计划）完成时间", "全码版（计划）完成时间",
@@ -690,7 +755,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
         "裁剪数", "车位（计划）完成时间", "后道（计划）完成时间", "出货数",
     ]
     if has_images:
-        # Insert "图片" between "款号" and "客户品牌"
+        # Insert "图片" between "款号" and "客人PC NO"
         headers = _base_headers[:2] + ["图片"] + _base_headers[2:]
     else:
         headers = _base_headers
@@ -704,16 +769,17 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
 
     # ── Column index map (1-based) — shifts right by 1 when image col present ─
     # Layout (no image col / with image col):
-    #   No.    | 款号   | [图片] | 客户品牌 | 面料_大身_编号 | 订单数合计 | 离厂时间
-    #     1        2       (3)      3/4         4/5            5/6        6/7
+    #   No.    | 款号   | [图片] | 客人PC NO | 客户品牌 | 面料_大身_编号 | 订单数合计 | 离厂时间
+    #     1        2       (3)      3/4          4/5        5/6            6/7        7/8
     _off = 1 if has_images else 0
     _C_NO    = 1
     _C_STYLE = 2
     _C_IMG   = 3 if has_images else None
-    _C_BRAND = 3 + _off
-    _C_FABNO = 4 + _off
-    _C_QTY   = 5 + _off
-    _C_EXFTY = 6 + _off
+    _C_PCNO  = 3 + _off
+    _C_BRAND = 4 + _off
+    _C_FABNO = 5 + _off
+    _C_QTY   = 6 + _off
+    _C_EXFTY = 7 + _off
 
     from openpyxl.utils import get_column_letter as _gcl
     _IMG_PX  = 160  # thumbnail size in pixels (larger = sharper rendering)
@@ -732,19 +798,23 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                 meta.get("body_part",   ""),
                 meta.get("display_key") or meta.get("hhn_no", ""),
                 meta.get("ex_fty_date", ""),
+                meta.get("pc_no",       ""),
             )
             for meta in sheet_meta_list
         ]
     else:
         # Legacy path: one row per unique style, aggregated from df_items.
+        _agg_kwargs = dict(
+            brand          = ("brand",          "first"),
+            fabrication    = ("fabrication",    "first"),
+            fabric_item_no = ("fabric_item_no", "first"),
+            ex_fty_date    = ("ex_fty_date",    "first"),
+        )
+        if "pc_no" in df_items.columns:
+            _agg_kwargs["pc_no"] = ("pc_no", "first")
         agg = (
             df_items.groupby("style", sort=False)
-            .agg(
-                brand          = ("brand",          "first"),
-                fabrication    = ("fabrication",    "first"),
-                fabric_item_no = ("fabric_item_no", "first"),
-                ex_fty_date    = ("ex_fty_date",    "first"),
-            )
+            .agg(**_agg_kwargs)
             .reset_index()
         )
         rows_iter = [
@@ -755,20 +825,20 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                 str(row.fabrication    or ""),
                 str(row.fabric_item_no or ""),
                 str(row.ex_fty_date    or ""),
+                str(getattr(row, "pc_no", "") or ""),
             )
             for row in agg.itertuples(index=False)
         ]
 
-    for ri, (style_name, sheet_name, brand, body_part, fab_key, ex_fty_date) in \
+    for ri, (style_name, sheet_name, brand, body_part, fab_key, ex_fty_date, pc_no) in \
             enumerate(rows_iter, start=2):
 
         idx_ws.cell(ri, _C_NO).value = ri - 1
         cell_style = idx_ws.cell(ri, _C_STYLE, value=style_name)
         if sheet_name in wb.sheetnames:
-            # BUG-41 mitigation: quote the sheet name for hyperlinks so spaces
-            # and other legal-but-tricky characters don't break the target.
-            cell_style.hyperlink = f"#'{sheet_name}'!A1"
+            set_internal_hyperlink(cell_style, sheet_name)
             cell_style.style = "Hyperlink"
+        idx_ws.cell(ri, _C_PCNO).value = pc_no
 
         # ── Style picture thumbnail (front image only for Index) ──────────
         if has_images and _C_IMG:
@@ -808,6 +878,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
     _idx_fixed_widths: dict[int, float] = {
         _C_NO:    6,
         _C_STYLE: 20,   # 款号  style names can be 15-18 chars
+        _C_PCNO:  14,   # 客人PC NO
         _C_BRAND: 16,   # 客户品牌
         _C_FABNO: 44,   # 面料_大身_编号  综合标识Key e.g. "HHN-JA-01715|100%POLYESTER|280|150"
         _C_QTY:   12,   # 订单数合计
@@ -828,6 +899,189 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
 
     # Freeze the header row so it stays visible while scrolling
     idx_ws.freeze_panes = "A2"
+
+
+def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 0) -> None:
+    """Item-level cross-check sheet — one row per (style, PO, colour) item
+    across the whole workbook, inserted right after the Index sheet.
+
+    Mirrors the Contract History item-browser preview table (Style, Photo,
+    Color, Brand, PO No., Config SKU, Article Name, Color Code, sizes,
+    Ex-Fty, Fabric N / 综合标识 Key N) plus the Chinese colour name alongside
+    the English one and the plain colour code, so every value written to a
+    per-style sheet can be spot-checked against one flat table without
+    hopping between tabs.
+
+    Parameters
+    ----------
+    wb             : target openpyxl Workbook — the Index sheet must already
+                     exist (this sheet is inserted at position 1, right after it).
+    overview_rows  : one dict per item row::
+
+                         {
+                             "contract_no": str, "pc_no": str, "style": str,
+                             "sheet_name": str,
+                             "color_en": str, "color_cn": str, "color_code": str,
+                             "client_po_color": str,
+                             "progress_colors": list[str] | None,
+                             "label_color": str,
+                             "brand": str, "po": str, "config_sku": str,
+                             "article_name": str,
+                             "xs": int, "s": int, "m": int, "l": int,
+                             "xl": int, "xxl": int, "total": int, "ex_fty": str,
+                             "photo": bytes | None,
+                             "fabrics": [(label, display_key), ...],
+                         }
+
+                     ``client_po_color`` is the colour text exactly as the
+                     client's order file had it, before bracket-stripping or
+                     multi-colour splitting. ``progress_colors`` is the list of
+                     colour name(s) 大货进度表 actually has on file for that PC
+                     No./Style (``None`` when the internal DB, not 大货进度表, is
+                     the selected source). When ``color_cn``/``color_code`` is
+                     :data:`_COLOR_NOT_FOUND`, both are combined into a cell
+                     comment so a reviewer can spot a naming mismatch (client
+                     says "Dark Blue", 大货进度表 says "Navy") without opening
+                     the source order file.
+
+    n_fabric_slots : number of Fabric / 综合标识 Key column pairs to render —
+                     matches the template's fabric-header row count, so every
+                     sheet's fabric combination fits regardless of how many
+                     fabrics any single style/combo actually uses.
+    """
+    import io as _io
+    from openpyxl.comments import Comment as _Comment
+    from openpyxl.utils import get_column_letter as _gcl
+
+    has_photos = any(r.get("photo") for r in overview_rows)
+
+    _base_headers = [
+        "No.", "Contract No.", "客人PC NO", "Style", "Color (EN)", "Color (CN)",
+        "Color Code", "主标颜色",
+        "Brand", "PO No.", "Config SKU", "Article Name",
+        "XS", "S", "M", "L", "XL", "2XL", "Total Qty", "Ex-Fty",
+    ]
+    headers = (_base_headers[:3] + ["Photo"] + _base_headers[3:]
+              if has_photos else list(_base_headers))
+    for i in range(1, n_fabric_slots + 1):
+        headers += [f"Fabric {i}", f"综合标识 Key {i}"]
+
+    ov_ws = wb.create_sheet("Overview", 1)   # right after Index
+
+    for ci, h in enumerate(headers, 1):
+        cell = ov_ws.cell(1, ci, value=h)
+        cell.fill = PatternFill(start_color="FF1F3864", end_color="FF1F3864", fill_type="solid")
+        cell.font = Font(bold=True, color="FFFFFFFF", size=10)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ov_ws.row_dimensions[1].height = 30
+
+    # ── Column index map (1-based) — shifts right by 1 when Photo is present ─
+    _off        = 1 if has_photos else 0
+    _C_NO       = 1
+    _C_CONTRACT = 2
+    _C_PCNO     = 3
+    _C_IMG      = 4 if has_photos else None
+    _C_STYLE    = 4 + _off
+    _C_COLOR_EN = 5 + _off
+    _C_COLOR_CN = 6 + _off
+    _C_CODE     = 7 + _off
+    _C_LABEL    = 8 + _off
+    _C_BRAND    = 9 + _off
+    _C_PO       = 10 + _off
+    _C_CONFIG   = 11 + _off
+    _C_ARTICLE  = 12 + _off
+    _C_XS       = 13 + _off
+    _C_S        = 14 + _off
+    _C_M        = 15 + _off
+    _C_L        = 16 + _off
+    _C_XL       = 17 + _off
+    _C_XXL      = 18 + _off
+    _C_TOTAL    = 19 + _off
+    _C_EXFTY    = 20 + _off
+    _FAB_START  = 21 + _off
+
+    _IMG_PX = 60   # small thumbnail — this sheet is one row per item, potentially
+    _ROW_PT = 46   # far more rows than the style-level Index sheet
+
+    for ri, row in enumerate(overview_rows, start=2):
+        ov_ws.cell(ri, _C_NO,       value=ri - 1)
+        ov_ws.cell(ri, _C_CONTRACT, value=row.get("contract_no", ""))
+        ov_ws.cell(ri, _C_PCNO,     value=row.get("pc_no", ""))
+        style_cell = ov_ws.cell(ri, _C_STYLE, value=row.get("style", ""))
+        sheet_name = row.get("sheet_name", "")
+        if sheet_name and sheet_name in wb.sheetnames:
+            set_internal_hyperlink(style_cell, sheet_name)
+            style_cell.style = "Hyperlink"
+        ov_ws.cell(ri, _C_COLOR_EN, value=row.get("color_en", ""))
+        color_cn_cell = ov_ws.cell(ri, _C_COLOR_CN, value=row.get("color_cn", ""))
+        color_code_cell = ov_ws.cell(ri, _C_CODE, value=row.get("color_code", ""))
+        if row.get("color_cn") == _COLOR_NOT_FOUND:
+            _client_color = row.get("client_po_color") or row.get("color_en", "")
+            _note_text = _color_miss_comment_text(_client_color, row.get("progress_colors"))
+            color_cn_cell.comment   = _Comment(_note_text, "PO Extractor")
+            color_code_cell.comment = _Comment(_note_text, "PO Extractor")
+        ov_ws.cell(ri, _C_LABEL,    value=row.get("label_color", ""))
+        ov_ws.cell(ri, _C_BRAND,    value=row.get("brand", ""))
+        ov_ws.cell(ri, _C_PO,       value=row.get("po", ""))
+        ov_ws.cell(ri, _C_CONFIG,   value=row.get("config_sku", ""))
+        ov_ws.cell(ri, _C_ARTICLE,  value=row.get("article_name", ""))
+        ov_ws.cell(ri, _C_XS,  value=row.get("xs", 0))
+        ov_ws.cell(ri, _C_S,   value=row.get("s", 0))
+        ov_ws.cell(ri, _C_M,   value=row.get("m", 0))
+        ov_ws.cell(ri, _C_L,   value=row.get("l", 0))
+        ov_ws.cell(ri, _C_XL,  value=row.get("xl", 0))
+        ov_ws.cell(ri, _C_XXL, value=row.get("xxl", 0))
+        ov_ws.cell(ri, _C_TOTAL, value=row.get("total", 0))
+        ov_ws.cell(ri, _C_EXFTY, value=row.get("ex_fty", ""))
+
+        if has_photos and _C_IMG:
+            img_bytes = row.get("photo")
+            if img_bytes:
+                try:
+                    from openpyxl.drawing.image import Image as _XLImage
+                    _prepped = _prep_image_for_embed(img_bytes, _IMG_PX)
+                    xl_img = _XLImage(_io.BytesIO(_prepped))
+                    xl_img.height = _IMG_PX
+                    xl_img.width  = _IMG_PX
+                    ov_ws.add_image(xl_img, f"{_gcl(_C_IMG)}{ri}")
+                except Exception:
+                    pass  # non-fatal — skip broken images silently
+
+        fabrics = row.get("fabrics") or []
+        for i in range(n_fabric_slots):
+            label, key = fabrics[i] if i < len(fabrics) else ("", "")
+            ov_ws.cell(ri, _FAB_START + i * 2,     value=label)
+            ov_ws.cell(ri, _FAB_START + i * 2 + 1, value=key)
+
+        ov_ws.row_dimensions[ri].height = _ROW_PT if has_photos else 18
+
+    # ── Alignment ─────────────────────────────────────────────────────────
+    _center_cols = {_C_NO, _C_XS, _C_S, _C_M, _C_L, _C_XL, _C_XXL, _C_TOTAL}
+    for rn in range(2, ov_ws.max_row + 1):
+        for cn in range(1, len(headers) + 1):
+            c = ov_ws.cell(rn, cn)
+            c.alignment = (
+                Alignment(horizontal="center", vertical="center") if cn in _center_cols
+                else Alignment(horizontal="left", vertical="center", indent=1)
+            )
+
+    # ── Column widths ─────────────────────────────────────────────────────
+    _fixed_widths: dict[int, float] = {
+        _C_NO: 6, _C_CONTRACT: 16, _C_PCNO: 14, _C_STYLE: 20, _C_COLOR_EN: 14, _C_COLOR_CN: 12,
+        _C_CODE: 10, _C_LABEL: 10, _C_BRAND: 14, _C_PO: 16, _C_CONFIG: 16, _C_ARTICLE: 22,
+        _C_XS: 6, _C_S: 6, _C_M: 6, _C_L: 6, _C_XL: 6, _C_XXL: 6,
+        _C_TOTAL: 10, _C_EXFTY: 12,
+    }
+    if has_photos and _C_IMG:
+        _fixed_widths[_C_IMG] = 10
+    for i in range(n_fabric_slots):
+        _fixed_widths[_FAB_START + i * 2]     = 24
+        _fixed_widths[_FAB_START + i * 2 + 1] = 40
+
+    for ci in range(1, len(headers) + 1):
+        ov_ws.column_dimensions[_gcl(ci)].width = _fixed_widths.get(ci, 14)
+
+    ov_ws.freeze_panes = "A2"
 
 
 def _prep_image_for_embed(img_bytes: bytes, display_px: int) -> bytes:

@@ -4,6 +4,8 @@ from __future__ import annotations
 import io
 from typing import Any
 
+import pandas as pd
+
 from po_extractor.config import EXCEL_PALETTE as _P
 
 

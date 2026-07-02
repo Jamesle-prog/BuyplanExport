@@ -31,6 +31,7 @@ from po_extractor.store import (
     BoatSampleStore,
     UITranslationStore,
     AppSettingsStore,
+    ProductionTrackingStore,
     get_po_store as _get_po_store,
     get_sky_east_store as _get_sky_east_store,
     get_fabric_master_store as _get_fabric_master_store,
@@ -38,6 +39,7 @@ from po_extractor.store import (
     get_boat_sample_store as _get_boat_sample_store,
     get_ui_translation_store as _get_ui_translation_store,
     get_app_settings_store as _get_app_settings_store,
+    get_production_tracking_store as _get_production_tracking_store,
     list_all_brands as _list_all_brands,
 )
 from po_extractor.config import DATA_DIR, DB_PATH   # canonical path constants
@@ -103,6 +105,16 @@ def get_app_settings_store() -> AppSettingsStore:
     Streamlit hot-reloads.
     """
     return _get_app_settings_store()
+
+
+def get_production_tracking_store() -> ProductionTrackingStore:
+    """Return a fresh ProductionTrackingStore (not cached — lightweight wrapper).
+
+    Same rationale as the other non-cached wrappers (FabricMasterStore,
+    BoatSampleStore): construction is cheap and we want every UI render
+    to see fresh data after any concurrent write.
+    """
+    return _get_production_tracking_store()
 
 
 # ── Convenience helpers exported for UI code ────────────────────────────────

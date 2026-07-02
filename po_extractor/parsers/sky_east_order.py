@@ -626,6 +626,7 @@ def parse(path: str, processed_by: str = "") -> SkyEastContract:
 
     # ── Parse data rows ───────────────────────────────────────────────────────
     items: list[SkyEastItem] = []
+    skipped_zero_qty: list[dict] = []
     current_brand = ""
 
     for r in range(hrow + 1, ws.max_row + 1):
@@ -670,6 +671,18 @@ def parse(path: str, processed_by: str = "") -> SkyEastContract:
         total_qty = _int(cv(r, "total_qty"))
         if total_qty == 0:
             total_qty = sum(sizes.values())
+
+        # Zero-unit rows are typically a cancelled/blanked-out order line
+        # (strikethrough style, PO, price all wiped but the row left in
+        # place) — importing them creates a phantom item with no real
+        # quantity. Drop the row and record it so it's surfaced in the
+        # upload log rather than silently disappearing.
+        if total_qty == 0:
+            skipped_zero_qty.append({
+                "row": r, "style": style_no,
+                "po": _v(cv(r, "po_number")),
+            })
+            continue
 
         # ── Multi-fabric extraction ───────────────────────────────────────────
         fabric_parts = _extract_fabric_parts(cv(r, "fabric_no"))
@@ -716,4 +729,5 @@ def parse(path: str, processed_by: str = "") -> SkyEastContract:
         parse_confidence = 100 if (pc_no and items) else 50,
         source_file_hash = file_hash,
         processed_by     = processed_by,
+        skipped_zero_qty = skipped_zero_qty,
     )

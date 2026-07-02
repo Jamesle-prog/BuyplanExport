@@ -30,11 +30,21 @@ import re
 import zipfile
 from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 import pandas as pd
 from openpyxl import load_workbook
 
-from ._sky_east_helpers import *  # noqa: F401,F403
+from ._sky_east_helpers import (
+    _TEMPLATES_DIR, _SE_TEMPLATE, _SE_TEMPLATE_P,
+    _SIZES_LC, _COL_BOAT_SAMPLE,
+    _apply_config_overrides, _clean_sheet_name, _clear_data_area, _cn_color,
+    _create_index_sheet, _create_overview_sheet,
+    _detect_buyplan_layout, _detect_fabric_rows, _detect_nukuryou_layout,
+    _embed_style_photos, _replace_placeholders, _set_sheet_column_widths,
+    _strip_color_brackets, _style_data, _style_total, derive_main_label_color,
+    _COLOR_NOT_FOUND, _color_miss_comment_text,
+)
 from ._excel_helpers import apply_print_settings
 from ..utils.file_utils import versioned_path
 from ..store.color_translation_store import _normalize_color_name as _nz_color
@@ -55,6 +65,33 @@ _NUKURYOU_LABEL_FMT = "{en}({cn})"
 # Sentinel used as the "brand" component of brand-agnostic flat lookup keys.
 # Centralised so changes propagate to every dict that follows the convention.
 _BRAND_AGNOSTIC = ""
+
+# _COLOR_NOT_FOUND is defined in _sky_east_helpers.py (shared with the
+# Overview sheet builder, which attaches a diagnostic comment to any cell
+# showing it) and reaches this module via the `from ._sky_east_helpers
+# import *` above.
+
+# Sentinel distinguishing "sky_east_store not passed — auto-fetch the
+# canonical store" from "explicitly passed None — disable colour-miss
+# logging entirely".  Callers that just want the default behaviour never
+# need to know this exists; tests pass ``sky_east_store=None`` to keep
+# colour-miss diagnostics (a real DB write) out of the shared dev database.
+_AUTO_STORE = object()
+
+
+def _se_base_style_key(style: str, known_styles: set[str]) -> str:
+    """Map a trailing-"A" variant onto its base style when the base exists.
+
+    ``"DR5302A"`` → ``"DR5302"`` only when ``"DR5302"`` is itself present in
+    *known_styles*; every other style is returned unchanged.  Used to group an
+    "A" variant into the same buy-plan sheet as its base style while each data
+    row still carries its own style name (with / without the trailing "A").
+    A standalone ``"…A"`` style with no matching base keeps its own sheet.
+    """
+    s = str(style or "").strip()
+    if len(s) > 1 and s.endswith("A") and s[:-1] in known_styles:
+        return s[:-1]
+    return s
 
 
 def _format_body_color_cn(
@@ -96,6 +133,26 @@ def _brand_keyed_get(
     return lookup.get((company, brand, norm_en)) or default
 
 
+def _available_progress_colors(
+    cn_by_pc_lookup: dict | None, pc_no_norm: str, sty_norm: str,
+) -> list[str]:
+    """Return the distinct colour names 大货进度表 actually has on file for
+    (pc_no_norm, sty_norm) — used to build a diagnostic comment when the
+    order-file colour doesn't match any of them, so a reviewer can see the
+    client's PO colour and 大货进度表's own colour(s) side by side instead of
+    having to open the source file to check for a naming mismatch (e.g.
+    client says "Dark Blue", 大货进度表 says "Navy").
+
+    Cheap by construction: only ever called on a miss (rare), not per row.
+    """
+    if not cn_by_pc_lookup:
+        return []
+    return sorted({
+        key[2] for key in cn_by_pc_lookup
+        if key[0] == pc_no_norm and key[1] == sty_norm and key[2]
+    })
+
+
 def _resolve_pc_color(
     row, sty_norm: str, color_en: str, brand: str,
     cn_lookup: dict, cn_code_lookup: dict | None,
@@ -103,35 +160,211 @@ def _resolve_pc_color(
 ) -> tuple[str, str, str, str]:
     """Resolve (color_cn, cn_code, label_color, color_cn_display) for one row.
 
-    Primary-only resolution — no brand-agnostic or cross-source fallbacks:
-      1. ``cn_by_pc_lookup`` — exact (pc_no, style, color) match from 大货进度表
-      2. ``cn_code_lookup``  — exact (company, brand, color) match from DB
+    The *selected* colour source is authoritative — whichever one the caller
+    wired in is used exclusively, with no fallback to the other:
 
-    When a field cannot be found in its primary source, ``cn_code`` is set to
-    ``"NA"`` so the cell clearly signals a missing mapping rather than silently
-    inheriting a wrong value from another brand.
+      • ``cn_by_pc_lookup`` is not ``None`` → 大货进度表 is the selected
+        source (the user's "Chinese color mapping source" radio picked it
+        and a file is loaded).  A miss on the exact (pc_no, style, color)
+        key is reported as an explicit ``_COLOR_NOT_FOUND`` error — it does
+        **not** fall through to the internal colour DB.
+      • ``cn_by_pc_lookup`` is ``None`` → the internal colour DB
+        (``cn_lookup`` / ``cn_code_lookup``) is the selected source.  A miss
+        there is reported the same way.
 
-    ``label_color`` is non-empty only when tier 1 hits.  The buyplan caller
-    falls back to ``label_lookup`` and ``derive_main_label_color`` when blank;
-    nukuryou ignores ``label_color`` altogether (核料 doesn't render it).
+    Silently trying a different source than the one the user explicitly
+    picked would show data that looks legitimate but didn't come from where
+    they expect it to — an explicit error is more useful than a
+    plausible-looking value from the wrong place.
+
+    ``label_color`` (主标颜色) is exempt from this rule: the buyplan caller
+    always falls back through ``label_lookup`` → the light/dark heuristic
+    regardless of source, since a label colour is always derivable from the
+    English body colour and withholding it would just break wash labels.
     """
-    norm_en  = _nz_color(color_en)
-    pc_match = (
-        cn_by_pc_lookup.get((_norm_key(row.get("pc_no") or ""), sty_norm, norm_en))
-        if cn_by_pc_lookup else None
-    )
-    if pc_match is not None:
-        # Use PC row values directly — no cross-source fallback.
+    norm_en = _nz_color(color_en)
+
+    if cn_by_pc_lookup is not None:
+        pc_match = cn_by_pc_lookup.get(
+            (_norm_key(row.get("pc_no") or ""), sty_norm, norm_en)
+        )
+        if pc_match is None:
+            return (_COLOR_NOT_FOUND, _COLOR_NOT_FOUND, "", _COLOR_NOT_FOUND)
         color_cn    = pc_match.cn_color
         cn_code     = pc_match.color_code or "NA"
         label_color = pc_match.label_color
-    else:
-        color_cn    = _cn_color(cn_lookup, brand, color_en)
-        cn_code     = _brand_keyed_get(
-            cn_code_lookup, COMPANY_SKY_EAST, brand, norm_en, default="NA",
+        return color_cn, cn_code, label_color, _format_body_color_cn(cn_code, color_cn)
+
+    color_cn = _cn_color(cn_lookup, brand, color_en)
+    cn_code  = _brand_keyed_get(cn_code_lookup, COMPANY_SKY_EAST, brand, norm_en, default="")
+    if not color_cn and not cn_code:
+        return (_COLOR_NOT_FOUND, _COLOR_NOT_FOUND, "", _COLOR_NOT_FOUND)
+    cn_code = cn_code or "NA"
+    return color_cn, cn_code, "", _format_body_color_cn(cn_code, color_cn)
+
+
+def _ai_retry_component(
+    row, sty_norm: str, comp: str, brand: str,
+    cn_lookup: dict, cn_code_lookup: dict | None,
+    cn_by_pc_lookup: dict | None,
+    ai_api_key: str, ai_model: str,
+) -> tuple[str, str, str, str] | None:
+    """AI-assisted retry for a colour *comp* that missed the local lookup.
+
+    Two strategies, in order:
+
+    1. **Constrained candidate match** (progress source only) — when
+       ``cn_by_pc_lookup`` is the selected source and the row's 客人PC NO +
+       款式 *does* have colour(s) on file, ask the API which of those exact
+       recorded colours *comp* is the SAME NAME written differently — a
+       typo ("Daek Blue" -> "Dark Blue") or abbreviation of the identical
+       name ("DK Brown" -> "Dark Brown"). The API is explicitly told NOT to
+       match different-but-related colour names (e.g. "Navy" is a different
+       colour from "Dark Blue", not a synonym) — a wrong pick would silently
+       assign the wrong colour code, worse than an honest miss. It also
+       only ever picks among colours already on file, so it can never
+       inject a fabricated value.
+    2. **Open-ended recognition** — fall back to asking the API to normalise
+       *comp* into candidate colour names, then retry the lookup with each.
+       Covers the internal-DB source (which has no per-PC candidate set) and
+       progress rows whose colour is buried in a longer description.
+
+    Returns the first result that resolves, or ``None``.
+    """
+    from ..lookups.color_ai_enhance import (
+        match_color_to_candidates, recognize_colors,
+    )
+
+    if cn_by_pc_lookup is not None:
+        candidates = _available_progress_colors(
+            cn_by_pc_lookup, _norm_key(row.get("pc_no") or ""), sty_norm,
         )
-        label_color = ""
-    return color_cn, cn_code, label_color, _format_body_color_cn(cn_code, color_cn)
+        if candidates:
+            picked = match_color_to_candidates(
+                comp, candidates, ai_api_key, ai_model,
+            )
+            if picked:
+                result = _resolve_pc_color(
+                    row, sty_norm, picked, brand,
+                    cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                )
+                if result[0] != _COLOR_NOT_FOUND:
+                    return result
+
+    for cand in recognize_colors(comp, ai_api_key, ai_model):
+        result = _resolve_pc_color(
+            row, sty_norm, cand, brand,
+            cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+        )
+        if result[0] != _COLOR_NOT_FOUND:
+            return result
+    return None
+
+
+def _resolve_pc_color_multi(
+    row, sty_norm: str, color_en: str, brand: str,
+    cn_lookup: dict, cn_code_lookup: dict | None,
+    cn_by_pc_lookup: dict | None,
+    *,
+    ai_enhance: bool = False,
+    ai_api_key: str = "",
+    ai_model: str = "deepseek-chat",
+) -> tuple[str, str, str, str]:
+    """Same resolution as :func:`_resolve_pc_color`, but tolerant of an order
+    file colour that names two colours in one string, e.g. ``"Dark Blue /
+    White"`` (produced by :func:`_strip_color_brackets` from a source cell
+    like ``"(dark blue)(white)"``).
+
+    Mirrors the "detect and separate, then look up on this" approach already
+    used for 大货进度表 rows (see ``progress_lookup._split_multi_color``):
+    each ``" / "``-separated component is resolved independently, and the
+    Chinese name / code of every component that actually resolves are
+    combined with ``" / "`` — a two-tone "Dark Blue / White" item shows
+    "藏青 / 白色", not just whichever component happened to resolve first.
+    A component that never resolves (even after AI enhance) is silently
+    omitted from the combination rather than blanking the whole result.
+
+    A single-colour value (the common case — no ``" / "`` present) is passed
+    straight through to :func:`_resolve_pc_color` unchanged.
+
+    ``ai_enhance`` ("Local + AI Enhance" mode): whenever an individual
+    component fails to resolve locally and an API key is configured, that
+    component's raw text is sent to
+    :func:`~po_extractor.lookups.color_ai_enhance.recognize_colors` to ask
+    an LLM to identify the colour — candidate names are retried against the
+    same local lookup, same as any other component. The API is never
+    consulted before local resolution of that component has already failed,
+    and never for anything other than a colour miss.
+    """
+    components = [c.strip() for c in color_en.split(" / ") if c.strip()]
+    if len(components) <= 1:
+        components = [color_en]
+
+    resolved = []
+    for comp in components:
+        result = _resolve_pc_color(
+            row, sty_norm, comp, brand,
+            cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+        )
+        if result[0] == _COLOR_NOT_FOUND and ai_enhance and ai_api_key:
+            improved = _ai_retry_component(
+                row, sty_norm, comp, brand,
+                cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                ai_api_key, ai_model,
+            )
+            if improved is not None:
+                result = improved
+        resolved.append(result)
+
+    if len(resolved) == 1:
+        return resolved[0]
+
+    cn_names = [r[0] for r in resolved if r[0] and r[0] != _COLOR_NOT_FOUND]
+    cn_codes = [r[1] for r in resolved if r[1] and r[1] not in (_COLOR_NOT_FOUND, "NA")]
+    label    = next((r[2] for r in resolved if r[2]), "")
+
+    if not cn_names and not cn_codes:
+        return (_COLOR_NOT_FOUND, _COLOR_NOT_FOUND, "", _COLOR_NOT_FOUND)
+
+    combined_cn   = " / ".join(cn_names) if cn_names else _COLOR_NOT_FOUND
+    combined_code = " / ".join(cn_codes) if cn_codes else "NA"
+    return combined_cn, combined_code, label, _format_body_color_cn(combined_code, combined_cn)
+
+
+def _resolve_ai_enhance_settings(
+    ai_enhance: bool | None,
+    ai_api_key: str | None,
+    ai_model: str | None,
+) -> tuple[bool, str, str]:
+    """Resolve the "Local + AI Enhance" colour-recognition settings.
+
+    Any argument left as ``None`` is read from the admin **AppSettings** store
+    (``KEY_COLOR_AI_ENHANCE`` / ``KEY_DEEPSEEK_API_KEY`` / ``KEY_DEEPSEEK_MODEL``
+    — the same DeepSeek key/model used for AI PO extraction).  An explicit
+    non-``None`` argument always wins (used by tests / callers that override).
+
+    Never raises: on any store/import error it warns and falls back to safe
+    defaults (AI disabled, no key, ``deepseek-chat``).  Returns a fully
+    resolved ``(ai_enhance, ai_api_key, ai_model)`` tuple.
+    """
+    if ai_enhance is not None and ai_api_key is not None and ai_model is not None:
+        return bool(ai_enhance), ai_api_key, ai_model
+    try:
+        from ..store import get_app_settings_store
+        from ..store.app_settings_store import (
+            KEY_COLOR_AI_ENHANCE, KEY_DEEPSEEK_API_KEY, KEY_DEEPSEEK_MODEL,
+        )
+        _settings = get_app_settings_store()
+        if ai_enhance is None:
+            ai_enhance = _settings.get(KEY_COLOR_AI_ENHANCE, "local") == "local_ai_enhance"
+        if ai_api_key is None:
+            ai_api_key = _settings.get(KEY_DEEPSEEK_API_KEY, "")
+        if ai_model is None:
+            ai_model = _settings.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
+    except Exception as exc:
+        import warnings as _w
+        _w.warn(f"[sky_east] AI-enhance settings fetch failed: {exc!r}")
+    return bool(ai_enhance), ai_api_key or "", ai_model or "deepseek-chat"
 
 
 def _apply_sky_east_compact_layout(ws, *, last_row: int) -> None:
@@ -177,6 +410,387 @@ def _apply_sky_east_compact_layout(ws, *, last_row: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Pre-fetch caches (extracted from export_sky_east_buyplan for testability)
+# ---------------------------------------------------------------------------
+
+def _present_order_sizes(df_items: pd.DataFrame) -> list[str]:
+    """Return the sizes (canonical XS→XXL order) that carry any non-zero
+    quantity anywhere in *df_items* — i.e. the order's actual size range.
+
+    Used to lay out the 核料 size columns dynamically so a size the order never
+    uses isn't shown as an empty column, and a size the template's header omits
+    (e.g. XS / XXL) is no longer silently dropped.  Falls back to the full
+    canonical set when the frame carries no size data at all.
+    """
+    present: list[str] = []
+    for sz in _SIZES_LC:
+        if sz in df_items.columns:
+            vals = pd.to_numeric(df_items[sz], errors="coerce").fillna(0)
+            if bool((vals != 0).any()):
+                present.append(sz)
+    return present or list(_SIZES_LC)
+
+
+def _prefetch_boat_sample_cache(df_items: pd.DataFrame) -> dict[str, str]:
+    """Batch-fetch 船样要求 (boat-sample requirement) text for every brand in
+    *df_items*, returning ``{brand: requirement}``.  Best-effort: any store
+    failure warns and yields an empty cache so the buy plan still generates.
+    """
+    bsr_cache: dict[str, str] = {}
+    try:
+        if "brand" in df_items.columns:
+            all_brands = [
+                str(b).strip() for b in df_items["brand"].dropna().unique() if b
+            ]
+            if all_brands:
+                from ..store import get_boat_sample_store
+                bsr_cache = get_boat_sample_store().get_batch(
+                    COMPANY_SKY_EAST, all_brands
+                ) or {}
+    except Exception as exc:
+        import warnings as _w
+        _w.warn(f"[sky_east buyplan] boat_sample lookup failed: {exc!r}")
+        bsr_cache = {}
+    return bsr_cache
+
+
+class _FabricMasterCache:
+    """Batch-fetched fabric-master enrichment, a case-insensitive index over
+    it, and a running set of HHN codes not found in the DB (for the end-of-run
+    diagnostic warning).
+
+    Encapsulates what used to be three locals + a nested closure inside
+    ``export_sky_east_buyplan`` so ``display_key`` can be unit-tested directly.
+    """
+
+    __slots__ = ("by_hhn", "by_hhn_lc", "misses")
+
+    def __init__(self, by_hhn: dict | None) -> None:
+        self.by_hhn: dict = by_hhn or {}
+        # Whitespace/case-insensitive index so stray-cased HHN codes still match.
+        self.by_hhn_lc: dict[str, dict] = {
+            str(k).strip().lower(): v
+            for k, v in self.by_hhn.items()
+            if isinstance(k, str)
+        }
+        self.misses: set[str] = set()
+
+    def display_key(self, hhn: str,
+                    fallback_composition: str = "",
+                    fallback_gsm=None,
+                    fallback_width=None) -> str:
+        """Return 综合标识Key for *hhn* (``quality_no|composition|gsm|width``).
+
+        DB-first resolution:
+          1. When the HHN exists in the fabric-master cache (even partially),
+             read from it — so the value reflects current DB state, not stale
+             caller data.  If ``display_key`` is populated, use it verbatim;
+             otherwise rebuild the key from DB columns, consulting caller
+             fallbacks only for fields that are NULL/0 in the DB record.
+          2. When the HHN is not in the DB at all, fall back to the caller's
+             values and record the HHN as a miss for the diagnostic warning.
+
+        Lookup is whitespace- and case-insensitive.  Returns an empty string
+        only when *hhn* itself is empty.
+        """
+        if not hhn:
+            return ""
+        h = str(hhn).strip()
+        rec = self.by_hhn.get(h) or self.by_hhn_lc.get(h.lower())
+
+        if rec is not None:
+            dk = str(rec.get("display_key") or "").strip()
+            if dk:
+                return dk
+            qno      = str(rec.get("quality_no")     or h).strip()
+            db_comp  = str(rec.get("composition_en") or "").strip()
+            db_gsm   = rec.get("weight_gsm")
+            db_width = rec.get("cuttable_width_cm")
+            comp     = db_comp  or str(fallback_composition or "").strip()
+            gsm      = db_gsm   or fallback_gsm
+            width    = db_width or fallback_width
+            gsm_s   = str(int(gsm))   if gsm   else ""
+            width_s = str(int(width)) if width else ""
+            return f"{qno}|{comp}|{gsm_s}|{width_s}"
+
+        # HHN not in fabric master — record the miss and build a best-effort
+        # partial key from caller fallbacks.
+        self.misses.add(h)
+        comp    = str(fallback_composition or "").strip()
+        gsm_s   = str(int(fallback_gsm))   if fallback_gsm   else ""
+        width_s = str(int(fallback_width)) if fallback_width else ""
+        if comp or gsm_s or width_s:
+            return f"{h}|{comp}|{gsm_s}|{width_s}"
+        return h
+
+
+def _prefetch_fabric_master_cache(
+    fabric_parts_by_style: dict | None, df_items: pd.DataFrame,
+) -> _FabricMasterCache:
+    """Collect every HHN code referenced by *fabric_parts_by_style* and
+    *df_items* and batch-fetch their fabric-master enrichment in one call,
+    wrapped in a :class:`_FabricMasterCache`.  Best-effort: a store failure
+    warns and yields an empty cache.
+    """
+    fm_cache: dict = {}
+    try:
+        all_hhns: set = set()
+        if fabric_parts_by_style:
+            for _parts in fabric_parts_by_style.values():
+                for fp in _parts or []:
+                    h = str(getattr(fp, "hhn_no", "") or "").strip()
+                    if h:
+                        all_hhns.add(h)
+        if "fabric_item_no" in df_items.columns:
+            for v in df_items["fabric_item_no"].dropna().astype(str):
+                v = v.strip()
+                if v:
+                    all_hhns.add(v)
+        if all_hhns:
+            from ..store import get_fabric_master_store
+            fm_cache = get_fabric_master_store().get_batch_enrichment(
+                list(all_hhns)
+            ) or {}
+    except Exception as exc:
+        # Silent failures here have masked real bugs in the past — make the
+        # cause visible (the buyplan still proceeds with an empty cache).
+        import warnings as _w
+        _w.warn(f"[sky_east buyplan] fabric_master lookup failed: {exc!r}")
+        fm_cache = {}
+    return _FabricMasterCache(fm_cache)
+
+
+def _fill_fabric_header(ws, combo_parts, fabric_rows, first,
+                        fm: _FabricMasterCache) -> list[tuple[str, str]]:
+    """Write the fabric-header rows for one style sheet and return the
+    ``[(label, 综合标识Key), ...]`` summary that feeds the Overview sheet.
+
+    Layout per fabric-slot row: B=body part, C=HHN (cleared — the code is
+    already encoded in the key), D/E=综合标识Key (``quality_no|composition|
+    gsm|width``).  When *combo_parts* is provided each part fills one slot;
+    otherwise a single slot is populated from the item row's ``fabric_item_no``
+    fallback.  ``first`` is the representative item row supplying the
+    ``fabrication`` composition fallback.
+    """
+    fabrication_fb = str(first.get("fabrication", "") or "")
+    fabric_summary: list[tuple[str, str]] = []
+
+    if combo_parts is not None:
+        for slot_idx, fp in enumerate(combo_parts[:len(fabric_rows)]):
+            frow, body_c, hhn_c, _comp_c, dk_c = fabric_rows[slot_idx]
+            hhn       = str(getattr(fp, "hhn_no", "") or "")
+            body_part = str(getattr(fp, "body_part", "") or "")
+            comp_fb   = str(getattr(fp, "composition", "") or "") or fabrication_fb
+            ws.cell(frow, body_c).value = body_part
+            ws.cell(frow, hhn_c).value  = None    # cleared — HHN already in the key
+            dk = fm.display_key(
+                hhn,
+                fallback_composition=comp_fb,
+                fallback_gsm  =getattr(fp, "weight_gsm", None) or None,
+                fallback_width=getattr(fp, "width_cm",  None) or None,
+            )
+            ws.cell(frow, dk_c).value = dk
+            fabric_summary.append(
+                (f"{hhn} ({body_part})" if body_part else hhn, dk)
+            )
+            # Defensive: clear column E in case an older config put the display
+            # key there — the value belongs in D.
+            if dk_c != 5:
+                ws.cell(frow, 5).value = None
+    else:
+        # Fallback: populate the first slot from the item row's fabric_item_no.
+        if fabric_rows:
+            frow, _body_c, hhn_c, _comp_c, dk_c = fabric_rows[0]
+            hhn_fb = str(first.get("fabric_item_no", "") or "")
+            ws.cell(frow, hhn_c).value = None
+            dk = fm.display_key(hhn_fb, fallback_composition=fabrication_fb)
+            ws.cell(frow, dk_c).value = dk
+            if hhn_fb:
+                fabric_summary.append((hhn_fb, dk))
+            if dk_c != 5:
+                ws.cell(frow, 5).value = None
+    return fabric_summary
+
+
+class _RowContext(NamedTuple):
+    """Immutable per-export context threaded into :func:`_fill_one_style_row`.
+
+    Bundles the lookups, resolved AI settings, caches, and column map that are
+    constant for the whole workbook, so the per-row writer takes a sane
+    signature instead of ~13 positional args.  ``sty_norm_cache`` is a shared
+    (mutable) memo of ``style -> _norm_key(style)`` — pure, so caching it once
+    across all sheets is equivalent to (and slightly cheaper than) the old
+    per-sheet cache.
+    """
+    col: dict
+    cn_lookup: dict
+    cn_code_lookup: dict | None
+    cn_by_pc_lookup: dict | None
+    label_lookup: dict | None
+    ai_enhance: bool
+    ai_api_key: str
+    ai_model: str
+    bsr_cache: dict
+    boat_sample_col: int
+    se_store: object
+    color_source: str
+    sty_norm_cache: dict
+    # Mutable collector: (style, color_en, progress_label, derived_label) for
+    # every row where 大货进度表's 主标颜色 disagrees with the derived heuristic.
+    label_warnings: list
+    # Mutable collector: (style, color_en) for every row that has NO 主标颜色 on
+    # file (大货进度表 / DB) — the cell is left blank (never derived) and flagged.
+    label_missing: list
+
+
+def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
+                        sheet_title: str, front, fabric_summary,
+                        ctx: _RowContext) -> tuple[int, dict]:
+    """Write one grouped buy-plan data row at *out_row*; return
+    ``(row_total, overview_row_dict)``.
+
+    *g* is the group's representative row, *grp_df* the full group (summed for
+    sizes), *base_style* the sheet's base style (used when a row carries no
+    style of its own).  Pure per-row: it reads from g/grp_df, writes cells on
+    *ws*, resolves and logs a colour miss, and returns the Overview-sheet dict.
+    The caller accumulates ``style_total`` and appends the dict — this function
+    owns neither the loop nor ``out_row`` advancement.
+    """
+    col = ctx.col
+    _row_style = str(g.get("style", "") or "").strip() or base_style
+    _row_sty_norm = ctx.sty_norm_cache.get(_row_style)
+    if _row_sty_norm is None:
+        _row_sty_norm = ctx.sty_norm_cache[_row_style] = _norm_key(_row_style)
+    # Strip decorative wrapping brackets some order files store the colour in,
+    # e.g. "(dark blue)" — both for a clean display and so the value can
+    # exact-match a 大货进度表 / internal DB colour key (which carry no brackets).
+    color_en = _strip_color_brackets(str(g.get("color_name", "") or "")).title()
+    brand    = str(g.get("brand", "") or "")
+    # color_en may combine two colours (e.g. "Dark Blue / White") — the multi
+    # resolver tries each component individually.
+    color_cn, cn_code, _pc_label, color_cn_display = _resolve_pc_color_multi(
+        g, _row_sty_norm, color_en, brand,
+        ctx.cn_lookup, ctx.cn_code_lookup, ctx.cn_by_pc_lookup,
+        ai_enhance=ctx.ai_enhance, ai_api_key=ctx.ai_api_key, ai_model=ctx.ai_model,
+    )
+    _raw_client_color = str(g.get("color_name", "") or "")
+    _progress_colors = None
+    if color_cn == _COLOR_NOT_FOUND:
+        if ctx.cn_by_pc_lookup is not None:
+            _progress_colors = _available_progress_colors(
+                ctx.cn_by_pc_lookup,
+                _norm_key(str(g.get("pc_no", "") or "")),
+                _row_sty_norm,
+            )
+        if ctx.se_store is not None:
+            try:
+                ctx.se_store.log_color_miss(
+                    pc_no=str(g.get("pc_no", "") or ""),
+                    contract_no=str(g.get("contract_no", "") or ""),
+                    style=_row_style,
+                    po_no=str(g.get("zalando_po", "") or ""),
+                    client_po_color=_raw_client_color,
+                    attempted_color=color_en,
+                    progress_colors=_progress_colors,
+                    source=ctx.color_source,
+                )
+            except Exception:
+                pass   # diagnostic logging must never break export
+
+    xs  = int(grp_df["xs"].sum()  if "xs"  in grp_df.columns else 0)
+    s   = int(grp_df["s"].sum()   if "s"   in grp_df.columns else 0)
+    m   = int(grp_df["m"].sum()   if "m"   in grp_df.columns else 0)
+    l   = int(grp_df["l"].sum()   if "l"   in grp_df.columns else 0)
+    xl  = int(grp_df["xl"].sum()  if "xl"  in grp_df.columns else 0)
+    xxl = int(grp_df["xxl"].sum() if "xxl" in grp_df.columns else 0)
+    row_total = xs + s + m + l + xl + xxl
+
+    _style_data(ws.cell(out_row, col["contract"]),  str(g.get("contract_no",  "") or ""))
+    _style_data(ws.cell(out_row, col["style"]),     _row_style)
+    _style_data(ws.cell(out_row, col["brand"]),     brand)
+    _style_data(ws.cell(out_row, col["article"]),   str(g.get("article_name", "") or ""))
+    _style_data(ws.cell(out_row, col["po"]),        str(g.get("zalando_po",   "") or ""))
+    _style_data(ws.cell(out_row, col["config"]),    str(g.get("config_sku",   "") or ""))
+    _style_data(ws.cell(out_row, col["color_en"]),  color_en)
+    _color_cn_cell = ws.cell(out_row, col["color_cn"])
+    _style_data(_color_cn_cell, color_cn_display)
+    if color_cn == _COLOR_NOT_FOUND:
+        from openpyxl.comments import Comment as _Comment
+        _color_cn_cell.comment = _Comment(
+            _color_miss_comment_text(_raw_client_color, _progress_colors),
+            "PO Extractor",
+        )
+    # 主标颜色: read from 大货进度表 (authoritative), then the DB label lookup.
+    # The value is NEVER derived — the light/dark heuristic is used only to
+    # *cross-check* an on-file value:
+    #   • On file + agrees with the heuristic → written, no flag.
+    #   • On file + disagrees → 大货进度表's value is kept, but the cell gets a
+    #     comment and the export raises an end-of-run mismatch warning.
+    #   • Not on file at all → the cell is left genuinely blank (not derived)
+    #     and flagged as a missing label for manual entry.
+    _label_clr = _pc_label  # 大货进度表 主标颜色 (may be "" outside progress mode)
+    if not _label_clr:
+        _label_clr = _brand_keyed_get(
+            ctx.label_lookup, COMPANY_SKY_EAST, brand, _nz_color(color_en),
+        )
+    _derived_label = derive_main_label_color(color_en)
+    _label_cell = ws.cell(out_row, col["label_clr"])
+    _style_data(_label_cell, _label_clr)   # blank when nothing is on file
+    from openpyxl.comments import Comment as _Comment
+    if not _label_clr:
+        _label_cell.comment = _Comment(
+            f"主标颜色 missing — no label colour on file for body colour "
+            f"\"{color_en}\". Not derived; please enter manually.",
+            "PO Extractor",
+        )
+        ctx.label_missing.append((_row_style, color_en))
+    elif _derived_label and _label_clr != _derived_label:
+        _label_cell.comment = _Comment(
+            f"主标颜色 mismatch — 大货进度表: \"{_label_clr}\"; body colour "
+            f"\"{color_en}\" suggests \"{_derived_label}\". Using 大货进度表's "
+            f"value; please verify.",
+            "PO Extractor",
+        )
+        ctx.label_warnings.append((_row_style, color_en, _label_clr, _derived_label))
+    _style_data(ws.cell(out_row, col["xs"]),  xs)
+    _style_data(ws.cell(out_row, col["s"]),   s)
+    _style_data(ws.cell(out_row, col["m"]),   m)
+    _style_data(ws.cell(out_row, col["l"]),   l)
+    _style_data(ws.cell(out_row, col["xl"]),  xl)
+    _style_data(ws.cell(out_row, col["xxl"]), xxl)
+    # col P = 船样要求 — inject from BoatSampleStore if available
+    _boat_req = ctx.bsr_cache.get(brand, "")
+    if _boat_req:
+        _style_data(ws.cell(out_row, ctx.boat_sample_col), _boat_req)
+    _style_data(ws.cell(out_row, col["total"]),  row_total)
+    _ex_fty = str(g.get("ex_fty_date", "") or "")
+    _style_data(ws.cell(out_row, col["ex_fty"]), _ex_fty)
+
+    overview_row = {
+        "contract_no":  str(g.get("contract_no", "") or ""),
+        "pc_no":        str(g.get("pc_no", "") or ""),
+        "style":        _row_style,
+        "sheet_name":   sheet_title,
+        "color_en":     color_en,
+        "color_cn":     color_cn,
+        "color_code":   cn_code if cn_code != "NA" else "",
+        "client_po_color": _raw_client_color,
+        "progress_colors": _progress_colors,
+        "label_color":  _label_clr,
+        "brand":        brand,
+        "po":           str(g.get("zalando_po", "") or ""),
+        "config_sku":   str(g.get("config_sku", "") or ""),
+        "article_name": str(g.get("article_name", "") or ""),
+        "xs": xs, "s": s, "m": m, "l": l, "xl": xl, "xxl": xxl,
+        "total":        row_total,
+        "ex_fty":       _ex_fty,
+        "photo":        front,
+        "fabrics":      fabric_summary,
+    }
+    return row_total, overview_row
+
+
+# ---------------------------------------------------------------------------
 # Main buy plan  (Template sheet → one sheet per style)
 # ---------------------------------------------------------------------------
 
@@ -189,6 +803,10 @@ def export_sky_east_buyplan(
     label_lookup: dict | None = None,
     cn_code_lookup: dict | None = None,
     cn_by_pc_lookup: dict | None = None,
+    ai_enhance: bool | None = None,
+    ai_api_key: str | None = None,
+    ai_model: str | None = None,
+    sky_east_store=_AUTO_STORE,
 ) -> str:
     """Generate the main Sky East buy plan.
 
@@ -223,10 +841,30 @@ def export_sky_east_buyplan(
                            resolved in one lookup with PC No. + style + color priority
                            (more specific than the brand + color flat lookup).
                            None → skipped.
+    ai_enhance            : optional override for the "Local + AI Enhance" colour
+                           recognition mode.  When None, read from the admin
+                           **Color Recognition** setting.  The API is only ever
+                           consulted after local resolution of a colour has
+                           already failed — never for anything else.
+    ai_api_key            : optional override for the DeepSeek API key used by
+                           AI-enhanced colour recognition.  When None, read from
+                           the admin DeepSeek settings (the same key used for AI
+                           PO extraction).
+    ai_model              : optional override for the DeepSeek model used by
+                           AI-enhanced colour recognition.  When None, read from
+                           the admin DeepSeek settings.
+    sky_east_store        : optional override for the store used to log colour
+                           resolution misses (see ``SkyEastStore.log_color_miss``).
+                           When omitted, the canonical store is auto-fetched.
+                           Pass ``None`` explicitly to disable colour-miss
+                           logging entirely (e.g. in tests, to avoid writing
+                           diagnostic rows into a real database).
 
     Returns
     -------
-    Absolute path of the saved .xlsx file.
+    ``(path, style_totals)`` — the absolute path of the saved .xlsx file and a
+    ``{style: total_units}`` dict (the per-style buy-plan totals, consumed by
+    :func:`build_cross_comparison`).
     """
     # Auto-fetch label_lookup and cn_code_lookup from the canonical store.
     # Single source of truth: the same DB as cn_lookup.
@@ -245,6 +883,23 @@ def export_sky_east_buyplan(
                 label_lookup = {}
             if cn_code_lookup is None:
                 cn_code_lookup = {}
+
+    # Auto-fetch "Local + AI Enhance" settings when not explicitly overridden.
+    ai_enhance, ai_api_key, ai_model = _resolve_ai_enhance_settings(
+        ai_enhance, ai_api_key, ai_model,
+    )
+
+    # Colour-miss diagnostic log — best-effort, never blocks export.
+    if sky_east_store is _AUTO_STORE:
+        try:
+            from ..store import get_sky_east_store
+            _se_store = get_sky_east_store()
+        except Exception:
+            _se_store = None
+    else:
+        _se_store = sky_east_store
+    _color_source = "progress" if cn_by_pc_lookup is not None else "db"
+
     if not _SE_TEMPLATE.exists():
         raise FileNotFoundError(f"Sky East template not found: {_SE_TEMPLATE}")
 
@@ -274,111 +929,23 @@ def export_sky_east_buyplan(
     style_totals: dict[str, int] = {}
 
     # ── Pre-fetch 船样要求 for all brands in one batch ────────────────────────
-    _BOAT_SAMPLE_COL = 16   # column P
-    bsr_cache: dict[str, str] = {}
-    try:
-        if "brand" in df_items.columns:
-            all_brands = [
-                str(b).strip() for b in df_items["brand"].dropna().unique() if b
-            ]
-            if all_brands:
-                from ..store import get_boat_sample_store
-                bsr_cache = get_boat_sample_store().get_batch(
-                    COMPANY_SKY_EAST, all_brands
-                ) or {}
-    except Exception as exc:
-        import warnings as _w
-        _w.warn(f"[sky_east buyplan] boat_sample lookup failed: {exc!r}")
-        bsr_cache = {}
+    # Column resolved from the detected layout (falls back to P/16 via the
+    # _COL_BOAT_SAMPLE default baked into _detect_buyplan_layout).
+    _BOAT_SAMPLE_COL = col.get("boat_sample", _COL_BOAT_SAMPLE)
+    bsr_cache = _prefetch_boat_sample_cache(df_items)
 
     # ── Pre-fetch fabric_master display_key for all HHN codes in one batch ─
-    fm_cache: dict = {}
-    try:
-        all_hhns: set = set()
-        if fabric_parts_by_style:
-            for _parts in fabric_parts_by_style.values():
-                for fp in _parts or []:
-                    h = str(getattr(fp, "hhn_no", "") or "").strip()
-                    if h:
-                        all_hhns.add(h)
-        # Also include fallback fabric_item_no values from df_items
-        if "fabric_item_no" in df_items.columns:
-            for v in df_items["fabric_item_no"].dropna().astype(str):
-                v = v.strip()
-                if v:
-                    all_hhns.add(v)
-        if all_hhns:
-            from ..store import get_fabric_master_store
-            fm_cache = get_fabric_master_store().get_batch_enrichment(
-                list(all_hhns)
-            ) or {}
-    except Exception as exc:
-        # Silent failures here have masked real bugs in the past — make
-        # the cause visible (the buyplan still proceeds with an empty cache).
-        import warnings as _w
-        _w.warn(f"[sky_east buyplan] fabric_master lookup failed: {exc!r}")
-        fm_cache = {}
+    _fm = _prefetch_fabric_master_cache(fabric_parts_by_style, df_items)
 
-    # Build a normalised case-insensitive index over the cache so HHN codes
-    # with stray whitespace / case differences still match.
-    _fm_cache_lc: dict[str, dict] = {
-        str(k).strip().lower(): v
-        for k, v in (fm_cache or {}).items()
-        if isinstance(k, str)
-    }
-    _fm_misses: set[str] = set()
-
-    def _display_key_for(hhn: str,
-                         fallback_composition: str = "",
-                         fallback_gsm=None,
-                         fallback_width=None) -> str:
-        """Return 综合标识Key for *hhn* (format: ``quality_no|composition|gsm|width``).
-
-        DB-first resolution:
-          1. Always read from the pre-fetched fabric master cache when the
-             HHN exists there, even partially — so the value reflects the
-             current DB state, not stale data the caller may have passed in.
-             • If ``display_key`` is populated, use it verbatim.
-             • Otherwise rebuild ``quality_no|composition|gsm|width`` from
-               the DB columns.  Caller fallbacks are *only* consulted for
-               fields that are NULL/0 in the DB record.
-          2. When the HHN is not in the DB at all, fall back to the caller's
-             values (FabricPart / item-row) so the user still sees something
-             useful — and the HHN is recorded as a "miss" for diagnostics.
-
-        Lookup is whitespace-insensitive and case-insensitive.
-        Returns empty string only when *hhn* itself is empty.
-        """
-        if not hhn:
-            return ""
-        h = str(hhn).strip()
-        rec = fm_cache.get(h) or _fm_cache_lc.get(h.lower())
-
-        if rec is not None:
-            dk = str(rec.get("display_key") or "").strip()
-            if dk:
-                return dk
-            qno   = str(rec.get("quality_no")     or h).strip()
-            db_comp  = str(rec.get("composition_en") or "").strip()
-            db_gsm   = rec.get("weight_gsm")
-            db_width = rec.get("cuttable_width_cm")
-            comp     = db_comp     or str(fallback_composition or "").strip()
-            gsm      = db_gsm      or fallback_gsm
-            width    = db_width    or fallback_width
-            gsm_s   = str(int(gsm))   if gsm   else ""
-            width_s = str(int(width)) if width else ""
-            return f"{qno}|{comp}|{gsm_s}|{width_s}"
-
-        # HHN not in fabric master — record the miss for the diagnostic
-        # warning and build a best-effort partial key from caller fallbacks.
-        _fm_misses.add(h)
-        comp    = str(fallback_composition or "").strip()
-        gsm_s   = str(int(fallback_gsm))   if fallback_gsm   else ""
-        width_s = str(int(fallback_width)) if fallback_width else ""
-        if comp or gsm_s or width_s:
-            return f"{h}|{comp}|{gsm_s}|{width_s}"
-        return h
-
+    # Constant-for-the-whole-workbook context threaded into the per-row writer.
+    _row_ctx = _RowContext(
+        col=col, cn_lookup=cn_lookup, cn_code_lookup=cn_code_lookup,
+        cn_by_pc_lookup=cn_by_pc_lookup, label_lookup=label_lookup,
+        ai_enhance=ai_enhance, ai_api_key=ai_api_key, ai_model=ai_model,
+        bsr_cache=bsr_cache, boat_sample_col=_BOAT_SAMPLE_COL,
+        se_store=_se_store, color_source=_color_source, sty_norm_cache={},
+        label_warnings=[], label_missing=[],
+    )
 
     # Each (style, fabric-part) combination gets its own sheet.
     # A style with N fabric parts in fabric_parts_by_style produces N sheets,
@@ -393,13 +960,31 @@ def export_sky_east_buyplan(
     # Index row's hyperlink and total formula both break.
     _used_sheet_names: set[str] = set(tpl_wb.sheetnames)
     _sheet_meta_list:  list[dict] = []
+    # One entry per item row across the whole workbook — feeds the Overview
+    # sheet, a flat cross-check table mirroring the per-style sheets.
+    _overview_rows:    list[dict] = []
+    # Running 1-based sheet index — matches the Index sheet's own "No."
+    # column, so a tab name like "3_DR5334" lines up with Index row 3.
+    _sheet_seq = 0
 
-    for style, style_df in df_items.groupby("style", sort=False):
+    # Trailing-"A" variants share a sheet with their base style (e.g. DR5302A is
+    # grouped into the DR5302 sheet) — but only when the base style is itself
+    # present in the data.  The group key is the base style; each data row still
+    # carries its own style name (with / without the "A") — see col["style"] in
+    # the row loop below.  An "A" style with no matching base keeps its own sheet.
+    _known_styles = {
+        str(s).strip() for s in df_items["style"].dropna() if str(s).strip()
+    }
+    _group_keys = df_items["style"].map(
+        lambda s: _se_base_style_key(s, _known_styles)
+    )
+
+    for style, style_df in df_items.groupby(_group_keys, sort=False):
+        # ``style`` here is the *base* style (group representative) — used for the
+        # sheet name, fabric-part lookup, header placeholder and per-tab total.
         style = str(style or "").strip()
         if not style:
             continue
-        # Style is invariant within this groupby — normalise once, reuse per row.
-        _sty_norm = _norm_key(style)
 
         first = style_df.iloc[0]
         parts = (fabric_parts_by_style or {}).get(style, []) if fabric_parts_by_style else []
@@ -415,16 +1000,12 @@ def export_sky_east_buyplan(
 
         for combo_parts in combo_list:
             # ── Unique sheet name ─────────────────────────────────────────
-            # Name after style + first HHN in this combination (most informative).
-            if combo_parts is not None:
-                _first_hhn = next(
-                    (str(fp.hhn_no or "") for fp in combo_parts if fp.hhn_no), ""
-                )
-                _base_sn = _clean_sheet_name(
-                    f"{style}_{_first_hhn}" if _first_hhn else style
-                )
-            else:
-                _base_sn = _clean_sheet_name(style)
+            # "<running index>_<style>" — e.g. "3_DR5334". The index alone
+            # already guarantees uniqueness even when one style has multiple
+            # fabric combos (each combo bumps the counter), so the fabric
+            # code no longer needs to be in the name.
+            _sheet_seq += 1
+            _base_sn = _clean_sheet_name(f"{_sheet_seq}_{style}")
             _sn, _sfx = _base_sn, 2
             while _sn in _used_sheet_names:
                 _suffix = f"_{_sfx}"
@@ -473,50 +1054,21 @@ def export_sky_east_buyplan(
             _embed_style_photos(ws, _front, _back)
 
             # ── Fabric header — all fabrics in this combination ───────────
-            # Each combo_part maps to one fabric-slot row (slot 0 = row 2, etc.).
-            # Layout: B=body part  C=HHN code  D=composition  E=综合标识Key
-            # The 综合标识Key encodes quality_no|composition_en|gsm|width.
-            # fabrication from df_items is used as a composition fallback when
-            # the FabricPart has no composition and the HHN is not in fabric master.
-            _fabrication_fb = str(first.get("fabrication", "") or "")
-
-            if combo_parts is not None:
-                for slot_idx, fp in enumerate(combo_parts[:len(fabric_rows)]):
-                    frow, body_c, hhn_c, _comp_c, dk_c = fabric_rows[slot_idx]
-                    _hhn = str(getattr(fp, "hhn_no", "") or "")
-                    _comp_fb = (str(getattr(fp, "composition", "") or "")
-                                or _fabrication_fb)
-                    ws.cell(frow, body_c).value = str(getattr(fp, "body_part", "") or "")
-                    ws.cell(frow, hhn_c).value  = None           # cleared — HHN already in 综合标识Key
-                    ws.cell(frow, dk_c).value   = _display_key_for(
-                        _hhn,
-                        fallback_composition=_comp_fb,
-                        fallback_gsm  =getattr(fp, "weight_gsm", None) or None,
-                        fallback_width=getattr(fp, "width_cm",  None) or None,
-                    )
-                    # Defensive: clear column E in case an older config put the
-                    # display key there.  The value belongs in D (under the
-                    # template's "面料编号|成分|克重|有效门幅" header).
-                    if dk_c != 5:
-                        ws.cell(frow, 5).value = None
-            else:
-                # Fallback: populate first slot from sky_east_items columns
-                if fabric_rows:
-                    frow, _body_c, hhn_c, _comp_c, dk_c = fabric_rows[0]
-                    hhn_fb = str(first.get("fabric_item_no", "") or "")
-                    ws.cell(frow, hhn_c).value = None            # cleared — HHN already in 综合标识Key
-                    ws.cell(frow, dk_c).value  = _display_key_for(
-                        hhn_fb,
-                        fallback_composition=_fabrication_fb,
-                    )
-                    if dk_c != 5:
-                        ws.cell(frow, 5).value = None
+            # Writes B=body part / D=综合标识Key per fabric-slot row and returns
+            # the [(label, key), ...] summary shared by every item row on this
+            # sheet (they all carry the same fabric combination).
+            _fabric_summary = _fill_fabric_header(
+                ws, combo_parts, fabric_rows, first, _fm,
+            )
 
             # ── Clear data area ───────────────────────────────────────────
             _clear_data_area(ws, data_row)
 
-            # ── Group by (PONo | ConfigSKU | ColorDesc) — mirrors VBA grpKey ─
-            grp_cols = [c for c in ["zalando_po", "config_sku", "color_name"]
+            # ── Group by (Style | PONo | ConfigSKU | ColorDesc) — VBA grpKey ─
+            # "style" leads the key so a base style and its "A" variant sharing a
+            # sheet keep separate rows (each with its own style name).  For a
+            # single-style sheet "style" is constant, so this is a no-op.
+            grp_cols = [c for c in ["style", "zalando_po", "config_sku", "color_name"]
                         if c in style_df.columns]
             groups = list(style_df.groupby(grp_cols, sort=False))
 
@@ -524,58 +1076,14 @@ def export_sky_east_buyplan(
             style_total = 0
 
             for _key, grp_df in groups:
-                g = grp_df.iloc[0]
-
-                color_en = str(g.get("color_name", "") or "").title()
-                brand    = str(g.get("brand",      "") or "")
-                _, _, _pc_label, color_cn_display = _resolve_pc_color(
-                    g, _sty_norm, color_en, brand,
-                    cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                # Per-row cell writing + colour resolution + miss logging lives
+                # in _fill_one_style_row; the loop owns only accumulation.
+                _row_total, _ov = _fill_one_style_row(
+                    ws, out_row, grp_df.iloc[0], grp_df, style,
+                    sheet_title, _front, _fabric_summary, _row_ctx,
                 )
-
-                xs  = int(grp_df["xs"].sum()  if "xs"  in grp_df.columns else 0)
-                s   = int(grp_df["s"].sum()   if "s"   in grp_df.columns else 0)
-                m   = int(grp_df["m"].sum()   if "m"   in grp_df.columns else 0)
-                l   = int(grp_df["l"].sum()   if "l"   in grp_df.columns else 0)
-                xl  = int(grp_df["xl"].sum()  if "xl"  in grp_df.columns else 0)
-                xxl = int(grp_df["xxl"].sum() if "xxl" in grp_df.columns else 0)
-                row_total = xs + s + m + l + xl + xxl
-                style_total += row_total
-
-                _style_data(ws.cell(out_row, col["contract"]),  str(g.get("contract_no",  "") or ""))
-                _style_data(ws.cell(out_row, col["style"]),     style)
-                _style_data(ws.cell(out_row, col["brand"]),     brand)
-                _style_data(ws.cell(out_row, col["article"]),   str(g.get("article_name", "") or ""))
-                _style_data(ws.cell(out_row, col["po"]),        str(g.get("zalando_po",   "") or ""))
-                _style_data(ws.cell(out_row, col["config"]),    str(g.get("config_sku",   "") or ""))
-                _style_data(ws.cell(out_row, col["color_en"]),  color_en)
-                _style_data(ws.cell(out_row, col["color_cn"]),  color_cn_display)
-                # 主标颜色 resolution order:
-                #   1. 大货进度表 PC-keyed (most specific — same contract)
-                #   2. label_lookup (brand-keyed DB or progress fallback)
-                #   3. Auto-derive from the English body colour (light/dark heuristic)
-                _label_clr = _pc_label  # may be "" when no PC-keyed match
-                if not _label_clr:
-                    _label_clr = _brand_keyed_get(
-                        label_lookup, COMPANY_SKY_EAST, brand, _nz_color(color_en),
-                    )
-                if not _label_clr:
-                    _label_clr = derive_main_label_color(color_en)
-                _style_data(ws.cell(out_row, col["label_clr"]), _label_clr)
-                _style_data(ws.cell(out_row, col["xs"]),  xs)
-                _style_data(ws.cell(out_row, col["s"]),   s)
-                _style_data(ws.cell(out_row, col["m"]),   m)
-                _style_data(ws.cell(out_row, col["l"]),   l)
-                _style_data(ws.cell(out_row, col["xl"]),  xl)
-                _style_data(ws.cell(out_row, col["xxl"]), xxl)
-                # col P = 船样要求 — inject from BoatSampleStore if available
-                _boat_req = bsr_cache.get(brand, "")
-                if _boat_req:
-                    _style_data(ws.cell(out_row, _BOAT_SAMPLE_COL), _boat_req)
-                _style_data(ws.cell(out_row, col["total"]),  row_total)
-                _style_data(ws.cell(out_row, col["ex_fty"]),
-                            str(g.get("ex_fty_date", "") or ""))
-
+                style_total += _row_total
+                _overview_rows.append(_ov)
                 out_row += 1
 
             # Grand-total row (only when >1 data rows, matching VBA logic)
@@ -601,7 +1109,7 @@ def export_sky_east_buyplan(
                          else str(first.get("fabric_item_no", "") or ""))
             _idx_comp = (str(getattr(_idx_fp, "composition", "") or "") if _idx_fp
                          else str(first.get("fabrication", "") or ""))
-            _idx_dk = _display_key_for(
+            _idx_dk = _fm.display_key(
                 _idx_hhn,
                 fallback_composition=_idx_comp,
                 fallback_gsm  =getattr(_idx_fp, "weight_gsm", None) if _idx_fp else None,
@@ -615,6 +1123,7 @@ def export_sky_east_buyplan(
                 "hhn_no":      _idx_hhn,
                 "display_key": _idx_dk,
                 "ex_fty_date": str(first.get("ex_fty_date", "") or ""),
+                "pc_no":       str(first.get("pc_no",       "") or ""),
             })
 
     # ── Remove master template sheet ─────────────────────────────────────
@@ -625,6 +1134,10 @@ def export_sky_east_buyplan(
     _create_index_sheet(tpl_wb, df_items, total_anchor=total_anchor,
                         style_image_map=style_image_map,
                         sheet_meta_list=_sheet_meta_list)
+
+    # ── Overview sheet — flat item-level cross-check table ────────────────
+    if _overview_rows:
+        _create_overview_sheet(tpl_wb, _overview_rows, n_fabric_slots=len(fabric_rows))
 
     if not tpl_wb.sheetnames:
         tpl_wb.create_sheet("Empty")
@@ -637,14 +1150,47 @@ def export_sky_east_buyplan(
     # When some HHNs aren't there yet, the produced key only has whatever
     # the caller could supply (often weight + width are blank → trailing
     # ``||``).  Warn loudly so the user knows to import those fabrics.
-    if _fm_misses:
+    if _fm.misses:
         import warnings as _w
-        preview = ", ".join(sorted(_fm_misses)[:8])
-        if len(_fm_misses) > 8:
-            preview += f" … +{len(_fm_misses) - 8} more"
+        preview = ", ".join(sorted(_fm.misses)[:8])
+        if len(_fm.misses) > 8:
+            preview += f" … +{len(_fm.misses) - 8} more"
         _w.warn(
-            f"[sky_east buyplan] 综合key partial — {len(_fm_misses)} HHN code(s) "
+            f"[sky_east buyplan] 综合key partial — {len(_fm.misses)} HHN code(s) "
             f"not in fabric_master DB: {preview}"
+        )
+
+    # ── 主标颜色 cross-check — surface 大货进度表 label-colour disagreements ──
+    # 大货进度表's 主标颜色 is used verbatim, but where it disagrees with the
+    # light/dark heuristic derived from the body colour the row is flagged so a
+    # reviewer can confirm the 大货进度表 entry isn't a data-entry slip.
+    if _row_ctx.label_warnings:
+        import warnings as _w
+        n = len(_row_ctx.label_warnings)
+        preview = "; ".join(
+            f"{sty} \"{ce}\": 大货进度表={lc} vs derived={dv}"
+            for sty, ce, lc, dv in _row_ctx.label_warnings[:6]
+        )
+        if n > 6:
+            preview += f" … +{n - 6} more"
+        _w.warn(
+            f"[sky_east buyplan] 主标颜色 cross-check — {n} item(s) where "
+            f"大货进度表's label colour disagrees with the derived value "
+            f"(大货进度表 kept; please verify): {preview}"
+        )
+
+    # ── 主标颜色 missing — no label colour on file (blank cells, not derived) ──
+    if _row_ctx.label_missing:
+        import warnings as _w
+        n = len(_row_ctx.label_missing)
+        preview = "; ".join(
+            f"{sty} \"{ce}\"" for sty, ce in _row_ctx.label_missing[:6]
+        )
+        if n > 6:
+            preview += f" … +{n - 6} more"
+        _w.warn(
+            f"[sky_east buyplan] 主标颜色 missing — {n} item(s) have no label "
+            f"colour on file (left blank, not derived; enter manually): {preview}"
         )
     return str(path), style_totals
 
@@ -685,6 +1231,10 @@ def export_sky_east_nukuryou(
     output_dir: str,
     cn_code_lookup: dict | None = None,
     cn_by_pc_lookup: dict | None = None,
+    ai_enhance: bool | None = None,
+    ai_api_key: str | None = None,
+    ai_model: str | None = None,
+    sky_east_store=_AUTO_STORE,
 ) -> list[str]:
     """Generate 核料 (material-allocation) workbooks — one per distinct fabric.
 
@@ -700,6 +1250,14 @@ def export_sky_east_nukuryou(
     cn_by_pc_lookup : optional ``{(pc_no_norm, style_norm, en_color_norm): (cn_color, color_code)}``
                       from ``ProgressLookup.build_pc_style_color_lookups()``.
                       Both values resolved in one lookup.  None → skipped.
+    ai_enhance, ai_api_key, ai_model : same "Local + AI Enhance" overrides as
+                      ``export_sky_east_buyplan`` — auto-fetched from the admin
+                      Color Recognition / DeepSeek settings when None.
+    sky_east_store  : optional override for the store used to log colour
+                      resolution misses (see ``SkyEastStore.log_color_miss``),
+                      mirroring ``export_sky_east_buyplan``.  When omitted, the
+                      canonical store is auto-fetched.  Pass ``None`` explicitly
+                      to disable colour-miss logging (e.g. in tests).
 
     Returns list of saved file paths (empty if Template_P not found or no fabric codes).
     """
@@ -713,6 +1271,23 @@ def export_sky_east_nukuryou(
             _w.warn(f"[sky_east nukuryou] cn_code_lookup fetch failed: {_exc!r}")
             cn_code_lookup = {}
 
+    ai_enhance, ai_api_key, ai_model = _resolve_ai_enhance_settings(
+        ai_enhance, ai_api_key, ai_model,
+    )
+
+    # Colour-miss diagnostic log — best-effort, never blocks export.  Mirrors
+    # export_sky_east_buyplan so a colour that fails to resolve is logged (and
+    # commented) here too, not just in the main buy plan.
+    if sky_east_store is _AUTO_STORE:
+        try:
+            from ..store import get_sky_east_store
+            _se_store = get_sky_east_store()
+        except Exception:
+            _se_store = None
+    else:
+        _se_store = sky_east_store
+    _color_source = "progress" if cn_by_pc_lookup is not None else "db"
+
     if not _SE_TEMPLATE_P.exists():
         return []
 
@@ -722,20 +1297,30 @@ def export_sky_east_nukuryou(
 
     output_paths: list[str] = []
 
-    # ── Load template ONCE and detect layout ONCE outside the loop ───────────
+    # ── Read the template bytes ONCE and detect layout ONCE outside the loop ─
     # Each fabric group previously re-parsed the template from disk (ZIP+XML
-    # decompression) — with N groups that was N × 100-500 ms.  Now we load
-    # once, detect layout once, then copy.deepcopy() per iteration.
-    import copy as _copy
-    _master_wb = load_workbook(str(_SE_TEMPLATE_P))
+    # decompression) — with N groups that was N × 100-500 ms.  We now read the
+    # file into memory once and re-open it per iteration from that buffer.
+    #
+    # NOTE: an earlier version used copy.deepcopy(_master_wb) here for speed,
+    # but deepcopy produces a workbook whose saved stylesheet has a named style
+    # pointing at a non-existent fontId — openpyxl (and Excel's repair check)
+    # reject it on reload.  load_workbook(BytesIO(bytes)) yields a clean,
+    # reloadable copy for only ~1 ms more per fabric while still avoiding disk.
+    import io as _io
+    _master_bytes = _SE_TEMPLATE_P.read_bytes()
+    _master_wb = load_workbook(_io.BytesIO(_master_bytes))
     _master_ws = _master_wb.worksheets[0]
 
     color_col, size_col_map, nuk_data_row = _detect_nukuryou_layout(_master_ws)
     # Apply user-configured overrides (Sky_East_P_config.json)
+    _size_cfg_explicit = False   # admin pinned specific size columns → keep static
     try:
         from . import template_config as _tc
         _nuk_cfg = _tc.load_config("sky_east_nukuryou")
-        for sz, raw in (_nuk_cfg.get("size_column_map") or {}).items():
+        _cfg_size_map = _nuk_cfg.get("size_column_map") or {}
+        _size_cfg_explicit = bool(_cfg_size_map)
+        for sz, raw in _cfg_size_map.items():
             k = str(sz).strip().lower()
             k = "xxl" if k in ("2xl", "xxl") else k
             if k in {"xs", "s", "m", "l", "xl", "xxl"}:
@@ -757,6 +1342,20 @@ def export_sky_east_nukuryou(
                 pass
     except Exception:
         pass
+
+    # ── Dynamic size columns — follow the order's actual size range ───────────
+    # By default the 核料 size columns are laid out from the sizes that actually
+    # appear in the order (canonical XS→XXL order), anchored at the template's
+    # first size column.  This stops the template's fixed header (often only
+    # S/M/L/XL) from silently dropping XS / XXL quantities, and hides sizes the
+    # order never uses.  An explicit size_column_map in the config still wins.
+    if not _size_cfg_explicit:
+        _first_size_col = min(size_col_map.values()) if size_col_map else (color_col + 1)
+        size_col_map = {
+            sz: _first_size_col + i
+            for i, sz in enumerate(_present_order_sizes(df_items))
+        }
+
     nuk_header_row = nuk_data_row - 1   # row where size headers are written
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -765,8 +1364,9 @@ def export_sky_east_nukuryou(
         if not fabric_no:
             continue
 
-        # Fast in-memory copy — avoids re-parsing ZIP+XML from disk
-        tpl_wb = _copy.deepcopy(_master_wb)
+        # Fresh clean copy per fabric from the cached template bytes — avoids
+        # re-reading from disk and (unlike deepcopy) reloads/opens correctly.
+        tpl_wb = load_workbook(_io.BytesIO(_master_bytes))
         tpl_ws = tpl_wb.worksheets[0]
 
         _replace_placeholders(tpl_ws, {"created_at": created_at, "fabric": fabric_no})
@@ -782,6 +1382,13 @@ def export_sky_east_nukuryou(
             # Clear data area (keep template header rows intact)
             _clear_data_area(ws, nuk_data_row)
 
+            # Clear any stale template size headers first (the template may ship
+            # with a fixed S/M/L/XL header row), then write the dynamic set — so
+            # trimming to fewer sizes leaves no orphaned "L"/"XL" labels.
+            if size_col_map:
+                _first_sc = min(size_col_map.values())
+                for _c in range(_first_sc, _first_sc + len(_SIZES_LC)):
+                    ws.cell(nuk_header_row, _c).value = None
             # Write size headers at the detected header row
             for sz_key, sz_col in size_col_map.items():
                 ws.cell(nuk_header_row, sz_col).value = sz_key.upper().replace("XXL", "2XL")
@@ -793,19 +1400,55 @@ def export_sky_east_nukuryou(
             color_totals: dict[str, dict[str, int]] = {}
             # Build display-label map for distinct color+brand combos
             _color_display_map: dict[tuple, str] = {}
+            # Displays whose colour failed to resolve → (client_colour,
+            # progress_colours) for the diagnostic comment attached at write time.
+            _miss_info: dict[str, tuple[str, list | None]] = {}
             for item in style_df.itertuples(index=False):
-                color_en = str(getattr(item, "color_name", "") or "").title()
+                color_en = _strip_color_brackets(
+                    str(getattr(item, "color_name", "") or "")
+                ).title()
                 brand    = str(getattr(item, "brand", "") or "")
                 key      = (color_en, brand)
                 if key not in _color_display_map:
-                    _, _, _, color_cn_display = _resolve_pc_color(
+                    color_cn, _, _, color_cn_display = _resolve_pc_color_multi(
                         item._asdict(), _sty_norm, color_en, brand,
                         cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+                        ai_enhance=ai_enhance, ai_api_key=ai_api_key, ai_model=ai_model,
                     )
-                    _color_display_map[key] = (
-                        _NUKURYOU_LABEL_FMT.format(en=color_en, cn=color_cn_display)
-                        if color_cn_display else color_en
-                    )
+                    if color_cn == _COLOR_NOT_FOUND:
+                        # Colour miss — show the English colour alone (never
+                        # embed 未找到 into the label), and record a diagnostic
+                        # comment + colour-miss-log entry mirroring the buy plan.
+                        display = color_en
+                        _raw_client_color = str(getattr(item, "color_name", "") or "")
+                        _progress_colors = None
+                        if cn_by_pc_lookup is not None:
+                            _progress_colors = _available_progress_colors(
+                                cn_by_pc_lookup,
+                                _norm_key(str(getattr(item, "pc_no", "") or "")),
+                                _sty_norm,
+                            )
+                        _miss_info[display] = (_raw_client_color, _progress_colors)
+                        if _se_store is not None:
+                            try:
+                                _se_store.log_color_miss(
+                                    pc_no=str(getattr(item, "pc_no", "") or ""),
+                                    contract_no=str(getattr(item, "contract_no", "") or ""),
+                                    style=style,
+                                    po_no=str(getattr(item, "zalando_po", "") or ""),
+                                    client_po_color=_raw_client_color,
+                                    attempted_color=color_en,
+                                    progress_colors=_progress_colors,
+                                    source=_color_source,
+                                )
+                            except Exception:
+                                pass   # diagnostic logging must never break export
+                    else:
+                        display = (
+                            _NUKURYOU_LABEL_FMT.format(en=color_en, cn=color_cn_display)
+                            if color_cn_display else color_en
+                        )
+                    _color_display_map[key] = display
                 display = _color_display_map[key]
                 if display not in color_totals:
                     color_totals[display] = {sz: 0 for sz in _SIZES_LC}
@@ -815,7 +1458,14 @@ def export_sky_east_nukuryou(
             # Write color rows starting at the detected data row
             out_row = nuk_data_row
             for color_display, sizes in color_totals.items():
-                ws.cell(out_row, color_col).value = color_display
+                _color_cell = ws.cell(out_row, color_col)
+                _color_cell.value = color_display
+                if color_display in _miss_info:
+                    from openpyxl.comments import Comment as _Comment
+                    _cc, _pc = _miss_info[color_display]
+                    _color_cell.comment = _Comment(
+                        _color_miss_comment_text(_cc, _pc), "PO Extractor",
+                    )
                 for sz_key, sz_col in size_col_map.items():
                     ws.cell(out_row, sz_col).value = sizes.get(sz_key, 0)
                 out_row += 1
@@ -856,13 +1506,19 @@ def build_cross_comparison(
     DataFrame with columns:
         Style | Total (Buy Plan) | Total (核料) | Match
     """
-    # Compute 核料 totals directly from df_items
+    # Compute 核料 totals directly from df_items.  Fold trailing-"A" variants
+    # onto their base style (DR5302A → DR5302) so the comparison matches the
+    # buy plan, which now groups those variants into one base-style sheet.
+    _known_styles = {
+        str(s).strip() for s in df_items["style"].dropna() if str(s).strip()
+    }
     nukuryou_totals: dict[str, int] = {}
     for style, grp in df_items.groupby("style", sort=False):
         total = sum(
             int(grp[sz].sum()) for sz in _SIZES_LC if sz in grp.columns
         )
-        nukuryou_totals[str(style)] = total
+        _key = _se_base_style_key(style, _known_styles)
+        nukuryou_totals[_key] = nukuryou_totals.get(_key, 0) + total
 
     all_styles = sorted(
         set(style_totals_buyplan) | set(nukuryou_totals)

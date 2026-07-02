@@ -1,4 +1,12 @@
-"""Sky East Reports tab — generate Buy Plan, 核料, Item Downloads, Wash Labels."""
+"""Sky East Generate / Export tab — one screen for Buy Plan + 核料, Item Data,
+and Wash Labels.
+
+Flattened from three sub-tabs (v2.22.0): a horizontal output-type radio swaps
+the options panel below, and ONE shared PC-No. selector serves every mode —
+switching output type no longer loses the selection.  ``st.radio`` (not
+``st.tabs``) so all three panels never stream/render at once and the mode is
+session-state addressable — same rationale as Production Tracking's sub-nav.
+"""
 from __future__ import annotations
 
 import streamlit as st
@@ -11,9 +19,14 @@ from ui.sky_east.history import (
     _se_hist_wash_label_download,
 )
 
+_MODE_BP = "📊 Buy Plan + 核料"
+_MODE_DL = "📥 Item Data"
+_MODE_WL = "🏷 Wash Labels"
+_GEN_MODES = [_MODE_BP, _MODE_DL, _MODE_WL]
+
 
 def _show_se_reports_tab() -> None:
-    """Reports tab: generate outputs from stored Sky East contracts."""
+    """Generate/Export: pick an output type; PC selection is shared across all."""
     store        = get_sky_east_store()
     df_contracts = store.list_contracts()
 
@@ -25,31 +38,54 @@ def _show_se_reports_tab() -> None:
         return
 
     pc_options = [pc for pc in df_contracts["pc_no"].tolist() if pc and str(pc).strip()]
-
-    # Guard stale session-state values — identical fix to _se_hist_item_browser.
-    # After a contract is deleted (History tab) the key may still hold pc_nos
-    # that are no longer in pc_options, which causes StreamlitAPIException when
-    # the multiselect renders and breaks the entire Buy Plan / Download / Wash
-    # Label sections (making the file uploaders appear unresponsive).
-    # NOTE: se_wl_styles holds *style names*, not PC Nos — it must NOT be
-    # filtered against _pc_set or every valid style gets wiped after a delete.
     _pc_set = set(pc_options)
-    for _sk in ("se_bp_sel", "se_dl_pcs", "se_wl_pcs"):
-        _cur = st.session_state.get(_sk, [])
-        if isinstance(_cur, list) and any(v not in _pc_set for v in _cur):
-            st.session_state[_sk] = [v for v in _cur if v in _pc_set]
 
-    sub_bp, sub_dl, sub_wl = st.tabs([
-        "📊 Buy Plan + 核料",
-        "📥 Download Items",
-        "🏷 Wash Labels",
-    ])
+    # One-time migration: carry over a selection made under the old per-section
+    # keys so users mid-task don't lose it after the flatten.
+    if "se_gen_pcs" not in st.session_state:
+        for _legacy in ("se_bp_sel", "se_dl_pcs", "se_wl_pcs"):
+            _old = st.session_state.get(_legacy)
+            if isinstance(_old, list) and _old:
+                st.session_state["se_gen_pcs"] = [v for v in _old if v in _pc_set]
+                break
+    # Stale-value guard: drop PC Nos no longer valid (e.g. after a delete in
+    # Contract History) BEFORE the widget renders, or st.multiselect raises
+    # StreamlitAPIException. se_wl_styles holds style names, not PC Nos — it
+    # must NOT be filtered against _pc_set.
+    _cur = st.session_state.get("se_gen_pcs", [])
+    if isinstance(_cur, list) and any(v not in _pc_set for v in _cur):
+        st.session_state["se_gen_pcs"] = [v for v in _cur if v in _pc_set]
 
-    with sub_bp:
-        _se_hist_buyplan_section(store, pc_options, df_contracts)
+    # ── Output type ───────────────────────────────────────────────────────────
+    mode = st.radio(
+        t("What do you want to generate?"),
+        _GEN_MODES,
+        horizontal=True,
+        key="se_gen_mode",
+    )
 
-    with sub_dl:
-        _se_hist_multi_pc_download(store, pc_options)
+    # ── Shared PC selection (persists across output types) ───────────────────
+    sel_col, all_col = st.columns([4, 1])
+    with sel_col:
+        sel_pcs = st.multiselect(
+            t("PC No.(s) to include:"),
+            pc_options,
+            key="se_gen_pcs",
+            placeholder="Select one or more PC Nos...",
+        )
+    with all_col:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.button(
+            t("Select all"), key="se_gen_all",
+            on_click=lambda: st.session_state.update({"se_gen_pcs": list(pc_options)}),
+            use_container_width=True,
+        )
 
-    with sub_wl:
-        _se_hist_wash_label_download(store, pc_options)
+    st.divider()
+
+    if mode == _MODE_BP:
+        _se_hist_buyplan_section(store, pc_options, df_contracts, sel_pcs=sel_pcs)
+    elif mode == _MODE_DL:
+        _se_hist_multi_pc_download(store, pc_options, sel_pcs=sel_pcs)
+    else:
+        _se_hist_wash_label_download(store, pc_options, sel_pcs=sel_pcs)
