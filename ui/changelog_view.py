@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.17.1",
+        "date": "2026-07-02",
+        "entries": [
+            {"type": "refactor", "text": "Decomposed the 631-line `export_sky_east_buyplan` (down to 365 lines) into focused, unit-testable module-level helpers: `_prefetch_boat_sample_cache`, `_prefetch_fabric_master_cache` + a `_FabricMasterCache` class (the old nested `_display_key_for` closure is now a method), `_fill_fabric_header`, and `_fill_one_style_row` (the per-row writer, threaded via a `_RowContext`). Behaviour is unchanged — the produced workbooks are identical. Replaced the `from _sky_east_helpers import *` wildcard (a documented `NameError` footgun) with an explicit 23-name import. 13 new fast unit tests exercise the extracted helpers directly, without generating a whole workbook"},
+        ],
+    },
+    {
         "version": "2.17.0",
         "date": "2026-07-02",
         "entries": [

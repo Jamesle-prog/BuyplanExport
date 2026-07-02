@@ -1,0 +1,176 @@
+"""Unit tests for the pieces extracted out of ``export_sky_east_buyplan`` so
+they can be tested without generating a whole workbook.
+
+Covers ``_FabricMasterCache.display_key`` (was a nested closure over three
+locals) and the batch pre-fetch helpers.
+"""
+from __future__ import annotations
+
+import pandas as pd
+
+from openpyxl import Workbook
+
+from po_extractor.exporters.sky_east_buyplan_export import (
+    _FabricMasterCache, _prefetch_boat_sample_cache, _prefetch_fabric_master_cache,
+    _RowContext, _fill_one_style_row, _COLOR_NOT_FOUND,
+)
+
+
+def _basic_col() -> dict:
+    keys = ["contract", "style", "brand", "article", "po", "config", "color_en",
+            "color_cn", "label_clr", "xs", "s", "m", "l", "xl", "xxl",
+            "total", "ex_fty"]
+    return {k: i + 1 for i, k in enumerate(keys)}
+
+
+def _ctx(**overrides) -> _RowContext:
+    base = dict(
+        col=_basic_col(), cn_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=None,
+        label_lookup={}, ai_enhance=False, ai_api_key="", ai_model="deepseek-chat",
+        bsr_cache={}, boat_sample_col=18, se_store=None, color_source="db",
+        sty_norm_cache={},
+    )
+    base.update(overrides)
+    return _RowContext(**base)
+
+
+# ── _FabricMasterCache.display_key ──────────────────────────────────────────
+
+def test_display_key_uses_db_display_key_verbatim():
+    c = _FabricMasterCache({"HHN-A": {"display_key": "Q1|Cotton|200|150"}})
+    assert c.display_key("HHN-A") == "Q1|Cotton|200|150"
+    assert c.misses == set()
+
+
+def test_display_key_rebuilds_from_db_columns_when_no_display_key():
+    c = _FabricMasterCache({"HHN-A": {
+        "quality_no": "Q9", "composition_en": "Wool",
+        "weight_gsm": 220, "cuttable_width_cm": 145,
+    }})
+    assert c.display_key("HHN-A") == "Q9|Wool|220|145"
+
+
+def test_display_key_db_wins_but_caller_fills_null_db_fields():
+    # composition present in DB, gsm/width NULL → caller fallbacks fill them.
+    c = _FabricMasterCache({"HHN-A": {
+        "quality_no": "Q9", "composition_en": "Wool",
+        "weight_gsm": None, "cuttable_width_cm": None,
+    }})
+    out = c.display_key("HHN-A", fallback_gsm=180, fallback_width=140)
+    assert out == "Q9|Wool|180|140"
+
+
+def test_display_key_case_and_whitespace_insensitive():
+    c = _FabricMasterCache({"HHN-A": {"display_key": "K"}})
+    assert c.display_key("  hhn-a ") == "K"
+
+
+def test_display_key_miss_records_and_builds_partial_from_fallbacks():
+    c = _FabricMasterCache({})
+    out = c.display_key("HHN-Z", fallback_composition="Poly")
+    assert out == "HHN-Z|Poly||"
+    assert c.misses == {"HHN-Z"}
+
+
+def test_display_key_miss_with_no_fallbacks_returns_bare_hhn():
+    c = _FabricMasterCache({})
+    assert c.display_key("HHN-Z") == "HHN-Z"
+    assert c.misses == {"HHN-Z"}
+
+
+def test_display_key_empty_hhn_returns_empty_and_not_a_miss():
+    c = _FabricMasterCache({})
+    assert c.display_key("") == ""
+    assert c.misses == set()
+
+
+# ── pre-fetch helpers ───────────────────────────────────────────────────────
+
+def test_prefetch_boat_sample_cache_empty_when_no_brand_column():
+    df = pd.DataFrame([{"style": "S1"}])
+    assert _prefetch_boat_sample_cache(df) == {}
+
+
+def test_prefetch_fabric_master_cache_empty_df_yields_empty_cache():
+    df = pd.DataFrame([{"style": "S1"}])   # no fabric_item_no, no parts
+    fm = _prefetch_fabric_master_cache(None, df)
+    assert isinstance(fm, _FabricMasterCache)
+    assert fm.by_hhn == {}
+    assert fm.misses == set()
+
+
+# ── _fill_one_style_row (extracted per-row writer, testable on a blank sheet) ─
+
+def test_fill_one_style_row_writes_cells_and_returns_overview():
+    ws = Workbook().active
+    col = _basic_col()
+    grp = pd.DataFrame([
+        {"style": "DR1", "brand": "Anna Field", "contract_no": "C1",
+         "article_name": "A", "zalando_po": "PO1", "config_sku": "S1",
+         "color_name": "dark blue", "pc_no": "PC1", "ex_fty_date": "2026-08-11",
+         "xs": 1, "s": 2, "m": 0, "l": 0, "xl": 0, "xxl": 0},
+        {"style": "DR1", "brand": "Anna Field", "contract_no": "C1",
+         "article_name": "A", "zalando_po": "PO1", "config_sku": "S1",
+         "color_name": "dark blue", "pc_no": "PC1", "ex_fty_date": "2026-08-11",
+         "xs": 3, "s": 1, "m": 0, "l": 0, "xl": 0, "xxl": 0},
+    ])
+    total, ov = _fill_one_style_row(
+        ws, 2, grp.iloc[0], grp, "DR1", "1_DR1", None, [], _ctx(col=col),
+    )
+    assert total == 7                                   # xs 1+3=4, s 2+1=3
+    assert ov["style"] == "DR1"
+    assert ov["color_en"] == "Dark Blue"                # bracket-strip + title
+    assert ov["total"] == 7
+    assert ov["label_color"] == "黑色"                   # dark → black label
+    assert ws.cell(2, col["style"]).value == "DR1"
+    assert ws.cell(2, col["color_en"]).value == "Dark Blue"
+    assert ws.cell(2, col["total"]).value == 7
+
+
+def test_fill_one_style_row_uses_base_style_when_row_style_blank():
+    ws = Workbook().active
+    grp = pd.DataFrame([{
+        "style": "", "brand": "B", "color_name": "Red",
+        "xs": 1, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    _, ov = _fill_one_style_row(
+        ws, 2, grp.iloc[0], grp, "BASE9", "1_BASE9", None, [], _ctx(),
+    )
+    assert ov["style"] == "BASE9"
+
+
+def test_fill_one_style_row_logs_miss_and_attaches_comment():
+    calls = []
+
+    class _Store:
+        def log_color_miss(self, **kw):
+            calls.append(kw)
+
+    ws = Workbook().active
+    col = _basic_col()
+    grp = pd.DataFrame([{
+        "style": "DR1", "brand": "Anna Field", "contract_no": "C1",
+        "article_name": "A", "zalando_po": "PO1", "config_sku": "S1",
+        "color_name": "Mauve", "pc_no": "PC1", "ex_fty_date": "",
+        "xs": 1, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    # cn_by_pc_lookup={} → progress source selected, no match → miss.
+    ctx = _ctx(col=col, cn_by_pc_lookup={}, se_store=_Store(), color_source="progress")
+    _, ov = _fill_one_style_row(ws, 2, grp.iloc[0], grp, "DR1", "1_DR1", None, [], ctx)
+
+    assert ov["color_cn"] == _COLOR_NOT_FOUND
+    assert len(calls) == 1
+    assert calls[0]["style"] == "DR1" and calls[0]["source"] == "progress"
+    assert ws.cell(2, col["color_cn"]).comment is not None   # diagnostic comment
+
+
+def test_fill_one_style_row_injects_boat_sample_from_cache():
+    ws = Workbook().active
+    col = _basic_col()
+    grp = pd.DataFrame([{
+        "style": "DR1", "brand": "Anna Field", "color_name": "Red",
+        "xs": 1, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    ctx = _ctx(col=col, bsr_cache={"Anna Field": "confirm boat sample"}, boat_sample_col=18)
+    _fill_one_style_row(ws, 2, grp.iloc[0], grp, "DR1", "1_DR1", None, [], ctx)
+    assert ws.cell(2, 18).value == "confirm boat sample"
