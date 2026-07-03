@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.26.2"
+APP_VERSION = "2.26.3"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -326,6 +326,19 @@ def show_main():
                 (SK.SE_BP_CMP,        None),
                 # Color source resets to admin default on next render
                 (SK.SE_COLOR_SOURCE,  None),
+                # GIII fax/portal extraction sections
+                (SK.GIII_MSG_RESULTS,   None),
+                (SK.GIII_MSG_SIG,       None),
+                (SK.GIII_KL_RESULTS,    None),
+                (SK.GIII_KL_SIG,        None),
+                (SK.GIII_TKEU_RESULTS,  None),
+                (SK.GIII_TKEU_SIG,      None),
+                (SK.GIII_IN_RESULTS,    None),
+                (SK.GIII_IN_SIG,        None),
+                (SK.GIII_IN_KL_RESULTS, None),
+                (SK.GIII_IN_KL_SIG,     None),
+                (SK.GIII_MASTER_DL_BYTES, None),
+                (SK.GIII_MASTER_DL_FNAME, None),
             ]:
                 st.session_state[k] = v
             # Clear bare-string keys not in SK enum

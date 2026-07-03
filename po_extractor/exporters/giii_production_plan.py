@@ -23,6 +23,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from ._excel_helpers import clean_sheet_name
+
 # ---------------------------------------------------------------------------
 # Style constants
 # ---------------------------------------------------------------------------
@@ -211,11 +213,13 @@ def _write_style_sheet(
     C_NOTE      = C_SZ_END + 5
     N_COLS      = C_NOTE
 
-    # Safe sheet title (max 31 chars, unique)
-    sheet_title = style[:31]
+    # Safe sheet title (max 31 chars, illegal chars sanitised, unique) —
+    # a bare style[:31] crashed create_sheet on styles containing / \ * ? : [ ]
+    base_title = clean_sheet_name(style)
+    sheet_title = base_title
     suffix = 2
     while sheet_title in wb.sheetnames:
-        sheet_title = f"{style[:28]}_{suffix}"
+        sheet_title = f"{base_title[:28]}_{suffix}"
         suffix += 1
     ws = wb.create_sheet(title=sheet_title)
 
@@ -345,11 +349,14 @@ def _write_style_sheet(
         hanger    = str(po_row.get("hanger")       or "").strip()
         note      = " + ".join(filter(None, [packaging, hanger]))
 
-        po_sizes = sizes_df[sizes_df["po_number"] == po_num]
+        po_sizes = sizes_df[sizes_df["po_number"] == po_num].copy()
         if po_sizes.empty:
             continue
 
-        colors = po_sizes["color"].dropna().unique().tolist()
+        # NaN colours become "" instead of being dropped — dropna() silently
+        # excluded those size rows from the sheet, 总数量 and the TTL footer.
+        po_sizes["color"] = po_sizes["color"].fillna("")
+        colors = po_sizes["color"].unique().tolist()
         po_start_row = current_row
 
         for color_en in colors:

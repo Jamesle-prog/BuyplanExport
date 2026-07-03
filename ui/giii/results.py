@@ -11,6 +11,7 @@ from po_extractor.ui_helpers import (
     generate_kl_format_excel as _generate_kl_format_excel_impl,
 )
 from ui.shared import build_image_cache_for_ids as _build_image_cache_for_ids
+from ui.shared import persisted_download
 from auth.companies import COMPANY_SKY_EAST
 from ui.stores import get_store, get_sky_east_store
 from ui.giii._shared import _XLSX_MIME, live_label
@@ -112,7 +113,10 @@ def _show_master_po_table():
 
     st.dataframe(display_df, width="stretch", hide_index=True, column_config=col_cfg)
 
-    # Download master table as Excel
+    # Download master table as Excel.  Bytes are stashed in session state
+    # (persisted_download convention) — a download_button nested inside the
+    # build-button's `if` vanished on the next rerun, forcing two clicks and
+    # losing the button after any widget interaction.
     if st.button("⬇ Download Master Table", key="master_dl_btn"):
         from openpyxl import Workbook
         dl_df = display_df.drop(columns=["Photo"])
@@ -122,12 +126,10 @@ def _show_master_po_table():
             for ci, val in enumerate(row, start=1):
                 ws.cell(row=ri, column=ci, value=val)
         buf = io.BytesIO(); wb.save(buf)
-        st.download_button(
-            "⬇ Save Excel", data=buf.getvalue(),
-            file_name="Master_PO_All_Clients.xlsx",
-            mime=_XLSX_MIME,
-            key="master_dl_save",
-        )
+        st.session_state["master_dl_bytes"] = buf.getvalue()
+        st.session_state["master_dl_fname"] = "Master_PO_All_Clients.xlsx"
+    persisted_download("master_dl", default_fname="Master_PO_All_Clients.xlsx",
+                       fixed_mime=_XLSX_MIME, label="⬇ Save Excel")
 
 
 def _show_downloads(outputs: dict, key_prefix: str = "dl"):

@@ -258,9 +258,7 @@ def show_color_translation_tab() -> None:
 
     df_view = store.to_dataframe(active_client, active_brand)
     if df_view.empty:
-        display_df = pd.DataFrame(columns=_CT_DISPLAY_COLS)
-        # Track an empty id-array so the save handler still works
-        _ids_in_view: list = []
+        display_df = pd.DataFrame(columns=["_id"] + _CT_DISPLAY_COLS)
     else:
         # Add the Delete checkbox column (default False) and reorder to the
         # canonical display layout.
@@ -269,8 +267,11 @@ def show_color_translation_tab() -> None:
         if "Color Code" in df_view.columns and "中文颜色代码" not in df_view.columns:
             df_view = df_view.rename(columns={"Color Code": "中文颜色代码"})
         df_view["Delete"] = False
-        display_df = df_view[_CT_DISPLAY_COLS]
-        _ids_in_view = df_view["_id"].tolist() if "_id" in df_view.columns else []
+        # "_id" rides along hidden (column_config None) so each edited row
+        # stays paired with its DB id.  The old positional pairing
+        # (_ids_in_view[:n]) deleted the WRONG row as soon as the user
+        # removed a row inline in this dynamic editor.
+        display_df = df_view[["_id"] + _CT_DISPLAY_COLS]
 
     if df_view.empty:
         st.info("No color translations yet. Use the import section above or add rows in the editor below.")
@@ -282,15 +283,9 @@ def show_color_translation_tab() -> None:
         width="stretch",
         hide_index=True,
         key="ct_editor",
-        column_config=_CT_COL_CFG,
+        column_config={**_CT_COL_CFG, "_id": None},
         height=420,
     )
-
-    # Pair edited rows back with their DB ids by position (rows added in
-    # the editor have no id and are inserted as new on save).
-    def _ids_for_edited() -> list:
-        n = min(len(edited), len(_ids_in_view))
-        return list(_ids_in_view[:n])
 
     save_c, del_sel_c, del_filt_c, _ = st.columns([1, 1.2, 1.2, 3])
 
@@ -303,17 +298,22 @@ def show_color_translation_tab() -> None:
         # mean to remove them, not save them.
         save_df = edited[edited.get("Delete", False) != True] \
                   if "Delete" in edited.columns else edited
+        # The hidden _id pairing column is not part of the store schema.
+        if "_id" in save_df.columns:
+            save_df = save_df.drop(columns=["_id"])
         saved = store.upsert_from_df(save_df)
         st.success(f"Saved {saved} row(s).")
         st.rerun()
 
     # ── Delete selected (checkbox-driven) ──────────────────────────────────
+    # Ids come from the row's own hidden _id — immune to inline row
+    # removal shifting positions.  Rows added in the editor have no _id
+    # (NaN) and are skipped: they're not in the DB yet.
     selected_ids = []
-    if "Delete" in edited.columns:
-        ids_paired = _ids_for_edited()
-        for i in range(min(len(edited), len(ids_paired))):
-            if bool(edited.iloc[i].get("Delete")):
-                selected_ids.append(int(ids_paired[i]))
+    if "Delete" in edited.columns and "_id" in edited.columns:
+        for _, _row in edited[edited["Delete"] == True].iterrows():
+            if pd.notna(_row["_id"]):
+                selected_ids.append(int(_row["_id"]))
 
     if del_sel_c.button(
         f"🗑 Delete selected ({len(selected_ids)})",

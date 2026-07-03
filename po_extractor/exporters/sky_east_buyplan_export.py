@@ -920,10 +920,21 @@ def export_sky_east_buyplan(
         "sky_east_buyplan", col, data_row, fabric_rows,
     )
 
-    # Compute the column letter for the style-total anchor cell (row 5)
+    # Compute the style-total anchor cell.  Canonically row 5 of the header
+    # block — but data_start_row is admin-configurable, and writing the total
+    # at row 5 while data starts at/above it would overwrite a live data cell
+    # (which the Index sheet's 订单数合计 formula then reads).  Clamp the
+    # anchor into the header block above the data region.
     from openpyxl.utils import get_column_letter as _gcl
-    total_col_letter = _gcl(col["total"])
-    total_anchor     = f"{total_col_letter}5"   # e.g. "Q5"
+    total_col_letter  = _gcl(col["total"])
+    _anchor_row = 5 if data_row > 5 else max(1, data_row - 1)
+    if _anchor_row != 5:
+        import warnings as _w
+        _w.warn(
+            f"[sky_east_buyplan] data_start_row={data_row} overlaps the "
+            f"canonical total anchor row 5 — anchor moved to row {_anchor_row}"
+        )
+    total_anchor      = f"{total_col_letter}{_anchor_row}"   # e.g. "Q5"
 
     # Style totals for cross-comparison: {style: int}
     style_totals: dict[str, int] = {}

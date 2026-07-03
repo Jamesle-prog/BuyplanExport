@@ -5,6 +5,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ..utils.file_utils import versioned_path
+from ._excel_helpers import clean_sheet_name
 
 
 def _thin():
@@ -23,24 +24,29 @@ def _header(cell, value):
 def _buyplan_totals(path: str) -> dict:
     """Return {style: total_units} by summing the 'Total' column in each sheet's data rows.
 
-    Buy plan layout: info rows 1-4, header row 5, data rows 6..N-1, total row N.
-    We sum the last column of data rows (excludes the total row itself).
+    Canonical layout: info rows 1-4, header row 5, data rows 6..N-1, total
+    row N — but client templates make the header row configurable, so the
+    'Total' header is searched in the first 10 rows instead of hardcoding
+    row 5 (a template with a different header row used to make every style
+    read 0 here and flag as MISMATCH).
     """
     wb = load_workbook(path, data_only=True)
     out = {}
     for sheet in wb.sheetnames:
         ws = wb[sheet]
-        # Find Total column in row 5
-        total_col = None
-        for cell in ws[5]:
-            if cell.value == "Total":
-                total_col = cell.column
+        total_col = header_row = None
+        for r in range(1, min(10, ws.max_row) + 1):
+            for cell in ws[r]:
+                if cell.value == "Total":
+                    total_col, header_row = cell.column, r
+                    break
+            if total_col:
                 break
         if not total_col:
             continue
-        # Data rows: row 6 to max_row - 1 (last row is the in-sheet Total row)
+        # Data rows: header_row+1 to max_row - 1 (last row is the in-sheet Total row)
         s = 0
-        for r in range(6, ws.max_row):
+        for r in range(header_row + 1, ws.max_row):
             v = ws.cell(row=r, column=total_col).value
             if isinstance(v, (int, float)):
                 s += int(v)
@@ -115,8 +121,11 @@ def export_cross_check(df_size: pd.DataFrame, buyplan_path: str,
     all_ok = True
     for style in styles:
         src = source.get(style, 0)
-        b = bp.get(style[:31], bp.get(style, 0))
-        c = cp.get(style[:31], cp.get(style, 0))
+        # Buy/color plan sheets are named via clean_sheet_name (illegal chars
+        # sanitised) — a bare style[:31] missed styles containing / etc.
+        cleaned = clean_sheet_name(style)
+        b = bp.get(cleaned, bp.get(style[:31], bp.get(style, 0)))
+        c = cp.get(cleaned, cp.get(style[:31], cp.get(style, 0)))
         p = ps.get(style, 0)
         match = (src == b == c == p)
         if not match:

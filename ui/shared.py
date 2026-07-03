@@ -197,6 +197,21 @@ class ProgressTracker:
 # Download helper
 # ---------------------------------------------------------------------------
 
+def guard_multiselect_state(key: str, options) -> None:
+    """Drop stale values from a multiselect's session state before rendering.
+
+    Values no longer present in *options* (e.g. after a delete + rerun, or a
+    filter change) historically raised ``StreamlitAPIException``; Streamlit
+    1.58 instead silently clears the WHOLE selection.  Pruning just the stale
+    values keeps the rest of the user's selection.  Run this before every
+    multiselect whose options are DB-derived (CLAUDE.md convention).
+    """
+    opts = set(options)
+    cur = st.session_state.get(key)
+    if isinstance(cur, list) and any(v not in opts for v in cur):
+        st.session_state[key] = [v for v in cur if v in opts]
+
+
 def persisted_download(
     state_key: str,
     *,

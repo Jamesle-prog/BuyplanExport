@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 from dataclasses import asdict
 from datetime import datetime
 from typing import Literal
@@ -9,6 +10,14 @@ from typing import Literal
 from ..models import POData
 
 SaveStatus = Literal["new", "duplicate", "updated", "skipped"]
+
+# Serialises the read-compare-write sequence in check_and_save/force_save.
+# The metadata read and the save run on separate connections, so without
+# this two Streamlit session threads uploading the same PO both read
+# "not present", both save as "new" (one archive row lost), or both
+# archive (duplicate history rows).  Streamlit sessions are threads in one
+# process, so a process-level lock covers the realistic race.
+_PO_WRITE_LOCK = threading.Lock()
 
 
 def _row_hash(po: POData) -> str:
@@ -52,6 +61,10 @@ class _WritesMixin:
         if not po_number:
             return "skipped", None
 
+        with _PO_WRITE_LOCK:
+            return self._check_and_save_locked(po, po_number)
+
+    def _check_and_save_locked(self, po: POData, po_number: str) -> tuple[SaveStatus, dict | None]:
         existing = self._get_metadata(po_number)
 
         if existing is None:
@@ -104,12 +117,13 @@ class _WritesMixin:
         po_number = (po.metadata.po_number or "").strip()
         if not po_number:
             return  # BUG-05: guard against NULL-keyed row insertion
-        existing = self._get_metadata(po_number)
-        old_units = existing.get("total_units", 0) if existing else 0
-        if existing:
-            self._archive_and_update(po, existing, old_units)
-        else:
-            self._do_save(po)
+        with _PO_WRITE_LOCK:
+            existing = self._get_metadata(po_number)
+            old_units = existing.get("total_units", 0) if existing else 0
+            if existing:
+                self._archive_and_update(po, existing, old_units)
+            else:
+                self._do_save(po)
 
     def save_many_checked(self, pos: list[POData]) -> list[tuple[str, SaveStatus, dict | None]]:
         """

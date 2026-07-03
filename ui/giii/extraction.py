@@ -126,7 +126,11 @@ def _run_extraction(uploaded_files, mask_prices: bool, company: str = ""):
         if mask_prices:
             tracker.step(f"Masking prices in {len(pdf_paths)} PDF(s)")
             st.write(f"Masking prices in {len(pdf_paths)} PDF(s)…")
-            masked_paths = mask_prices_batch(pdf_paths, out_dir)
+            _mask_errors: list[str] = []
+            masked_paths = mask_prices_batch(pdf_paths, out_dir,
+                                             errors=_mask_errors)
+            for _me in _mask_errors:
+                st.warning(f"Price-mask failed — {_me} (file NOT in masked output)")
 
         tracker.done()
         status.update(label="Done!", state="complete")
@@ -422,7 +426,10 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
 
     masked_paths = []
     if mask_prices:
-        masked_paths = mask_prices_batch(paths, out_dir)
+        _mask_errors: list[str] = []
+        masked_paths = mask_prices_batch(paths, out_dir, errors=_mask_errors)
+        for _me in _mask_errors:
+            st.warning(f"Price-mask failed — {_me} (file NOT in masked output)")
 
     out: dict = {}
     for key, path in [("buyplan", bp), ("color_plan", cp), ("po_summary", ps), ("cross_check", cc)]:

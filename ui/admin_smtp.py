@@ -243,10 +243,15 @@ def show_smtp_admin() -> None:
                 placeholder="apikey  (for SendGrid) / you@gmail.com",
             )
         with c4:
+            # Never pre-fill the stored secret — value= pushes it over the
+            # websocket into the browser DOM on every render.  Blank keeps
+            # the current password on save.
             password = st.text_input(
                 "Password / API Key / App Password",
-                value=cur["password"],
+                value="",
                 type="password",
+                placeholder=("•••••• (saved — leave blank to keep)"
+                             if cur["password"] else "API key / app password"),
             )
 
         sender = st.text_input(
@@ -263,7 +268,10 @@ def show_smtp_admin() -> None:
     if saved:
         smtp_settings.save({
             "host": host, "port": int(port), "user": user,
-            "password": password, "sender": sender, "use_tls": bool(use_tls),
+            # Blank password field = keep the stored secret (field is never
+            # pre-filled with it).
+            "password": password or cur["password"],
+            "sender": sender, "use_tls": bool(use_tls),
         })
         st.session_state.pop(_SK_PRESET, None)
         st.success("✅ Saved.")

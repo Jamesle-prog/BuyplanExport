@@ -4,6 +4,7 @@ from __future__ import annotations
 import streamlit as st
 
 from auth.companies import list_company_names
+from ui.shared import guard_multiselect_state
 from auth.users import (
     ALL_MODULES, MODULE_LABELS, ROLE_ADMIN, create_user, delete_user,
     get_user, list_users, set_user_companies, set_user_email,
@@ -36,15 +37,31 @@ def show_user_admin() -> None:
                     key=f"role_{uname}",
                 )
                 if st.button("Set role", key=f"setrole_{uname}"):
-                    set_user_role(uname, new_role)
-                    st.success("Role updated.")
-                    st.rerun()
+                    # Last-admin guard: demoting the only admin would leave
+                    # no account able to manage users/companies (recovery
+                    # would need setup_users.py on the server).
+                    if role == ROLE_ADMIN and new_role != ROLE_ADMIN and not any(
+                        u != uname and (get_user(u) or {}).get("role") == ROLE_ADMIN
+                        for u in users
+                    ):
+                        st.error("Cannot demote the last admin account.")
+                    else:
+                        set_user_role(uname, new_role)
+                        st.success("Role updated.")
+                        st.rerun()
             with c2:
+                # Seed once from the DB, then guard — key= together with
+                # default= silently ignores DB changes once widget state
+                # exists (banned pattern, CLAUDE.md).
+                _cos_key = f"cos_{uname}"
+                if _cos_key not in st.session_state:
+                    st.session_state[_cos_key] = [c for c in cos if c in all_companies]
+                else:
+                    guard_multiselect_state(_cos_key, all_companies)
                 new_cos = st.multiselect(
                     "Allowed companies (leave empty = all for admin)",
                     all_companies,
-                    default=[c for c in cos if c in all_companies],
-                    key=f"cos_{uname}",
+                    key=_cos_key,
                 )
                 if st.button("Set companies", key=f"setcos_{uname}"):
                     set_user_companies(uname, new_cos)
@@ -56,12 +73,16 @@ def show_user_admin() -> None:
                         delete_user(uname)
                         st.success(f"Deleted {uname}.")
                         st.rerun()
+            _mods_key = f"mods_{uname}"
+            if _mods_key not in st.session_state:
+                st.session_state[_mods_key] = [m for m in mods if m in ALL_MODULES]
+            else:
+                guard_multiselect_state(_mods_key, ALL_MODULES)
             new_mods = st.multiselect(
                 "Allowed tabs (leave empty = all tabs)",
                 ALL_MODULES,
-                default=[m for m in mods if m in ALL_MODULES],
                 format_func=lambda m: MODULE_LABELS.get(m, m),
-                key=f"mods_{uname}",
+                key=_mods_key,
                 help="Restricts which top-level tabs this user sees. "
                      "'Sky East — Buy Plan only' hides Contract History / "
                      "Missing Fields and pins Generate/Export to Buy Plan mode.",

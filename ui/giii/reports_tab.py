@@ -5,7 +5,9 @@ import streamlit as st
 import pandas as pd
 
 from auth.users import get_user_companies, is_admin
+from ui.i18n import t
 from ui.session_keys import SK
+from ui.shared import guard_multiselect_state
 from ui.stores import get_store
 from ui.giii._shared import _XLSX_MIME, live_label
 from ui.giii.extraction import _run_from_history, _create_buyplan_bytes
@@ -69,13 +71,16 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
     fc1, fc2, fc3 = st.columns(3)
     with fc1:
         companies = sorted(df["company"].dropna().unique().tolist()) if "company" in df.columns else []
-        sel_co = st.multiselect("Company", companies, key="rpt_co_filter")
+        guard_multiselect_state("rpt_co_filter", companies)
+        sel_co = st.multiselect(t("Company"), companies, key="rpt_co_filter")
     with fc2:
         seasons = sorted(df["season"].dropna().unique().tolist()) if "season" in df.columns else []
-        sel_season = st.multiselect("Season", seasons, key="rpt_season_filter")
+        guard_multiselect_state("rpt_season_filter", seasons)
+        sel_season = st.multiselect(t("Season"), seasons, key="rpt_season_filter")
     with fc3:
         divs = sorted(df["division_name"].dropna().unique().tolist()) if "division_name" in df.columns else []
-        sel_div = st.multiselect("Division", divs, key="rpt_div_filter")
+        guard_multiselect_state("rpt_div_filter", divs)
+        sel_div = st.multiselect(t("Division"), divs, key="rpt_div_filter")
 
     filt_df = df.copy()
     if sel_co:
@@ -86,11 +91,17 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         filt_df = filt_df[filt_df["division_name"].isin(sel_div)]
 
     # ── PO selector ───────────────────────────────────────────────────────────
+    # Seed once (pre-select all visible POs), then guard — key= together with
+    # default= is the CLAUDE.md-banned desync pattern: the default is ignored
+    # once widget state exists, and stale POs silently blank the selection.
     po_opts = filt_df["po_number"].tolist()
+    if "rpt_po_select" not in st.session_state:
+        st.session_state["rpt_po_select"] = po_opts
+    else:
+        guard_multiselect_state("rpt_po_select", po_opts)
     selected = st.multiselect(
         f"Select POs ({len(po_opts)} available after filters):",
         options=po_opts,
-        default=po_opts,          # pre-select all visible POs
         placeholder="Select one or more PO numbers…",
         key="rpt_po_select",
     )
@@ -252,13 +263,16 @@ def _show_tracker_section(df: pd.DataFrame, user_cos: list, admin: bool) -> None
     fc1, fc2, fc3 = st.columns(3)
     with fc1:
         seasons = sorted(df["season"].dropna().unique().tolist()) if "season" in df.columns else []
-        sel_s = st.multiselect("Season", seasons, key="trk_season")
+        guard_multiselect_state("trk_season", seasons)
+        sel_s = st.multiselect(t("Season"), seasons, key="trk_season")
     with fc2:
         divs = sorted(df["division_name"].dropna().unique().tolist()) if "division_name" in df.columns else []
-        sel_d = st.multiselect("Division", divs, key="trk_div")
+        guard_multiselect_state("trk_div", divs)
+        sel_d = st.multiselect(t("Division"), divs, key="trk_div")
     with fc3:
         buyers = sorted(df["buyer"].dropna().unique().tolist()) if "buyer" in df.columns else []
-        sel_b = st.multiselect("Buyer", buyers, key="trk_buyer")
+        guard_multiselect_state("trk_buyer", buyers)
+        sel_b = st.multiselect(t("Buyer"), buyers, key="trk_buyer")
 
     view = df.copy()
     if sel_s:
@@ -269,12 +283,16 @@ def _show_tracker_section(df: pd.DataFrame, user_cos: list, admin: bool) -> None
         view = view[view["buyer"].isin(sel_b)]
 
     # ── Column selector ───────────────────────────────────────────────────────
+    # Seed once + guard instead of key= AND default= (banned desync pattern).
     avail   = [k for k in _TRACKER_COLS if k in view.columns]
     default = [k for k in _DEFAULT_COLS  if k in avail]
+    if "trk_cols" not in st.session_state:
+        st.session_state["trk_cols"] = default
+    else:
+        guard_multiselect_state("trk_cols", avail)
     picked  = st.multiselect(
-        "Columns",
+        t("Columns"),
         options=avail,
-        default=default,
         format_func=lambda k: _TRACKER_COLS.get(k, k),
         key="trk_cols",
     )

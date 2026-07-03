@@ -128,7 +128,17 @@ def _extract_approval_status(text: str):
 
 
 def _extract_origin_port(text: str):
-    # "Order Type Origin Port Issued By Season Price Type\r\nBTB Shanghai ..."
+    # "Order Type Origin Port Issued By Season Price Type\r\nBTB Shanghai ana.cristian ..."
+    # Issued By is a dotted username — anchoring on it keeps multi-word ports
+    # intact ("Ho Chi Minh" used to truncate to "Ho" with a bare \S+ capture).
+    port = _search(
+        r'Order Type Origin Port Issued By Season Price Type\s*[\r\n]'
+        r'\S+\s+(.+?)\s+[a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z0-9._]+(?:\s|$)',
+        text,
+    )
+    if port:
+        return port
+    # Fallback (no dotted username on the line): original single-token capture.
     return _search(
         r'Order Type Origin Port Issued By Season Price Type\s*[\r\n]\S+\s+(\S+)',
         text,
@@ -160,7 +170,9 @@ def _extract_discount(text: str):
 
 def _extract_country(text: str):
     # "PO Number Label Hanger Discount Country of Origin\r\nDWCCC013DS 0.75% China"
-    return _search(r'PO Number[^\r\n]+[\r\n]+\S+\s+[\d.]+%\s+(\S+)', text)
+    # Country is the last field on the line — capture to end of line so
+    # multi-word countries ("Sri Lanka") aren't truncated to their first word.
+    return _search(r'PO Number[^\r\n]+[\r\n]+\S+\s+[\d.]+%\s+([^\r\n]+)', text)
 
 
 def _extract_customer(text: str):
@@ -257,9 +269,12 @@ def _parse_size_grid(block: str) -> list[tuple]:
             size = grid_lines[i]
             upc = grid_lines[i + 2]
             qty_str = grid_lines[i + stride - 1]
-            if size != '-' and re.fullmatch(r'\d{12}', upc):
+            # 12-digit UPC-A or 13-digit EAN — rejecting EANs silently
+            # dropped that size's quantity.  Quantities may carry thousands
+            # separators ("2,500").
+            if size != '-' and re.fullmatch(r'\d{12,13}', upc):
                 try:
-                    results.append((size, upc, int(qty_str)))
+                    results.append((size, upc, int(qty_str.replace(',', ''))))
                 except ValueError:
                     pass
             i += stride

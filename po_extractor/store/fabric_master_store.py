@@ -69,8 +69,8 @@ class FabricMasterStore(BaseSQLiteStore):
             ("spot_price_m",  "REAL"),
         ]:
             if col_name not in existing_cols:
-                conn.execute(
-                    f"ALTER TABLE fabric_master ADD COLUMN {col_name} {col_type}"
+                FabricMasterStore._add_column_if_missing(
+                    conn, "fabric_master", col_name, col_type
                 )
 
         # Only NULL out stale data when upgrading a pre-existing DB that lacked
@@ -149,8 +149,17 @@ class FabricMasterStore(BaseSQLiteStore):
              "col_map": dict, "unmatched_headers": list}
         """
         wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
-        if "all" not in wb.sheetnames:
+        # try/finally: a mid-import exception used to skip wb.close(), and on
+        # Windows the open zip handle kept the uploaded file locked until GC —
+        # an immediate retry of the same file failed with a share violation.
+        try:
+            return self._import_from_open_workbook(wb, xlsx_path, source_file_name)
+        finally:
             wb.close()
+
+    def _import_from_open_workbook(self, wb, xlsx_path: str,
+                                   source_file_name: str | None) -> dict:
+        if "all" not in wb.sheetnames:
             raise ValueError("Sheet 'all' not found in workbook.")
 
         ws = wb["all"]
@@ -217,7 +226,6 @@ class FabricMasterStore(BaseSQLiteStore):
                     )
                     inserted += 1
 
-        wb.close()
         return {
             "inserted": inserted,
             "updated": updated,

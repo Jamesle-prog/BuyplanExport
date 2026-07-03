@@ -83,8 +83,8 @@ class ProductionTrackingStore(BaseSQLiteStore):
             }
             for col_name, col_def in COLUMN_SPEC:
                 if col_name not in existing:
-                    conn.execute(
-                        f"ALTER TABLE production_tracking ADD COLUMN {col_name} {col_def}"
+                    self._add_column_if_missing(
+                        conn, "production_tracking", col_name, col_def
                     )
         ProductionTrackingStore._checked_paths.add(self.db_path)
 
@@ -263,9 +263,8 @@ class ProductionTrackingStore(BaseSQLiteStore):
                 ).fetchall()
             else:
                 # Different DB files: attach the tracking DB read-only.
-                conn.execute(
-                    f"ATTACH DATABASE '{self.db_path}' AS pt"
-                )
+                # Parameterised — an f-string breaks on any quote in the path.
+                conn.execute("ATTACH DATABASE ? AS pt", (self.db_path,))
                 rows = conn.execute(
                     f"""
                     SELECT DISTINCT

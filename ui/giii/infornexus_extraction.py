@@ -18,7 +18,10 @@ import re
 
 import streamlit as st
 
-from ui.giii._shared import _XLSX_MIME
+from ui.giii._shared import _XLSX_MIME, files_signature
+from ui.i18n import t
+from ui.session_keys import SK
+from ui.shared import _th
 
 _SIZE_ORDER = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '1X', '2X', '3X', 'OSFM']
 
@@ -425,10 +428,10 @@ def show_infornexus_upload_section() -> None:
 
     st.divider()
     st.markdown("#### 🗂 InforNexus POs")
-    st.caption(
+    st.caption(t(
         "Upload InforNexus-format PO PDFs. "
         "Optionally also upload the matching KL fax PDFs to generate a side-by-side comparison."
-    )
+    ))
 
     col_in, col_kl = st.columns(2)
     with col_in:
@@ -438,7 +441,7 @@ def show_infornexus_upload_section() -> None:
             label_visibility="collapsed", key="in_uploader",
         )
         if in_files:
-            st.caption(f"{len(in_files)} file(s)")
+            st.caption(f"{len(in_files)} {t('file(s)')}")
 
     with col_kl:
         st.markdown("**KL Fax PDFs** *(for comparison)*")
@@ -447,33 +450,37 @@ def show_infornexus_upload_section() -> None:
             label_visibility="collapsed", key="in_kl_uploader",
         )
         if kl_files:
-            st.caption(f"{len(kl_files)} file(s)")
+            st.caption(f"{len(kl_files)} {t('file(s)')}")
 
     if not in_files:
-        st.info("Upload InforNexus PDFs to get started.")
+        st.info(t("Upload InforNexus PDFs to get started."))
         return
 
-    if "in_results" not in st.session_state:
-        st.session_state.in_results = None
-    if "in_kl_results" not in st.session_state:
-        st.session_state.in_kl_results = None
+    in_sig = files_signature(in_files)
+    kl_sig = files_signature(kl_files)
 
-    if st.button("▶  Extract & Compare", type="primary", use_container_width=True, key="run_in"):
-        st.session_state.in_results    = None
-        st.session_state.in_kl_results = None
+    if SK.GIII_IN_RESULTS not in st.session_state:
+        st.session_state[SK.GIII_IN_RESULTS] = None
+    if SK.GIII_IN_KL_RESULTS not in st.session_state:
+        st.session_state[SK.GIII_IN_KL_RESULTS] = None
 
-        with st.spinner("Parsing InforNexus PDFs…"):
+    if st.button(f"▶  {t('Extract & Compare')}", type="primary",
+                 use_container_width=True, key="run_in"):
+        st.session_state[SK.GIII_IN_RESULTS]    = None
+        st.session_state[SK.GIII_IN_KL_RESULTS] = None
+
+        with st.spinner(t("Parsing InforNexus PDFs…")):
             in_results = _parse_infornexus_pdfs(in_files)
 
         kl_results: list[dict] = []
         if kl_files:
             from ui.giii.kl_extraction import _parse_kl_pdf
-            with st.spinner("Parsing KL fax PDFs…"):
+            with st.spinner(t("Parsing KL fax PDFs…")):
                 for uf in kl_files:
                     try:
                         po = _parse_kl_pdf(uf.read())
                     except Exception as exc:
-                        st.warning(f"KL parse error {uf.name}: {exc}")
+                        st.warning(f"{t('KL parse error')} {uf.name}: {exc}")
                         continue
                     if po['po_number'] == '?':
                         po['po_number'] = uf.name.split('-')[0]
@@ -481,45 +488,61 @@ def show_infornexus_upload_section() -> None:
                     kl_results.append(po)
 
         if not in_results:
-            st.error("No POs could be parsed.")
+            st.error(t("No POs could be parsed."))
             return
 
-        st.session_state.in_results    = in_results
-        st.session_state.in_kl_results = kl_results
+        st.session_state[SK.GIII_IN_RESULTS]    = in_results
+        st.session_state[SK.GIII_IN_KL_RESULTS] = kl_results
+        st.session_state[SK.GIII_IN_SIG]        = in_sig
+        st.session_state[SK.GIII_IN_KL_SIG]     = kl_sig
 
-    in_results = st.session_state.get("in_results")
+    # Drop stale results when either uploaded file set changed since extraction.
+    if (st.session_state.get(SK.GIII_IN_RESULTS) is not None
+            and st.session_state.get(SK.GIII_IN_SIG) != in_sig):
+        st.session_state[SK.GIII_IN_RESULTS]    = None
+        st.session_state[SK.GIII_IN_KL_RESULTS] = None
+    if (st.session_state.get(SK.GIII_IN_KL_RESULTS) is not None
+            and st.session_state.get(SK.GIII_IN_KL_SIG) != kl_sig):
+        st.session_state[SK.GIII_IN_KL_RESULTS] = None
+
+    in_results = st.session_state.get(SK.GIII_IN_RESULTS)
     if not in_results:
         return
 
-    kl_results = st.session_state.get("in_kl_results") or []
+    kl_results = st.session_state.get(SK.GIII_IN_KL_RESULTS) or []
 
     # ── Summary table ────────────────────────────────────────────────────────
     rows = []
+    total_units = 0
     for po in in_results:
         total = sum(s[1] for li in po['line_items'] for s in li['sizes'])
+        fob_disp = (po['fob_price']
+                    if po['fob_price'] in ('?', 'UNCONFIRMED', 'NOT CONFIRMED')
+                    else f"${po['fob_price']}")
         rows.append({
-            'PO Number': po['po_number'],
-            'Style':     po['style'],
-            'Color':     po['line_items'][0]['color'] if po['line_items'] else '?',
-            'ETD':       po['etd'],
-            'FOB':       f"${po['fob_price']}",
-            'MSRP':      f"${po['msrp']}" if po['msrp'] != '?' else '?',
-            'HTS#':      po['hts_num'],
-            'CPO':       po['cpo'],
-            'Units':     total,
-            'Pack':      po['pack_ratio'],
+            _th('PO Number'): po['po_number'],
+            _th('Style'):     po['style'],
+            _th('Color'):     po['line_items'][0]['color'] if po['line_items'] else '?',
+            _th('ETD'):       po['etd'],
+            _th('FOB'):       fob_disp,
+            _th('MSRP'):      f"${po['msrp']}" if po['msrp'] != '?' else '?',
+            _th('HTS#'):      po['hts_num'],
+            _th('CPO'):       po['cpo'],
+            _th('Units'):     total,
+            _th('Pack'):      po['pack_ratio'],
         })
+        total_units += total
 
     import pandas as pd
     st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
-    total_units = sum(r['Units'] for r in rows)
-    st.caption(f"**{len(in_results)} PO(s)** · **{total_units:,} total units**")
+    st.caption(f"**{len(in_results)} {t('PO(s)')}** · **{total_units:,} {t('total units')}**")
 
     # ── Download ─────────────────────────────────────────────────────────────
-    with st.spinner("Building Excel…"):
+    with st.spinner(t("Building Excel…")):
         xlsx = build_comparison_excel(kl_results, in_results)
 
-    label = "⬇ Download Comparison Excel" if kl_results else "⬇ Download InforNexus Excel"
+    label = (f"⬇ {t('Download Comparison Excel')}" if kl_results
+             else f"⬇ {t('Download InforNexus Excel')}")
     first_po = in_results[0]['po_number'] if in_results else 'IN_POs'
     prefix   = re.sub(r'\d+R$', '', first_po)
     fname    = f"{prefix}_comparison.xlsx" if kl_results else f"{prefix}_IN_POs.xlsx"

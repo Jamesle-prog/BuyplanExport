@@ -15,7 +15,10 @@ import re
 
 import streamlit as st
 
-from ui.giii._shared import _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE
+from ui.giii._shared import _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature
+from ui.i18n import t
+from ui.session_keys import SK
+from ui.shared import _th
 
 # (parser helpers are imported from _shared)
 
@@ -182,7 +185,7 @@ def _parse_kl_pdfs(pdf_files) -> list[dict]:
         try:
             po = _parse_kl_pdf(uf.read())
         except Exception as exc:
-            st.warning(f"Parse error in {uf.name}: {exc}")
+            st.warning(f"{t('Parse error in')} {uf.name}: {exc}")
             continue
         if po['po_number'] == '?':
             # derive from filename e.g. LSKHHN015R-G5DTN93C 5.13.pdf
@@ -373,7 +376,15 @@ def _build_kl_excel(results: list[dict]) -> bytes:
             msrp_val = float(po['msrp']) if po['msrp'] not in ('?', '') else ''
         except ValueError:
             msrp_val = ''
-        fob_val = po['fob_price'] if is_unc else (float(po['fob_price']) if po['fob_price'] != '?' else '')
+        if is_unc:
+            fob_val = po['fob_price']
+        elif po['fob_price'] != '?':
+            try:
+                fob_val = float(po['fob_price'])
+            except ValueError:
+                fob_val = po['fob_price']       # e.g. "12.50." — keep raw string
+        else:
+            fob_val = ''
 
         for li in po['line_items']:
             bg        = _LT_BLUE if (po_row - 2) % 2 == 0 else None
@@ -430,7 +441,15 @@ def _build_kl_excel(results: list[dict]) -> bytes:
         tu_col  = get_column_letter(len(S_HDRS))
         formula = f'=SUM({",".join(f"{tu_col}{r}" for r in rows)})' if rows else 0
         is_unc  = info['fob'] == 'UNCONFIRMED'
-        fob_val = info['fob'] if is_unc else (float(info['fob']) if info['fob'] != '?' else '')
+        if is_unc:
+            fob_val = info['fob']
+        elif info['fob'] != '?':
+            try:
+                fob_val = float(info['fob'])
+            except ValueError:
+                fob_val = info['fob']           # e.g. "12.50." — keep raw string
+        else:
+            fob_val = ''
         vals    = [style_key, info['desc'], fob_val, info['msrp'], formula, len(info['pos'])]
 
         for ci, v in enumerate(vals, 1):
@@ -488,11 +507,11 @@ def show_kl_upload_section() -> None:
 
     st.divider()
     st.markdown("#### 📄 KL PO PDFs")
-    st.caption(
+    st.caption(t(
         "Upload KL-format purchase order PDFs directly. "
         "The system parses PO fields, MSRP details, HTS codes and produces "
         "a formatted Excel workbook ready for download."
-    )
+    ))
 
     uploaded_pdfs = st.file_uploader(
         "Upload KL PO PDF files",
@@ -503,26 +522,34 @@ def show_kl_upload_section() -> None:
     )
 
     if not uploaded_pdfs:
-        st.info("Upload one or more KL PO PDF files to get started.")
+        st.info(t("Upload one or more KL PO PDF files to get started."))
         return
 
-    st.caption(f"{len(uploaded_pdfs)} file(s) selected")
+    st.caption(f"{len(uploaded_pdfs)} " + t("file(s) selected"))
 
-    if "kl_results" not in st.session_state:
-        st.session_state.kl_results = None
+    sig = files_signature(uploaded_pdfs)
 
-    if st.button("▶  Extract KL POs", type="primary", use_container_width=True, key="run_kl"):
-        st.session_state.kl_results = None
-        with st.spinner("Parsing KL PO PDFs…"):
+    if SK.GIII_KL_RESULTS not in st.session_state:
+        st.session_state[SK.GIII_KL_RESULTS] = None
+
+    if st.button(t("▶  Extract KL POs"), type="primary", use_container_width=True, key="run_kl"):
+        st.session_state[SK.GIII_KL_RESULTS] = None
+        with st.spinner(t("Parsing KL PO PDFs…")):
             results = _parse_kl_pdfs(uploaded_pdfs)
 
         if not results:
-            st.error("No POs could be parsed from the uploaded files.")
+            st.error(t("No POs could be parsed from the uploaded files."))
             return
 
-        st.session_state.kl_results = results
+        st.session_state[SK.GIII_KL_RESULTS] = results
+        st.session_state[SK.GIII_KL_SIG]     = sig
 
-    results = st.session_state.get("kl_results")
+    results = st.session_state.get(SK.GIII_KL_RESULTS)
+    if results and st.session_state.get(SK.GIII_KL_SIG) != sig:
+        # Upload selection changed since extraction — drop the stale results
+        # so a swapped file set can't display/download the previous batch.
+        st.session_state[SK.GIII_KL_RESULTS] = None
+        results = None
     if not results:
         return
 
@@ -531,6 +558,7 @@ def show_kl_upload_section() -> None:
     sizes_cols = [s for s in _SIZE_ORDER if s in all_sizes]
 
     rows = []
+    total_col = _th('Total')
     for po in results:
         for li in po['line_items']:
             sz_map    = {s[0]: s[1] for s in li['sizes']}
@@ -538,58 +566,58 @@ def show_kl_upload_section() -> None:
             fob_disp  = po['fob_price'] if po['fob_price'] in ('?', 'UNCONFIRMED') else f"${po['fob_price']}"
             msrp_disp = f"${po['msrp']}" if po['msrp'] not in ('?', '') else po['msrp']
             row = {
-                'PO Number':     po['po_number'],
-                'Style':         li['style'],
-                'Color':         li['color'],
-                'ETD':           po['etd'],
-                'FOB':           fob_disp,
-                'MSRP':          msrp_disp,
-                'HTS#':          po['hts_num'],
-                'CPO':           po['cpo'],
-                'Customer Name': po['customer_name'],
-                'Ship To':       po['ship_to'],
-                'Hanger Info':   po['hanger_info'],
-                'Pack Ratio':    po['pack_ratio'],
+                _th('PO Number'):     po['po_number'],
+                _th('Style'):         li['style'],
+                _th('Color'):         li['color'],
+                _th('ETD'):           po['etd'],
+                _th('FOB'):           fob_disp,
+                _th('MSRP'):          msrp_disp,
+                _th('HTS#'):          po['hts_num'],
+                _th('CPO'):           po['cpo'],
+                _th('Customer Name'): po['customer_name'],
+                _th('Ship To'):       po['ship_to'],
+                _th('Hanger Info'):   po['hanger_info'],
+                _th('Pack Ratio'):    po['pack_ratio'],
             }
             for sz in sizes_cols:
                 row[sz] = sz_map.get(sz, '')
-            row['Total'] = row_total
+            row[total_col] = row_total
             rows.append(row)
 
     import pandas as pd
     df = pd.DataFrame(rows)
     st.dataframe(df, hide_index=True, use_container_width=True)
 
-    grand_total = sum(r['Total'] for r in rows)
+    grand_total = sum(r[total_col] for r in rows)
     st.caption(
-        f"**{len(results)} PO(s)** · **{grand_total:,} total units** · "
-        f"{len(sizes_cols)} size(s): {', '.join(sizes_cols)}"
+        f"**{len(results)} {t('PO(s)')}** · **{grand_total:,} {t('total units')}** · "
+        f"{len(sizes_cols)} {t('size(s)')}: {', '.join(sizes_cols)}"
     )
 
     # ── Metadata expander ────────────────────────────────────────────────────
-    with st.expander("PO Metadata", expanded=False):
+    with st.expander(t("PO Metadata"), expanded=False):
         meta_rows = [{
-            'PO Number':     po['po_number'],
-            'Style':         po['style'],
-            'Description':   po['description'],
-            'Customer Name': po['customer_name'],
-            'Ship To':       po['ship_to'],
-            'PO Date':       po['po_date'],
-            'Ship Date':     po['ship_date'],
-            'ETD':           po['etd'],
-            'FOB Price':     po['fob_price'],
-            'MSRP':          po['msrp'],
-            'HTS#':          po['hts_num'],
-            'CPO':           po['cpo'],
-            'Hanger Info':   po['hanger_info'],
-            'Pack Ratio':    po['pack_ratio'],
-            'Factory':       po['factory'],
-            'Vendor':        po['vendor'],
+            _th('PO Number'):     po['po_number'],
+            _th('Style'):         po['style'],
+            _th('Description'):   po['description'],
+            _th('Customer Name'): po['customer_name'],
+            _th('Ship To'):       po['ship_to'],
+            _th('PO Date'):       po['po_date'],
+            _th('Ship Date'):     po['ship_date'],
+            _th('ETD'):           po['etd'],
+            _th('FOB Price'):     po['fob_price'],
+            _th('MSRP'):          po['msrp'],
+            _th('HTS#'):          po['hts_num'],
+            _th('CPO'):           po['cpo'],
+            _th('Hanger Info'):   po['hanger_info'],
+            _th('Pack Ratio'):    po['pack_ratio'],
+            _th('Factory'):       po['factory'],
+            _th('Vendor'):        po['vendor'],
         } for po in results]
         st.dataframe(pd.DataFrame(meta_rows), hide_index=True, use_container_width=True)
 
     # ── Download ─────────────────────────────────────────────────────────────
-    with st.spinner("Building Excel…"):
+    with st.spinner(t("Building Excel…")):
         xlsx_bytes = _build_kl_excel(results)
 
     first_po = results[0]['po_number'] if results else 'KL_POs'
@@ -597,7 +625,7 @@ def show_kl_upload_section() -> None:
     fname    = f"{prefix}_KL_POs.xlsx" if prefix else "KL_POs.xlsx"
 
     st.download_button(
-        label="⬇ Download Excel",
+        label=t("⬇ Download Excel"),
         data=xlsx_bytes,
         file_name=fname,
         mime=_XLSX_MIME,

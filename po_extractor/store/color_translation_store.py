@@ -649,18 +649,23 @@ class ColorTranslationStore(BaseSQLiteStore):
                     ).fetchone()
                     if existing:
                         # Preserve existing manual values when source is blank
-                        old_cn    = existing["cn_color"]    or ""
-                        old_code  = existing["color_code"]  or ""
-                        old_label = existing["label_color"] or ""
+                        old_cn    = existing["cn_color"]      or ""
+                        old_code  = existing["color_code"]    or ""
+                        old_label = existing["label_color"]   or ""
+                        old_shade = existing["light_or_dark"] or ""
                         new_cn    = cn_color    or old_cn
                         new_code  = color_code  or old_code
                         new_label = label_final or old_label
+                        # Shade too: when the keyword classifier can't place
+                        # the colour (derived ""), keep a manually set value
+                        # instead of blanking it on every re-import.
+                        new_shade = shade_final or old_shade
                         conn.execute(
                             """UPDATE color_translations SET
                                   cn_color=?, color_code=?, light_or_dark=?,
                                   label_color=?, updated_at=?
                                WHERE id=?""",
-                            (new_cn, new_code, shade_final, new_label,
+                            (new_cn, new_code, new_shade, new_label,
                              now, existing["id"]),
                         )
                         updated += 1
@@ -669,7 +674,7 @@ class ColorTranslationStore(BaseSQLiteStore):
                             {f: existing[f] for f in _AUDIT_FIELDS},
                             {"cn_color": new_cn,
                              "color_code": new_code,
-                             "light_or_dark": shade_final,
+                             "light_or_dark": new_shade,
                              "label_color": new_label,
                              "notes": existing["notes"] or ""},
                         )

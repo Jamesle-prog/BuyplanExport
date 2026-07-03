@@ -134,10 +134,12 @@ def _extract_metadata(text: str, file_path: str) -> POMetadata:
     if hts_idx >= 0:
         hts = _search(HTS_PATTERN, text[hts_idx:hts_idx + 400])
 
-    # Discount
+    # Discount — only prefix a leading-dot fraction (".75%" → "0.75%").
+    # The old `not startswith("0.")` guard also mangled whole-number
+    # discounts: "1.5%" → "0.1.5%", "1%" → "0.1%" (silently 10× smaller).
     discount = _search(DISCOUNT_PATTERN, text)
-    if discount and not discount.startswith("0."):
-        discount = "0." + discount.lstrip(".")   # ".75%" → "0.75%"
+    if discount and discount.startswith("."):
+        discount = "0" + discount
 
     # Pack type
     packaging = _search(PACK_PATTERN, text)

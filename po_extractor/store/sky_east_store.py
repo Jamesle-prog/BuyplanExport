@@ -23,13 +23,13 @@ class SkyEastStore(BaseSQLiteStore):
             for tbl in ("sky_east_items", "sky_east_item_history"):
                 cols = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})")}
                 if "contract_no" not in cols:
-                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN contract_no TEXT")
+                    self._add_column_if_missing(conn, tbl, "contract_no", "TEXT")
             # Migrate: add progress_colors if missing (existing DBs, added after
             # sky_east_color_misses first shipped)
             _cm_cols = {r[1] for r in conn.execute("PRAGMA table_info(sky_east_color_misses)")}
             if "progress_colors" not in _cm_cols:
-                conn.execute(
-                    "ALTER TABLE sky_east_color_misses ADD COLUMN progress_colors TEXT"
+                self._add_column_if_missing(
+                    conn, "sky_east_color_misses", "progress_colors", "TEXT"
                 )
 
     # ------------------------------------------------------------------ #

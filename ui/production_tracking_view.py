@@ -48,6 +48,7 @@ import streamlit as st
 
 from ui.i18n import t
 from ui.session_keys import SK
+from ui.shared import guard_multiselect_state
 from ui.stores import get_production_tracking_store, get_store
 
 # ── Schema constants — imported once at module load, not on every render ──────
@@ -140,12 +141,12 @@ def _parse_date(val: Any) -> date | None:
 def _stage_col_headers() -> None:
     """Render a single-row header for the 6-column stage row layout."""
     h1, h2, h3, h4, h5, h6 = st.columns([2.5, 2, 2, 2, 1.5, 2.5])
-    h1.caption("**Stage**")
-    h2.caption("**Status**")
-    h3.caption("**Planned**")
-    h4.caption("**Actual**")
-    h5.caption("**Exp.Days**")
-    h6.caption("**Notes**")
+    h1.caption(f"**{t('Stage')}**")
+    h2.caption(f"**{t('Status')}**")
+    h3.caption(f"**{t('Planned')}**")
+    h4.caption(f"**{t('Actual')}**")
+    h5.caption(f"**{t('Exp.Days')}**")
+    h6.caption(f"**{t('Notes')}**")
 
 
 # ── Per-stage row renderer ────────────────────────────────────────────────────
@@ -215,17 +216,24 @@ def _render_dep_row(stage: str, record: dict, rid: int) -> None:
 
     # Build display-name ↔ key maps
     label_to_key = {STAGE_LABELS[t]: t for t in targets}
+    options = list(label_to_key.keys())
     default_labels = [
         STAGE_LABELS[t]
         for t in targets
         if record.get(dep_col(stage, t), 0)
     ]
 
+    # Seed-once + guard (never key= AND default= together — CLAUDE.md).
+    wkey = _wkey(rid, f"dep_{stage}")
+    if wkey not in st.session_state:
+        st.session_state[wkey] = default_labels
+    else:
+        guard_multiselect_state(wkey, options)
+
     selected = st.multiselect(
         "Required for:",
-        options=list(label_to_key.keys()),
-        default=default_labels,
-        key=_wkey(rid, f"dep_{stage}"),
+        options=options,
+        key=wkey,
     )
     # Store the resolved keys back in session_state so _collect_dep_fields
     # can read them without a second reverse-lookup pass.
@@ -239,12 +247,12 @@ def _render_dep_row(stage: str, record: dict, rid: int) -> None:
 def _render_readiness_badge(label: str, readiness: str) -> None:
     """Render a readiness status callout for PP Sample or Cutting."""
     if readiness == "ready":
-        st.success(f"✅ **{label}** — Ready")
+        st.success(f"✅ **{label}** — {t('Ready')}")
     elif readiness.startswith("waiting"):
         waiting_on = readiness[len("waiting:"):]
-        st.warning(f"⏳ **{label}** — Waiting on: {waiting_on}")
+        st.warning(f"⏳ **{label}** — {t('Waiting on:')} {waiting_on}")
     else:  # no_prereqs
-        st.info(f"⚪ **{label}** — No prerequisites set")
+        st.info(f"⚪ **{label}** — {t('No prerequisites set')}")
 
 
 # ── Section renderers ─────────────────────────────────────────────────────────
@@ -271,7 +279,7 @@ def _render_group_a_section(record: dict, rid: int, readiness: dict[str, str]) -
 
     _done, _total = _group_progress(record, list(STAGES_GROUP_A))
     with st.expander(
-        f"🧵 Group A — Pre-Production (Parallel) · {_done}/{_total} ✅",
+        f"🧵 {t('Group A — Pre-Production (Parallel)')} · {_done}/{_total} ✅",
         expanded=_done < _total,
     ):
         _stage_col_headers()
@@ -295,7 +303,7 @@ def _render_optional_samples_section(record: dict, rid: int) -> None:
         record.get(f"{s}_applicable", 0) for s in STAGES_GROUP_B_OPTIONAL
     )
 
-    with st.expander("Optional Samples", expanded=any_applicable):
+    with st.expander(t("Optional Samples"), expanded=any_applicable):
         for stage in STAGES_GROUP_B_OPTIONAL:
             applicable = st.toggle(
                 f"Include {STAGE_LABELS[stage]}",
@@ -308,11 +316,16 @@ def _render_optional_samples_section(record: dict, rid: int) -> None:
                 # Optional samples can only target PP Sample
                 pp_label = STAGE_LABELS["pp_sample"]
                 is_dep = bool(record.get(dep_col(stage, "pp_sample"), 0))
+                # Seed-once + guard (never key= AND default= together).
+                dep_wkey = _wkey(rid, f"dep_{stage}_pp")
+                if dep_wkey not in st.session_state:
+                    st.session_state[dep_wkey] = [pp_label] if is_dep else []
+                else:
+                    guard_multiselect_state(dep_wkey, [pp_label])
                 selected = st.multiselect(
                     "Required for:",
                     options=[pp_label],
-                    default=[pp_label] if is_dep else [],
-                    key=_wkey(rid, f"dep_{stage}_pp"),
+                    key=dep_wkey,
                 )
                 st.session_state[_wkey(rid, f"dep_{stage}_keys")] = (
                     ["pp_sample"] if pp_label in selected else []
@@ -331,7 +344,7 @@ def _render_pp_sample_section(record: dict, rid: int, readiness: str) -> None:
         s for s in STAGES_GROUP_B_OPTIONAL if record.get(f"{s}_applicable", 0)
     ]
     _done, _total = _group_progress(record, _b_stages)
-    st.subheader(f"🧪 Group B — Samples · {_done}/{_total} ✅")
+    st.subheader(f"🧪 {t('Group B — Samples')} · {_done}/{_total} ✅")
 
     # ── Substitute materials toggle ──────────────────────────────────────────
     use_sub = st.toggle(
@@ -369,7 +382,7 @@ def _render_group_c_section(record: dict, rid: int, readiness_cutting: str) -> N
     """Render Group C — Production (sequential); collapses when fully done."""
     _done, _total = _group_progress(record, list(STAGES_GROUP_C))
     with st.expander(
-        f"🏭 Group C — Production (Sequential) · {_done}/{_total} ✅",
+        f"🏭 {t('Group C — Production (Sequential)')} · {_done}/{_total} ✅",
         expanded=_done < _total,
     ):
         # Cutting gets a readiness badge
@@ -390,7 +403,7 @@ def _render_group_d_section(record: dict, rid: int) -> None:
     """Render Group D — Post-Production (sequential); collapses when fully done."""
     _done, _total = _group_progress(record, list(STAGES_GROUP_D))
     with st.expander(
-        f"📦 Group D — Post-Production · {_done}/{_total} ✅",
+        f"📦 {t('Group D — Post-Production')} · {_done}/{_total} ✅",
         expanded=_done < _total,
     ):
         _stage_col_headers()
@@ -618,10 +631,10 @@ def show_production_tracking_tab(
     # Non-admin users with no assigned companies see nothing — never let
     # admin status leak through the "no filter" path of list_all().
     if not admin_mode and not user_cos:
-        st.info(
+        st.info(t(
             "No companies assigned to your account. "
             "Contact an administrator to be granted access."
-        )
+        ))
         return
 
     records = store.list_all(
@@ -642,12 +655,15 @@ def show_production_tracking_tab(
     # the radio's own session-state key ("pt_tab_radio") before st.rerun().
     # Setting only PT_ACTIVE_TAB would silently fail because Streamlit
     # ignores `index=` once the widget key has a value in session_state.
+    # NOTE: options stay English (stable widget/session values, index math);
+    # format_func translates at render time so language switches apply live.
     active_label = st.radio(
         "Sub-section",
         _TAB_LABELS,
         horizontal=True,
         index=st.session_state.get(SK.PT_ACTIVE_TAB, TAB_DASHBOARD),
         key="pt_tab_radio",
+        format_func=t,
         label_visibility="collapsed",
     )
     st.session_state[SK.PT_ACTIVE_TAB] = _TAB_LABELS.index(active_label)
@@ -721,11 +737,11 @@ def _render_metrics(records, readiness_map, reminder_map, today) -> None:
 def _render_dashboard_tab(records, readiness_map, reminder_map, today) -> None:
     """Stage 7 will render the per-PO progress cards.  For now: count summary."""
     if not records:
-        st.info("No tracked records yet. Use **➕ Add New** to start tracking a PO/style.")
+        st.info(t("No tracked records yet. Use **➕ Add New** to start tracking a PO/style."))
         return
     st.caption(
-        f"📊 Dashboard placeholder — {len(records)} record(s) loaded. "
-        "Card grid lands in Stage 7."
+        f"📊 {t('Dashboard placeholder')} — {len(records)} "
+        + t("record(s) loaded. Card grid lands in Stage 7.")
     )
 
 
@@ -736,11 +752,11 @@ def _render_dashboard_tab(records, readiness_map, reminder_map, today) -> None:
 def _render_overview_table(records, readiness_map, reminder_map, today) -> None:
     """Stage 7 will render the wide emoji-badge table."""
     if not records:
-        st.info("No tracked records yet.")
+        st.info(t("No tracked records yet."))
         return
     st.caption(
-        f"📋 Overview placeholder — {len(records)} record(s) loaded. "
-        "Full table lands in Stage 7."
+        f"📋 {t('Overview placeholder')} — {len(records)} "
+        + t("record(s) loaded. Full table lands in Stage 7.")
     )
 
 
@@ -751,7 +767,7 @@ def _render_overview_table(records, readiness_map, reminder_map, today) -> None:
 def _render_edit_tab(records, readiness_map, store, username, today) -> None:
     """Full edit form for an existing tracking record."""
     if not records:
-        st.info("No tracked records yet. Use **➕ Add New** first.")
+        st.info(t("No tracked records yet. Use **➕ Add New** first."))
         return
 
     # One-shot success message from the previous run's delete (the message
@@ -808,7 +824,7 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
     # Overall notes
     overall_notes_val = record.get("overall_notes") or ""
     st.text_area(
-        "Overall Notes",
+        t("Overall Notes"),
         value=overall_notes_val,
         key=_wkey(rid, "overall_notes"),
     )
@@ -844,12 +860,14 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
             st.session_state[SK.PT_DELETE_CONFIRM] = True
 
     if st.session_state.get(SK.PT_DELETE_CONFIRM):
-        st.warning(
-            f"⚠️ Delete **{record['po_number']}** "
-            f"({'Style: ' + record['style'] if record.get('style') else 'no style'})? "
-            "This cannot be undone."
+        _style_part = (
+            f"{t('Style:')} {record['style']}" if record.get("style") else t("no style")
         )
-        if st.button("✅ Confirm Delete", type="primary"):
+        st.warning(
+            f"⚠️ {t('Delete')} **{record['po_number']}** ({_style_part})? "
+            + t("This cannot be undone.")
+        )
+        if st.button(f"✅ {t('Confirm Delete')}", type="primary"):
             store.delete([rid])
             st.session_state[SK.PT_DELETE_CONFIRM] = False
             # Do NOT touch SK.PT_SELECTED_EDIT here — it is the selectbox's
@@ -859,7 +877,7 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
             # the stale id reconciles to the first option automatically.
             st.session_state[SK.PT_DELETE_FLASH] = t("Record deleted.")
             st.rerun()
-        if st.button("Cancel"):
+        if st.button(t("Cancel")):
             st.session_state[SK.PT_DELETE_CONFIRM] = False
             st.rerun()
 
@@ -889,7 +907,7 @@ def _render_add_tab(
         allow_all=admin_mode,
     )
     if not untracked:
-        st.info("All POs are already being tracked.")
+        st.info(t("All POs are already being tracked."))
         return
 
     # ── PO picker ────────────────────────────────────────────────────────────
@@ -922,7 +940,7 @@ def _render_add_tab(
         key="pt_add_factory",
     )
     company_val = chosen.get("company") or ""
-    overall_notes_val = st.text_area("Overall Notes", value="", key="pt_add_notes")
+    overall_notes_val = st.text_area(t("Overall Notes"), value="", key="pt_add_notes")
 
     st.divider()
 
@@ -991,9 +1009,9 @@ def _render_add_tab(
 def _render_plan_tab(records, store) -> None:
     """Stage 8 will render the planning what-if interface."""
     if not records:
-        st.info("No tracked records yet — nothing to plan.")
+        st.info(t("No tracked records yet — nothing to plan."))
         return
     st.caption(
-        f"📅 Plan placeholder — {len(records)} record(s) available. "
-        "Schedule calculator lands in Stage 8."
+        f"📅 {t('Plan placeholder')} — {len(records)} "
+        + t("record(s) available. Schedule calculator lands in Stage 8.")
     )

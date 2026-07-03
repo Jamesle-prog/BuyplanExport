@@ -10,6 +10,20 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.26.3",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "fix", "text": "**Parser accuracy batch.** Whole-number discounts are no longer 10× smaller (\"1.5%\" became \"0.1.5%\"); multi-word countries/ports survive (\"Sri Lanka\", \"Ho Chi Minh\" were truncated to their first word); 13-digit EAN barcodes and quantities with thousands separators no longer silently drop their size rows; the AI (DeepSeek) parser asks for and stores the real per-row colour instead of filling every row with the division code; the EAN lookup warns loudly when it falls back to fixed column positions"},
+            {"type": "fix", "text": "**Price masking is trustworthy again.** Masked `.xlsm` files keep their macros (previously re-packaged as plain xlsx under the .xlsm name — Excel refused to open them), legacy `.xls` fails with a clear message instead of vanishing, and every masking failure now shows in the processing log / on screen instead of a console print nobody sees — a file can no longer silently go missing from the masked zip"},
+            {"type": "fix", "text": "**Colors tab: deleting the right rows, keeping manual shades.** The 🗑 delete checkbox now pairs each row with its database id (removing a row inline used to shift every row down and delete the wrong record), and re-importing a 大货进度表 no longer blanks a manually set light/dark shade the keyword classifier can't derive"},
+            {"type": "fix", "text": "**Extraction tabs can't serve stale results.** All four fax/portal sections (MSG · KL · TK EU · InforNexus) now tie their results to the uploaded file set — swapping files without re-extracting drops the old table and its download instead of silently offering the previous batch. FOB values that aren't clean numbers degrade gracefully in the summary sheets instead of crashing the export, and non-price FOBs no longer display as \"$NOT CONFIRMED\"/\"$?\""},
+            {"type": "fix", "text": "Concurrent-use hardening: simultaneous saves of the same PO serialize (no more lost archive rows / duplicate history), first-run schema migrations tolerate two sessions racing (`duplicate column` crash), buy-plan sheets whose styles collide at 31 chars no longer swap photos, cross-check totals find the Total header on any row (configurable templates read 0 before), production-plan styles containing `/` export instead of crashing, and blank-colour size rows are counted instead of dropped"},
+            {"type": "security", "text": "The admin Email panel no longer round-trips the stored SMTP password into the browser on every render (leave blank to keep it), sign-in timing no longer reveals whether a username exists, and the sole remaining admin can no longer demote themselves into a lockout"},
+            {"type": "perf", "text": "The styled PO-Tracker workbook is cached instead of being rebuilt on every filter click (Summary tab and GIII Generate/Export)"},
+            {"type": "refactor", "text": "**Convention sweep:** GIII extraction sections + Tracking/Summary views now use SK session-key constants (state resets properly on sign-out), user-facing text is t()/_th()-wrapped for the Chinese UI, and every DB-driven multiselect uses the seed-once + stale-value-guard idiom (`guard_multiselect_state` in ui/shared.py) instead of the banned key=+default= pattern"},
+        ],
+    },
+    {
         "version": "2.26.2",
         "date": "2026-07-03",
         "entries": [

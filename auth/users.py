@@ -88,12 +88,19 @@ def create_user(username: str, password: str,
     _save(users)
 
 
+# Throwaway hash used to equalise timing when the username doesn't exist —
+# an instant return let attackers distinguish valid usernames from invalid
+# ones by response time (missing user ≈ instant; real user ≈ full bcrypt).
+_DUMMY_HASH = bcrypt.hashpw(b"__timing_pad__", bcrypt.gensalt()).decode()
+
+
 def verify_password(username: str, password: str) -> bool:
     if not username or not password:
         return False
     users = _load()
     rec = users.get(username)
     if not rec:
+        bcrypt.checkpw(password.encode(), _DUMMY_HASH.encode())
         return False
     try:
         h = rec["password"] if isinstance(rec, dict) else rec
