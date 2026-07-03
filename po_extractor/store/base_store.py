@@ -18,9 +18,23 @@ class BaseSQLiteStore:
 
     db_path: str  # set by subclass
 
+    # Paths whose journal_mode has already been set to WAL this process.
+    # journal_mode=WAL is a *persisted* DB property, so it only needs to be
+    # applied once per file — re-running it on every connection is pure
+    # overhead (≈5× the cost of a bare connect).  synchronous=NORMAL is a
+    # per-connection setting and is cheap, so it stays on every open.
+    _wal_initialized: set[str] = set()
+
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
+        if self.db_path not in BaseSQLiteStore._wal_initialized:
+            # The pragma returns the *resulting* mode — the switch can fail
+            # (e.g. the DB is locked by another connection), so only mark the
+            # path done once WAL actually took effect; otherwise retry on the
+            # next connection.
+            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+            if str(mode).lower() == "wal":
+                BaseSQLiteStore._wal_initialized.add(self.db_path)
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn

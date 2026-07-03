@@ -10,6 +10,17 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.26.0",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "feat", "text": "**Tracking: lab-dip gates for bulk purchasing.** Trim Layout must now be confirmed before Trim Purchase, and Fabric Color (LD) before Fabric Purchase — both gates are ON by default (new *and* existing records) and editable per record in the dependency matrix. Trim Purchase and Fabric Purchase show a readiness badge in the Edit form (✅ Ready / ⏳ Waiting on …), and Group A stages are re-ordered so each confirmation stage sits directly above the purchase it gates"},
+            {"type": "perf", "text": "**Faster tab renders on SQLite-heavy screens.** `PRAGMA journal_mode=WAL` (a persisted DB property) now runs once per database file per process instead of on every connection (≈5× a bare connect); the Production Tracking store's schema check is likewise memoized per process, and the store instance is cached via `functools.cache` in `ui/stores.py` — reads still open fresh connections, so data freshness is unchanged"},
+            {"type": "refactor", "text": "The AS400 fax-copy parser helpers (`_undouble`, size-code regexes, line-item patterns) previously copy-pasted in the MSG, KL, and TK EU extractors now live once in `ui/giii/_shared.py`; header-field parsing runs each `grep` once instead of twice per field"},
+            {"type": "fix", "text": "**MSG extraction: FOB price is now read only from the FOB line** — previously the first doubled `$$` amount anywhere in the PO could be picked up (e.g. an MSRP), and the UNCONFIRMED check now takes priority. InforNexus PO-number fallback no longer uses a redundant `O` in its letter-to-zero substitution"},
+            {"type": "security", "text": "`auth/users.json` and `data/fabric_master.db` are no longer tracked by git (local files kept; both added to `.gitignore` along with the fabric DB's WAL/journal side-files and `data/extracted_images/`)"},
+        ],
+    },
+    {
         "version": "2.25.0",
         "date": "2026-07-03",
         "entries": [

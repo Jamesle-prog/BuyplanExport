@@ -46,6 +46,11 @@ from ._production_tracking_schema import (
 class ProductionTrackingStore(BaseSQLiteStore):
     """Read/write access to the ``production_tracking`` table."""
 
+    # Class-level set of db_paths that have already been schema-checked in
+    # this process.  Lets _ensure_schema() be a fast no-op on repeated
+    # construction (e.g. when the store is not cached by the caller).
+    _checked_paths: set[str] = set()
+
     def __init__(self, db_path: str):
         self.db_path = db_path
         self._ensure_schema()
@@ -63,7 +68,13 @@ class ProductionTrackingStore(BaseSQLiteStore):
         etc.) are intentionally left in place — SQLite has no safe
         ``DROP COLUMN`` in a migration; the application code simply ignores
         them.
+
+        The class-level ``_checked_paths`` set makes this a fast no-op after
+        the first call per db_path within a process lifetime — the PRAGMA +
+        connection-open overhead is paid once, not on every render.
         """
+        if self.db_path in ProductionTrackingStore._checked_paths:
+            return
         with self._conn() as conn:
             conn.executescript(base_schema_sql())
             existing = {
@@ -75,6 +86,7 @@ class ProductionTrackingStore(BaseSQLiteStore):
                     conn.execute(
                         f"ALTER TABLE production_tracking ADD COLUMN {col_name} {col_def}"
                     )
+        ProductionTrackingStore._checked_paths.add(self.db_path)
 
     # ── Writes ──────────────────────────────────────────────────────────────
 

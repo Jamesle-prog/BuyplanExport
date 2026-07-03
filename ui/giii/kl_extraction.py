@@ -15,21 +15,9 @@ import re
 
 import streamlit as st
 
-from ui.giii._shared import _XLSX_MIME
+from ui.giii._shared import _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE
 
-# ---------------------------------------------------------------------------
-# Parser helpers (shared patterns)
-# ---------------------------------------------------------------------------
-
-_SIZE_CODES = r'(?:XXS|XS|XXL|XL|[123]XL|[123]X|OSFM|OSM|OSF|OS|S|M|L)'
-_FIRST_RE   = re.compile(
-    rf'^(\d{{3}})\s+(\S+)\s+(.+?)\s+({_SIZE_CODES})\s+(\d+)\s+(\d{{12,13}})\s+([\d.]+)'
-)
-_CONT_RE    = re.compile(rf'^({_SIZE_CODES})\s+(\d+)\s+(\d{{12,13}})')
-
-
-def _undouble(s: str) -> str:
-    return re.sub(r'(.)\1', r'\1', s)
+# (parser helpers are imported from _shared)
 
 
 def _parse_kl_pdf(pdf_bytes: bytes) -> dict:
@@ -48,10 +36,14 @@ def _parse_kl_pdf(pdf_bytes: bytes) -> dict:
         return None
 
     # ── Standard header fields ────────────────────────────────────────────────
-    po_num  = _undouble(grep(r'PO NUMBER\s+(\S+)').group(1))  if grep(r'PO NUMBER\s+(\S+)')  else '?'
-    style   = _undouble(grep(r'S T Y L E #\s+(\S+)').group(1)) if grep(r'S T Y L E #\s+(\S+)') else '?'
-    po_date = _undouble(grep(r'PO DATE\s+([\d/]+)').group(1))  if grep(r'PO DATE\s+([\d/]+)')  else '?'
-    ship    = _undouble(grep(r'P R T\s+([\d/]+)').group(1))    if grep(r'P R T\s+([\d/]+)')    else '?'
+    m = grep(r'PO NUMBER\s+(\S+)')
+    po_num  = _undouble(m.group(1)) if m else '?'
+    m = grep(r'S T Y L E #\s+(\S+)')
+    style   = _undouble(m.group(1)) if m else '?'
+    m = grep(r'PO DATE\s+([\d/]+)')
+    po_date = _undouble(m.group(1)) if m else '?'
+    m = grep(r'P R T\s+([\d/]+)')
+    ship    = _undouble(m.group(1)) if m else '?'
 
     etd_m = grep(r'([\d/]+)\s+EETTDD')
     etd   = _undouble(etd_m.group(1)) if etd_m else '?'
@@ -485,9 +477,6 @@ def _build_kl_excel(results: list[dict]) -> bytes:
 # Streamlit section
 # ---------------------------------------------------------------------------
 
-_SIZE_ORDER_UI = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '1X', '2X', '3X']
-
-
 def show_kl_upload_section() -> None:
     """Render the KL PO PDF upload section inside the GIII Upload tab."""
 
@@ -533,7 +522,7 @@ def show_kl_upload_section() -> None:
 
     # ── Summary table ────────────────────────────────────────────────────────
     all_sizes  = {s[0] for po in results for li in po['line_items'] for s in li['sizes']}
-    sizes_cols = [s for s in _SIZE_ORDER_UI if s in all_sizes]
+    sizes_cols = [s for s in _SIZE_ORDER if s in all_sizes]
 
     rows = []
     for po in results:

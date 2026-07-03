@@ -174,7 +174,7 @@ def _parse_infornexus_pdfs(pdf_files) -> list[dict]:
             st.warning(f"Parse error in {uf.name}: {exc}")
             continue
         if po['po_number'] == '?':
-            po['po_number'] = re.sub(r'[OoO]', '0', uf.name.split('.')[0])
+            po['po_number'] = re.sub(r'[Oo]', '0', uf.name.split('.')[0])
         po['source_file'] = uf.name
         results.append(po)
     return results

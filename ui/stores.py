@@ -107,12 +107,25 @@ def get_app_settings_store() -> AppSettingsStore:
     return _get_app_settings_store()
 
 
+@functools.cache
 def get_production_tracking_store() -> ProductionTrackingStore:
-    """Return a fresh ProductionTrackingStore (not cached — lightweight wrapper).
+    """Return the cached ProductionTrackingStore.
 
-    Same rationale as the other non-cached wrappers (FabricMasterStore,
-    BoatSampleStore): construction is cheap and we want every UI render
-    to see fresh data after any concurrent write.
+    Cached with ``functools.cache`` (same rationale as ColorTranslationStore /
+    AppSettingsStore): construction calls ``_ensure_schema()`` which opens a
+    SQLite connection and runs ``PRAGMA table_info`` — doing this on every
+    Streamlit render adds unnecessary latency.
+
+    ``functools.cache`` (not ``@st.cache_resource``) is intentional: it ties
+    the cached instance to this function object.  When Streamlit hot-reloads
+    the module the function is recreated, its cache is empty, and a fresh
+    instance is built from the current class definition — avoiding the
+    stale-class AttributeError that ``st.cache_resource`` causes across
+    hot-reloads.
+
+    Data freshness: ``list_all()`` and ``list_untracked_pos()`` open their own
+    connections on every call, so they always see committed writes regardless
+    of instance caching.
     """
     return _get_production_tracking_store()
 
