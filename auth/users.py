@@ -10,6 +10,38 @@ _USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
 ROLE_ADMIN = "admin"
 ROLE_USER  = "user"
 
+# Modules — one per top-level app tab, plus a narrower sub-scope for Sky East.
+# A user's `modules` list gates which tabs render for them; an empty list means
+# unrestricted (all modules) — same convention as `companies`. Admins always
+# get every module regardless of this field.
+MODULE_GIII             = "giii"
+MODULE_SKY_EAST         = "sky_east"           # full Sky East tab (Upload/Reports/History/Missing)
+MODULE_SKY_EAST_BUYPLAN = "sky_east_buyplan"   # Sky East narrowed to Upload + Buy Plan generation only
+MODULE_FABRIC_DB        = "fabric_db"
+MODULE_REFERENCE_DATA   = "reference_data"
+MODULE_COLORS           = "colors"
+MODULE_SUMMARY          = "summary"
+MODULE_TRACKING         = "tracking"
+MODULE_RELEASES         = "releases"
+
+ALL_MODULES = [
+    MODULE_GIII, MODULE_SKY_EAST, MODULE_SKY_EAST_BUYPLAN, MODULE_FABRIC_DB,
+    MODULE_REFERENCE_DATA, MODULE_COLORS, MODULE_SUMMARY, MODULE_TRACKING,
+    MODULE_RELEASES,
+]
+
+MODULE_LABELS = {
+    MODULE_GIII: "📋 GIII",
+    MODULE_SKY_EAST: "🛍 Sky East (full)",
+    MODULE_SKY_EAST_BUYPLAN: "🛍 Sky East — Buy Plan only",
+    MODULE_FABRIC_DB: "🧵 Fabric DB",
+    MODULE_REFERENCE_DATA: "📐 Reference Data",
+    MODULE_COLORS: "🎨 Colors",
+    MODULE_SUMMARY: "📊 Summary",
+    MODULE_TRACKING: "🏭 Tracking",
+    MODULE_RELEASES: "🔖 Releases",
+}
+
 
 def _load() -> dict:
     if not os.path.exists(_USERS_FILE):
@@ -39,7 +71,8 @@ def _save(users: dict) -> None:
 def create_user(username: str, password: str,
                 role: str = ROLE_USER,
                 companies: list[str] | None = None,
-                email: str | None = None) -> None:
+                email: str | None = None,
+                modules: list[str] | None = None) -> None:
     if not username or not password:
         raise ValueError("Username and password are required")
     users = _load()
@@ -50,6 +83,7 @@ def create_user(username: str, password: str,
         "role": role,
         "companies": companies if companies is not None else existing.get("companies", []),
         "email": (email if email is not None else existing.get("email", "")) or "",
+        "modules": modules if modules is not None else existing.get("modules", []),
     }
     _save(users)
 
@@ -75,7 +109,8 @@ def change_password(username: str, old_password: str, new_password: str) -> bool
     rec = users.get(username, {})
     create_user(username, new_password,
                 role=rec.get("role", ROLE_USER),
-                companies=rec.get("companies", []))
+                companies=rec.get("companies", []),
+                modules=rec.get("modules", []))
     return True
 
 
@@ -88,13 +123,14 @@ def list_users() -> list[str]:
 
 
 def get_user(username: str) -> dict | None:
-    """Return {role, companies, email} or None."""
+    """Return {role, companies, email, modules} or None."""
     rec = _load().get(username)
     if not rec:
         return None
     return {"role": rec.get("role", ROLE_USER),
             "companies": rec.get("companies", []),
-            "email": rec.get("email", "") or ""}
+            "email": rec.get("email", "") or "",
+            "modules": rec.get("modules", []) or []}
 
 
 def get_user_email(username: str) -> str:
@@ -132,6 +168,26 @@ def set_user_companies(username: str, companies: list[str]) -> bool:
     if username not in users:
         return False
     users[username]["companies"] = companies
+    _save(users)
+    return True
+
+
+def get_user_modules(username: str) -> list[str]:
+    """Admin returns [] (meaning all). Regular user returns their list —
+    empty also means unrestricted (same convention as get_user_companies)."""
+    u = get_user(username)
+    if not u:
+        return []
+    if u["role"] == ROLE_ADMIN:
+        return []
+    return u["modules"]
+
+
+def set_user_modules(username: str, modules: list[str]) -> bool:
+    users = _load()
+    if username not in users:
+        return False
+    users[username]["modules"] = modules
     _save(users)
     return True
 

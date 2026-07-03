@@ -4,14 +4,15 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.24.0"
+APP_VERSION = "2.25.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from auth.license import validate_license
 from auth.companies import ensure_defaults_seeded
 from auth.users import (
-    change_password, get_user_companies, is_admin,
+    MODULE_SKY_EAST, MODULE_SKY_EAST_BUYPLAN,
+    change_password, get_user_companies, get_user_modules, is_admin,
     user_exists, verify_password,
 )
 from po_extractor.ui_helpers import load_live_schema as _load_live_schema_impl
@@ -296,33 +297,42 @@ def show_main():
 
     # ---- Tabs ----
     admin_mode = is_admin(st.session_state.username)
-    tab_labels = ["📋 GIII", "🛍 Sky East", "🧵 Fabric DB", "📐 Reference Data", "🎨 Colors", "📊 Summary", "🏭 Tracking", "🔖 Releases"]
+    user_modules = get_user_modules(st.session_state.username)  # [] = unrestricted
+    _buyplan_only = (
+        MODULE_SKY_EAST_BUYPLAN in user_modules
+        and MODULE_SKY_EAST not in user_modules
+    )
+
+    def _allowed(module_key: str) -> bool:
+        if not user_modules:
+            return True
+        if module_key == "sky_east":
+            return MODULE_SKY_EAST in user_modules or MODULE_SKY_EAST_BUYPLAN in user_modules
+        return module_key in user_modules
+
+    _all_tabs = [
+        ("giii",           "📋 GIII",           lambda: _show_smart_upload_tab()),
+        ("sky_east",       "🛍 Sky East",       lambda: _show_sky_east_tab(restrict_to_buyplan=_buyplan_only)),
+        ("fabric_db",      "🧵 Fabric DB",      lambda: _show_fabric_db_tab()),
+        ("reference_data", "📐 Reference Data", lambda: _show_fabric_mapping_tab()),
+        ("colors",         "🎨 Colors",         lambda: _show_color_translation_tab()),
+        ("summary",        "📊 Summary",        lambda: _show_summary_tab(
+            user_cos=get_user_companies(st.session_state.username), admin_mode=admin_mode)),
+        ("tracking",       "🏭 Tracking",       lambda: _show_production_tracking_tab(
+            user_cos=get_user_companies(st.session_state.username), admin_mode=admin_mode)),
+        ("releases",       "🔖 Releases",       lambda: _show_changelog_tab()),
+    ]
+    _visible_tabs = [(label, fn) for key, label, fn in _all_tabs if _allowed(key)]
+    tab_labels = [label for label, _ in _visible_tabs]
     if admin_mode:
         tab_labels.append("⚙️ Admin")
     tabs = st.tabs(tab_labels)
 
-    with tabs[0]:
-        _show_smart_upload_tab()
-    with tabs[1]:
-        _show_sky_east_tab()
-    with tabs[2]:
-        _show_fabric_db_tab()
-    with tabs[3]:
-        _show_fabric_mapping_tab()
-    with tabs[4]:
-        _show_color_translation_tab()
-    with tabs[5]:
-        _show_summary_tab(user_cos=get_user_companies(st.session_state.username),
-                          admin_mode=admin_mode)
-    with tabs[6]:
-        _show_production_tracking_tab(
-            user_cos=get_user_companies(st.session_state.username),
-            admin_mode=admin_mode,
-        )
-    with tabs[7]:
-        _show_changelog_tab()
+    for tab, (_, fn) in zip(tabs, _visible_tabs):
+        with tab:
+            fn()
     if admin_mode:
-        with tabs[8]:
+        with tabs[-1]:
             _show_admin_panel()
 
 
@@ -454,9 +464,9 @@ def _show_smart_upload_tab() -> None:
 
 
 @st.fragment
-def _show_sky_east_tab() -> None:
+def _show_sky_east_tab(restrict_to_buyplan: bool = False) -> None:
     from ui.sky_east_view import show_sky_east_tab
-    show_sky_east_tab()
+    show_sky_east_tab(restrict_to_buyplan=restrict_to_buyplan)
 
 
 

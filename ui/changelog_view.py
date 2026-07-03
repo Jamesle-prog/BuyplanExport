@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.25.0",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "feat", "text": "**Per-user tab restrictions.** Admin → Users now has an **Allowed tabs** picker (leave empty = all tabs, same convention as Allowed companies). A new **\"Sky East — Buy Plan only\"** option narrows a user's entire app down to Upload + Generate/Export, pinned to Buy Plan + 核料 mode — Contract History, Missing Fields, Item Data, Wash Labels, and every other top-level tab (GIII, Fabric DB, Reference Data, Colors, Summary, Tracking) stay hidden for that user"},
+        ],
+    },
+    {
         "version": "2.24.0",
         "date": "2026-07-02",
         "entries": [

@@ -24,9 +24,18 @@ _MODE_DL = "📥 Item Data"
 _MODE_WL = "🏷 Wash Labels"
 _GEN_MODES = [_MODE_BP, _MODE_DL, _MODE_WL]
 
+# Public alias for callers (e.g. a restricted user role) that need to pin the
+# output type instead of showing the full radio.
+PIN_BUYPLAN = "buyplan"
 
-def _show_se_reports_tab() -> None:
-    """Generate/Export: pick an output type; PC selection is shared across all."""
+
+def _show_se_reports_tab(pin_mode: str | None = None) -> None:
+    """Generate/Export: pick an output type; PC selection is shared across all.
+
+    ``pin_mode=PIN_BUYPLAN`` skips the output-type radio entirely and always
+    renders the Buy Plan + 核料 section — used by the Sky East "Buy Plan only"
+    restricted role so Item Data / Wash Labels stay hidden.
+    """
     store        = get_sky_east_store()
     df_contracts = store.list_contracts()
 
@@ -57,12 +66,15 @@ def _show_se_reports_tab() -> None:
         st.session_state["se_gen_pcs"] = [v for v in _cur if v in _pc_set]
 
     # ── Output type ───────────────────────────────────────────────────────────
-    mode = st.radio(
-        t("What do you want to generate?"),
-        _GEN_MODES,
-        horizontal=True,
-        key="se_gen_mode",
-    )
+    if pin_mode == PIN_BUYPLAN:
+        mode = _MODE_BP
+    else:
+        mode = st.radio(
+            t("What do you want to generate?"),
+            _GEN_MODES,
+            horizontal=True,
+            key="se_gen_mode",
+        )
 
     # ── Shared PC selection (persists across output types) ───────────────────
     sel_col, all_col = st.columns([4, 1])

@@ -69,7 +69,10 @@ def test_show_pipeline_layout_admin_exported():
 def test_show_sky_east_tab_exported():
     from ui import show_sky_east_tab
     assert callable(show_sky_east_tab)
-    assert len(inspect.signature(show_sky_east_tab).parameters) == 0
+    sig = inspect.signature(show_sky_east_tab)
+    params = list(sig.parameters.values())
+    assert params[0].name == "restrict_to_buyplan"
+    assert params[0].default is False
 
 
 def test_show_fabric_db_tab_exported():

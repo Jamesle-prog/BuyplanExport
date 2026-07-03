@@ -8,7 +8,7 @@ from ui.sky_east._shared import live_label, show_color_source_radio
 from ui.sky_east.processing import _run_sky_east_processing, _compute_se_missing_df
 from ui.sky_east.items_view import _show_se_results, _show_se_missing_fields_section
 from ui.sky_east.history import _show_se_history_section
-from ui.sky_east.reports_tab import _show_se_reports_tab
+from ui.sky_east.reports_tab import PIN_BUYPLAN, _show_se_reports_tab
 
 # Color source radio is defined in sky_east._shared.show_color_source_radio
 # and shared with the Buy Plan section in the history tab.
@@ -135,14 +135,29 @@ def _show_se_upload_section():
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def show_sky_east_tab() -> None:
-    """Sky East purchase-contract upload, merge, amendment review, and history."""
+def show_sky_east_tab(restrict_to_buyplan: bool = False) -> None:
+    """Sky East purchase-contract upload, merge, amendment review, and history.
+
+    ``restrict_to_buyplan=True`` renders a narrowed view for the "Sky East —
+    Buy Plan only" user role: just Upload + Generate/Export pinned to Buy
+    Plan mode. Contract History and Missing Fields stay hidden.
+    """
     st.subheader(t("Sky East Purchase Contracts"))
     st.caption(t(
         "Upload one or more Sky East order Excel files. "
         "Files with the **same PC No.** are merged (quantities added). "
         "Changed size breakdowns are detected as amendments and logged to history."
     ))
+
+    if restrict_to_buyplan:
+        se_tab_upload, se_tab_reports = st.tabs(
+            [t("New Contracts"), f"📦 {t('Generate / Export')}"]
+        )
+        with se_tab_upload:
+            _show_se_upload_section()
+        with se_tab_reports:
+            _show_se_reports_tab(pin_mode=PIN_BUYPLAN)
+        return
 
     _missing_df = _compute_se_missing_df()
     _missing_count = len(_missing_df)
