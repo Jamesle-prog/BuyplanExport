@@ -10,6 +10,18 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.26.2",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "fix", "text": "**Fabric DB auto-migration actually runs now.** A fresh deployment silently got an *empty* fabric master (blank 综合key/composition in every buy plan): the store's own schema migrations stamped the same `user_version` values the factory used as its \"legacy copy done\" marker, so the copy from `po_history.db` was unreachable. The marker now uses a dedicated bit; locked by a new regression test"},
+            {"type": "fix", "text": "**Photo injection can no longer delete a finished buy plan.** When no sheet matched the photo map (e.g. every photo style contained `&` — sheet titles were compared XML-escaped), the injector removed the export before discovering there was nothing to move. Titles are now unescaped and the workbook is only replaced when the patched copy exists"},
+            {"type": "fix", "text": "**核料 colour column no longer misdetected.** An always-true guard (string-vs-int comparison) overrode a correctly detected 颜色/Color header with the leftmost other column whenever the size-header row contained any extra label (e.g. 合计)"},
+            {"type": "fix", "text": "**Sky East contracts missing an optional header row (e.g. Trade Term) no longer fail entirely** with a cryptic `'trade_term'` error — absent fields default to blank and the file's items import normally (parse confidence drops as before)"},
+            {"type": "fix", "text": "**Sky East style photos are read from the actual contract sheet.** Image positions were always taken from sheet 1 even when the contract was found on a later sheet, attaching wrong or missing photos"},
+            {"type": "fix", "text": "**KL/MSG extraction: HTS codes with repeated digits are no longer corrupted** (6110.20.2079 became 610.20.2079). De-doubling is now applied only when the match is genuinely fax-doubled (doubled dots)"},
+        ],
+    },
+    {
         "version": "2.26.1",
         "date": "2026-07-03",
         "entries": [

@@ -604,21 +604,29 @@ def parse(path: str, processed_by: str = "") -> SkyEastContract:
         file_hash = hashlib.md5(fh.read()).hexdigest()
 
     # ── Contract header — dynamic label search with position fallbacks ────────
+    # .get with "" fallback: _parse_contract_header only inserts keys whose
+    # label (or hardcoded fallback cell) was found — a variant contract that
+    # omits an optional row (e.g. Trade Term) must not KeyError the whole file.
     hdr      = _parse_contract_header(ws)
-    pc_no    = hdr["pc_no"]
-    pc_date  = hdr["pc_date"]
-    party_a  = hdr["party_a"]
-    party_b  = hdr["party_b"]
-    currency = hdr["currency"]
-    payment  = hdr["payment_terms"]
-    trade    = hdr["trade_term"]
+    pc_no    = hdr.get("pc_no", "")
+    pc_date  = hdr.get("pc_date", "")
+    party_a  = hdr.get("party_a", "")
+    party_b  = hdr.get("party_b", "")
+    currency = hdr.get("currency", "")
+    payment  = hdr.get("payment_terms", "")
+    trade    = hdr.get("trade_term", "")
 
     # ── Column mapping ────────────────────────────────────────────────────────
     hrow = _find_header_row(ws)
     col  = _map_columns(ws, hrow)
 
-    # Pre-extract DISPIMG positions directly from XML (reliable even with data_only=True)
-    dispimg_pos = extract_dispimg_positions(path, sheet_index=0)
+    # Pre-extract DISPIMG positions directly from XML (reliable even with data_only=True).
+    # Use the *found* contract sheet's index — hardcoding 0 read image positions
+    # from sheet 1 even when the contract lives on a later sheet, attaching
+    # wrong/no photos by (row, col) collision.
+    dispimg_pos = extract_dispimg_positions(
+        path, sheet_index=wb.sheetnames.index(ws.title)
+    )
 
     def cv(row, key):
         c = col.get(key)

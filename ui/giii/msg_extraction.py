@@ -92,9 +92,17 @@ def _parse_pdf_bytes(pdf_bytes: bytes) -> dict:
         if pr_m:
             pack_ratio = pr_m.group(1)
 
-    # HTS#: tariff code like 6106.20.2010 (may be doubled in header, normal in data row)
+    # HTS#: tariff code like 6106.20.2010 (may be doubled in header, normal in
+    # data row).  Only undouble when the match is actually fax-doubled — the
+    # doubled form always carries doubled dots ("..").  Unconditional
+    # undoubling corrupted normal-font codes with legitimately repeated
+    # digits: 6110.20.2079 → 610.20.2079.
     hts_m   = grep(r'(\d{4,8}\.+\d{2,4}\.+\d{4,8})')
-    hts_num = _undouble(hts_m.group(1)) if hts_m else '?'
+    if hts_m:
+        hts_raw = hts_m.group(1)
+        hts_num = _undouble(hts_raw) if '..' in hts_raw else hts_raw
+    else:
+        hts_num = '?'
 
     # CPO: e.g. "CPO: TBD" or doubled "CCPPOO:: TTBBDD"
     cpo_m = grep(r'C+P+O+:+\s*(\S+)')

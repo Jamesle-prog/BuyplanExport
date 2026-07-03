@@ -107,9 +107,15 @@ def _parse_kl_pdf(pdf_bytes: bytes) -> dict:
             pack_ratio = pr_m.group(1)
             break
 
-    # ── HTS# (page 2, normal font) ────────────────────────────────────────────
+    # ── HTS# (page 2, normal font; doubled variant carries "..") ─────────────
+    # Only undouble a fax-doubled match — unconditional undoubling corrupted
+    # normal-font codes with repeated digits: 6110.20.2079 → 610.20.2079.
     hts_m   = grep(r'(\d{4,8}\.+\d{2,4}\.+\d{4,8})')
-    hts_num = _undouble(hts_m.group(1)) if hts_m else '?'
+    if hts_m:
+        hts_raw = hts_m.group(1)
+        hts_num = _undouble(hts_raw) if '..' in hts_raw else hts_raw
+    else:
+        hts_num = '?'
 
     # ── CPO: KL uses "CUST PO:" (doubled: "CCUUSSTT PPOO::") ─────────────────
     cpo_m = grep(r'CCUUSSTT\s+PPOO::\s*(\S+)')
