@@ -543,12 +543,17 @@ def _collect_dep_fields(record: dict, rid: int) -> dict[str, Any]:
 
         if selected_targets is _MISSING:
             # Widget was not rendered this cycle — preserve DB values.
-            for t in targets:
-                col = dep_col(source, t)
+            # (loop var named `tgt`, not `t` — `t` is the i18n translator
+            # imported into this module; a bare `for t in ...:` anywhere in a
+            # function makes Python treat `t` as local for the WHOLE function,
+            # breaking any `t(...)` call that runs earlier — see the
+            # _render_add_tab UnboundLocalError this caused.)
+            for tgt in targets:
+                col = dep_col(source, tgt)
                 fields[col] = record.get(col, 0)
         else:
-            for t in targets:
-                fields[dep_col(source, t)] = 1 if t in selected_targets else 0
+            for tgt in targets:
+                fields[dep_col(source, tgt)] = 1 if tgt in selected_targets else 0
 
     return fields
 
@@ -959,8 +964,12 @@ def _render_add_tab(
 
         dep_fields: dict[str, Any] = {}
         for source, targets in PREREQ_VALID.items():
-            for t in targets:
-                col = dep_col(source, t)
+            # loop var `tgt`, not `t` — `t` is this module's i18n translator;
+            # a bare `for t in ...:` anywhere in the function makes Python
+            # treat `t` as local for the WHOLE function (UnboundLocalError on
+            # the t("Overall Notes") call above, which runs unconditionally).
+            for tgt in targets:
+                col = dep_col(source, tgt)
                 dep_fields[col] = 1 if col in DEFAULT_DEP_ON else 0
         # pp_sample → cutting is always 1
         dep_fields[dep_col("pp_sample", "cutting")] = 1

@@ -53,11 +53,11 @@ from ui.giii.tk_eu_extraction import show_tk_eu_upload_section as _show_tk_eu_up
 # ---------------------------------------------------------------------------
 
 def _show_excel_tab():
-    st.subheader("Zalando Buy Plan")
-    st.caption(
+    st.subheader(t("Zalando Buy Plan"))
+    st.caption(t(
         "Upload one or more client Excel files (each with a **1.1.PO_Client** sheet). "
         "The system merges them, detects repeat orders, and generates the buy plan + Template_P files."
-    )
+    ))
 
     for key, default in [
         ("excel_results", None),
@@ -69,7 +69,7 @@ def _show_excel_tab():
     col_up, col_opt = st.columns([2, 1])
     with col_up:
         uploaded_excels = st.file_uploader(
-            "Upload client Excel file(s)",
+            t("Upload client Excel file(s)"),
             type=["xlsx", "xlsm", "xls"],
             accept_multiple_files=True,
             label_visibility="collapsed",
@@ -77,13 +77,13 @@ def _show_excel_tab():
             key="excel_uploader",
         )
         if uploaded_excels:
-            st.caption(f"{len(uploaded_excels)} file(s) selected")
+            st.caption(f"{len(uploaded_excels)} " + t("file(s) selected"))
 
     with col_opt:
-        st.markdown("**Options**")
+        st.markdown(f"**{t('Options')}**")
 
         sheet_name = st.text_input(
-            "Source sheet name",
+            t("Source sheet name"),
             value="1.1.PO_Client",
             help="Name of the mapping sheet inside each Excel file.",
             key="excel_sheet_name",
@@ -92,7 +92,7 @@ def _show_excel_tab():
         pass  # photo folder is shown below as a separate expander
 
         client_profile = st.selectbox(
-            "Client profile",
+            t("Client profile"),
             ["(auto-detect)"] + list(CLIENT_ALIASES.keys()),
             help="Pre-loads known column aliases for the selected client.",
             key="excel_client_profile",
@@ -101,18 +101,18 @@ def _show_excel_tab():
     st.divider()
 
     # ── Template download (moved to Admin > Templates) ────────────────────────
-    st.caption(
+    st.caption(t(
         "💡 Need a blank mapping template? Get it from **Admin → 📄 Templates → "
         "Client PO Mapping Template (1.1.PO_Client)**."
-    )
+    ))
 
     _show_image_folder_expander("excel_images_dir", "excel_images_dir_apply")
 
-    with st.expander("📊 大货进度表 (contract number lookup)", expanded=False):
-        st.caption(
+    with st.expander("📊 " + t("大货进度表 (contract number lookup)"), expanded=False):
+        st.caption(t(
             "Upload the production-progress Excel (大货进度表) to auto-fill **合同号** "
             "in the buy plan.  Leave blank to skip."
-        )
+        ))
         progress_file = st.file_uploader(
             "大货进度表 Excel",
             type=["xlsx", "xlsm", "xls"],
@@ -123,17 +123,17 @@ def _show_excel_tab():
             st.caption(f"✅ {progress_file.name}")
 
     if not uploaded_excels:
-        st.info("Upload one or more client Excel files to get started.")
+        st.info(t("Upload one or more client Excel files to get started."))
         return
 
     excel_mask = st.checkbox(
-        "Mask prices in output files",
+        t("Mask prices in output files"),
         value=False,
         key="excel_mask_prices",
         help="Replace FOB / cost / price columns with *** before download.",
     )
 
-    if st.button("▶  Process Excel Files", type="primary", use_container_width=True, key="run_excel"):
+    if st.button("▶  " + t("Process Excel Files"), type="primary", use_container_width=True, key="run_excel"):
         st.session_state.excel_results = None
         st.session_state.excel_log = []
         _run_excel_extraction(
@@ -156,24 +156,24 @@ def _show_excel_tab():
 
 def _show_giii_upload_section():
     """Upload + process panel (inner tab of GIII)."""
-    st.markdown("**PO Files** (PDF · XLSX · XLSM · XLS)")
+    st.markdown(f"**{t('PO Files')}** (PDF · XLSX · XLSM · XLS)")
     uploaded = st.file_uploader(
-        "Upload PO files",
+        t("Upload PO files"),
         type=["pdf", "xlsx", "xlsm", "xls"],
         accept_multiple_files=True,
         label_visibility="collapsed",
         key="smart_uploader",
     )
     if uploaded:
-        st.caption(f"{len(uploaded)} file(s) selected")
+        st.caption(f"{len(uploaded)} " + t("file(s) selected"))
 
-    with st.expander("➕ Reference files (Fabric Mapping)"):
+    with st.expander("➕ " + t("Reference files (Fabric Mapping)")):
         _show_giii_reference_section()
 
     _show_image_folder_expander("giii_images_dir", "giii_images_dir_apply")
 
     mask_prices = st.checkbox(
-        "🔒 Mask prices",
+        "🔒 " + t("Mask prices"),
         value=False,
         key="smart_mask_prices",
         help="Replace FOB / cost / price values with *** in all output files.",
@@ -185,19 +185,19 @@ def _show_giii_upload_section():
     _api_key        = _settings.get(KEY_DEEPSEEK_API_KEY, "")
     _ds_model       = _settings.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
 
-    with st.expander("🤖 AI Extraction (DeepSeek)", expanded=(_default_method == "deepseek")):
-        st.caption(
+    with st.expander("🤖 " + t("AI Extraction (DeepSeek)"), expanded=(_default_method == "deepseek")):
+        st.caption(t(
             "Use the DeepSeek API to extract PO fields instead of the built-in regex parser.  "
             "Useful for non-standard layouts or when you want AI-assisted field recognition."
-        )
+        ))
         use_ai = st.toggle(
-            "Use DeepSeek AI extraction",
+            t("Use DeepSeek AI extraction"),
             value=(_default_method == "deepseek"),
             key="smart_use_ai",
         )
         if use_ai:
             session_key = st.text_input(
-                "API Key (leave blank to use admin-configured key)",
+                t("API Key (leave blank to use admin-configured key)"),
                 value="",
                 type="password",
                 placeholder="sk-… (optional override)",
@@ -205,16 +205,16 @@ def _show_giii_upload_section():
             )
             effective_key = session_key.strip() or _api_key
             if not effective_key:
-                st.warning("⚠️ No DeepSeek API key configured. Set one in Admin → Settings or enter above.")
+                st.warning("⚠️ " + t("No DeepSeek API key configured. Set one in Admin → Settings or enter above."))
             else:
-                st.caption(f"Model: `{_ds_model}` · key ending …{effective_key[-4:]}")
+                st.caption(f"{t('Model')}: `{_ds_model}` · " + t("key ending") + f" …{effective_key[-4:]}")
         else:
             effective_key = ""
 
     st.divider()
 
     if not uploaded:
-        st.info("Upload one or more PO files (PDF or Excel) to begin.")
+        st.info(t("Upload one or more PO files (PDF or Excel) to begin."))
         return
 
     # ── Auto-detect ───────────────────────────────────────────────────────────
@@ -247,7 +247,7 @@ def _show_giii_upload_section():
 
         st.divider()
 
-        if st.button("▶  Process all files", type="primary",
+        if st.button("▶  " + t("Process all files"), type="primary",
                      use_container_width=True, key="smart_run"):
             st.session_state.smart_results = None
             st.session_state.smart_log = []
@@ -286,12 +286,12 @@ def show_smart_upload_tab():
         if key not in st.session_state:
             st.session_state[key] = default
 
-    st.subheader("📦 GIII PO Processing")
-    st.caption(
+    st.subheader("📦 " + t("GIII PO Processing"))
+    st.caption(t(
         "Upload PDF or Excel PO files — client and format are auto-detected per file. "
         "PDFs produce Buy Plan · Color Plan · PO Summary · Cross-Check. "
         "Excel files produce HHP Buy Plan · Template_P workbooks."
-    )
+    ))
 
     # Badge counts.  An unassigned non-admin gets an empty frame — passing the
     # empty list through would hit the store's falsy check and count EVERY

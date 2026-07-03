@@ -24,6 +24,7 @@ import tempfile
 import pandas as pd
 import streamlit as st
 
+from ui.i18n import t
 from auth.companies import list_company_names
 from po_extractor.exporters.buyplan_export import (
     delete_client_template, list_client_templates, save_client_template,
@@ -63,25 +64,25 @@ def _preview_giii_template_columns(xlsx_bytes: bytes, header_row: int) -> None:
 
     total_found = len(col_map) + len(sz_map)
     if total_found == 0:
-        st.caption("ℹ️ No standard column headers detected — will use sequential write.")
+        st.caption(t("ℹ️ No standard column headers detected — will use sequential write."))
         return
 
     with st.expander(
-        f"🔍 Auto-detected columns ({total_found} found — expand to verify)",
+        f"🔍 {t('Auto-detected columns')} ({total_found} {t('found — expand to verify')})",
         expanded=False,
     ):
         if col_map:
-            st.markdown("**Named fields**")
+            st.markdown(f"**{t('Named fields')}**")
             rows = [{"Field": k, "Column": v} for k, v in sorted(col_map.items())]
             st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
         if sz_map:
-            st.markdown("**Size columns**")
+            st.markdown(f"**{t('Size columns')}**")
             rows = [{"Size": k, "Column": v} for k, v in sorted(sz_map.items())]
             st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-        st.caption(
+        st.caption(t(
             "These mappings are detected automatically each time the template is used. "
             "No config file needed — just ensure the header row labels match standard names."
-        )
+        ))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -89,12 +90,12 @@ def _preview_giii_template_columns(xlsx_bytes: bytes, header_row: int) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _sky_east_section() -> None:
-    st.markdown("### 🛍 Sky East Templates")
-    st.caption(
+    st.markdown(f"### 🛍 {t('Sky East Templates')}")
+    st.caption(t(
         "These two workbooks drive the Sky East buy-plan and 核料 exporters. "
         "They live on disk at `data/buyplan_templates/` and are loaded directly by the "
         "Sky East exporter — replace them here whenever the layout changes."
-    )
+    ))
 
     rows = list_sky_east_templates()
     df = pd.DataFrame([
@@ -116,35 +117,35 @@ def _sky_east_section() -> None:
             st.caption(r["description"])
 
             up = st.file_uploader(
-                "Replace template (.xlsx)",
+                t("Replace template (.xlsx)"),
                 type=["xlsx"],
                 key=f"se_tpl_up_{kind}",
-                help="Pick the new workbook here, then click 'Save' below to overwrite the file on disk.",
+                help=t("Pick the new workbook here, then click 'Save' below to overwrite the file on disk."),
             )
 
             col_l, col_r = st.columns(2)
             with col_l:
                 if up is not None:
-                    if st.button("💾 Save replacement",
+                    if st.button(f"💾 {t('Save replacement')}",
                                  key=f"se_tpl_save_{kind}", type="primary",
                                  use_container_width=True):
                         try:
                             path = replace_sky_east_template(kind, up.read())
-                            st.success(f"✅ Saved to `{path.name}`. Next export will use the new template.")
+                            st.success(f"✅ {t('Saved to')} `{path.name}`. {t('Next export will use the new template.')}")
                             st.rerun()
                         except Exception as exc:
-                            st.error(f"Failed to save: {exc}")
+                            st.error(f"{t('Failed to save:')} {exc}")
                 else:
-                    st.button("💾 Save replacement",
+                    st.button(f"💾 {t('Save replacement')}",
                               key=f"se_tpl_save_disabled_{kind}",
                               disabled=True, use_container_width=True,
-                              help="Pick a file above first.")
+                              help=t("Pick a file above first."))
 
             with col_r:
                 if r["exists"]:
                     try:
                         st.download_button(
-                            f"⬇ Download current `{r['file']}`",
+                            f"⬇ {t('Download current')} `{r['file']}`",
                             data=read_sky_east_template(kind),
                             file_name=r["file"],
                             mime=_XLSX_MIME,
@@ -152,33 +153,33 @@ def _sky_east_section() -> None:
                             use_container_width=True,
                         )
                     except Exception as exc:
-                        st.warning(f"Cannot read template: {exc}")
+                        st.warning(f"{t('Cannot read template:')} {exc}")
                 else:
-                    st.info("Template file is missing. Upload one to install it.")
+                    st.info(t("Template file is missing. Upload one to install it."))
 
     # ── Sky East config (column overrides) ────────────────────────────────────
-    with st.expander("⚙️ Column-header overrides  —  `Sky_East_config.json`", expanded=False):
-        st.caption(
+    with st.expander(f"⚙️ {t('Column-header overrides')}  —  `Sky_East_config.json`", expanded=False):
+        st.caption(t(
             "Optional JSON file that lets you remap column-header text to the canonical "
             "Sky East field names without editing the template. Leave empty to delete and "
             "fall back to the template's own headers."
-        )
+        ))
         cur = read_sky_east_config_text()
         new = st.text_area(
-            "Sky_East_config.json contents",
+            t("Sky_East_config.json contents"),
             value=cur,
             height=240,
             key="se_cfg_text",
-            help="Must be valid JSON. Saved as UTF-8.",
+            help=t("Must be valid JSON. Saved as UTF-8."),
         )
-        if st.button("💾 Save config", key="se_cfg_save", type="primary"):
+        if st.button(f"💾 {t('Save config')}", key="se_cfg_save", type="primary"):
             try:
                 path = write_sky_east_config_text(new)
-                action = "deleted (defaults restored)" if not new.strip() else f"saved to `{path.name}`"
-                st.success(f"✅ Config {action}.")
+                action = t("deleted (defaults restored)") if not new.strip() else f"{t('saved to')} `{path.name}`"
+                st.success(f"✅ {t('Config')} {action}.")
                 st.rerun()
             except Exception as exc:
-                st.error(f"Invalid config: {exc}")
+                st.error(f"{t('Invalid config:')} {exc}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -186,13 +187,13 @@ def _sky_east_section() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _giii_section() -> None:
-    st.markdown("### 📋 GIII Per-Client Buy-Plan Templates")
-    st.caption(
+    st.markdown(f"### 📋 {t('GIII Per-Client Buy-Plan Templates')}")
+    st.caption(t(
         "Each client can have its own buy-plan Excel template. "
         "When exporting, the system picks the template matching the PO's company name. "
         "**default** is used as a fallback when no client-specific template exists. "
         "Without any template the built-in format is used."
-    )
+    ))
 
     installed = list_client_templates()
     if installed:
@@ -201,25 +202,25 @@ def _giii_section() -> None:
         df_tpl.columns = ["Client", "File", "Size"]
         st.dataframe(df_tpl, width="stretch", hide_index=True)
     else:
-        st.info("No per-client templates installed yet — all GIII exports use the built-in format.")
+        st.info(t("No per-client templates installed yet — all GIII exports use the built-in format."))
 
-    st.markdown("#### Upload / replace a client template")
+    st.markdown(f"#### {t('Upload / replace a client template')}")
 
     companies = list_company_names()
     client_options = ["default"] + sorted(companies)
     sel_client = st.selectbox(
-        "Client",
+        t("Client"),
         client_options,
         key="admin_tpl_client",
-        help="Select the client this template applies to. "
-             "'default' is the shared fallback for any client without a specific template.",
+        help=t("Select the client this template applies to. "
+               "'default' is the shared fallback for any client without a specific template."),
     )
 
     up = st.file_uploader(
-        "Template file (.xlsx)",
+        t("Template file (.xlsx)"),
         type=["xlsx"],
         key="admin_tpl_upload",
-        help=(
+        help=t(
             "First sheet is the per-style master. "
             "Use {{data_start}} to mark where the data table starts. "
             "Placeholders: {{factory}}, {{style}}, {{xfactory_date}}, "
@@ -233,48 +234,48 @@ def _giii_section() -> None:
 
         if detected_row:
             st.success(
-                f"✅ Found `{{{{data_start}}}}` at row **{detected_row}** — "
-                "data table will start there."
+                f"✅ {t('Found')} `{{{{data_start}}}}` {t('at row')} **{detected_row}** — "
+                + t("data table will start there.")
             )
             header_row_val = detected_row
         else:
-            st.warning(
+            st.warning(t(
                 "⚠️ No `{{data_start}}` found. If this is a Sky East template, upload it via "
                 "the **Sky East Templates** section above instead. Otherwise, set the header "
                 "row manually below."
-            )
+            ))
             header_row_val = 5
 
         _preview_giii_template_columns(xlsx_bytes, header_row_val)
 
         cfg_row = st.number_input(
-            "Header row (fallback if no {{data_start}})",
+            t("Header row (fallback if no {{data_start}})"),
             min_value=1, max_value=50,
             value=header_row_val, step=1,
             key="admin_tpl_header_row",
-            help="Row where column headers (PO Number, Style, Color…) will be written.",
+            help=t("Row where column headers (PO Number, Style, Color…) will be written."),
         )
 
-        if st.button("💾 Save template", key="admin_tpl_save", type="primary"):
+        if st.button(f"💾 {t('Save template')}", key="admin_tpl_save", type="primary"):
             try:
                 save_client_template(sel_client, xlsx_bytes, header_row=int(cfg_row))
                 st.success(
-                    f"✅ Template saved for **{sel_client}**. "
-                    "It will be used on the next export for matching POs."
+                    f"✅ {t('Template saved for')} **{sel_client}**. "
+                    + t("It will be used on the next export for matching POs.")
                 )
                 st.rerun()
             except Exception as exc:
-                st.error(f"Failed to save template: {exc}")
+                st.error(f"{t('Failed to save template:')} {exc}")
 
     # ── Download / delete existing client template ────────────────────────────
     if installed:
-        st.markdown("#### Download / delete an existing client template")
+        st.markdown(f"#### {t('Download / delete an existing client template')}")
         del_client = st.selectbox(
-            "Select template",
-            [t["client"] for t in installed],
+            t("Select template"),
+            [tpl["client"] for tpl in installed],
             key="admin_tpl_del_sel",
         )
-        selected_tpl = next((t for t in installed if t["client"] == del_client), None)
+        selected_tpl = next((tpl for tpl in installed if tpl["client"] == del_client), None)
         if selected_tpl:
             from po_extractor.exporters.buyplan_export import _TEMPLATES_DIR
             tpl_path = _TEMPLATES_DIR / selected_tpl["file"]
@@ -282,17 +283,17 @@ def _giii_section() -> None:
             with open(tpl_path, "rb") as fh:
                 tpl_bytes = fh.read()
             dc1.download_button(
-                f"⬇ Download {selected_tpl['file']}",
+                f"⬇ {t('Download')} {selected_tpl['file']}",
                 data=tpl_bytes,
                 file_name=selected_tpl["file"],
                 mime=_XLSX_MIME,
                 use_container_width=True,
                 key="admin_tpl_dl_existing",
             )
-            if dc2.button("🗑 Delete this template", key="admin_tpl_delete",
+            if dc2.button(f"🗑 {t('Delete this template')}", key="admin_tpl_delete",
                           use_container_width=True):
                 delete_client_template(del_client)
-                st.success(f"Deleted template for '{del_client}'.")
+                st.success(f"{t('Deleted template for')} '{del_client}'.")
                 st.rerun()
             detected_hdr = detect_template_header_row(tpl_bytes) or 5
             _preview_giii_template_columns(tpl_bytes, detected_hdr)
@@ -303,20 +304,20 @@ def _giii_section() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _blank_templates_section() -> None:
-    st.markdown("### 📥 Blank / Sample Templates (download only)")
-    st.caption(
+    st.markdown(f"### 📥 {t('Blank / Sample Templates (download only)')}")
+    st.caption(t(
         "Pre-built blank templates to hand to clients or to use as a starting point. "
         "These are generated on demand — they aren't stored on disk."
-    )
+    ))
 
     # ── GIII buy-plan sample template ─────────────────────────────────────────
-    with st.expander("📄 GIII Buy-Plan Sample Template", expanded=False):
-        st.caption(
+    with st.expander(f"📄 {t('GIII Buy-Plan Sample Template')}", expanded=False):
+        st.caption(t(
             "Ready-made sample with all `{{placeholders}}` — rename and upload it to a "
             "client slot in the **GIII Per-Client Buy-Plan Templates** section above."
-        )
+        ))
         st.download_button(
-            "⬇ Download sample buy-plan template",
+            f"⬇ {t('Download sample buy-plan template')}",
             data=make_sample_buyplan_template(),
             file_name="GIII_BuyPlan_Template_Sample.xlsx",
             mime=_XLSX_MIME,
@@ -325,17 +326,17 @@ def _blank_templates_section() -> None:
         )
 
     # ── 1.1.PO_Client mapping template ────────────────────────────────────────
-    with st.expander("📄 Client PO Mapping Template (1.1.PO_Client)", expanded=False):
-        st.caption(
+    with st.expander(f"📄 {t('Client PO Mapping Template (1.1.PO_Client)')}", expanded=False):
+        st.caption(t(
             "Two-row header workbook used by the GIII Excel pipeline to import a client's "
             "PO data. Pre-fill the row-1 client headers for a known client below."
-        )
+        ))
         client_for_tpl = st.selectbox(
-            "Pre-fill client headers",
+            t("Pre-fill client headers"),
             ["(generic)"] + list(CLIENT_ALIASES.keys()),
             key="blank_tpl_client_profile",
         )
-        if st.button("Generate mapping template", key="blank_tpl_gen_client"):
+        if st.button(t("Generate mapping template"), key="blank_tpl_gen_client"):
             with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
                 tf_path = tf.name
             try:
@@ -350,7 +351,7 @@ def _blank_templates_section() -> None:
                     os.unlink(tf_path)
             suffix = "" if client_for_tpl == "(generic)" else f"_{client_for_tpl}"
             st.download_button(
-                "⬇ Download mapping template",
+                f"⬇ {t('Download mapping template')}",
                 data=tpl_buf,
                 file_name=f"PO_Client_Mapping_Template{suffix}.xlsx",
                 mime=_XLSX_MIME,
@@ -359,13 +360,13 @@ def _blank_templates_section() -> None:
             )
 
     # ── Style-Fabric mapping template ─────────────────────────────────────────
-    with st.expander("📄 Style-Fabric Mapping Template (HHN codes)", expanded=False):
-        st.caption(
+    with st.expander(f"📄 {t('Style-Fabric Mapping Template (HHN codes)')}", expanded=False):
+        st.caption(t(
             "Used by both the GIII Reference panel and the Sky East tab to map each style "
             "to up to 4 HHN fabric codes. Same template for both pipelines."
-        )
+        ))
         st.download_button(
-            "⬇ Download fabric mapping template",
+            f"⬇ {t('Download fabric mapping template')}",
             data=generate_fabric_mapping_template(),
             file_name="Style_Fabric_Mapping_Template.xlsx",
             mime=_XLSX_MIME,
@@ -379,8 +380,8 @@ def _blank_templates_section() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _reference_section() -> None:
-    with st.expander("📖 Placeholder reference (GIII per-client templates)"):
-        st.markdown("""
+    with st.expander(f"📖 {t('Placeholder reference (GIII per-client templates)')}"):
+        st.markdown(t("""
 | Placeholder | Description |
 |---|---|
 | `{{factory}}` | Factory name + code |
@@ -398,7 +399,7 @@ def _reference_section() -> None:
 - Rows *above* `{{data_start}}` are your metadata / branding area.
 - `{{data_start}}` row is overwritten with column headers (PO Number, Style, Color…).
 - Data rows and the grand-total row are written immediately below.
-        """)
+        """))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -407,12 +408,12 @@ def _reference_section() -> None:
 
 def show_templates_admin() -> None:
     """Render the unified Templates admin view."""
-    st.subheader("📄 Templates")
-    st.caption(
+    st.subheader(f"📄 {t('Templates')}")
+    st.caption(t(
         "Single place to upload, replace, download, and amend every template the app uses. "
         "Sky East templates are at the top, GIII per-client buy-plan templates in the middle, "
         "and blank/sample template downloads at the bottom."
-    )
+    ))
 
     _sky_east_section()
     st.divider()

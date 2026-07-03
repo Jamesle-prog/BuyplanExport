@@ -178,7 +178,7 @@ def _show_po_tracker(user_cos: list[str], admin_mode: bool) -> None:
     # ── Download ──────────────────────────────────────────────────────────────
     xlsx = _build_tracker_excel(display_df)
     st.download_button(
-        "⬇️ Download PO Tracker (.xlsx)",
+        "⬇️ " + t("Download PO Tracker (.xlsx)"),
         data=xlsx,
         file_name="po_tracker.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -199,7 +199,7 @@ def show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
         ))
         return
 
-    tab_overview, tab_tracker = st.tabs(["📊 Overview", "📋 PO Tracker"])
+    tab_overview, tab_tracker = st.tabs([f"📊 {t('Overview')}", f"📋 {t('PO Tracker')}"])
 
     with tab_tracker:
         _show_po_tracker(user_cos, admin_mode)
@@ -295,7 +295,7 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
     se_labels: dict = {}
 
     if can_see_giii and not giii_df.empty:
-        with st.expander("🔍 GIII — full PO list"):
+        with st.expander("🔍 " + t("GIII — full PO list")):
             # Virtual "pc_no" column — mirrors po_number for users whose
             # external workflow refers to it as "PC No." (Purchase Contract No.).
             if "po_number" in giii_df.columns and "pc_no" not in giii_df.columns:
@@ -339,7 +339,7 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
                          use_container_width=True, hide_index=True)
 
     if can_see_zalando and not se_df.empty:
-        with st.expander("🔍 Sky East — full item list"):
+        with st.expander("🔍 " + t("Sky East — full item list")):
             # Virtual "company" column — Sky East is the source by definition.
             if "company" not in se_df.columns:
                 se_df["company"] = COMPANY_SKY_EAST
@@ -389,7 +389,7 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
             if can_see_zalando and not se_df.empty and se_show:
                 se_df[se_show].rename(columns=se_labels).to_excel(
                     wr, sheet_name="Sky East Items", index=False)
-        st.download_button("⬇️ Download Full Summary", buf.getvalue(),
+        st.download_button("⬇️ " + t("Download Full Summary"), buf.getvalue(),
                            "order_summary.xlsx", key="sum_dl_all")
 
     if not can_see_giii and not can_see_zalando:

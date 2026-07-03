@@ -10,6 +10,21 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.26.5",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "feat", "text": "**Every menu, tab, and admin screen now has full Chinese coverage.** Reference Data, GIII, Sky East, Summary, Tracking, Colors, Fabric DB, and every Admin sub-tab (Users, Companies, Templates, Pipeline Layouts, Size Order, Email, Translations, Settings) — plus the top navigation bar, sidebar, and login form — are wrapped for translation; **793 new Chinese translations** were added so switching to 中文 (🌐) actually shows Chinese everywhere instead of leaving most of the app in English. File names stay English as before"},
+            {"type": "fix", "text": "**Tracking → Add New crashed with `UnboundLocalError: cannot access local variable 't'`.** A `for t in targets:` loop inside `_render_add_tab` shadowed the module's `t()` translator for the whole function — Python treats a name assigned anywhere in a function as local throughout, so the `t(\"Overall Notes\")` call earlier in the same function broke every time the tab was opened. Renamed the loop variable and swept the entire codebase for the same hazard (none remain)"},
+        ],
+    },
+    {
+        "version": "2.26.4",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "refactor", "text": "**Chinese-UI coverage sweep.** Tab-bar menus and section headers across the GIII, Sky East, Order Summary, GIII Generate/Export, and admin Translations views are now t()-wrapped, so their tab labels, subheaders, captions, buttons, and status messages translate under the Chinese UI. Radio/selectbox option values compared or stored in code stay English; only their labels are wrapped"},
+        ],
+    },
+    {
         "version": "2.26.3",
         "date": "2026-07-03",
         "entries": [

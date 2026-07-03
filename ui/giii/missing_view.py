@@ -4,21 +4,22 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from ui.i18n import t
 from ui.stores import get_store
 
 
 def _show_giii_missing_fields_section(missing_df: pd.DataFrame) -> None:
     """Show GIII POs that are missing factory or export date."""
-    st.subheader("✏️ POs with Missing Fields")
+    st.subheader(f"✏️ {t('POs with Missing Fields')}")
 
     if missing_df.empty:
-        st.success("✅ All stored POs are complete — no missing fields.")
+        st.success(t("✅ All stored POs are complete — no missing fields."))
         return
 
     st.caption(
-        f"**{len(missing_df)}** PO(s) are missing factory name or export date. "
+        f"**{len(missing_df)}** " + t("PO(s) are missing factory name or export date. "
         "These fields are extracted from the source PDF. "
-        "If they remain blank after re-processing, the source file may not contain them."
+        "If they remain blank after re-processing, the source file may not contain them.")
     )
 
     disp_cols = [c for c in
@@ -44,13 +45,13 @@ def _show_giii_missing_fields_section(missing_df: pd.DataFrame) -> None:
         hide_index=True,
         disabled=disabled,
         column_config={
-            "Factory":     st.column_config.TextColumn("Factory"),
-            "Export Date": st.column_config.TextColumn("Export Date", help="YYYY-MM-DD"),
+            "Factory":     st.column_config.TextColumn(t("Factory")),
+            "Export Date": st.column_config.TextColumn(t("Export Date"), help="YYYY-MM-DD"),
         },
         key="giii_missing_editor",
     )
 
-    if st.button("💾 Save Changes", key="giii_missing_save", type="primary"):
+    if st.button(f"💾 {t('Save Changes')}", key="giii_missing_save", type="primary"):
         store = get_store()
         rev   = {v: k for k, v in col_rename.items()}
         saved_df = edited.rename(columns=rev)
@@ -68,7 +69,7 @@ def _show_giii_missing_fields_section(missing_df: pd.DataFrame) -> None:
                 )
                 updated += 1
         if updated:
-            st.success(f"✅ Updated {updated} PO(s).")
+            st.success(f"✅ {t('Updated')} {updated} {t('PO(s).')}")
             st.rerun()
         else:
-            st.warning("No rows updated.")
+            st.warning(t("No rows updated."))

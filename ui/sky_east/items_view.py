@@ -66,13 +66,13 @@ def _show_se_results(results: list, image_cache: dict):
                             diff_cols[i + 1].markdown(f"**{sk}**")
 
                         old_cols = st.columns(len(sz_keys) + 1)
-                        old_cols[0].markdown("*Before*")
+                        old_cols[0].markdown(f"*{t('Before')}*")
                         for i, sk in enumerate(sz_keys):
                             v = old_sz.get(sk, 0) or 0
                             old_cols[i + 1].markdown(str(v))
 
                         new_cols = st.columns(len(sz_keys) + 1)
-                        new_cols[0].markdown("**After**")
+                        new_cols[0].markdown(f"**{t('After')}**")
                         for i, sk in enumerate(sz_keys):
                             ov = old_sz.get(sk, 0) or 0
                             nv = new_sz.get(sk, 0) or 0
@@ -86,13 +86,13 @@ def _show_se_results(results: list, image_cache: dict):
 
                     non_size = {k: v for k, v in changed.items() if k != "sizes"}
                     if non_size:
-                        field_labels = {"total_qty": "Total Qty", "fob_usd": "FOB (USD)"}
+                        field_labels = {"total_qty": t("Total Qty"), "fob_usd": t("FOB (USD)")}
                         change_parts = []
                         for field, (old_v, new_v) in non_size.items():
                             lbl = field_labels.get(field, field)
                             change_parts.append(f"{lbl}: **{old_v}** -> **{new_v}**")
                         st.markdown(
-                            "Changed: " + " &nbsp;·&nbsp; ".join(change_parts),
+                            t("Changed:") + " " + " &nbsp;·&nbsp; ".join(change_parts),
                             unsafe_allow_html=True,
                         )
 

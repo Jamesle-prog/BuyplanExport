@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.26.3"
+APP_VERSION = "2.26.5"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -18,6 +18,7 @@ from auth.users import (
 from po_extractor.ui_helpers import load_live_schema as _load_live_schema_impl
 from po_extractor.config import SCHEMA_PATH as _SCHEMA_PATH_CFG, CACHE_TTL_SECONDS
 from ui.session_keys import SK
+from ui.i18n import t
 
 # Seed default companies on startup (idempotent)
 ensure_defaults_seeded()
@@ -233,9 +234,9 @@ def show_login():
         st.markdown("---")
 
         with st.form("login_form"):
-            username = st.text_input("Username", placeholder="your username")
-            password = st.text_input("Password", type="password", placeholder="••••••••")
-            submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+            username = st.text_input(t("Username"), placeholder="your username")
+            password = st.text_input(t("Password"), type="password", placeholder="••••••••")
+            submitted = st.form_submit_button(t("Sign In"), type="primary", use_container_width=True)
 
         if submitted:
             uname_key = (username or "").strip().lower()
@@ -244,7 +245,7 @@ def show_login():
                 _login_lock_remaining(_LOGIN_GLOBAL_KEY),
             )
             if wait:
-                st.error(f"Too many failed attempts. Try again in {wait} s.")
+                st.error(f"{t('Too many failed attempts. Try again in')} {wait} s.")
             elif verify_password(username, password):
                 _login_succeeded(uname_key)
                 st.session_state.logged_in = True
@@ -257,7 +258,7 @@ def show_login():
                               _LOGIN_BASE_LOCK_S, _LOGIN_MAX_LOCK_S)
                 _login_failed(_LOGIN_GLOBAL_KEY, _LOGIN_GLOBAL_THRESHOLD,
                               _LOGIN_GLOBAL_LOCK_S, _LOGIN_GLOBAL_LOCK_S)
-                st.error("Incorrect username or password.")
+                st.error(t("Incorrect username or password."))
 
 
 # ---------------------------------------------------------------------------
@@ -265,19 +266,19 @@ def show_login():
 # ---------------------------------------------------------------------------
 def _show_change_password_sidebar():
     with st.form("cp_form", clear_on_submit=True):
-        old  = st.text_input("Current password", type="password")
-        new1 = st.text_input("New password", type="password")
-        new2 = st.text_input("Confirm new password", type="password")
-        submitted = st.form_submit_button("Save", type="primary", use_container_width=True)
+        old  = st.text_input(t("Current password"), type="password")
+        new1 = st.text_input(t("New password"), type="password")
+        new2 = st.text_input(t("Confirm new password"), type="password")
+        submitted = st.form_submit_button(t("Save"), type="primary", use_container_width=True)
     if submitted:
         if not new1:
-            st.error("New password cannot be empty.")
+            st.error(t("New password cannot be empty."))
         elif new1 != new2:
-            st.error("Passwords do not match.")
+            st.error(t("Passwords do not match."))
         elif not change_password(st.session_state.username, old, new1):
-            st.error("Current password is incorrect.")
+            st.error(t("Current password is incorrect."))
         else:
-            st.success("Password changed.")
+            st.success(t("Password changed."))
 
 
 # ---------------------------------------------------------------------------
@@ -290,10 +291,10 @@ def show_main():
         st.caption(f"v{APP_VERSION}")
         st.divider()
         st.markdown(f"👤 **{st.session_state.username}**")
-        with st.expander("🔑 Change Password"):
+        with st.expander(f"🔑 {t('Change Password')}"):
             _show_change_password_sidebar()
         st.divider()
-        if st.button("Sign Out", use_container_width=True):
+        if st.button(t("Sign Out"), use_container_width=True):
             for k, v in [
                 (SK.LOGGED_IN,        False),
                 (SK.USERNAME,         None),
@@ -379,22 +380,25 @@ def show_main():
             return MODULE_SKY_EAST in user_modules or MODULE_SKY_EAST_BUYPLAN in user_modules
         return module_key in user_modules
 
+    # Tab labels are display-only (st.tabs returns objects used positionally,
+    # dispatch/visibility is keyed by the `key` field), so translating the
+    # label text is safe.  Emoji stays outside t().
     _all_tabs = [
-        ("giii",           "📋 GIII",           lambda: _show_smart_upload_tab()),
-        ("sky_east",       "🛍 Sky East",       lambda: _show_sky_east_tab(restrict_to_buyplan=_buyplan_only)),
-        ("fabric_db",      "🧵 Fabric DB",      lambda: _show_fabric_db_tab()),
-        ("reference_data", "📐 Reference Data", lambda: _show_fabric_mapping_tab()),
-        ("colors",         "🎨 Colors",         lambda: _show_color_translation_tab()),
-        ("summary",        "📊 Summary",        lambda: _show_summary_tab(
+        ("giii",           f"📋 {t('GIII')}",           lambda: _show_smart_upload_tab()),
+        ("sky_east",       f"🛍 {t('Sky East')}",       lambda: _show_sky_east_tab(restrict_to_buyplan=_buyplan_only)),
+        ("fabric_db",      f"🧵 {t('Fabric DB')}",      lambda: _show_fabric_db_tab()),
+        ("reference_data", f"📐 {t('Reference Data')}", lambda: _show_fabric_mapping_tab()),
+        ("colors",         f"🎨 {t('Colors')}",         lambda: _show_color_translation_tab()),
+        ("summary",        f"📊 {t('Summary')}",        lambda: _show_summary_tab(
             user_cos=get_user_companies(st.session_state.username), admin_mode=admin_mode)),
-        ("tracking",       "🏭 Tracking",       lambda: _show_production_tracking_tab(
+        ("tracking",       f"🏭 {t('Tracking')}",       lambda: _show_production_tracking_tab(
             user_cos=get_user_companies(st.session_state.username), admin_mode=admin_mode)),
-        ("releases",       "🔖 Releases",       lambda: _show_changelog_tab()),
+        ("releases",       f"🔖 {t('Releases')}",       lambda: _show_changelog_tab()),
     ]
     _visible_tabs = [(label, fn) for key, label, fn in _all_tabs if _allowed(key)]
     tab_labels = [label for label, _ in _visible_tabs]
     if admin_mode:
-        tab_labels.append("⚙️ Admin")
+        tab_labels.append(f"⚙️ {t('Admin')}")
     tabs = st.tabs(tab_labels)
 
     for tab, (_, fn) in zip(tabs, _visible_tabs):
@@ -428,9 +432,10 @@ def _show_admin_panel():
     (admin_tab_users, admin_tab_cos, admin_tab_schema, admin_tab_sizes,
      admin_tab_tpl, admin_tab_pipe, admin_tab_bsr, admin_tab_smtp,
      admin_tab_i18n, admin_tab_settings) = st.tabs(
-        ["👤 Users", "🏢 Companies", "📋 Column Mapping", "📐 Size Order",
-         "📄 Templates", "🧩 Pipeline Layouts", "🚢 船样要求", "📧 Email",
-         "🌐 Translations", "⚙️ Settings"]
+        [f"👤 {t('Users')}", f"🏢 {t('Companies')}", f"📋 {t('Column Mapping')}",
+         f"📐 {t('Size Order')}", f"📄 {t('Templates')}", f"🧩 {t('Pipeline Layouts')}",
+         f"🚢 {t('船样要求')}", f"📧 {t('Email')}", f"🌐 {t('Translations')}",
+         f"⚙️ {t('Settings')}"]
     )
 
     with admin_tab_cos:

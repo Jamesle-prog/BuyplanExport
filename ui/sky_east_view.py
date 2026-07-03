@@ -21,20 +21,20 @@ from ui.sky_east.reports_tab import PIN_BUYPLAN, _show_se_reports_tab
 def _show_se_upload_section():
     st.markdown(f"**{t('Order Files')}** (Sky East Purchase Contract xlsx)")
     order_files = st.file_uploader(
-        "Upload Sky East order file(s)",
+        t("Upload Sky East order file(s)"),
         type=["xlsx", "xls", "xlsm"],
         accept_multiple_files=True,
         label_visibility="collapsed",
         key="se_order_uploader",
     )
     if order_files:
-        st.caption(f"{len(order_files)} file(s) selected")
+        st.caption(f"{len(order_files)} " + t("file(s) selected"))
 
     with st.expander(f"{t('Reference files')} (optional — Config SKU · Progress)", expanded=True):
         ref_l, ref_r = st.columns(2)
         with ref_l:
             ean_file = st.file_uploader(
-                "Config SKU file (Zalando PO report xlsx)",
+                t("Config SKU file (Zalando PO report xlsx)"),
                 type=["xlsx", "xls"],
                 key="se_ean_uploader",
                 help=(
@@ -48,11 +48,11 @@ def _show_se_upload_section():
                 ),
             )
             st.caption(
-                "💡 Upload fabric mapping independently in the **📐 Reference Data** tab."
+                "💡 " + t("Upload fabric mapping independently in the **📐 Reference Data** tab.")
             )
         with ref_r:
             progress_file = st.file_uploader(
-                "HHN contract No. file",
+                t("HHN contract No. file"),
                 type=["xlsx", "xls"],
                 key="se_progress_uploader",
                 help=(
@@ -110,7 +110,7 @@ def _show_se_upload_section():
 
     if st.session_state.get(SK.SE_MASKED_ZIP):
         st.download_button(
-            "Download Masked Files (.zip)",
+            t("Download Masked Files (.zip)"),
             data=st.session_state.se_masked_zip,
             file_name="sky_east_masked.zip",
             mime=ZIP_MIME,

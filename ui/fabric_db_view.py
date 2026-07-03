@@ -12,6 +12,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from ui.i18n import t
 from ui.fabric_db._shared import _fabric_db_stats_bar, _fabric_db_list_table
 from ui.fabric_db.import_section import (
     _fabric_db_upload_section,
@@ -32,17 +33,17 @@ def show_fabric_db_tab() -> None:
     count = store.count()
     last  = store.last_import_info()
 
-    st.subheader("🧵 Fabric Master Database")
-    st.caption(
+    st.subheader(f"🧵 {t('Fabric Master Database')}")
+    st.caption(t(
         "Fabric reference data from **面料统计表.xlsx**. "
         "Upload a new version of the file below to refresh all records. "
         "Use the search box to look up any fabric by code, composition, or supplier."
-    )
-    st.caption(
+    ))
+    st.caption(t(
         "💡 This tab holds **fabric properties** (composition · gsm · width per HHN "
         "code). Style→fabric assignments and the 大货进度表 live in "
         "**📐 Reference Data**; colour translations live in **🎨 Colors**."
-    )
+    ))
 
     _fabric_db_stats_bar(count, last)
     st.divider()
@@ -51,11 +52,11 @@ def show_fabric_db_tab() -> None:
     st.divider()
 
     if count == 0:
-        st.info("No fabric data yet. Upload a 面料统计表.xlsx file above to get started.")
+        st.info(t("No fabric data yet. Upload a 面料统计表.xlsx file above to get started."))
         return
 
     search_q = st.text_input(
-        "🔍 Search by Quality No., composition, supplier, or fabric structure",
+        f"🔍 {t('Search by Quality No., composition, supplier, or fabric structure')}",
         placeholder="e.g. MQ-BD181446 · French Terry · 贝德 · Cotton",
         key="fabric_db_search",
     )
@@ -64,10 +65,10 @@ def show_fabric_db_tab() -> None:
         # Search mode — flat list, up to 300 matches
         rows = store.search(search_q.strip(), limit=300)
         if not rows:
-            st.warning("No fabrics match your search.")
+            st.warning(t("No fabrics match your search."))
             return
         _fabric_db_list_table(pd.DataFrame(rows))
-        st.caption(f"{len(rows):,} match(es) shown (search limit: 300)")
+        st.caption(f"{len(rows):,} {t('match(es) shown (search limit: 300)')}")
     else:
         # Browse mode — paginated through all records
         _fabric_db_paginated_list(store, count)
