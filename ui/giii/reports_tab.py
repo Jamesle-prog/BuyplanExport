@@ -30,6 +30,14 @@ def _show_reports_tab() -> None:
     username = st.session_state.get(SK.USERNAME, "")
     user_cos = get_user_companies(username)
     admin    = is_admin(username)
+    # Non-admin with no assigned companies must see nothing — an empty list
+    # falls through the store's falsy check to an unfiltered query.
+    if not admin and not user_cos:
+        st.info(
+            "No companies assigned to your account. "
+            "Contact an administrator to be granted access."
+        )
+        return
     df       = store.list_pos(companies=user_cos if user_cos else None)
 
     sub_gen, sub_tracker = st.tabs(["📥 Generate Outputs", "📋 PO Tracker"])

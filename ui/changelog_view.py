@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.26.1",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "security", "text": "**A non-admin with no assigned companies now sees nothing instead of everything.** The Summary tab, GIII PO History, GIII Generate/Export, and the GIII exception badge passed an empty company list through to an *unfiltered* query (the stores treat an empty list as \"no filter\"), so a freshly created user saw every company's POs including unit/extended costs. All four now show the same \"No companies assigned\" notice the Tracking tab already used"},
+            {"type": "security", "text": "**Failed sign-ins are now rate-limited.** 5 wrong passwords for a username lock it out for 60 s with exponential backoff (cap 15 min), plus a global brake against username spraying — previously unlimited guesses were possible against the network-reachable login"},
+            {"type": "fix", "text": "**Tracking → Edit Record: Delete no longer throws a StreamlitAPIException.** Confirm Delete assigned to the record selectbox's own session key after the widget was rendered (forbidden by Streamlit) — the record *was* deleted, but the error screen replaced the success message. The selection now reconciles automatically and a proper \"Record deleted.\" confirmation shows after the rerun"},
+        ],
+    },
+    {
         "version": "2.26.0",
         "date": "2026-07-03",
         "entries": [

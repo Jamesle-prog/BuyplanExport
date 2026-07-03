@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.26.0"
+APP_VERSION = "2.26.1"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -174,6 +174,50 @@ if not user_exists():
 
 
 # ---------------------------------------------------------------------------
+# Login throttle — the app is reachable from the network, so failed sign-ins
+# must cost something.  Process-wide (module-level, shared by all sessions and
+# threads — a per-session counter would be trivially bypassed by dropping the
+# session).  After _LOGIN_FAIL_THRESHOLD failures a key locks out with
+# exponential backoff; a coarser global brake catches username spraying.
+# ---------------------------------------------------------------------------
+import threading as _threading
+import time as _time
+
+_LOGIN_GUARD_LOCK = _threading.Lock()
+_LOGIN_FAILURES: dict[str, tuple[int, float]] = {}   # key → (fails, locked_until)
+_LOGIN_GLOBAL_KEY = "\x00global"
+
+_LOGIN_FAIL_THRESHOLD   = 5      # per-username fails before lockout
+_LOGIN_BASE_LOCK_S      = 60.0   # first lockout, doubles per extra fail
+_LOGIN_MAX_LOCK_S       = 900.0
+_LOGIN_GLOBAL_THRESHOLD = 30     # total fails across all usernames
+_LOGIN_GLOBAL_LOCK_S    = 120.0
+
+
+def _login_lock_remaining(key: str) -> int:
+    """Seconds left on the lockout for *key* (0 = not locked)."""
+    with _LOGIN_GUARD_LOCK:
+        _count, until = _LOGIN_FAILURES.get(key, (0, 0.0))
+        remaining = until - _time.time()
+    return int(remaining) + 1 if remaining > 0 else 0
+
+
+def _login_failed(key: str, threshold: int, base_lock_s: float, max_lock_s: float) -> None:
+    with _LOGIN_GUARD_LOCK:
+        count, _until = _LOGIN_FAILURES.get(key, (0, 0.0))
+        count += 1
+        lock_s = 0.0
+        if count >= threshold:
+            lock_s = min(base_lock_s * (2 ** (count - threshold)), max_lock_s)
+        _LOGIN_FAILURES[key] = (count, _time.time() + lock_s)
+
+
+def _login_succeeded(key: str) -> None:
+    with _LOGIN_GUARD_LOCK:
+        _LOGIN_FAILURES.pop(key, None)
+
+
+# ---------------------------------------------------------------------------
 # Login page
 # ---------------------------------------------------------------------------
 def show_login():
@@ -194,13 +238,25 @@ def show_login():
             submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
 
         if submitted:
-            if verify_password(username, password):
+            uname_key = (username or "").strip().lower()
+            wait = max(
+                _login_lock_remaining(uname_key),
+                _login_lock_remaining(_LOGIN_GLOBAL_KEY),
+            )
+            if wait:
+                st.error(f"Too many failed attempts. Try again in {wait} s.")
+            elif verify_password(username, password):
+                _login_succeeded(uname_key)
                 st.session_state.logged_in = True
                 st.session_state.username = username
                 st.session_state.results = None
                 st.session_state.parse_log = []
                 st.rerun()
             else:
+                _login_failed(uname_key, _LOGIN_FAIL_THRESHOLD,
+                              _LOGIN_BASE_LOCK_S, _LOGIN_MAX_LOCK_S)
+                _login_failed(_LOGIN_GLOBAL_KEY, _LOGIN_GLOBAL_THRESHOLD,
+                              _LOGIN_GLOBAL_LOCK_S, _LOGIN_GLOBAL_LOCK_S)
                 st.error("Incorrect username or password.")
 
 

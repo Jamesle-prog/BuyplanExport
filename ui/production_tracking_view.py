@@ -754,6 +754,12 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
         st.info("No tracked records yet. Use **➕ Add New** first.")
         return
 
+    # One-shot success message from the previous run's delete (the message
+    # can't be shown in the delete handler itself — st.rerun() fires first).
+    flash = st.session_state.pop(SK.PT_DELETE_FLASH, None)
+    if flash:
+        st.success(flash)
+
     # Build selectbox options — display as "PO# — Style" keyed by integer id
     id_to_record = {r["id"]: r for r in records}
     options = [r["id"] for r in records]
@@ -783,8 +789,11 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
         key=SK.PT_SELECTED_EDIT,
     )
 
-    record = id_to_record[selected_id]
-    rid    = selected_id
+    # Defensive: selectbox state can briefly hold an id that no longer exists
+    # (e.g. right after a delete); Streamlit reconciles it to the index
+    # default on this same run, but never KeyError on the lookup.
+    record = id_to_record.get(selected_id, id_to_record[options[0]])
+    rid    = record["id"]
     readiness = readiness_map[rid]
     reminders = store.compute_inspection_reminders(record, today)
 
@@ -843,8 +852,12 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
         if st.button("✅ Confirm Delete", type="primary"):
             store.delete([rid])
             st.session_state[SK.PT_DELETE_CONFIRM] = False
-            st.session_state[SK.PT_SELECTED_EDIT]  = None
-            st.success("Record deleted.")
+            # Do NOT touch SK.PT_SELECTED_EDIT here — it is the selectbox's
+            # widget key and was instantiated this run; assigning to it
+            # raises StreamlitAPIException (the delete succeeded but the
+            # success message and rerun never happened).  After the rerun
+            # the stale id reconciles to the first option automatically.
+            st.session_state[SK.PT_DELETE_FLASH] = t("Record deleted.")
             st.rerun()
         if st.button("Cancel"):
             st.session_state[SK.PT_DELETE_CONFIRM] = False

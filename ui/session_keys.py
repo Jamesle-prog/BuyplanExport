@@ -63,6 +63,7 @@ class SK:
     PT_SELECTED_PLAN  = "pt_selected_plan"   # int — id of record selected in Plan
     PT_PLAN_OVERRIDE  = "pt_plan_override"   # dict[stage, int] — what-if day overrides
     PT_DELETE_CONFIRM = "pt_delete_confirm"  # bool — delete confirmation shown
+    PT_DELETE_FLASH   = "pt_delete_flash"    # str — one-shot success msg after delete
     PT_ACTIVE_TAB     = "pt_active_tab"      # int — active sub-tab index (0=Dashboard)
 
 

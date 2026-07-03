@@ -25,7 +25,7 @@ from po_extractor.store.app_settings_store import (
     KEY_EXTRACTION_METHOD, KEY_DEEPSEEK_API_KEY, KEY_DEEPSEEK_MODEL,
 )
 
-from auth.users import get_user_companies
+from auth.users import get_user_companies, is_admin
 
 from ui.shared import (
     show_image_folder_expander as _show_image_folder_expander,
@@ -293,10 +293,15 @@ def show_smart_upload_tab():
         "Excel files produce HHP Buy Plan · Template_P workbooks."
     )
 
-    # Badge counts
+    # Badge counts.  An unassigned non-admin gets an empty frame — passing the
+    # empty list through would hit the store's falsy check and count EVERY
+    # company's exceptions.
     _store    = get_store()
     _user_cos = get_user_companies(st.session_state.username)
-    _exc_df   = _store.list_exceptions(companies=_user_cos if _user_cos else None)
+    if _user_cos or is_admin(st.session_state.username):
+        _exc_df = _store.list_exceptions(companies=_user_cos if _user_cos else None)
+    else:
+        _exc_df = pd.DataFrame()
     _exc_count = (len(_exc_df[_exc_df["status"] == "pending"])
                   if not _exc_df.empty and "status" in _exc_df.columns else 0)
     history_label = f"📚 {t('PO History')}" + (f"  🔴 {_exc_count}" if _exc_count else "")

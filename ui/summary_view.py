@@ -174,6 +174,17 @@ def _show_po_tracker(user_cos: list[str], admin_mode: bool) -> None:
 
 def show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
     """Cross-company order summary, filtered by user permissions."""
+    # Same convention as the Tracking tab: a non-admin with no assigned
+    # companies sees nothing.  Without this gate the empty list fell through
+    # the stores' falsy check (`if companies:`) to an UNFILTERED query —
+    # i.e. a freshly created user saw every company's commercial data.
+    if not admin_mode and not user_cos:
+        st.info(
+            "No companies assigned to your account. "
+            "Contact an administrator to be granted access."
+        )
+        return
+
     tab_overview, tab_tracker = st.tabs(["📊 Overview", "📋 PO Tracker"])
 
     with tab_tracker:
