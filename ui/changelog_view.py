@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.27.2",
+        "date": "2026-07-04",
+        "entries": [
+            {"type": "docs", "text": "**Sky East User Guide: added a \"Buy Plan Only Accounts\" section** (all three versions — bilingual, English, Chinese) covering the restricted role's actual screen: one \"Sky East\" tab, only New Contracts + 📦 Generate / Export sub-tabs, and Generate / Export going straight to Buy Plan + 核料 with no mode picker. A callout near the top now points readers to the right section for their account type"},
+            {"type": "fix", "text": "**Sky East User Guide's own Step 4 was out of date** — it claimed the New Contracts \"Process\" button generates the Buy Plan/核料 workbooks directly. That moved to a separate 📦 Generate / Export sub-tab a few releases ago; the button is now named **Process Sky East Files** and only saves the contract. Corrected the button name and the description in all three guide versions and pointed readers to Generate / Export for the actual output step"},
+        ],
+    },
+    {
         "version": "2.27.1",
         "date": "2026-07-04",
         "entries": [
