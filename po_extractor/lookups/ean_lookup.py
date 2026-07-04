@@ -81,7 +81,17 @@ class EANLookup:
                 hrow_idx = ri
                 break
 
-        # Positional fallbacks (convert to 0-based)
+        # Positional fallbacks (convert to 0-based).  Falling back means NO
+        # recognised header was found in the first 10 rows — on a
+        # differently-shaped export this silently ingests whatever sits in
+        # these columns as EAN barcodes, so make it loud.
+        if col_ean is None:
+            import warnings
+            warnings.warn(
+                f"[ean_lookup] no 'EAN' header found in the first 10 rows of "
+                f"{self._path!r} — falling back to fixed column positions; "
+                f"verify the file layout if lookups return wrong barcodes"
+            )
         col_po    = col_po    if col_po    is not None else 8
         col_style = col_style if col_style is not None else 11
         col_size  = col_size  if col_size  is not None else 12

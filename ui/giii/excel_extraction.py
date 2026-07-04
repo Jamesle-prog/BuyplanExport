@@ -138,7 +138,11 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
         import shutil as _shutil_mask
         mask_out_dir = tempfile.mkdtemp()
         try:
-            masked_files = mask_prices_excel_batch(paths, mask_out_dir)
+            _mask_errors: list[str] = []
+            masked_files = mask_prices_excel_batch(paths, mask_out_dir,
+                                                   errors=_mask_errors)
+            for _me in _mask_errors:
+                log.append(f"⚠️ price-mask failed — {_me} (file NOT in masked zip)")
             if masked_files:
                 mbuf = io.BytesIO()
                 with zipfile.ZipFile(mbuf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -342,7 +346,12 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
             st.write("Masking prices in source files…")
             mask_out_dir = tempfile.mkdtemp()
             try:
-                masked_files = mask_prices_excel_batch(excel_paths, mask_out_dir)
+                _mask_errors: list[str] = []
+                masked_files = mask_prices_excel_batch(excel_paths, mask_out_dir,
+                                                       errors=_mask_errors)
+                for _me in _mask_errors:
+                    st.warning(f"Price-mask failed — {_me} (file NOT in masked zip)")
+                    log.append(f"⚠️ price-mask failed — {_me}")
                 if masked_files:
                     mbuf = io.BytesIO()
                     with zipfile.ZipFile(mbuf, "w", zipfile.ZIP_DEFLATED) as zf:

@@ -32,8 +32,13 @@ data/po_history.db
 data/po_history.db-journal
 data/po_history.db-wal
 data/po_history.db-shm
+data/fabric_master.db
+data/fabric_master.db-journal
+data/fabric_master.db-wal
+data/fabric_master.db-shm
 data/output/
 data/images/
+data/extracted_images/
 data/image_folder_history.json
 
 # Sample / input documents at project root (not source code)
@@ -44,6 +49,7 @@ data/image_folder_history.json
 
 # Local logs and temp
 *.log
+logs/
 tmp/
 temp/
 .codex_tmp/
@@ -59,4 +65,5 @@ temp/
 auth/license_key.txt
 auth/users.db
 auth/users.db-*
+auth/users.json
 auth/smtp_settings.json

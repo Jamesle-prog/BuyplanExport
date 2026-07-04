@@ -8,7 +8,7 @@ from ui.sky_east._shared import live_label, show_color_source_radio
 from ui.sky_east.processing import _run_sky_east_processing, _compute_se_missing_df
 from ui.sky_east.items_view import _show_se_results, _show_se_missing_fields_section
 from ui.sky_east.history import _show_se_history_section
-from ui.sky_east.reports_tab import _show_se_reports_tab
+from ui.sky_east.reports_tab import PIN_BUYPLAN, _show_se_reports_tab
 
 # Color source radio is defined in sky_east._shared.show_color_source_radio
 # and shared with the Buy Plan section in the history tab.
@@ -21,20 +21,20 @@ from ui.sky_east.reports_tab import _show_se_reports_tab
 def _show_se_upload_section():
     st.markdown(f"**{t('Order Files')}** (Sky East Purchase Contract xlsx)")
     order_files = st.file_uploader(
-        "Upload Sky East order file(s)",
+        t("Upload Sky East order file(s)"),
         type=["xlsx", "xls", "xlsm"],
         accept_multiple_files=True,
         label_visibility="collapsed",
         key="se_order_uploader",
     )
     if order_files:
-        st.caption(f"{len(order_files)} file(s) selected")
+        st.caption(f"{len(order_files)} " + t("file(s) selected"))
 
     with st.expander(f"{t('Reference files')} (optional — Config SKU · Progress)", expanded=True):
         ref_l, ref_r = st.columns(2)
         with ref_l:
             ean_file = st.file_uploader(
-                "Config SKU file (Zalando PO report xlsx)",
+                t("Config SKU file (Zalando PO report xlsx)"),
                 type=["xlsx", "xls"],
                 key="se_ean_uploader",
                 help=(
@@ -48,11 +48,11 @@ def _show_se_upload_section():
                 ),
             )
             st.caption(
-                "💡 Upload fabric mapping independently in the **📐 Reference Data** tab."
+                "💡 " + t("Upload fabric mapping independently in the **📐 Reference Data** tab.")
             )
         with ref_r:
             progress_file = st.file_uploader(
-                "HHN contract No. file",
+                t("HHN contract No. file"),
                 type=["xlsx", "xls"],
                 key="se_progress_uploader",
                 help=(
@@ -110,7 +110,7 @@ def _show_se_upload_section():
 
     if st.session_state.get(SK.SE_MASKED_ZIP):
         st.download_button(
-            "Download Masked Files (.zip)",
+            t("Download Masked Files (.zip)"),
             data=st.session_state.se_masked_zip,
             file_name="sky_east_masked.zip",
             mime=ZIP_MIME,
@@ -135,14 +135,29 @@ def _show_se_upload_section():
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def show_sky_east_tab() -> None:
-    """Sky East purchase-contract upload, merge, amendment review, and history."""
+def show_sky_east_tab(restrict_to_buyplan: bool = False) -> None:
+    """Sky East purchase-contract upload, merge, amendment review, and history.
+
+    ``restrict_to_buyplan=True`` renders a narrowed view for the "Sky East —
+    Buy Plan only" user role: just Upload + Generate/Export pinned to Buy
+    Plan mode. Contract History and Missing Fields stay hidden.
+    """
     st.subheader(t("Sky East Purchase Contracts"))
     st.caption(t(
         "Upload one or more Sky East order Excel files. "
         "Files with the **same PC No.** are merged (quantities added). "
         "Changed size breakdowns are detected as amendments and logged to history."
     ))
+
+    if restrict_to_buyplan:
+        se_tab_upload, se_tab_reports = st.tabs(
+            [t("New Contracts"), f"📦 {t('Generate / Export')}"]
+        )
+        with se_tab_upload:
+            _show_se_upload_section()
+        with se_tab_reports:
+            _show_se_reports_tab(pin_mode=PIN_BUYPLAN)
+        return
 
     _missing_df = _compute_se_missing_df()
     _missing_count = len(_missing_df)

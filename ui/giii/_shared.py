@@ -1,5 +1,6 @@
 """Shared constants and helpers for the GIII tab sub-modules."""
 from __future__ import annotations
+import re
 import streamlit as st
 from po_extractor.ui_helpers import (
     live_label_for,
@@ -57,6 +58,32 @@ _norm_mapping_header = _normalize_header
 # Smart upload confidence badges
 # ---------------------------------------------------------------------------
 _CONF_BADGE = {"high": "🟢", "medium": "🟡", "low": "🔴"}
+
+# ---------------------------------------------------------------------------
+# Fax-copy (AS400 doubled-font) parser helpers
+# shared by msg_extraction, kl_extraction, tk_eu_extraction
+# ---------------------------------------------------------------------------
+
+def _undouble(s: str) -> str:
+    """Collapse doubled characters produced by the AS400 fax-copy font."""
+    return re.sub(r'(.)\1', r'\1', s)
+
+
+def files_signature(files) -> tuple:
+    """Order-insensitive identity of an uploader's file set (name + size).
+
+    Stored next to extraction results so a changed upload selection
+    invalidates them — previously the table (and its download button) kept
+    serving the previous batch after the files were swapped.
+    """
+    return tuple(sorted((f.name, getattr(f, "size", None)) for f in (files or [])))
+
+
+_SIZE_CODES = r'(?:XXS|XS|XXL|XL|[123]XL|[123]X|OSFM|OSM|OSF|OS|S|M|L)'
+_FIRST_RE   = re.compile(
+    rf'^(\d{{3}})\s+(\S+)\s+(.+?)\s+({_SIZE_CODES})\s+(\d+)\s+(\d{{12,13}})\s+([\d.]+)'
+)
+_CONT_RE    = re.compile(rf'^({_SIZE_CODES})\s+(\d+)\s+(\d{{12,13}})')
 
 # ---------------------------------------------------------------------------
 # Body part list (used for fabric mapping template)

@@ -164,6 +164,14 @@ def export_buyplan(
         flat.columns.name = None
 
         sheet_name = clean_sheet_name(style)   # BUG-42: illegal chars + ≤31
+        # Dedupe explicitly: two styles truncating to the same 31 chars used
+        # to collide — openpyxl silently renamed the second sheet while the
+        # photo map kept ONE entry, swapping/dropping the injected photos.
+        _base = sheet_name
+        _sfx = 2
+        while sheet_name in wb.sheetnames or sheet_name in sheet_style_map:
+            sheet_name = f"{_base[:28]}_{_sfx}"
+            _sfx += 1
         sheet_style_map[sheet_name] = style
         po_numbers = flat["PO Number"].astype(str).unique().tolist()
         m = _lookup_meta(meta_cache, po_numbers)

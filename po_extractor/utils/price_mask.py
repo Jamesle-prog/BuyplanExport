@@ -45,8 +45,14 @@ def mask_prices(pdf_path: str, output_dir: str) -> str:
     return out_path
 
 
-def mask_prices_batch(pdf_paths: list[str], output_dir: str) -> list[str]:
-    """Mask prices in a list of PDFs; return output paths."""
+def mask_prices_batch(pdf_paths: list[str], output_dir: str,
+                      errors: list[str] | None = None) -> list[str]:
+    """Mask prices in a list of PDFs; return output paths.
+
+    Failures are appended to *errors* (if given) so UI callers can surface
+    them — a console print is invisible in Streamlit and the file is just
+    missing from the result.
+    """
     results = []
     for path in pdf_paths:
         try:
@@ -54,7 +60,10 @@ def mask_prices_batch(pdf_paths: list[str], output_dir: str) -> list[str]:
             results.append(out)
             print(f"masked: {out}")
         except Exception as e:
-            print(f"  mask FAILED: {path} ({e})")
+            msg = f"{os.path.basename(path)}: {e}"
+            if errors is not None:
+                errors.append(msg)
+            print(f"  mask FAILED: {msg}")
     return results
 
 
@@ -77,11 +86,22 @@ def mask_prices_excel(xlsx_path: str, output_dir: str,
     """
     import openpyxl
 
+    ext = os.path.splitext(xlsx_path)[1].lower()
+    if ext == ".xls":
+        # openpyxl cannot read the legacy binary format; failing loudly here
+        # beats the old behavior (an exception swallowed into a console
+        # print, with the file silently missing from the masked zip).
+        raise ValueError(
+            "legacy .xls files cannot be price-masked — re-save as .xlsx/.xlsm"
+        )
+
     masked_dir = os.path.join(output_dir, "masked")
     os.makedirs(masked_dir, exist_ok=True)
     out_path = os.path.join(masked_dir, os.path.basename(xlsx_path))
 
-    wb = openpyxl.load_workbook(xlsx_path)
+    # keep_vba: without it a .xlsm is silently re-packaged as a plain xlsx
+    # under the .xlsm name — Excel then refuses to open the output.
+    wb = openpyxl.load_workbook(xlsx_path, keep_vba=(ext == ".xlsm"))
     for ws in wb.worksheets:
         if ws.max_row is None or ws.max_column is None:
             continue
@@ -122,8 +142,13 @@ def mask_prices_excel(xlsx_path: str, output_dir: str,
     return out_path
 
 
-def mask_prices_excel_batch(xlsx_paths: list[str], output_dir: str) -> list[str]:
-    """Mask prices in a list of Excel files; return output paths."""
+def mask_prices_excel_batch(xlsx_paths: list[str], output_dir: str,
+                            errors: list[str] | None = None) -> list[str]:
+    """Mask prices in a list of Excel files; return output paths.
+
+    Failures are appended to *errors* (if given) so UI callers can surface
+    them — see mask_prices_batch.
+    """
     results = []
     for path in xlsx_paths:
         try:
@@ -131,5 +156,8 @@ def mask_prices_excel_batch(xlsx_paths: list[str], output_dir: str) -> list[str]
             results.append(out)
             print(f"masked: {out}")
         except Exception as e:
-            print(f"  mask FAILED: {path} ({e})")
+            msg = f"{os.path.basename(path)}: {e}"
+            if errors is not None:
+                errors.append(msg)
+            print(f"  mask FAILED: {msg}")
     return results

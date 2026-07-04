@@ -18,22 +18,12 @@ import tempfile
 
 import streamlit as st
 
-from ui.giii._shared import _XLSX_MIME
+from ui.giii._shared import _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature
+from ui.i18n import t
+from ui.session_keys import SK
+from ui.shared import _th
 
-# ---------------------------------------------------------------------------
-# Parser helpers
-# ---------------------------------------------------------------------------
-
-_SIZE_CODES = r'(?:XXS|XS|XXL|XL|[123]XL|[123]X|OSFM|OSM|OSF|OS|S|M|L)'
-_FIRST_RE   = re.compile(
-    rf'^(\d{{3}})\s+(\S+)\s+(.+?)\s+({_SIZE_CODES})\s+(\d+)\s+(\d{{12,13}})\s+([\d.]+)'
-)
-_CONT_RE    = re.compile(rf'^({_SIZE_CODES})\s+(\d+)\s+(\d{{12,13}})')
-
-
-def _undouble(s: str) -> str:
-    """Collapse doubled characters produced by the fax-copy font."""
-    return re.sub(r'(.)\1', r'\1', s)
+# (parser helpers are imported from _shared)
 
 
 def _parse_pdf_bytes(pdf_bytes: bytes) -> dict:
@@ -51,10 +41,14 @@ def _parse_pdf_bytes(pdf_bytes: bytes) -> dict:
                 return m
         return None
 
-    po_num  = _undouble(grep(r'PO NUMBER\s+(\S+)').group(1))  if grep(r'PO NUMBER\s+(\S+)')  else '?'
-    style   = _undouble(grep(r'S T Y L E #\s+(\S+)').group(1)) if grep(r'S T Y L E #\s+(\S+)') else '?'
-    po_date = _undouble(grep(r'PO DATE\s+([\d/]+)').group(1))  if grep(r'PO DATE\s+([\d/]+)')  else '?'
-    ship    = _undouble(grep(r'P R T\s+([\d/]+)').group(1))    if grep(r'P R T\s+([\d/]+)')    else '?'
+    m = grep(r'PO NUMBER\s+(\S+)')
+    po_num  = _undouble(m.group(1)) if m else '?'
+    m = grep(r'S T Y L E #\s+(\S+)')
+    style   = _undouble(m.group(1)) if m else '?'
+    m = grep(r'PO DATE\s+([\d/]+)')
+    po_date = _undouble(m.group(1)) if m else '?'
+    m = grep(r'P R T\s+([\d/]+)')
+    ship    = _undouble(m.group(1)) if m else '?'
     etd_m   = grep(r'([\d/]+)\s+EETTDD')
     etd     = _undouble(etd_m.group(1)) if etd_m else '?'
 
@@ -66,13 +60,14 @@ def _parse_pdf_bytes(pdf_bytes: bytes) -> dict:
 
     fob = '?'
     for l in text_lines:
-        m = re.search(r'\$\$([\d.]+)', l)
-        if m:
-            fob = _undouble(m.group(1))
-            break
         if re.search(r'FFOOBB::\s*UUNNCCOONNFFIIRRMMEEDD', l):
             fob = 'UNCONFIRMED'
             break
+        if re.search(r'FFOOBB', l):
+            m = re.search(r'\$\$([\d.]+)', l)
+            if m:
+                fob = _undouble(m.group(1))
+                break
 
     desc_m      = grep(r'DESCRIPTION\s+(.+)')
     description = _undouble(desc_m.group(1)).strip() if desc_m else '?'
@@ -100,9 +95,17 @@ def _parse_pdf_bytes(pdf_bytes: bytes) -> dict:
         if pr_m:
             pack_ratio = pr_m.group(1)
 
-    # HTS#: tariff code like 6106.20.2010 (may be doubled in header, normal in data row)
+    # HTS#: tariff code like 6106.20.2010 (may be doubled in header, normal in
+    # data row).  Only undouble when the match is actually fax-doubled — the
+    # doubled form always carries doubled dots ("..").  Unconditional
+    # undoubling corrupted normal-font codes with legitimately repeated
+    # digits: 6110.20.2079 → 610.20.2079.
     hts_m   = grep(r'(\d{4,8}\.+\d{2,4}\.+\d{4,8})')
-    hts_num = _undouble(hts_m.group(1)) if hts_m else '?'
+    if hts_m:
+        hts_raw = hts_m.group(1)
+        hts_num = _undouble(hts_raw) if '..' in hts_raw else hts_raw
+    else:
+        hts_num = '?'
 
     # CPO: e.g. "CPO: TBD" or doubled "CCPPOO:: TTBBDD"
     cpo_m = grep(r'C+P+O+:+\s*(\S+)')
@@ -146,7 +149,7 @@ def _parse_pdf_bytes(pdf_bytes: bytes) -> dict:
         description=description, line_items=line_items,
         customer_name=customer_name, ship_to=ship_to,
         hanger_info=hanger_info, pack_ratio=pack_ratio,
-        hts_num=hts_num, cpo=cpo,
+        hts_num=hts_num, cpo=cpo, msrp='?',
     )
 
 
@@ -164,7 +167,7 @@ def _extract_and_parse_msgs(msg_files) -> list[dict]:
             try:
                 msg = extract_msg.openMsg(msg_path)
             except Exception as exc:
-                st.warning(f"Could not open {uf.name}: {exc}")
+                st.warning(f"{t('Could not open')} {uf.name}: {exc}")
                 continue
 
             pdf_data: bytes | None = None
@@ -175,13 +178,13 @@ def _extract_and_parse_msgs(msg_files) -> list[dict]:
                     break
 
             if pdf_data is None:
-                st.warning(f"No PDF attachment in {uf.name} — skipped.")
+                st.warning(f"{t('No PDF attachment in')} {uf.name} — {t('skipped.')}")
                 continue
 
             try:
                 po = _parse_pdf_bytes(pdf_data)
             except Exception as exc:
-                st.warning(f"Parse error in {uf.name}: {exc}")
+                st.warning(f"{t('Parse error in')} {uf.name}: {exc}")
                 continue
 
             # Derive PO number from email subject as fallback
@@ -382,7 +385,15 @@ def _build_excel_bytes(results: list[dict]) -> bytes:
             bg = _LT_BLUE if (po_row - 2) % 2 == 0 else None
             sizes_map  = {s[0]: s[1] for s in li['sizes']}
             row_total  = sum(s[1] for s in li['sizes'])
-            fob_val    = po['fob_price'] if is_unc else float(po['fob_price']) if po['fob_price'] != '?' else ''
+            if is_unc:
+                fob_val = po['fob_price']
+            elif po['fob_price'] != '?':
+                try:
+                    fob_val = float(po['fob_price'])
+                except ValueError:
+                    fob_val = po['fob_price']   # e.g. "12.50." — keep raw string
+            else:
+                fob_val = ''
 
             vals = (
                 [po['po_number'], li['style'], po['description'], li['color'], po['etd'], fob_val]
@@ -427,7 +438,15 @@ def _build_excel_bytes(results: list[dict]) -> bytes:
         tu_col  = get_column_letter(len(S_HDRS))
         formula = f'=SUM({",".join(f"{tu_col}{r}" for r in rows)})' if rows else 0
         is_unc  = info['fob'] == 'UNCONFIRMED'
-        fob_val = info['fob'] if is_unc else (float(info['fob']) if info['fob'] != '?' else '')
+        if is_unc:
+            fob_val = info['fob']
+        elif info['fob'] != '?':
+            try:
+                fob_val = float(info['fob'])
+            except ValueError:
+                fob_val = info['fob']           # e.g. "12.50." — keep raw string
+        else:
+            fob_val = ''
         vals    = [style_key, info['desc'], fob_val, formula, len(info['pos'])]
 
         for ci, v in enumerate(vals, 1):
@@ -484,11 +503,11 @@ def show_msg_upload_section() -> None:
 
     st.divider()
     st.markdown("#### 📧 MSG / Vendor Fax POs")
-    st.caption(
+    st.caption(t(
         "Upload Outlook **.msg** emails (vendor fax copies from AS400). "
         "The system extracts the embedded PDF, parses PO fields, and produces "
         "a formatted Excel workbook ready for download."
-    )
+    ))
 
     uploaded_msgs = st.file_uploader(
         "Upload .msg files",
@@ -499,34 +518,42 @@ def show_msg_upload_section() -> None:
     )
 
     if not uploaded_msgs:
-        st.info("Upload one or more .msg vendor fax emails to get started.")
+        st.info(t("Upload one or more .msg vendor fax emails to get started."))
         return
 
-    st.caption(f"{len(uploaded_msgs)} file(s) selected")
+    st.caption(f"{len(uploaded_msgs)} " + t("file(s) selected"))
 
-    if "msg_results" not in st.session_state:
-        st.session_state.msg_results = None
+    sig = files_signature(uploaded_msgs)
 
-    if st.button("▶  Extract MSG POs", type="primary", use_container_width=True, key="run_msg"):
-        st.session_state.msg_results = None
-        with st.spinner("Extracting PDFs and parsing POs…"):
+    if SK.GIII_MSG_RESULTS not in st.session_state:
+        st.session_state[SK.GIII_MSG_RESULTS] = None
+
+    if st.button(t("▶  Extract MSG POs"), type="primary", use_container_width=True, key="run_msg"):
+        st.session_state[SK.GIII_MSG_RESULTS] = None
+        with st.spinner(t("Extracting PDFs and parsing POs…")):
             try:
                 import extract_msg  # noqa: F401 — verify library present
             except ImportError:
-                st.error(
+                st.error(t(
                     "**extract-msg** library not installed. "
                     "Run `pip install extract-msg` and restart the app."
-                )
+                ))
                 return
             results = _extract_and_parse_msgs(uploaded_msgs)
 
         if not results:
-            st.error("No POs could be parsed from the uploaded files.")
+            st.error(t("No POs could be parsed from the uploaded files."))
             return
 
-        st.session_state.msg_results = results
+        st.session_state[SK.GIII_MSG_RESULTS] = results
+        st.session_state[SK.GIII_MSG_SIG]     = sig
 
-    results = st.session_state.get("msg_results")
+    results = st.session_state.get(SK.GIII_MSG_RESULTS)
+    if results and st.session_state.get(SK.GIII_MSG_SIG) != sig:
+        # Upload selection changed since extraction — drop the stale results
+        # so a swapped file set can't display/download the previous batch.
+        st.session_state[SK.GIII_MSG_RESULTS] = None
+        results = None
     if not results:
         return
 
@@ -535,62 +562,63 @@ def show_msg_upload_section() -> None:
     sizes_cols = [s for s in _SIZE_ORDER if s in all_sizes]
 
     rows = []
+    total_col = _th('Total')
     for po in results:
         for li in po['line_items']:
             sz_map     = {s[0]: s[1] for s in li['sizes']}
             row_total  = sum(s[1] for s in li['sizes'])
             fob_disp   = po['fob_price'] if po['fob_price'] in ('?', 'UNCONFIRMED') else f"${po['fob_price']}"
             row = {
-                'PO Number':     po['po_number'],
-                'Style':         li['style'],
-                'Color':         li['color'],
-                'ETD':           po['etd'],
-                'FOB':           fob_disp,
-                'HTS#':          po['hts_num'],
-                'CPO':           po['cpo'],
-                'Customer Name': po['customer_name'],
-                'Ship To':       po['ship_to'],
-                'Hanger Info':   po['hanger_info'],
-                'Pack Ratio':    po['pack_ratio'],
+                _th('PO Number'):     po['po_number'],
+                _th('Style'):         li['style'],
+                _th('Color'):         li['color'],
+                _th('ETD'):           po['etd'],
+                _th('FOB'):           fob_disp,
+                _th('HTS#'):          po['hts_num'],
+                _th('CPO'):           po['cpo'],
+                _th('Customer Name'): po['customer_name'],
+                _th('Ship To'):       po['ship_to'],
+                _th('Hanger Info'):   po['hanger_info'],
+                _th('Pack Ratio'):    po['pack_ratio'],
             }
             for sz in sizes_cols:
                 row[sz] = sz_map.get(sz, '')
-            row['Total'] = row_total
+            row[total_col] = row_total
             rows.append(row)
 
     import pandas as pd
     df = pd.DataFrame(rows)
     st.dataframe(df, hide_index=True, use_container_width=True)
 
-    grand_total = sum(r['Total'] for r in rows)
+    grand_total = sum(r[total_col] for r in rows)
     st.caption(
-        f"**{len(results)} PO(s)** · **{grand_total:,} total units** · "
-        f"{len(sizes_cols)} size(s): {', '.join(sizes_cols)}"
+        f"**{len(results)} {t('PO(s)')}** · **{grand_total:,} {t('total units')}** · "
+        f"{len(sizes_cols)} {t('size(s)')}: {', '.join(sizes_cols)}"
     )
 
     # ── Metadata expander ────────────────────────────────────────────────────
-    with st.expander("PO Metadata", expanded=False):
+    with st.expander(t("PO Metadata"), expanded=False):
         meta_rows = [{
-            'PO Number':     po['po_number'],
-            'Style':         po['style'],
-            'Description':   po['description'],
-            'Customer Name': po['customer_name'],
-            'Ship To':       po['ship_to'],
-            'PO Date':       po['po_date'],
-            'Ship Date':     po['ship_date'],
-            'ETD':           po['etd'],
-            'FOB Price':     po['fob_price'],
-            'HTS#':          po['hts_num'],
-            'CPO':           po['cpo'],
-            'Hanger Info':   po['hanger_info'],
-            'Pack Ratio':    po['pack_ratio'],
-            'Factory':       po['factory'],
-            'Vendor':        po['vendor'],
+            _th('PO Number'):     po['po_number'],
+            _th('Style'):         po['style'],
+            _th('Description'):   po['description'],
+            _th('Customer Name'): po['customer_name'],
+            _th('Ship To'):       po['ship_to'],
+            _th('PO Date'):       po['po_date'],
+            _th('Ship Date'):     po['ship_date'],
+            _th('ETD'):           po['etd'],
+            _th('FOB Price'):     po['fob_price'],
+            _th('HTS#'):          po['hts_num'],
+            _th('CPO'):           po['cpo'],
+            _th('Hanger Info'):   po['hanger_info'],
+            _th('Pack Ratio'):    po['pack_ratio'],
+            _th('Factory'):       po['factory'],
+            _th('Vendor'):        po['vendor'],
         } for po in results]
         st.dataframe(pd.DataFrame(meta_rows), hide_index=True, use_container_width=True)
 
     # ── Download ─────────────────────────────────────────────────────────────
-    with st.spinner("Building Excel…"):
+    with st.spinner(t("Building Excel…")):
         xlsx_bytes = _build_excel_bytes(results)
 
     # Derive a filename from the first PO number
@@ -599,7 +627,7 @@ def show_msg_upload_section() -> None:
     fname    = f"{prefix}_POs.xlsx" if prefix else "MSG_POs.xlsx"
 
     st.download_button(
-        label="⬇ Download Excel",
+        label=t("⬇ Download Excel"),
         data=xlsx_bytes,
         file_name=fname,
         mime=_XLSX_MIME,

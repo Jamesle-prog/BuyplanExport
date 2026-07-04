@@ -43,7 +43,10 @@ VEND_CNTRY_PATTERN = r'VEND CNTRY\s+(\w+(?:\s*-\s*\w+)?)'
 FACTORY_PATTERN = r'FACTORY\s+(\d+)\s*-\s*([A-Z]+(?:\s[A-Z]+)*)(?=\s{2,}|\s+INCO|\s+PORT|$)'
 # Case-insensitive full-line capture (handles both "HANGER QF5103" and "Hanger,unless specified...")
 HANGER_PATTERN = r'(?i)(hanger[^\n]*)'
-CNTRY_OF_ORIGIN_PATTERN = r'CNTRY OF ORIGIN\s+(\w+)'
+# Words separated by SINGLE spaces (multi-word countries like "SRI LANKA");
+# a run of 2+ spaces is a column gap and ends the capture (same convention
+# as FACTORY_PATTERN below).
+CNTRY_OF_ORIGIN_PATTERN = r'CNTRY OF ORIGIN\s+(\w+(?: \w+)*)'
 # Description via backreference (DKNY / CK): PDF doubles the text so the second
 # occurrence serves as a lookahead sentinel.  Apostrophe-aware ([\w'] handles CK
 # descriptions like "PYSP WOMEN'S BLOU ROSS 25").

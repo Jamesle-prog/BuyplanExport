@@ -70,10 +70,18 @@ def _legacy_has_fabric_data(db_path: str) -> bool:
     return count_fabric_rows(db_path) > 0
 
 
-# Marker key written to the fabric DB after auto-migration so subsequent
-# factory calls skip the legacy probe entirely (saves two SQLite opens
-# per ``get_fabric_master_store()`` on a fresh-but-intentionally-empty DB).
-_FABRIC_MIGRATION_PRAGMA = 1   # PRAGMA user_version value after migration
+# Marker bit OR-ed into the fabric DB's PRAGMA user_version after the legacy
+# auto-migration check, so subsequent factory calls skip the probe entirely
+# (saves two SQLite opens per ``get_fabric_master_store()`` on a
+# fresh-but-intentionally-empty DB).
+#
+# This MUST be a dedicated bit, not a plain value: the low values 1 and 2 are
+# owned by FabricMasterStore's schema migrations (_migrate_swap_widths /
+# _migrate_add_spot_price_cols), which stamp user_version during __init__ —
+# i.e. *before* this factory probes it.  Reusing those values (as the original
+# ``== 1`` marker did) made the probe always pass on a freshly created DB and
+# turned the legacy-data copy below into dead code.
+_FABRIC_MIGRATION_MARKER_BIT = 0x100
 
 
 def get_fabric_master_store() -> FabricMasterStore:
@@ -116,7 +124,7 @@ def get_fabric_master_store() -> FabricMasterStore:
             uv = _probe.execute("PRAGMA user_version").fetchone()[0]
     except sqlite3.Error:
         uv = 0
-    if uv >= _FABRIC_MIGRATION_PRAGMA:
+    if uv & _FABRIC_MIGRATION_MARKER_BIT:
         return store
 
     # Slow path: only on first run after the v1.7.2 split.
@@ -139,7 +147,12 @@ def get_fabric_master_store() -> FabricMasterStore:
     if migration_ok:
         try:
             with closing(sqlite3.connect(fabric_path)) as _stamp:
-                _stamp.execute(f"PRAGMA user_version = {_FABRIC_MIGRATION_PRAGMA}")
+                # OR the marker bit in, preserving the schema-migration version
+                # held in the low bits.
+                cur = _stamp.execute("PRAGMA user_version").fetchone()[0]
+                _stamp.execute(
+                    f"PRAGMA user_version = {cur | _FABRIC_MIGRATION_MARKER_BIT}"
+                )
                 _stamp.commit()
         except sqlite3.Error:
             pass

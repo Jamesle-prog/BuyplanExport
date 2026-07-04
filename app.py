@@ -4,19 +4,21 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.24.0"
+APP_VERSION = "2.27.2"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from auth.license import validate_license
 from auth.companies import ensure_defaults_seeded
 from auth.users import (
-    change_password, get_user_companies, is_admin,
+    MODULE_SKY_EAST, MODULE_SKY_EAST_BUYPLAN,
+    change_password, get_user_companies, get_user_modules, is_admin,
     user_exists, verify_password,
 )
 from po_extractor.ui_helpers import load_live_schema as _load_live_schema_impl
 from po_extractor.config import SCHEMA_PATH as _SCHEMA_PATH_CFG, CACHE_TTL_SECONDS
 from ui.session_keys import SK
+from ui.i18n import t
 
 # Seed default companies on startup (idempotent)
 ensure_defaults_seeded()
@@ -173,6 +175,50 @@ if not user_exists():
 
 
 # ---------------------------------------------------------------------------
+# Login throttle — the app is reachable from the network, so failed sign-ins
+# must cost something.  Process-wide (module-level, shared by all sessions and
+# threads — a per-session counter would be trivially bypassed by dropping the
+# session).  After _LOGIN_FAIL_THRESHOLD failures a key locks out with
+# exponential backoff; a coarser global brake catches username spraying.
+# ---------------------------------------------------------------------------
+import threading as _threading
+import time as _time
+
+_LOGIN_GUARD_LOCK = _threading.Lock()
+_LOGIN_FAILURES: dict[str, tuple[int, float]] = {}   # key → (fails, locked_until)
+_LOGIN_GLOBAL_KEY = "\x00global"
+
+_LOGIN_FAIL_THRESHOLD   = 5      # per-username fails before lockout
+_LOGIN_BASE_LOCK_S      = 60.0   # first lockout, doubles per extra fail
+_LOGIN_MAX_LOCK_S       = 900.0
+_LOGIN_GLOBAL_THRESHOLD = 30     # total fails across all usernames
+_LOGIN_GLOBAL_LOCK_S    = 120.0
+
+
+def _login_lock_remaining(key: str) -> int:
+    """Seconds left on the lockout for *key* (0 = not locked)."""
+    with _LOGIN_GUARD_LOCK:
+        _count, until = _LOGIN_FAILURES.get(key, (0, 0.0))
+        remaining = until - _time.time()
+    return int(remaining) + 1 if remaining > 0 else 0
+
+
+def _login_failed(key: str, threshold: int, base_lock_s: float, max_lock_s: float) -> None:
+    with _LOGIN_GUARD_LOCK:
+        count, _until = _LOGIN_FAILURES.get(key, (0, 0.0))
+        count += 1
+        lock_s = 0.0
+        if count >= threshold:
+            lock_s = min(base_lock_s * (2 ** (count - threshold)), max_lock_s)
+        _LOGIN_FAILURES[key] = (count, _time.time() + lock_s)
+
+
+def _login_succeeded(key: str) -> None:
+    with _LOGIN_GUARD_LOCK:
+        _LOGIN_FAILURES.pop(key, None)
+
+
+# ---------------------------------------------------------------------------
 # Login page
 # ---------------------------------------------------------------------------
 def show_login():
@@ -188,19 +234,31 @@ def show_login():
         st.markdown("---")
 
         with st.form("login_form"):
-            username = st.text_input("Username", placeholder="your username")
-            password = st.text_input("Password", type="password", placeholder="••••••••")
-            submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+            username = st.text_input(t("Username"), placeholder="your username")
+            password = st.text_input(t("Password"), type="password", placeholder="••••••••")
+            submitted = st.form_submit_button(t("Sign In"), type="primary", use_container_width=True)
 
         if submitted:
-            if verify_password(username, password):
+            uname_key = (username or "").strip().lower()
+            wait = max(
+                _login_lock_remaining(uname_key),
+                _login_lock_remaining(_LOGIN_GLOBAL_KEY),
+            )
+            if wait:
+                st.error(f"{t('Too many failed attempts. Try again in')} {wait} s.")
+            elif verify_password(username, password):
+                _login_succeeded(uname_key)
                 st.session_state.logged_in = True
                 st.session_state.username = username
                 st.session_state.results = None
                 st.session_state.parse_log = []
                 st.rerun()
             else:
-                st.error("Incorrect username or password.")
+                _login_failed(uname_key, _LOGIN_FAIL_THRESHOLD,
+                              _LOGIN_BASE_LOCK_S, _LOGIN_MAX_LOCK_S)
+                _login_failed(_LOGIN_GLOBAL_KEY, _LOGIN_GLOBAL_THRESHOLD,
+                              _LOGIN_GLOBAL_LOCK_S, _LOGIN_GLOBAL_LOCK_S)
+                st.error(t("Incorrect username or password."))
 
 
 # ---------------------------------------------------------------------------
@@ -208,19 +266,19 @@ def show_login():
 # ---------------------------------------------------------------------------
 def _show_change_password_sidebar():
     with st.form("cp_form", clear_on_submit=True):
-        old  = st.text_input("Current password", type="password")
-        new1 = st.text_input("New password", type="password")
-        new2 = st.text_input("Confirm new password", type="password")
-        submitted = st.form_submit_button("Save", type="primary", use_container_width=True)
+        old  = st.text_input(t("Current password"), type="password")
+        new1 = st.text_input(t("New password"), type="password")
+        new2 = st.text_input(t("Confirm new password"), type="password")
+        submitted = st.form_submit_button(t("Save"), type="primary", use_container_width=True)
     if submitted:
         if not new1:
-            st.error("New password cannot be empty.")
+            st.error(t("New password cannot be empty."))
         elif new1 != new2:
-            st.error("Passwords do not match.")
+            st.error(t("Passwords do not match."))
         elif not change_password(st.session_state.username, old, new1):
-            st.error("Current password is incorrect.")
+            st.error(t("Current password is incorrect."))
         else:
-            st.success("Password changed.")
+            st.success(t("Password changed."))
 
 
 # ---------------------------------------------------------------------------
@@ -233,10 +291,10 @@ def show_main():
         st.caption(f"v{APP_VERSION}")
         st.divider()
         st.markdown(f"👤 **{st.session_state.username}**")
-        with st.expander("🔑 Change Password"):
+        with st.expander(f"🔑 {t('Change Password')}"):
             _show_change_password_sidebar()
         st.divider()
-        if st.button("Sign Out", use_container_width=True):
+        if st.button(t("Sign Out"), use_container_width=True):
             for k, v in [
                 (SK.LOGGED_IN,        False),
                 (SK.USERNAME,         None),
@@ -269,6 +327,19 @@ def show_main():
                 (SK.SE_BP_CMP,        None),
                 # Color source resets to admin default on next render
                 (SK.SE_COLOR_SOURCE,  None),
+                # GIII fax/portal extraction sections
+                (SK.GIII_MSG_RESULTS,   None),
+                (SK.GIII_MSG_SIG,       None),
+                (SK.GIII_KL_RESULTS,    None),
+                (SK.GIII_KL_SIG,        None),
+                (SK.GIII_TKEU_RESULTS,  None),
+                (SK.GIII_TKEU_SIG,      None),
+                (SK.GIII_IN_RESULTS,    None),
+                (SK.GIII_IN_SIG,        None),
+                (SK.GIII_IN_KL_RESULTS, None),
+                (SK.GIII_IN_KL_SIG,     None),
+                (SK.GIII_MASTER_DL_BYTES, None),
+                (SK.GIII_MASTER_DL_FNAME, None),
             ]:
                 st.session_state[k] = v
             # Clear bare-string keys not in SK enum
@@ -296,33 +367,45 @@ def show_main():
 
     # ---- Tabs ----
     admin_mode = is_admin(st.session_state.username)
-    tab_labels = ["📋 GIII", "🛍 Sky East", "🧵 Fabric DB", "📐 Reference Data", "🎨 Colors", "📊 Summary", "🏭 Tracking", "🔖 Releases"]
+    user_modules = get_user_modules(st.session_state.username)  # [] = unrestricted
+    _buyplan_only = (
+        MODULE_SKY_EAST_BUYPLAN in user_modules
+        and MODULE_SKY_EAST not in user_modules
+    )
+
+    def _allowed(module_key: str) -> bool:
+        if not user_modules:
+            return True
+        if module_key == "sky_east":
+            return MODULE_SKY_EAST in user_modules or MODULE_SKY_EAST_BUYPLAN in user_modules
+        return module_key in user_modules
+
+    # Tab labels are display-only (st.tabs returns objects used positionally,
+    # dispatch/visibility is keyed by the `key` field), so translating the
+    # label text is safe.  Emoji stays outside t().
+    _all_tabs = [
+        ("giii",           f"📋 {t('GIII')}",           lambda: _show_smart_upload_tab()),
+        ("sky_east",       f"🛍 {t('Sky East')}",       lambda: _show_sky_east_tab(restrict_to_buyplan=_buyplan_only)),
+        ("fabric_db",      f"🧵 {t('Fabric DB')}",      lambda: _show_fabric_db_tab()),
+        ("reference_data", f"📐 {t('Reference Data')}", lambda: _show_fabric_mapping_tab()),
+        ("colors",         f"🎨 {t('Colors')}",         lambda: _show_color_translation_tab()),
+        ("summary",        f"📊 {t('Summary')}",        lambda: _show_summary_tab(
+            user_cos=get_user_companies(st.session_state.username), admin_mode=admin_mode)),
+        ("tracking",       f"🏭 {t('Tracking')}",       lambda: _show_production_tracking_tab(
+            user_cos=get_user_companies(st.session_state.username), admin_mode=admin_mode)),
+        ("releases",       f"🔖 {t('Releases')}",       lambda: _show_changelog_tab()),
+    ]
+    _visible_tabs = [(label, fn) for key, label, fn in _all_tabs if _allowed(key)]
+    tab_labels = [label for label, _ in _visible_tabs]
     if admin_mode:
-        tab_labels.append("⚙️ Admin")
+        tab_labels.append(f"⚙️ {t('Admin')}")
     tabs = st.tabs(tab_labels)
 
-    with tabs[0]:
-        _show_smart_upload_tab()
-    with tabs[1]:
-        _show_sky_east_tab()
-    with tabs[2]:
-        _show_fabric_db_tab()
-    with tabs[3]:
-        _show_fabric_mapping_tab()
-    with tabs[4]:
-        _show_color_translation_tab()
-    with tabs[5]:
-        _show_summary_tab(user_cos=get_user_companies(st.session_state.username),
-                          admin_mode=admin_mode)
-    with tabs[6]:
-        _show_production_tracking_tab(
-            user_cos=get_user_companies(st.session_state.username),
-            admin_mode=admin_mode,
-        )
-    with tabs[7]:
-        _show_changelog_tab()
+    for tab, (_, fn) in zip(tabs, _visible_tabs):
+        with tab:
+            fn()
     if admin_mode:
-        with tabs[8]:
+        with tabs[-1]:
             _show_admin_panel()
 
 
@@ -349,9 +432,10 @@ def _show_admin_panel():
     (admin_tab_users, admin_tab_cos, admin_tab_schema, admin_tab_sizes,
      admin_tab_tpl, admin_tab_pipe, admin_tab_bsr, admin_tab_smtp,
      admin_tab_i18n, admin_tab_settings) = st.tabs(
-        ["👤 Users", "🏢 Companies", "📋 Column Mapping", "📐 Size Order",
-         "📄 Templates", "🧩 Pipeline Layouts", "🚢 船样要求", "📧 Email",
-         "🌐 Translations", "⚙️ Settings"]
+        [f"👤 {t('Users')}", f"🏢 {t('Companies')}", f"📋 {t('Column Mapping')}",
+         f"📐 {t('Size Order')}", f"📄 {t('Templates')}", f"🧩 {t('Pipeline Layouts')}",
+         f"🚢 {t('船样要求')}", f"📧 {t('Email')}", f"🌐 {t('Translations')}",
+         f"⚙️ {t('Settings')}"]
     )
 
     with admin_tab_cos:
@@ -454,9 +538,9 @@ def _show_smart_upload_tab() -> None:
 
 
 @st.fragment
-def _show_sky_east_tab() -> None:
+def _show_sky_east_tab(restrict_to_buyplan: bool = False) -> None:
     from ui.sky_east_view import show_sky_east_tab
-    show_sky_east_tab()
+    show_sky_east_tab(restrict_to_buyplan=restrict_to_buyplan)
 
 
 

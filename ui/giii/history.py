@@ -13,6 +13,14 @@ from ui.giii.results import _show_master_po_table
 def _show_history(exc_df=None):
     store = get_store()
     user_cos = get_user_companies(st.session_state.username)
+    # Non-admin with no assigned companies must see nothing — an empty list
+    # falls through the store's falsy check to an unfiltered query.
+    if not is_admin(st.session_state.username) and not user_cos:
+        st.info(
+            "No companies assigned to your account. "
+            "Contact an administrator to be granted access."
+        )
+        return
     df = store.list_pos(companies=user_cos if user_cos else None)
 
     # ── Summary metrics ───────────────────────────────────────────────────────

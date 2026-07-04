@@ -5,6 +5,7 @@ import os
 
 import streamlit as st
 
+from ui.i18n import t
 from ui.session_keys import SK, COLOR_SOURCE_DB, COLOR_SOURCE_PROGRESS
 from ui.stores import get_app_settings_store
 from po_extractor.store.app_settings_store import (
@@ -46,46 +47,45 @@ _COLOR_SOURCE_HELP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 def show_settings_admin() -> None:
-    st.markdown("### ⚙️ Application Settings")
-    st.caption(
+    st.markdown(f"### ⚙️ {t('Application Settings')}")
+    st.caption(t(
         "Settings here apply to all users.  "
         "Individual users can still override per-session where allowed."
-    )
+    ))
 
     store = get_app_settings_store()
 
     # ── Chinese color mapping default source ────────────────────────────────
     st.markdown("---")
-    st.markdown("#### 🎨 Chinese Color Mapping — Default Source")
-    st.caption(
+    st.markdown(f"#### 🎨 {t('Chinese Color Mapping — Default Source')}")
+    st.caption(t(
         "Controls the pre-selected option for the **Chinese color mapping source** "
         "radio on the Sky East tab.  New sessions start with this value; "
         "users can still change it within their session."
-    )
+    ))
 
     current = store.get(_SETTING_COLOR_SOURCE, COLOR_SOURCE_DB)
     options  = list(_COLOR_SOURCE_OPTIONS.keys())
-    labels   = list(_COLOR_SOURCE_OPTIONS.values())
     idx      = options.index(current) if current in options else 0
 
-    chosen_label = st.radio(
-        "Default source",
-        labels,
+    chosen_key = st.radio(
+        t("Default source"),
+        options,
         index=idx,
+        format_func=lambda k: t(_COLOR_SOURCE_OPTIONS[k]),
         key="admin_default_color_src_radio",
     )
-    chosen_key = options[labels.index(chosen_label)]
-    st.info(_COLOR_SOURCE_HELP[chosen_key], icon="ℹ️")
+    st.info(t(_COLOR_SOURCE_HELP[chosen_key]), icon="ℹ️")
 
-    if st.button("💾 Save", key="admin_settings_save", type="primary"):
+    if st.button(f"💾 {t('Save')}", key="admin_settings_save", type="primary"):
         store.set(
             _SETTING_COLOR_SOURCE,
             chosen_key,
             updated_by=st.session_state.get(SK.USERNAME, ""),
         )
         st.success(
-            f"✅ Default color source saved: **{_COLOR_SOURCE_OPTIONS[chosen_key]}**  \n"
-            "New sessions will start with this selection."
+            f"✅ {t('Default color source saved:')} **{t(_COLOR_SOURCE_OPTIONS[chosen_key])}**  \n"
+            + t("New sessions will start with this selection.")
         )
 
     # ── DeepSeek AI Extraction ───────────────────────────────────────────────
@@ -106,12 +106,12 @@ def show_settings_admin() -> None:
 # ---------------------------------------------------------------------------
 
 def _show_deepseek_settings(store) -> None:
-    st.markdown("#### 🤖 AI Extraction — DeepSeek")
-    st.caption(
+    st.markdown(f"#### 🤖 {t('AI Extraction — DeepSeek')}")
+    st.caption(t(
         "When enabled, PO PDFs are sent to the **DeepSeek API** for field extraction "
         "instead of (or alongside) the built-in regex parser.  "
         "Requires a DeepSeek API key from [platform.deepseek.com](https://platform.deepseek.com)."
-    )
+    ))
 
     current_method = store.get(KEY_EXTRACTION_METHOD, "regex")
     current_key    = store.get(KEY_DEEPSEEK_API_KEY, "")
@@ -119,18 +119,18 @@ def _show_deepseek_settings(store) -> None:
 
     method_options = {"regex": "🔍 Regex (built-in, no API)", "deepseek": "🤖 DeepSeek AI"}
     chosen_method  = st.radio(
-        "Default extraction method",
+        t("Default extraction method"),
         list(method_options.keys()),
         index=0 if current_method == "regex" else 1,
-        format_func=lambda k: method_options[k],
+        format_func=lambda k: t(method_options[k]),
         key="admin_extraction_method",
-        help="Users can also switch per-session on the GIII upload tab.",
+        help=t("Users can also switch per-session on the GIII upload tab."),
     )
 
     col_key, col_model = st.columns([3, 1])
     with col_key:
         new_key = st.text_input(
-            "DeepSeek API Key",
+            t("DeepSeek API Key"),
             value=current_key,
             type="password",
             placeholder="sk-...",
@@ -139,7 +139,7 @@ def _show_deepseek_settings(store) -> None:
         )
     with col_model:
         new_model = st.selectbox(
-            "Model",
+            t("Model"),
             ["deepseek-chat", "deepseek-reasoner"],
             index=0 if current_model == "deepseek-chat" else 1,
             key="admin_deepseek_model",
@@ -148,22 +148,22 @@ def _show_deepseek_settings(store) -> None:
 
     col_test, col_save = st.columns([1, 1])
     with col_test:
-        if st.button("🔌 Test API key", key="admin_deepseek_test",
+        if st.button(f"🔌 {t('Test API key')}", key="admin_deepseek_test",
                      disabled=(chosen_method == "regex" or not new_key)):
-            with st.spinner("Testing…"):
+            with st.spinner(f"{t('Testing…')}"):
                 ok, msg = _test_deepseek(new_key, new_model)
             if ok:
                 st.success(f"✅ {msg}")
             else:
                 st.error(f"❌ {msg}")
     with col_save:
-        if st.button("💾 Save AI settings", key="admin_deepseek_save", type="primary"):
+        if st.button(f"💾 {t('Save AI settings')}", key="admin_deepseek_save", type="primary"):
             user = st.session_state.get(SK.USERNAME, "")
             store.set(KEY_EXTRACTION_METHOD, chosen_method, updated_by=user)
             store.set(KEY_DEEPSEEK_MODEL,    new_model,      updated_by=user)
             if new_key:
                 store.set(KEY_DEEPSEEK_API_KEY, new_key, updated_by=user)
-            st.success("✅ AI extraction settings saved.")
+            st.success(t("✅ AI extraction settings saved."))
 
 
 def _test_deepseek(api_key: str, model: str) -> tuple[bool, str]:
@@ -193,8 +193,8 @@ _COLOR_AI_MODE_OPTIONS: dict[str, str] = {
 
 
 def _show_color_ai_enhance_settings(store) -> None:
-    st.markdown("#### 🎨 Colour Recognition — Local + AI Enhance")
-    st.caption(
+    st.markdown(f"#### 🎨 {t('Colour Recognition — Local + AI Enhance')}")
+    st.caption(t(
         "Controls how Sky East order-file colours (e.g. a two-tone cell like "
         "\"(dark blue)(white)\") are matched against 大货进度表 / the internal "
         "colour DB. **Local only** relies purely on regex detection and never "
@@ -203,32 +203,32 @@ def _show_color_ai_enhance_settings(store) -> None:
         "locally — it is never called for anything else (dates, quantities, "
         "other fields), to avoid spending API tokens unnecessarily. "
         "Uses the same DeepSeek API key/model configured above."
-    )
+    ))
 
     current_mode = store.get(KEY_COLOR_AI_ENHANCE, "local")
     chosen_mode  = st.radio(
-        "Colour recognition mode",
+        t("Colour recognition mode"),
         list(_COLOR_AI_MODE_OPTIONS.keys()),
         index=0 if current_mode == "local" else 1,
-        format_func=lambda k: _COLOR_AI_MODE_OPTIONS[k],
+        format_func=lambda k: t(_COLOR_AI_MODE_OPTIONS[k]),
         key="admin_color_ai_enhance_mode",
     )
 
     has_key = bool(store.get(KEY_DEEPSEEK_API_KEY, ""))
     if chosen_mode == "local_ai_enhance" and not has_key:
         st.warning(
-            "⚠️ No DeepSeek API key configured above — AI Enhance will have "
-            "no effect until one is saved.",
+            t("⚠️ No DeepSeek API key configured above — AI Enhance will have "
+              "no effect until one is saved."),
             icon="⚠️",
         )
 
-    if st.button("💾 Save colour recognition mode", key="admin_color_ai_enhance_save",
+    if st.button(f"💾 {t('Save colour recognition mode')}", key="admin_color_ai_enhance_save",
                  type="primary"):
         store.set(
             KEY_COLOR_AI_ENHANCE, chosen_mode,
             updated_by=st.session_state.get(SK.USERNAME, ""),
         )
-        st.success(f"✅ Colour recognition mode saved: **{_COLOR_AI_MODE_OPTIONS[chosen_mode]}**")
+        st.success(f"✅ {t('Colour recognition mode saved:')} **{t(_COLOR_AI_MODE_OPTIONS[chosen_mode])}**")
 
 
 # ---------------------------------------------------------------------------
@@ -242,40 +242,40 @@ def _show_fabric_db_settings() -> None:
     from po_extractor.store.fabric_master_store import FabricMasterStore
     from fabric_master_client import FabricMasterClient
 
-    st.markdown("#### 🗄 Fabric Master Database")
-    st.caption(
+    st.markdown(f"#### 🗄 {t('Fabric Master Database')}")
+    st.caption(t(
         "The fabric master lives in its **own dedicated SQLite file** so that "
         "other applications can share the same data.  Point any app's "
         "`FabricMasterStore` (or copy `fabric_master_client.py`) at the path "
         "below to get read access."
-    )
+    ))
 
     current_path = get_fabric_db_path()
 
     # ── Current status ───────────────────────────────────────────────────────
     ok, status_msg = FabricMasterClient.test_connection(current_path)
     if ok:
-        st.success(f"✅ Connected — {status_msg}  \n`{current_path}`")
+        st.success(f"✅ {t('Connected —')} {status_msg}  \n`{current_path}`")
     else:
-        st.warning(f"⚠️ Cannot connect: {status_msg}  \n`{current_path}`")
+        st.warning(f"⚠️ {t('Cannot connect:')} {status_msg}  \n`{current_path}`")
 
     env_override = os.environ.get("FABRIC_DB_PATH", "").strip()
     if env_override:
         st.info(
-            f"ℹ️ Path is overridden by the `FABRIC_DB_PATH` environment variable.  "
-            f"Clear the env var to use the path configured below.",
+            t("ℹ️ Path is overridden by the `FABRIC_DB_PATH` environment variable.  "
+              "Clear the env var to use the path configured below."),
             icon="🔒",
         )
 
     # ── Path editor ──────────────────────────────────────────────────────────
-    with st.expander("✏️ Change fabric master DB path", expanded=not ok):
-        st.caption(
+    with st.expander(f"✏️ {t('Change fabric master DB path')}", expanded=not ok):
+        st.caption(t(
             "Enter an absolute path to the `fabric_master.db` file.  "
             "All apps sharing this file must have read access to the same location "
             "(e.g. a mapped network drive or shared folder)."
-        )
+        ))
         new_path = st.text_input(
-            "Fabric master DB path",
+            t("Fabric master DB path"),
             value=current_path,
             key="admin_fabric_db_path_input",
             placeholder=r"C:\Shared\fabric_master.db",
@@ -284,7 +284,7 @@ def _show_fabric_db_settings() -> None:
 
         col_test, col_save = st.columns([1, 1])
         with col_test:
-            if st.button("🔌 Test connection", key="admin_fabric_test_btn"):
+            if st.button(f"🔌 {t('Test connection')}", key="admin_fabric_test_btn"):
                 test_ok, test_msg = FabricMasterClient.test_connection(new_path)
                 if test_ok:
                     st.success(f"✅ {test_msg}")
@@ -293,47 +293,47 @@ def _show_fabric_db_settings() -> None:
 
         with col_save:
             if st.button(
-                "💾 Save path",
+                f"💾 {t('Save path')}",
                 key="admin_fabric_save_path_btn",
                 type="primary",
                 disabled=bool(env_override),
             ):
                 save_fabric_db_path(new_path.strip())
-                st.success("✅ Path saved to `fabric_config.json`.  Reload the page to apply.")
+                st.success(t("✅ Path saved to `fabric_config.json`.  Reload the page to apply."))
                 st.rerun()
 
     # ── Migration ────────────────────────────────────────────────────────────
-    with st.expander("📦 Migrate existing fabric data from main app DB"):
-        st.caption(
+    with st.expander(f"📦 {t('Migrate existing fabric data from main app DB')}"):
+        st.caption(t(
             "If you previously used this app before the centralised fabric DB "
             "was introduced, your fabric data is still in `po_history.db`.  "
             "Click below to copy it into the dedicated `fabric_master.db`."
-        )
+        ))
 
         src_count = _count_fabric_in_db(DB_PATH)
         dst_count = FabricMasterStore(current_path).count() if ok else 0
 
         col1, col2 = st.columns(2)
-        col1.metric("Records in po_history.db", src_count)
-        col2.metric("Records in fabric_master.db", dst_count)
+        col1.metric(t("Records in po_history.db"), src_count)
+        col2.metric(t("Records in fabric_master.db"), dst_count)
 
         if src_count == 0:
-            st.info("No fabric records found in `po_history.db` — nothing to migrate.")
+            st.info(t("No fabric records found in `po_history.db` — nothing to migrate."))
         else:
             if st.button(
-                f"📦 Migrate {src_count} records → fabric_master.db",
+                f"📦 {t('Migrate')} {src_count} {t('records → fabric_master.db')}",
                 key="admin_fabric_migrate_btn",
                 type="primary",
             ):
-                with st.spinner("Migrating…"):
+                with st.spinner(f"{t('Migrating…')}"):
                     result = FabricMasterStore.migrate_from_db(DB_PATH, current_path)
                 st.success(
-                    f"✅ Migration complete.  {result['message']}  \n"
-                    f"fabric_master.db now has **{FabricMasterStore(current_path).count()}** records."
+                    f"✅ {t('Migration complete.')}  {result['message']}  \n"
+                    + f"{t('fabric_master.db now has')} **{FabricMasterStore(current_path).count()}** {t('records.')}"
                 )
 
     # ── Integration guide ────────────────────────────────────────────────────
-    with st.expander("📋 How other apps connect to this database"):
+    with st.expander(f"📋 {t('How other apps connect to this database')}"):
         st.markdown(
             "**Option A — Copy `fabric_master_client.py` (no dependencies)**\n\n"
             "Drop `fabric_master_client.py` (found in the PO_Automation_GIII "

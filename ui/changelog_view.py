@@ -10,6 +10,97 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.27.2",
+        "date": "2026-07-04",
+        "entries": [
+            {"type": "docs", "text": "**Sky East User Guide: added a \"Buy Plan Only Accounts\" section** (all three versions — bilingual, English, Chinese) covering the restricted role's actual screen: one \"Sky East\" tab, only New Contracts + 📦 Generate / Export sub-tabs, and Generate / Export going straight to Buy Plan + 核料 with no mode picker. A callout near the top now points readers to the right section for their account type"},
+            {"type": "fix", "text": "**Sky East User Guide's own Step 4 was out of date** — it claimed the New Contracts \"Process\" button generates the Buy Plan/核料 workbooks directly. That moved to a separate 📦 Generate / Export sub-tab a few releases ago; the button is now named **Process Sky East Files** and only saves the contract. Corrected the button name and the description in all three guide versions and pointed readers to Generate / Export for the actual output step"},
+        ],
+    },
+    {
+        "version": "2.27.1",
+        "date": "2026-07-04",
+        "entries": [
+            {"type": "docs", "text": "Added `docs/DEPLOYMENT.md` — a runbook for installing the app as a persistent Windows Service (NSSM: auto-start on boot, auto-restart on crash, rotated logs) instead of running it manually in a terminal. Covers getting the code onto a server, the Python/venv setup, first-run licensing and user setup, the firewall rule, a post-deploy verification checklist, and the update/rollback procedure"},
+        ],
+    },
+    {
+        "version": "2.27.0",
+        "date": "2026-07-04",
+        "entries": [
+            {"type": "feat", "text": "**Tracking → Add New can now track Sky East orders, not just GIII.** The untracked-PO picker only ever queried the GIII pipeline's tables, so a Sky East order could never be offered no matter which company you had access to. It now also pulls from Sky East's item table, and a new **Client** filter appears whenever more than one client has untracked orders, so a mixed list doesn't get unwieldy"},
+            {"type": "fix", "text": "The 🏭 Tracking sub-tab labels (Dashboard/Overview/Edit Record/Add New/Plan) didn't translate under the Chinese UI — they're rendered via a radio's `format_func`, which the i18n coverage audit couldn't see since the string isn't a literal argument to `t()`. Added their translations explicitly"},
+        ],
+    },
+    {
+        "version": "2.26.5",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "feat", "text": "**Every menu, tab, and admin screen now has full Chinese coverage.** Reference Data, GIII, Sky East, Summary, Tracking, Colors, Fabric DB, and every Admin sub-tab (Users, Companies, Templates, Pipeline Layouts, Size Order, Email, Translations, Settings) — plus the top navigation bar, sidebar, and login form — are wrapped for translation; **793 new Chinese translations** were added so switching to 中文 (🌐) actually shows Chinese everywhere instead of leaving most of the app in English. File names stay English as before"},
+            {"type": "fix", "text": "**Tracking → Add New crashed with `UnboundLocalError: cannot access local variable 't'`.** A `for t in targets:` loop inside `_render_add_tab` shadowed the module's `t()` translator for the whole function — Python treats a name assigned anywhere in a function as local throughout, so the `t(\"Overall Notes\")` call earlier in the same function broke every time the tab was opened. Renamed the loop variable and swept the entire codebase for the same hazard (none remain)"},
+        ],
+    },
+    {
+        "version": "2.26.4",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "refactor", "text": "**Chinese-UI coverage sweep.** Tab-bar menus and section headers across the GIII, Sky East, Order Summary, GIII Generate/Export, and admin Translations views are now t()-wrapped, so their tab labels, subheaders, captions, buttons, and status messages translate under the Chinese UI. Radio/selectbox option values compared or stored in code stay English; only their labels are wrapped"},
+        ],
+    },
+    {
+        "version": "2.26.3",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "fix", "text": "**Parser accuracy batch.** Whole-number discounts are no longer 10× smaller (\"1.5%\" became \"0.1.5%\"); multi-word countries/ports survive (\"Sri Lanka\", \"Ho Chi Minh\" were truncated to their first word); 13-digit EAN barcodes and quantities with thousands separators no longer silently drop their size rows; the AI (DeepSeek) parser asks for and stores the real per-row colour instead of filling every row with the division code; the EAN lookup warns loudly when it falls back to fixed column positions"},
+            {"type": "fix", "text": "**Price masking is trustworthy again.** Masked `.xlsm` files keep their macros (previously re-packaged as plain xlsx under the .xlsm name — Excel refused to open them), legacy `.xls` fails with a clear message instead of vanishing, and every masking failure now shows in the processing log / on screen instead of a console print nobody sees — a file can no longer silently go missing from the masked zip"},
+            {"type": "fix", "text": "**Colors tab: deleting the right rows, keeping manual shades.** The 🗑 delete checkbox now pairs each row with its database id (removing a row inline used to shift every row down and delete the wrong record), and re-importing a 大货进度表 no longer blanks a manually set light/dark shade the keyword classifier can't derive"},
+            {"type": "fix", "text": "**Extraction tabs can't serve stale results.** All four fax/portal sections (MSG · KL · TK EU · InforNexus) now tie their results to the uploaded file set — swapping files without re-extracting drops the old table and its download instead of silently offering the previous batch. FOB values that aren't clean numbers degrade gracefully in the summary sheets instead of crashing the export, and non-price FOBs no longer display as \"$NOT CONFIRMED\"/\"$?\""},
+            {"type": "fix", "text": "Concurrent-use hardening: simultaneous saves of the same PO serialize (no more lost archive rows / duplicate history), first-run schema migrations tolerate two sessions racing (`duplicate column` crash), buy-plan sheets whose styles collide at 31 chars no longer swap photos, cross-check totals find the Total header on any row (configurable templates read 0 before), production-plan styles containing `/` export instead of crashing, and blank-colour size rows are counted instead of dropped"},
+            {"type": "security", "text": "The admin Email panel no longer round-trips the stored SMTP password into the browser on every render (leave blank to keep it), sign-in timing no longer reveals whether a username exists, and the sole remaining admin can no longer demote themselves into a lockout"},
+            {"type": "perf", "text": "The styled PO-Tracker workbook is cached instead of being rebuilt on every filter click (Summary tab and GIII Generate/Export)"},
+            {"type": "refactor", "text": "**Convention sweep:** GIII extraction sections + Tracking/Summary views now use SK session-key constants (state resets properly on sign-out), user-facing text is t()/_th()-wrapped for the Chinese UI, and every DB-driven multiselect uses the seed-once + stale-value-guard idiom (`guard_multiselect_state` in ui/shared.py) instead of the banned key=+default= pattern"},
+        ],
+    },
+    {
+        "version": "2.26.2",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "fix", "text": "**Fabric DB auto-migration actually runs now.** A fresh deployment silently got an *empty* fabric master (blank 综合key/composition in every buy plan): the store's own schema migrations stamped the same `user_version` values the factory used as its \"legacy copy done\" marker, so the copy from `po_history.db` was unreachable. The marker now uses a dedicated bit; locked by a new regression test"},
+            {"type": "fix", "text": "**Photo injection can no longer delete a finished buy plan.** When no sheet matched the photo map (e.g. every photo style contained `&` — sheet titles were compared XML-escaped), the injector removed the export before discovering there was nothing to move. Titles are now unescaped and the workbook is only replaced when the patched copy exists"},
+            {"type": "fix", "text": "**核料 colour column no longer misdetected.** An always-true guard (string-vs-int comparison) overrode a correctly detected 颜色/Color header with the leftmost other column whenever the size-header row contained any extra label (e.g. 合计)"},
+            {"type": "fix", "text": "**Sky East contracts missing an optional header row (e.g. Trade Term) no longer fail entirely** with a cryptic `'trade_term'` error — absent fields default to blank and the file's items import normally (parse confidence drops as before)"},
+            {"type": "fix", "text": "**Sky East style photos are read from the actual contract sheet.** Image positions were always taken from sheet 1 even when the contract was found on a later sheet, attaching wrong or missing photos"},
+            {"type": "fix", "text": "**KL/MSG extraction: HTS codes with repeated digits are no longer corrupted** (6110.20.2079 became 610.20.2079). De-doubling is now applied only when the match is genuinely fax-doubled (doubled dots)"},
+        ],
+    },
+    {
+        "version": "2.26.1",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "security", "text": "**A non-admin with no assigned companies now sees nothing instead of everything.** The Summary tab, GIII PO History, GIII Generate/Export, and the GIII exception badge passed an empty company list through to an *unfiltered* query (the stores treat an empty list as \"no filter\"), so a freshly created user saw every company's POs including unit/extended costs. All four now show the same \"No companies assigned\" notice the Tracking tab already used"},
+            {"type": "security", "text": "**Failed sign-ins are now rate-limited.** 5 wrong passwords for a username lock it out for 60 s with exponential backoff (cap 15 min), plus a global brake against username spraying — previously unlimited guesses were possible against the network-reachable login"},
+            {"type": "fix", "text": "**Tracking → Edit Record: Delete no longer throws a StreamlitAPIException.** Confirm Delete assigned to the record selectbox's own session key after the widget was rendered (forbidden by Streamlit) — the record *was* deleted, but the error screen replaced the success message. The selection now reconciles automatically and a proper \"Record deleted.\" confirmation shows after the rerun"},
+        ],
+    },
+    {
+        "version": "2.26.0",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "feat", "text": "**Tracking: lab-dip gates for bulk purchasing.** Trim Layout must now be confirmed before Trim Purchase, and Fabric Color (LD) before Fabric Purchase — both gates are ON by default (new *and* existing records) and editable per record in the dependency matrix. Trim Purchase and Fabric Purchase show a readiness badge in the Edit form (✅ Ready / ⏳ Waiting on …), and Group A stages are re-ordered so each confirmation stage sits directly above the purchase it gates"},
+            {"type": "perf", "text": "**Faster tab renders on SQLite-heavy screens.** `PRAGMA journal_mode=WAL` (a persisted DB property) now runs once per database file per process instead of on every connection (≈5× a bare connect); the Production Tracking store's schema check is likewise memoized per process, and the store instance is cached via `functools.cache` in `ui/stores.py` — reads still open fresh connections, so data freshness is unchanged"},
+            {"type": "refactor", "text": "The AS400 fax-copy parser helpers (`_undouble`, size-code regexes, line-item patterns) previously copy-pasted in the MSG, KL, and TK EU extractors now live once in `ui/giii/_shared.py`; header-field parsing runs each `grep` once instead of twice per field"},
+            {"type": "fix", "text": "**MSG extraction: FOB price is now read only from the FOB line** — previously the first doubled `$$` amount anywhere in the PO could be picked up (e.g. an MSRP), and the UNCONFIRMED check now takes priority. InforNexus PO-number fallback no longer uses a redundant `O` in its letter-to-zero substitution"},
+            {"type": "security", "text": "`auth/users.json` and `data/fabric_master.db` are no longer tracked by git (local files kept; both added to `.gitignore` along with the fabric DB's WAL/journal side-files and `data/extracted_images/`)"},
+        ],
+    },
+    {
+        "version": "2.25.0",
+        "date": "2026-07-03",
+        "entries": [
+            {"type": "feat", "text": "**Per-user tab restrictions.** Admin → Users now has an **Allowed tabs** picker (leave empty = all tabs, same convention as Allowed companies). A new **\"Sky East — Buy Plan only\"** option narrows a user's entire app down to Upload + Generate/Export, pinned to Buy Plan + 核料 mode — Contract History, Missing Fields, Item Data, Wash Labels, and every other top-level tab (GIII, Fabric DB, Reference Data, Colors, Summary, Tracking) stay hidden for that user"},
+        ],
+    },
+    {
         "version": "2.24.0",
         "date": "2026-07-02",
         "entries": [

@@ -15,6 +15,7 @@ import re
 import shutil
 import zipfile
 from pathlib import Path
+from xml.sax.saxutils import unescape as _xml_unescape
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +151,16 @@ def inject_style_photos(
 
     try:
         _patch(output_path, tmp, active, regions)
+        # _patch returns without creating tmp when nothing matched/was planned.
+        # Never touch the finished workbook unless the patched copy exists —
+        # unlinking first turned a no-op patch into deleting the export.
+        if not tmp.exists():
+            import warnings
+            warnings.warn(
+                "inject_style_photos: no sheet matched the photo map; "
+                "workbook left unmodified"
+            )
+            return
         if output_path.exists():
             output_path.unlink()
         shutil.move(str(tmp), str(output_path))
@@ -228,7 +239,11 @@ def _patch(
                 if not photo_bytes:
                     continue
                 rid        = f"rId{len(rels) + 1}"
-                media_path = f"xl/media/image{next_media}.png"
+                # Declare the real payload type — photo dirs accept .jpg too,
+                # and JPEG bytes declared as image/png make strict OOXML
+                # consumers (older WPS, validators) blank the picture part.
+                _ext = "jpeg" if photo_bytes[:3] == b"\xff\xd8\xff" else "png"
+                media_path = f"xl/media/image{next_media}.{_ext}"
                 next_media_val = next_media  # capture before increment
                 region = regions.get(side, DEFAULT_PHOTO_REGIONS.get(side, {}))
                 anchors.append(_anchor_xml(rid, pic_id, region))
@@ -343,7 +358,12 @@ def _parse_sheets(wb_xml: str) -> dict[str, int]:
     ):
         nm = re.search(r'\bname="([^"]*)"', m.group(0))
         if nm:
-            out[nm.group(1)] = i
+            # The raw attribute value is XML-escaped ("M&S" → "M&amp;S");
+            # unescape so titles compare equal to openpyxl's ws.title.
+            title = _xml_unescape(
+                nm.group(1), {"&quot;": '"', "&apos;": "'"}
+            )
+            out[title] = i
     return out
 
 
@@ -368,14 +388,21 @@ def _patch_ct(ct_xml: str, plan: dict) -> str:
         part = f"/xl/drawings/drawing{info['dnum']}.xml"
         if part not in ct_xml:
             additions.append(f'<Override PartName="{part}" ContentType="{_CT_DRW}"/>')
-    # PNG media (add Default extension once if not present)
+    # Media Default extensions (add once per format if not present)
     has_any_png = any(
         path.endswith(".png")
         for info in plan.values()
         for path in info["media"]
     )
+    has_any_jpeg = any(
+        path.endswith(".jpeg")
+        for info in plan.values()
+        for path in info["media"]
+    )
     if has_any_png and 'Extension="png"' not in ct_xml:
         additions.append(f'<Default Extension="png" ContentType="{_CT_PNG}"/>')
+    if has_any_jpeg and 'Extension="jpeg"' not in ct_xml:
+        additions.append('<Default Extension="jpeg" ContentType="image/jpeg"/>')
     if additions:
         ct_xml = ct_xml.replace("</Types>", "\n".join(additions) + "</Types>")
     return ct_xml

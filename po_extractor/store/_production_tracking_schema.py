@@ -35,10 +35,10 @@ from __future__ import annotations
 # ── Stage groupings ─────────────────────────────────────────────────────────
 
 STAGES_GROUP_A: list[str] = [
+    "trim_layout",            # must be confirmed before Trim Purchase
     "trim_purchase",
-    "trim_layout",
+    "fabric_color_ld",        # must be confirmed before Fabric Purchase
     "fabric_purchase",
-    "fabric_color_ld",
     "base_size_pattern",
     "full_sized_pattern",
     "sample_trim_purchase",
@@ -129,9 +129,9 @@ STATUS_EMOJI: dict[str, str] = {
 # in the compute helpers (see SUBSTITUTE_SAMPLE_PREREQS / BULK_MATERIAL_PREREQS).
 PREREQ_VALID: dict[str, list[str]] = {
     "trim_purchase":          ["pp_sample", "cutting"],
-    "trim_layout":            ["pp_sample", "cutting"],
+    "trim_layout":            ["trim_purchase", "pp_sample", "cutting"],   # LD gate
     "fabric_purchase":        ["pp_sample", "cutting"],
-    "fabric_color_ld":        ["pp_sample", "cutting"],
+    "fabric_color_ld":        ["fabric_purchase", "pp_sample", "cutting"], # LD gate
     "sample_trim_purchase":   ["pp_sample", "cutting"],
     "sample_fabric_purchase": ["pp_sample", "cutting"],
     "base_size_pattern":      ["pp_sample", "cutting"],
@@ -147,8 +147,10 @@ PREREQ_VALID: dict[str, list[str]] = {
     "pp_sample":              ["cutting"],
 }
 
-# Convenience constant listing the only two stages that have computed readiness.
-PREREQ_TARGETS: list[str] = ["pp_sample", "cutting"]
+# Stages that have computed readiness (displayed as badges in the Edit form).
+# trim_purchase and fabric_purchase are gated by their respective LD/layout
+# confirmation stages; pp_sample and cutting are gated by the broader matrix.
+PREREQ_TARGETS: list[str] = ["trim_purchase", "fabric_purchase", "pp_sample", "cutting"]
 
 # Substitute-material automatic gating (FR-03b).
 # When use_substitute_materials=1, these stages must be Done before any sample
@@ -168,9 +170,14 @@ BULK_MATERIAL_PREREQS: list[str] = [
 
 # Dep matrix flags that default to 1 (ON) on every new record.
 DEFAULT_DEP_ON: set[str] = {
+    # New: confirm before bulk procurement
+    "trim_layout_req_trim_purchase",
+    "fabric_color_ld_req_fabric_purchase",
+    # Pattern approvals gate samples and cutting
     "base_size_pattern_req_pp_sample",
     "base_size_pattern_req_cutting",
     "full_sized_pattern_req_cutting",
+    # System-enforced: PP Sample must precede Cutting
     "pp_sample_req_cutting",
 }
 
@@ -288,7 +295,7 @@ def _build_column_spec() -> list[tuple[str, str]]:
     for stage in STAGES_GROUP_D:
         cols.extend(_stage_columns(stage))
 
-    # 7. Dependency matrix (21 cols) — sorted into a stable order.
+    # 7. Dependency matrix (23 cols) — sorted into a stable order.
     for source, targets in PREREQ_VALID.items():
         for target in targets:
             col = dep_col(source, target)

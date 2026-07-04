@@ -5,6 +5,7 @@ import base64
 
 import streamlit as st
 
+from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import build_image_cache_for_ids, _th, _tr
 from ui.stores import get_sky_east_store
@@ -62,10 +63,10 @@ def _se_missing_show_autofill_controls(df_a, orig_a, af_mask, fl, pl) -> None:
     """Render the lookup-driven preview + 'Auto-fill & Save' button."""
     if not (fl or pl):
         return
-    hint = [n for n, v in [("Fabric lookup", fl), ("Progress lookup", pl)] if v]
+    hint = [n for n, v in [(t("Fabric lookup"), fl), (t("Progress lookup"), pl)] if v]
     auto_resolvable = int(af_mask.sum())
-    st.info(f"Reference files in session: **{', '.join(hint)}**. "
-            f"**{auto_resolvable}** item(s) can be auto-filled.")
+    st.info(f"{t('Reference files in session:')} **{', '.join(hint)}**. "
+            f"**{auto_resolvable}** {t('item(s) can be auto-filled.')}")
 
     if auto_resolvable:
         preview = df_a[af_mask][["pc_no", "style", "color_name",
@@ -79,7 +80,7 @@ def _se_missing_show_autofill_controls(df_a, orig_a, af_mask, fl, pl) -> None:
             "contract_no": "HHN Contract No. -> (new)",
         })), use_container_width=True, hide_index=True)
 
-    if st.button("Auto-fill & Save", type="primary", key="se_missing_autofill"):
+    if st.button(t("Auto-fill & Save"), type="primary", key="se_missing_autofill"):
         store = get_sky_east_store()
         saved = sum(
             store.update_item_fields(
@@ -90,16 +91,16 @@ def _se_missing_show_autofill_controls(df_a, orig_a, af_mask, fl, pl) -> None:
             )
             for _, row in df_a[af_mask].iterrows()
         )
-        st.success(f"Auto-filled and saved {saved} item(s).")
+        st.success(f"{t('Auto-filled and saved')} {saved} {t('item(s).')}")
         st.rerun()
 
 
 def _se_missing_edit_grid(df_a, pid_b64_a: dict) -> None:
     """Render the editable grid + 'Save Changes' button for Section A."""
-    st.caption("Edit cells below and click **Save Changes**:")
+    st.caption(t("Edit cells below and click **Save Changes**:"))
 
     pc_opts = ["All"] + sorted(df_a["pc_no"].unique().tolist())
-    sel_pc  = st.selectbox("Filter by PC No.", pc_opts, key="se_missing_pc_filter")
+    sel_pc  = st.selectbox(t("Filter by PC No."), pc_opts, key="se_missing_pc_filter")
     edit_df = df_a[df_a["pc_no"] == sel_pc].copy() if sel_pc != "All" else df_a.copy()
 
     disp_cols = [c for c in
@@ -140,7 +141,7 @@ def _se_missing_edit_grid(df_a, pid_b64_a: dict) -> None:
         },
         key="se_missing_editor",
     )
-    if st.button("Save Changes", key="se_missing_save"):
+    if st.button(t("Save Changes"), key="se_missing_save"):
         store = get_sky_east_store()
         rev = {v: k for k, v in drename.items()}
         # Drop the locale-aware Photo column (_th("Photo")), not the literal
@@ -154,21 +155,21 @@ def _se_missing_edit_grid(df_a, pid_b64_a: dict) -> None:
             )
             for _, r in ei.iterrows()
         )
-        (st.success(f"Updated {saved} item(s).") if saved
-         else st.warning("No rows updated."))
+        (st.success(f"{t('Updated')} {saved} {t('item(s).')}") if saved
+         else st.warning(t("No rows updated.")))
         if saved:
             st.rerun()
 
 
 def _se_missing_section_b(df_b, pid_b64_b: dict) -> None:
     """Render Section B: read-only items missing composition / cuttable width."""
-    st.markdown("#### Missing Composition or Cuttable Width")
-    st.caption(
+    st.markdown(f"#### {t('Missing Composition or Cuttable Width')}")
+    st.caption(t(
         "These items have a Fabric No. but the **Fabric DB** does not have their composition "
         "or cuttable width. Import the 面料统计表 in the **Fabric DB** tab to resolve them."
-    )
+    ))
     if df_b.empty:
-        st.success("No items missing composition or cuttable width.")
+        st.success(t("No items missing composition or cuttable width."))
         return
     show_b = [c for c in
               ["pc_no", "style", "color_name", "brand", "fabric_item_no",
@@ -195,10 +196,10 @@ def _se_missing_section_b(df_b, pid_b64_b: dict) -> None:
 
 def _show_se_missing_fields_section(missing_df) -> None:
     """Let users manually fill in missing fabric_item_no / contract_no; shows fabric DB gaps."""
-    st.subheader("Items with Missing Fields")
+    st.subheader(t("Items with Missing Fields"))
 
     if missing_df.empty:
-        st.success("All items are complete -- no missing fields.")
+        st.success(t("All items are complete -- no missing fields."))
         return
 
     for _col in ("composition_en", "cuttable_width_cm"):
@@ -220,7 +221,7 @@ def _show_se_missing_fields_section(missing_df) -> None:
     pid_b64_b = _se_missing_style_photo_map(df_b)
 
     if df_a.empty:
-        st.success("All items have Fabric No. and HHN Contract No.")
+        st.success(t("All items have Fabric No. and HHN Contract No."))
     else:
         from ui.sky_east._shared import get_progress_lookup
         fl = st.session_state.get(SK.SE_FABRIC_LOOKUP)

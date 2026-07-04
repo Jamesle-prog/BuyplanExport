@@ -7,6 +7,7 @@ import tempfile
 import pandas as pd
 import streamlit as st
 
+from ui.i18n import t
 from auth.companies import COMPANY_GIII, COMPANY_SKY_EAST
 from ui.shared import XLSX_MIME
 from ui.stores import get_color_translation_store
@@ -95,93 +96,94 @@ def show_color_translation_tab() -> None:
     count = store.count()
     clients = store.list_clients()
 
-    st.subheader("🎨 Color Name Translation")
-    st.caption(
+    st.subheader(f"🎨 {t('Color Name Translation')}")
+    st.caption(t(
         "Reference table mapping English color names to Chinese (中文颜色) by client and brand "
         "(e.g. GIII / Karl Lagerfeld, Sky East / Anna Field). "
         "Use the editor below to add/edit entries, or bulk-import from Excel."
-    )
-    st.caption(
+    ))
+    st.caption(t(
         "💡 This tab holds **colour translations** only. Fabric properties live in "
         "**🧵 Fabric DB**; style→fabric assignments and the 大货进度表 live in "
         "**📐 Reference Data**."
-    )
+    ))
 
     # Stats bar + quick-load button
     brands_all = store.list_brands()
     m1, m2, m3, m4 = st.columns([1, 1, 1, 2])
-    m1.metric("Total entries", f"{count:,}")
-    m2.metric("Clients", f"{len(clients):,}")
-    m3.metric("Brands", f"{len(brands_all):,}")
-    if m4.button("🔄 Load colors from PO database",
-                 help=f"Scans all {COMPANY_GIII} PO size rows and {COMPANY_SKY_EAST} items for distinct "
-                      "color names and adds any not already in this table. "
-                      "Existing Chinese translations are preserved.",
+    m1.metric(t("Total entries"), f"{count:,}")
+    m2.metric(t("Clients"), f"{len(clients):,}")
+    m3.metric(t("Brands"), f"{len(brands_all):,}")
+    if m4.button(f"🔄 {t('Load colors from PO database')}",
+                 help=f"{t('Scans all')} {COMPANY_GIII} {t('PO size rows and')} {COMPANY_SKY_EAST} "
+                      + t("items for distinct "
+                          "color names and adds any not already in this table. "
+                          "Existing Chinese translations are preserved."),
                  use_container_width=True,
                  key="ct_load_from_db"):
-        with st.spinner("Scanning PO database for color names…"):
+        with st.spinner(f"{t('Scanning PO database for color names…')}"):
             result = store.load_from_po_data(skip_existing=True)
         ins = result["inserted"]
         skp = result["skipped"]
         src = result["sources"]
         if ins:
             st.success(
-                f"Added **{ins}** new color(s) — "
-                f"{src['giii']} from {COMPANY_GIII} POs, {src['sky_east']} from {COMPANY_SKY_EAST}. "
-                f"{skp} already existed (preserved)."
+                f"{t('Added')} **{ins}** {t('new color(s) —')} "
+                f"{src['giii']} {t('from')} {COMPANY_GIII} {t('POs,')} {src['sky_east']} {t('from')} {COMPANY_SKY_EAST}. "
+                f"{skp} {t('already existed (preserved).')}"
             )
             st.rerun()
         else:
-            st.info(f"No new colors found — all {skp} color(s) were already in the table.")
+            st.info(f"{t('No new colors found — all')} {skp} {t('color(s) were already in the table.')}")
 
     # ── Import from a 大货进度表 progress-tracker workbook ───────────────────
-    with st.expander("📥 Import from progress tracker (大货进度表)", expanded=False):
-        st.caption(
+    with st.expander(f"📥 {t('Import from progress tracker (大货进度表)')}", expanded=False):
+        st.caption(t(
             "Reads the **颜色 / 主标颜色 / 中文颜色** columns (and **BRAND** "
             "when present) from a 大货进度表 workbook and upserts every "
             "unique combination into this table.  English colour names are "
             "case-insensitive — \"NAVY\", \"navy\" and \"Navy\" all collapse "
             "into the same row stored as \"Navy\"."
-        )
+        ))
         prog_file = st.file_uploader(
-            "Upload 大货进度表 workbook (.xlsx)",
+            t("Upload 大货进度表 workbook (.xlsx)"),
             type=["xlsx"],
             key="ct_progress_ul",
         )
         prog_client = st.selectbox(
-            "Assign rows to client",
+            t("Assign rows to client"),
             [COMPANY_SKY_EAST, COMPANY_GIII],
             index=0,
             key="ct_progress_client",
-            help="Which company should the imported rows be filed under?",
+            help=t("Which company should the imported rows be filed under?"),
         )
-        if prog_file and st.button("▶ Import progress tracker",
+        if prog_file and st.button(f"▶ {t('Import progress tracker')}",
                                     key="ct_progress_run", use_container_width=True):
             try:
                 tmp = tempfile.mktemp(suffix=".xlsx")
                 with open(tmp, "wb") as fh:
                     fh.write(prog_file.read())
-                with st.spinner(f"Reading {prog_file.name}…"):
+                with st.spinner(f"{t('Reading')} {prog_file.name}…"):
                     result = store.import_from_progress_xlsx(tmp, client=prog_client)
                 st.success(
-                    f"Scanned **{result['sheets']}** sheet(s): "
-                    f"**{result['inserted']}** inserted · "
-                    f"**{result['updated']}** updated · "
-                    f"**{result['skipped']}** skipped (blank colour)"
+                    f"{t('Scanned')} **{result['sheets']}** {t('sheet(s):')} "
+                    f"**{result['inserted']}** {t('inserted')} · "
+                    f"**{result['updated']}** {t('updated')} · "
+                    f"**{result['skipped']}** {t('skipped (blank colour)')}"
                 )
                 st.rerun()
             except Exception as exc:
-                st.error(f"Import failed: {exc}")
+                st.error(f"{t('Import failed:')} {exc}")
 
     st.divider()
 
     # Import / Export
-    with st.expander("📤 Import / Export", expanded=(count == 0)):
+    with st.expander(f"📤 {t('Import / Export')}", expanded=(count == 0)):
         imp_col, exp_col, tpl_col = st.columns(3)
 
         # Template download
         tpl_col.download_button(
-            "📋 Download template (.xlsx)",
+            f"📋 {t('Download template (.xlsx)')}",
             data=_ct_excel_template(),
             file_name="color_translation_template.xlsx",
             mime=XLSX_MIME,
@@ -198,7 +200,7 @@ def show_color_translation_tab() -> None:
             with pd.ExcelWriter(xl_buf, engine="openpyxl") as w:
                 df_exp.to_excel(w, sheet_name="Color Translations", index=False)
             exp_col.download_button(
-                "⬇ Export all (.xlsx)",
+                f"⬇ {t('Export all (.xlsx)')}",
                 data=xl_buf.getvalue(),
                 file_name="color_translations.xlsx",
                 mime=XLSX_MIME,
@@ -209,22 +211,23 @@ def show_color_translation_tab() -> None:
         # Upload
         with imp_col:
             up_file = st.file_uploader(
-                "Upload Excel (.xlsx)",
+                t("Upload Excel (.xlsx)"),
                 type=["xlsx"],
                 key="ct_ul",
-                help="Must have columns: client, en_color, cn_color (optional: color_code, notes)",
+                help=t("Must have columns: client, en_color, cn_color (optional: color_code, notes)"),
             )
         if up_file is not None:
             replace_opt = st.selectbox(
-                "On conflict:",
+                t("On conflict:"),
                 ["Merge (upsert existing)", "Replace all data"],
+                format_func=lambda o: t(o),
                 key="ct_ul_mode",
             )
             client_filter = ""
             if replace_opt == "Replace all data":
-                st.warning("⚠️ This will delete ALL existing color translations before importing.")
+                st.warning(t("⚠️ This will delete ALL existing color translations before importing."))
                 client_filter = "__ALL__"
-            if st.button("▶ Run import", key="ct_ul_run"):
+            if st.button(f"▶ {t('Run import')}", key="ct_ul_run"):
                 try:
                     tmp = tempfile.mktemp(suffix=".xlsx")
                     with open(tmp, "wb") as fh:
@@ -234,33 +237,35 @@ def show_color_translation_tab() -> None:
                             conn.execute("DELETE FROM color_translations")
                     result = store.import_from_xlsx(tmp)
                     st.success(
-                        f"✅ Imported: **{result['inserted']}** new · "
-                        f"**{result['updated']}** updated · "
-                        f"**{result['skipped']}** skipped"
+                        f"✅ {t('Imported:')} **{result['inserted']}** {t('new')} · "
+                        f"**{result['updated']}** {t('updated')} · "
+                        f"**{result['skipped']}** {t('skipped')}"
                     )
                     st.rerun()
                 except Exception as exc:
-                    st.error(f"Import failed: {exc}")
+                    st.error(f"{t('Import failed:')} {exc}")
 
     st.divider()
 
     # View / Edit
     fc1, fc2, _, del_c = st.columns([2, 2, 2, 1])
     client_opts = ["All clients"] + clients
-    sel_client = fc1.selectbox("Filter by client", client_opts, key="ct_client_filter")
+    sel_client = fc1.selectbox(t("Filter by client"), client_opts,
+                               format_func=lambda o: t(o) if o == "All clients" else o,
+                               key="ct_client_filter")
     active_client = "" if sel_client == "All clients" else sel_client
 
     # Cascading brand filter
     brand_opts_raw = store.list_brands(active_client) if active_client else store.list_brands()
     brand_opts = ["All brands"] + brand_opts_raw
-    sel_brand = fc2.selectbox("Filter by brand", brand_opts, key="ct_brand_filter")
+    sel_brand = fc2.selectbox(t("Filter by brand"), brand_opts,
+                              format_func=lambda o: t(o) if o == "All brands" else o,
+                              key="ct_brand_filter")
     active_brand = "" if sel_brand == "All brands" else sel_brand
 
     df_view = store.to_dataframe(active_client, active_brand)
     if df_view.empty:
-        display_df = pd.DataFrame(columns=_CT_DISPLAY_COLS)
-        # Track an empty id-array so the save handler still works
-        _ids_in_view: list = []
+        display_df = pd.DataFrame(columns=["_id"] + _CT_DISPLAY_COLS)
     else:
         # Add the Delete checkbox column (default False) and reorder to the
         # canonical display layout.
@@ -269,11 +274,14 @@ def show_color_translation_tab() -> None:
         if "Color Code" in df_view.columns and "中文颜色代码" not in df_view.columns:
             df_view = df_view.rename(columns={"Color Code": "中文颜色代码"})
         df_view["Delete"] = False
-        display_df = df_view[_CT_DISPLAY_COLS]
-        _ids_in_view = df_view["_id"].tolist() if "_id" in df_view.columns else []
+        # "_id" rides along hidden (column_config None) so each edited row
+        # stays paired with its DB id.  The old positional pairing
+        # (_ids_in_view[:n]) deleted the WRONG row as soon as the user
+        # removed a row inline in this dynamic editor.
+        display_df = df_view[["_id"] + _CT_DISPLAY_COLS]
 
     if df_view.empty:
-        st.info("No color translations yet. Use the import section above or add rows in the editor below.")
+        st.info(t("No color translations yet. Use the import section above or add rows in the editor below."))
 
     # Editable table
     edited = st.data_editor(
@@ -282,19 +290,13 @@ def show_color_translation_tab() -> None:
         width="stretch",
         hide_index=True,
         key="ct_editor",
-        column_config=_CT_COL_CFG,
+        column_config={**_CT_COL_CFG, "_id": None},
         height=420,
     )
 
-    # Pair edited rows back with their DB ids by position (rows added in
-    # the editor have no id and are inserted as new on save).
-    def _ids_for_edited() -> list:
-        n = min(len(edited), len(_ids_in_view))
-        return list(_ids_in_view[:n])
-
     save_c, del_sel_c, del_filt_c, _ = st.columns([1, 1.2, 1.2, 3])
 
-    if save_c.button("💾 Save changes", key="ct_save", use_container_width=True):
+    if save_c.button(f"💾 {t('Save changes')}", key="ct_save", use_container_width=True):
         if active_client:
             edited["Client"] = edited["Client"].replace("", active_client).fillna(active_client)
         if active_brand and "Brand" in edited.columns:
@@ -303,83 +305,90 @@ def show_color_translation_tab() -> None:
         # mean to remove them, not save them.
         save_df = edited[edited.get("Delete", False) != True] \
                   if "Delete" in edited.columns else edited
+        # The hidden _id pairing column is not part of the store schema.
+        if "_id" in save_df.columns:
+            save_df = save_df.drop(columns=["_id"])
         saved = store.upsert_from_df(save_df)
-        st.success(f"Saved {saved} row(s).")
+        st.success(f"{t('Saved')} {saved} {t('row(s).')}")
         st.rerun()
 
     # ── Delete selected (checkbox-driven) ──────────────────────────────────
+    # Ids come from the row's own hidden _id — immune to inline row
+    # removal shifting positions.  Rows added in the editor have no _id
+    # (NaN) and are skipped: they're not in the DB yet.
     selected_ids = []
-    if "Delete" in edited.columns:
-        ids_paired = _ids_for_edited()
-        for i in range(min(len(edited), len(ids_paired))):
-            if bool(edited.iloc[i].get("Delete")):
-                selected_ids.append(int(ids_paired[i]))
+    if "Delete" in edited.columns and "_id" in edited.columns:
+        for _, _row in edited[edited["Delete"] == True].iterrows():
+            if pd.notna(_row["_id"]):
+                selected_ids.append(int(_row["_id"]))
 
     if del_sel_c.button(
-        f"🗑 Delete selected ({len(selected_ids)})",
+        f"🗑 {t('Delete selected')} ({len(selected_ids)})",
         key="ct_del_selected",
         use_container_width=True,
         disabled=(len(selected_ids) == 0),
-        help="Delete the rows whose 🗑 checkbox is ticked.",
+        help=t("Delete the rows whose 🗑 checkbox is ticked."),
     ):
         n = store.delete_ids(selected_ids)
-        st.success(f"Deleted {n} selected row(s).")
+        st.success(f"{t('Deleted')} {n} {t('selected row(s).')}")
         st.rerun()
 
     # ── Delete filtered (legacy bulk-by-client/brand) ──────────────────────
     del_ctx = " / ".join(filter(None, [active_client, active_brand])) or None
-    del_help = f"Delete all entries for: {del_ctx}" if del_ctx else "Select a client or brand to delete"
+    del_help = f"{t('Delete all entries for:')} {del_ctx}" if del_ctx else t("Select a client or brand to delete")
     if del_filt_c.button(
-        "🗑 Delete filtered",
+        f"🗑 {t('Delete filtered')}",
         key="ct_del_client",
         use_container_width=True,
         disabled=(not del_ctx),
         help=del_help,
     ):
         deleted = store.delete_by_client_brand(active_client, active_brand)
-        st.success(f"Deleted {deleted} entries for '{del_ctx}'.")
+        st.success(f"{t('Deleted')} {deleted} {t('entries for')} '{del_ctx}'.")
         st.rerun()
 
     if count > 0:
         st.caption(
-            f"Showing **{len(display_df):,}** of **{count:,}** entries. "
-            "Filter by client and/or brand. Edit cells directly, then click Save."
+            f"{t('Showing')} **{len(display_df):,}** {t('of')} **{count:,}** {t('entries.')} "
+            + t("Filter by client and/or brand. Edit cells directly, then click Save.")
         )
 
     # ── Audit log — every change made to the table is recorded here ────────
     st.divider()
     audit_count = store.audit_log_count()
     with st.expander(
-        f"📜 Change history ({audit_count:,} entries)",
+        f"📜 {t('Change history')} ({audit_count:,} {t('entries')})",
         expanded=False,
     ):
-        st.caption(
+        st.caption(t(
             "Every insert / update / delete on the colour-translation table is "
             "recorded here.  Filter by client / brand / English colour, then "
             "the most recent changes (newest first) are shown.  Use this to "
             "see who changed what and when."
-        )
+        ))
 
         f1, f2, f3, f4 = st.columns([2, 2, 2, 1])
         a_client = f1.selectbox(
-            "Client", ["All clients"] + clients,
+            t("Client"), ["All clients"] + clients,
+            format_func=lambda o: t(o) if o == "All clients" else o,
             key="ct_audit_client",
         )
         a_client_v = "" if a_client == "All clients" else a_client
         a_brand_opts = (store.list_brands(a_client_v) if a_client_v else
                         store.list_brands())
         a_brand = f2.selectbox(
-            "Brand", ["All brands"] + a_brand_opts,
+            t("Brand"), ["All brands"] + a_brand_opts,
+            format_func=lambda o: t(o) if o == "All brands" else o,
             key="ct_audit_brand",
         )
         a_brand_v = "" if a_brand == "All brands" else a_brand
         a_en = f3.text_input(
-            "English colour",
+            t("English colour"),
             placeholder="(any)", key="ct_audit_en",
-            help="Case-insensitive — \"navy\", \"NAVY\" both match.",
+            help=t("Case-insensitive — \"navy\", \"NAVY\" both match."),
         )
         a_limit = f4.number_input(
-            "Max rows", min_value=10, max_value=2000, value=200, step=10,
+            t("Max rows"), min_value=10, max_value=2000, value=200, step=10,
             key="ct_audit_limit",
         )
 
@@ -407,16 +416,16 @@ def show_color_translation_tab() -> None:
                 hide_index=True,
                 height=360,
                 column_config={
-                    "When":   st.column_config.TextColumn("When (UTC)", width="small"),
-                    "Who":    st.column_config.TextColumn("Who",        width="small"),
-                    "Action": st.column_config.TextColumn("Action",     width="small"),
-                    "Field":  st.column_config.TextColumn("Field",      width="small"),
-                    "Old":    st.column_config.TextColumn("Old value",  width="medium"),
-                    "New":    st.column_config.TextColumn("New value",  width="medium"),
+                    "When":   st.column_config.TextColumn(t("When (UTC)"), width="small"),
+                    "Who":    st.column_config.TextColumn(t("Who"),        width="small"),
+                    "Action": st.column_config.TextColumn(t("Action"),     width="small"),
+                    "Field":  st.column_config.TextColumn(t("Field"),      width="small"),
+                    "Old":    st.column_config.TextColumn(t("Old value"),  width="medium"),
+                    "New":    st.column_config.TextColumn(t("New value"),  width="medium"),
                 },
             )
         else:
-            st.info("No audit entries match the current filter.")
+            st.info(t("No audit entries match the current filter."))
 
         if audit_count > 0:
             # Two-step confirm: while armed, the warning stays visible across
@@ -426,28 +435,28 @@ def show_color_translation_tab() -> None:
             _armed = st.session_state.get("_ct_audit_confirm", False)
             if _armed:
                 st.warning(
-                    f"⚠️ This will erase the entire change history "
-                    f"({audit_count:,} entries). Click **Confirm clear** to "
-                    "proceed, or Cancel to keep it."
+                    f"⚠️ {t('This will erase the entire change history')} "
+                    f"({audit_count:,} {t('entries')}). "
+                    + t("Click **Confirm clear** to proceed, or Cancel to keep it.")
                 )
             cclr1, cclr2, _ = st.columns([1.6, 1, 3.4])
-            _clr_label = (f"🧹 Confirm clear ({audit_count:,} entries)"
-                          if _armed else "🧹 Clear audit history")
+            _clr_label = (f"🧹 {t('Confirm clear')} ({audit_count:,} {t('entries')})"
+                          if _armed else f"🧹 {t('Clear audit history')}")
             if cclr1.button(
                 _clr_label,
                 key="ct_audit_clear",
                 type="primary" if _armed else "secondary",
-                help="Permanently delete all audit-log entries.  "
-                     "Does NOT touch the colour-translation rows themselves.",
+                help=t("Permanently delete all audit-log entries.  "
+                       "Does NOT touch the colour-translation rows themselves."),
             ):
                 if _armed:
                     n = store.clear_audit_log()
                     st.session_state.pop("_ct_audit_confirm", None)
-                    st.success(f"Cleared {n} audit entries.")
+                    st.success(f"{t('Cleared')} {n} {t('audit entries.')}")
                     st.rerun()
                 else:
                     st.session_state["_ct_audit_confirm"] = True
                     st.rerun()
-            if _armed and cclr2.button("Cancel", key="ct_audit_clear_cancel"):
+            if _armed and cclr2.button(t("Cancel"), key="ct_audit_clear_cancel"):
                 st.session_state.pop("_ct_audit_confirm", None)
                 st.rerun()

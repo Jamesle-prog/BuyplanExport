@@ -20,21 +20,14 @@ import tempfile
 
 import streamlit as st
 
-from ui.giii._shared import _XLSX_MIME
-
-# ---------------------------------------------------------------------------
-# Parser helpers
-# ---------------------------------------------------------------------------
-
-_SIZE_CODES = r'(?:XXS|XS|XXL|XL|[123]XL|[123]X|OSFM|OSM|OSF|OS|S|M|L)'
-_FIRST_RE   = re.compile(
-    rf'^(\d{{3}})\s+(\S+)\s+(.+?)\s+({_SIZE_CODES})\s+(\d+)\s+(\d{{12,13}})\s+([\d.]+)'
+from ui.giii._shared import (
+    _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature,
 )
-_CONT_RE    = re.compile(rf'^({_SIZE_CODES})\s+(\d+)\s+(\d{{12,13}})')
+from ui.i18n import t
+from ui.session_keys import SK
+from ui.shared import _th
 
-
-def _undouble(s: str) -> str:
-    return re.sub(r'(.)\1', r'\1', s)
+# (parser helpers are imported from _shared)
 
 
 def _parse_tk_eu_pdf(pdf_bytes: bytes) -> dict:
@@ -53,10 +46,14 @@ def _parse_tk_eu_pdf(pdf_bytes: bytes) -> dict:
         return None
 
     # ── Standard header fields ────────────────────────────────────────────────
-    po_num  = _undouble(grep(r'PO NUMBER\s+(\S+)').group(1))   if grep(r'PO NUMBER\s+(\S+)')   else '?'
-    style   = _undouble(grep(r'S T Y L E #\s+(\S+)').group(1)) if grep(r'S T Y L E #\s+(\S+)') else '?'
-    po_date = _undouble(grep(r'PO DATE\s+([\d/]+)').group(1))  if grep(r'PO DATE\s+([\d/]+)')  else '?'
-    ship    = _undouble(grep(r'P R T\s+([\d/]+)').group(1))    if grep(r'P R T\s+([\d/]+)')    else '?'
+    m = grep(r'PO NUMBER\s+(\S+)')
+    po_num  = _undouble(m.group(1)) if m else '?'
+    m = grep(r'S T Y L E #\s+(\S+)')
+    style   = _undouble(m.group(1)) if m else '?'
+    m = grep(r'PO DATE\s+([\d/]+)')
+    po_date = _undouble(m.group(1)) if m else '?'
+    m = grep(r'P R T\s+([\d/]+)')
+    ship    = _undouble(m.group(1)) if m else '?'
 
     etd_m = grep(r'([\d/]+)\s+EETTDD')
     etd   = _undouble(etd_m.group(1)) if etd_m else '?'
@@ -203,7 +200,6 @@ _WHITE   = 'FFFFFFFF'
 _YELLOW  = 'FFFFF2CC'
 _LT_BLUE = 'FFDEEAF1'
 _GREY    = 'FFD9D9D9'
-_ORANGE  = 'FFF4B942'
 _GREEN   = 'FFE2EFDA'
 _TEAL    = 'FF1F6B75'  # TK EU accent colour
 
@@ -429,10 +425,10 @@ def show_tk_eu_upload_section() -> None:
 
     st.divider()
     st.markdown("#### 🇬🇧 TK EU POs (Kostroma / TJX UK)")
-    st.caption(
+    st.caption(t(
         "Upload Outlook **.msg** vendor fax emails for TK EU / Kostroma purchase orders (TJX UK). "
         "The system extracts the embedded PDF, parses PO fields, and produces a formatted Excel."
-    )
+    ))
 
     uploaded_msgs = st.file_uploader(
         "Upload TK EU .msg files",
@@ -443,31 +439,39 @@ def show_tk_eu_upload_section() -> None:
     )
 
     if not uploaded_msgs:
-        st.info("Upload one or more TK EU .msg vendor fax emails to get started.")
+        st.info(t("Upload one or more TK EU .msg vendor fax emails to get started."))
         return
 
-    st.caption(f"{len(uploaded_msgs)} file(s) selected")
+    sig = files_signature(uploaded_msgs)
 
-    if "tk_eu_results" not in st.session_state:
-        st.session_state.tk_eu_results = None
+    st.caption(f"{len(uploaded_msgs)} {t('file(s) selected')}")
 
-    if st.button("▶  Extract TK EU POs", type="primary",
+    if SK.GIII_TKEU_RESULTS not in st.session_state:
+        st.session_state[SK.GIII_TKEU_RESULTS] = None
+
+    if st.button(f"▶  {t('Extract TK EU POs')}", type="primary",
                  use_container_width=True, key="run_tk_eu"):
-        st.session_state.tk_eu_results = None
-        with st.spinner("Extracting PDFs and parsing POs…"):
+        st.session_state[SK.GIII_TKEU_RESULTS] = None
+        with st.spinner(t("Extracting PDFs and parsing POs…")):
             try:
                 import extract_msg  # noqa
             except ImportError:
-                st.error("**extract-msg** library not installed. Run `pip install extract-msg`.")
+                st.error(t("**extract-msg** library not installed. Run `pip install extract-msg`."))
                 return
             results = _extract_and_parse_tk_eu(uploaded_msgs)
 
         if not results:
-            st.error("No POs could be parsed.")
+            st.error(t("No POs could be parsed."))
             return
-        st.session_state.tk_eu_results = results
+        st.session_state[SK.GIII_TKEU_RESULTS] = results
+        st.session_state[SK.GIII_TKEU_SIG]     = sig
 
-    results = st.session_state.get("tk_eu_results")
+    # Drop stale results when the uploaded file set changed since extraction.
+    if (st.session_state.get(SK.GIII_TKEU_RESULTS) is not None
+            and st.session_state.get(SK.GIII_TKEU_SIG) != sig):
+        st.session_state[SK.GIII_TKEU_RESULTS] = None
+
+    results = st.session_state.get(SK.GIII_TKEU_RESULTS)
     if not results:
         return
 
@@ -476,49 +480,53 @@ def show_tk_eu_upload_section() -> None:
     sizes_cols = [s for s in _SIZE_ORDER if s in all_sizes]
 
     rows = []
+    grand_total = 0
     for po in results:
         for li in po['line_items']:
             sz_map    = {s[0]: s[1] for s in li['sizes']}
             row_total = sum(s[1] for s in li['sizes'])
+            fob_disp  = (po['fob_price']
+                         if po['fob_price'] in ('?', 'UNCONFIRMED', 'NOT CONFIRMED')
+                         else f"${po['fob_price']}")
             row = {
-                'PO Number':     po['po_number'],
-                'Style':         li['style'],
-                'Color':         li['color'],
-                'ETD':           po['etd'],
-                'FOB':           f"${po['fob_price']}",
-                'Customer Name': po['customer_name'],
-                'Ship To':       po['ship_to'],
-                'Hanger Info':   po['hanger_info'],
+                _th('PO Number'):     po['po_number'],
+                _th('Style'):         li['style'],
+                _th('Color'):         li['color'],
+                _th('ETD'):           po['etd'],
+                _th('FOB'):           fob_disp,
+                _th('Customer Name'): po['customer_name'],
+                _th('Ship To'):       po['ship_to'],
+                _th('Hanger Info'):   po['hanger_info'],
             }
             for sz in sizes_cols:
                 row[sz] = sz_map.get(sz, '')
-            row['Total'] = row_total
+            row[_th('Total')] = row_total
+            grand_total += row_total
             rows.append(row)
 
     import pandas as pd
     st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
-    grand_total = sum(r['Total'] for r in rows)
-    st.caption(f"**{len(results)} PO(s)** · **{grand_total:,} total units**")
+    st.caption(f"**{len(results)} {t('PO(s)')}** · **{grand_total:,} {t('total units')}**")
 
-    with st.expander("PO Metadata", expanded=False):
+    with st.expander(t("PO Metadata"), expanded=False):
         meta_rows = [{
-            'PO Number':     po['po_number'],
-            'Style':         po['style'],
-            'Description':   po['description'],
-            'Customer Name': po['customer_name'],
-            'Ship To':       po['ship_to'],
-            'PO Date':       po['po_date'],
-            'Ship Date':     po['ship_date'],
-            'ETD':           po['etd'],
-            'FOB Price':     po['fob_price'],
-            'Hanger Info':   po['hanger_info'],
-            'Factory':       po['factory'],
-            'Vendor':        po['vendor'],
+            _th('PO Number'):     po['po_number'],
+            _th('Style'):         po['style'],
+            _th('Description'):   po['description'],
+            _th('Customer Name'): po['customer_name'],
+            _th('Ship To'):       po['ship_to'],
+            _th('PO Date'):       po['po_date'],
+            _th('Ship Date'):     po['ship_date'],
+            _th('ETD'):           po['etd'],
+            _th('FOB Price'):     po['fob_price'],
+            _th('Hanger Info'):   po['hanger_info'],
+            _th('Factory'):       po['factory'],
+            _th('Vendor'):        po['vendor'],
         } for po in results]
         st.dataframe(pd.DataFrame(meta_rows), hide_index=True, use_container_width=True)
 
-    with st.spinner("Building Excel…"):
+    with st.spinner(t("Building Excel…")):
         xlsx_bytes = _build_tk_eu_excel(results)
 
     first_po = results[0]['po_number'] if results else 'TK_EU_POs'
@@ -526,7 +534,7 @@ def show_tk_eu_upload_section() -> None:
     fname    = f"{prefix}_TK_EU_POs.xlsx" if prefix else "TK_EU_POs.xlsx"
 
     st.download_button(
-        label="⬇ Download Excel",
+        label=f"⬇ {t('Download Excel')}",
         data=xlsx_bytes, file_name=fname,
         mime=_XLSX_MIME, type="primary",
         use_container_width=True, key="tk_eu_dl",

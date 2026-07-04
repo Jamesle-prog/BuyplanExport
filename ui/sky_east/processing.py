@@ -204,9 +204,13 @@ def _se_mask_order_files(order_paths, log: list[str]) -> bytes | None:
     import shutil as _shutil2
     mask_out_dir = tempfile.mkdtemp()
     try:
+        _mask_errors: list[str] = []
         masked_files = mask_prices_excel_batch(
-            [p for _, p in order_paths], mask_out_dir
+            [p for _, p in order_paths], mask_out_dir, errors=_mask_errors
         )
+        for _me in _mask_errors:
+            st.warning(f"Price-mask failed — {_me} (file NOT in masked zip)")
+            log.append(f"⚠️ price-mask failed — {_me}")
         if not masked_files:
             return None
         mbuf = io.BytesIO()

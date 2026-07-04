@@ -10,7 +10,8 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from auth.companies import COMPANY_GIII, COMPANY_SKY_EAST
-from ui.shared import _th, _tr
+from ui.i18n import t
+from ui.shared import _th, _tr, guard_multiselect_state
 from ui.stores import get_store, get_sky_east_store
 
 
@@ -58,7 +59,10 @@ _DEFAULT_COLS = [
 ]
 
 
+@st.cache_data(max_entries=8, show_spinner=False)
 def _build_tracker_excel(df: pd.DataFrame) -> bytes:
+    """Pure function (DataFrame in → xlsx bytes out) — safe to cache so the
+    styled workbook is not rebuilt on every fragment rerun."""
     wb = Workbook()
     ws = wb.active
     ws.title = "PO Tracker"
@@ -69,13 +73,13 @@ def _build_tracker_excel(df: pd.DataFrame) -> bytes:
         s = Side(style="thin", color="CCCCCC")
         return Border(left=s, right=s, top=s, bottom=s)
 
-    # Title row
+    # Title row  (cell var named `tc` — `t` is the i18n translator import)
     ws.merge_cells(f"A1:{get_column_letter(len(df.columns))}1")
-    t = ws["A1"]
-    t.value = "PO Tracker — Commercial Summary"
-    t.font = Font(name="Arial", bold=True, size=13, color=WHITE)
-    t.fill = PatternFill("solid", fgColor=NAVY)
-    t.alignment = Alignment(horizontal="center", vertical="center")
+    tc = ws["A1"]
+    tc.value = "PO Tracker — Commercial Summary"
+    tc.font = Font(name="Arial", bold=True, size=13, color=WHITE)
+    tc.fill = PatternFill("solid", fgColor=NAVY)
+    tc.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 24
 
     # Header row
@@ -117,26 +121,29 @@ def _build_tracker_excel(df: pd.DataFrame) -> bytes:
 
 
 def _show_po_tracker(user_cos: list[str], admin_mode: bool) -> None:
-    st.subheader("📋 PO Tracker")
-    st.caption("One row per PO — all commercial fields for comparison and tracking.")
+    st.subheader(f"📋 {t('PO Tracker')}")
+    st.caption(t("One row per PO — all commercial fields for comparison and tracking."))
 
     df = get_store().list_pos(companies=user_cos if user_cos and not admin_mode else None)
 
     if df.empty:
-        st.info("No POs stored yet. Upload PDFs via the GIII tab to populate.")
+        st.info(t("No POs stored yet. Upload PDFs via the GIII tab to populate."))
         return
 
     # ── Filters ──────────────────────────────────────────────────────────────
     fc1, fc2, fc3 = st.columns(3)
     with fc1:
         seasons = sorted(df["season"].dropna().unique().tolist()) if "season" in df.columns else []
-        sel_season = st.multiselect("Season", seasons, key="tracker_season")
+        guard_multiselect_state("tracker_season", seasons)
+        sel_season = st.multiselect(t("Season"), seasons, key="tracker_season")
     with fc2:
         divs = sorted(df["division_name"].dropna().unique().tolist()) if "division_name" in df.columns else []
-        sel_div = st.multiselect("Division", divs, key="tracker_div")
+        guard_multiselect_state("tracker_div", divs)
+        sel_div = st.multiselect(t("Division"), divs, key="tracker_div")
     with fc3:
         buyers = sorted(df["buyer"].dropna().unique().tolist()) if "buyer" in df.columns else []
-        sel_buyer = st.multiselect("Buyer", buyers, key="tracker_buyer")
+        guard_multiselect_state("tracker_buyer", buyers)
+        sel_buyer = st.multiselect(t("Buyer"), buyers, key="tracker_buyer")
 
     if sel_season:
         df = df[df["season"].isin(sel_season)]
@@ -148,23 +155,30 @@ def _show_po_tracker(user_cos: list[str], admin_mode: bool) -> None:
     # ── Column selector ───────────────────────────────────────────────────────
     avail = [k for k in _TRACKER_COLS if k in df.columns]
     default = [k for k in _DEFAULT_COLS if k in avail]
+    # Seed-once + guard (never key= AND default= together — CLAUDE.md).
+    if "tracker_cols" not in st.session_state:
+        st.session_state["tracker_cols"] = default
+    else:
+        guard_multiselect_state("tracker_cols", avail)
     picked = st.multiselect(
-        "Columns",
+        t("Columns"),
         options=avail,
-        default=default,
         format_func=lambda k: _TRACKER_COLS.get(k, k),
         key="tracker_cols",
     )
     show_cols = picked or default
     display_df = df[show_cols].rename(columns=_TRACKER_COLS)
 
-    st.caption(f"{len(display_df):,} PO(s)")
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.caption(f"{len(display_df):,} {t('PO(s)')}")
+    # Translate headers only for on-screen display; the Excel export keeps the
+    # English headers (its width_map and cache key stay language-independent).
+    st.dataframe(display_df.rename(columns={c: _th(c) for c in display_df.columns}),
+                 use_container_width=True, hide_index=True)
 
     # ── Download ──────────────────────────────────────────────────────────────
     xlsx = _build_tracker_excel(display_df)
     st.download_button(
-        "⬇️ Download PO Tracker (.xlsx)",
+        "⬇️ " + t("Download PO Tracker (.xlsx)"),
         data=xlsx,
         file_name="po_tracker.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -174,7 +188,18 @@ def _show_po_tracker(user_cos: list[str], admin_mode: bool) -> None:
 
 def show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
     """Cross-company order summary, filtered by user permissions."""
-    tab_overview, tab_tracker = st.tabs(["📊 Overview", "📋 PO Tracker"])
+    # Same convention as the Tracking tab: a non-admin with no assigned
+    # companies sees nothing.  Without this gate the empty list fell through
+    # the stores' falsy check (`if companies:`) to an UNFILTERED query —
+    # i.e. a freshly created user saw every company's commercial data.
+    if not admin_mode and not user_cos:
+        st.info(t(
+            "No companies assigned to your account. "
+            "Contact an administrator to be granted access."
+        ))
+        return
+
+    tab_overview, tab_tracker = st.tabs([f"📊 {t('Overview')}", f"📋 {t('PO Tracker')}"])
 
     with tab_tracker:
         _show_po_tracker(user_cos, admin_mode)
@@ -185,8 +210,8 @@ def show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
 
 def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
     """Original cross-company overview content."""
-    st.subheader("📊 Order Summary")
-    st.caption("Aggregated view of all orders across clients, filtered to your permitted companies.")
+    st.subheader(f"📊 {t('Order Summary')}")
+    st.caption(t("Aggregated view of all orders across clients, filtered to your permitted companies."))
 
     # Permission helpers
     # admin or empty user_cos = unrestricted
@@ -259,7 +284,7 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
         st.dataframe(summary_df.rename(columns=_sum_rename),
                      use_container_width=True, hide_index=True)
     else:
-        st.info("No order data available for your permitted companies.")
+        st.info(t("No order data available for your permitted companies."))
 
     st.divider()
 
@@ -270,7 +295,7 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
     se_labels: dict = {}
 
     if can_see_giii and not giii_df.empty:
-        with st.expander("🔍 GIII — full PO list"):
+        with st.expander("🔍 " + t("GIII — full PO list")):
             # Virtual "pc_no" column — mirrors po_number for users whose
             # external workflow refers to it as "PC No." (Purchase Contract No.).
             if "po_number" in giii_df.columns and "pc_no" not in giii_df.columns:
@@ -297,10 +322,14 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
                              "country_of_origin", "xport_date", "total_units"]
                             if k in giii_avail]
 
+            # Seed-once + guard (never key= AND default= together — CLAUDE.md).
+            if "sum_giii_cols" not in st.session_state:
+                st.session_state["sum_giii_cols"] = giii_default
+            else:
+                guard_multiselect_state("sum_giii_cols", giii_avail)
             picked = st.multiselect(
-                "Columns to display",
+                t("Columns to display"),
                 options=giii_avail,
-                default=giii_default,
                 format_func=lambda k: giii_field_labels.get(k, k),
                 key="sum_giii_cols",
             )
@@ -310,7 +339,7 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
                          use_container_width=True, hide_index=True)
 
     if can_see_zalando and not se_df.empty:
-        with st.expander("🔍 Sky East — full item list"):
+        with st.expander("🔍 " + t("Sky East — full item list")):
             # Virtual "company" column — Sky East is the source by definition.
             if "company" not in se_df.columns:
                 se_df["company"] = COMPANY_SKY_EAST
@@ -333,10 +362,14 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
                            "color_name", "total_qty", "ex_fty_date"]
                           if k in se_avail]
 
+            # Seed-once + guard (never key= AND default= together — CLAUDE.md).
+            if "sum_se_cols" not in st.session_state:
+                st.session_state["sum_se_cols"] = se_default
+            else:
+                guard_multiselect_state("sum_se_cols", se_avail)
             se_picked = st.multiselect(
-                "Columns to display",
+                t("Columns to display"),
                 options=se_avail,
-                default=se_default,
                 format_func=lambda k: se_field_labels.get(k, k),
                 key="sum_se_cols",
             )
@@ -356,8 +389,8 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
             if can_see_zalando and not se_df.empty and se_show:
                 se_df[se_show].rename(columns=se_labels).to_excel(
                     wr, sheet_name="Sky East Items", index=False)
-        st.download_button("⬇️ Download Full Summary", buf.getvalue(),
+        st.download_button("⬇️ " + t("Download Full Summary"), buf.getvalue(),
                            "order_summary.xlsx", key="sum_dl_all")
 
     if not can_see_giii and not can_see_zalando:
-        st.warning("You don't have permission to view any company's orders. Contact an admin.")
+        st.warning(t("You don't have permission to view any company's orders. Contact an admin."))

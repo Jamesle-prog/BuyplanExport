@@ -36,12 +36,13 @@ Required fields (use null if not found):
   unit_cost, total_extended_cost, total_quantity,
   xport_date, factory_ship_date,
   size_rows: [
-    { size, upc, quantity }
+    { size, upc, quantity, color }
   ]
 
 Rules:
 - All values are strings unless noted.
 - size_rows is a list of objects; quantity is an integer.
+- color is the item colour for that size row (null if the PO shows none).
 - discount should include the % sign if present.
 - xport_date and factory_ship_date are YYYY-MM-DD strings.
 - Return exactly one JSON object, nothing else.
@@ -121,7 +122,10 @@ def _to_po_data(d: dict, file_path: str, source_format: str) -> POData:
                 size_rows.append(SizeRow(
                     po_number=po_number,
                     style=meta.style or "",
-                    color=meta.division_code or "",
+                    # Real per-row colour from the model (blank when the PO
+                    # has none) — never the division code, which polluted
+                    # every export with a wrong-but-plausible value.
+                    color=_safe_str(row.get("color")) or "",
                     size=size,
                     units=int(qty) if qty is not None else 0,
                     upc=upc,

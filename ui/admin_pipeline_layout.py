@@ -6,6 +6,7 @@ import json as _json
 import pandas as pd
 import streamlit as st
 
+from ui.i18n import t
 from ui.shared import XLSX_MIME as _XLSX_MIME
 
 
@@ -18,18 +19,18 @@ def show_pipeline_layout_admin() -> None:
     """
     from po_extractor.exporters import template_config as tc
 
-    st.subheader("🧩 Pipeline Buy-Plan Layouts")
-    st.caption(
+    st.subheader(f"🧩 {t('Pipeline Buy-Plan Layouts')}")
+    st.caption(t(
         "Per-client buy-plan template layouts. Edit the column mapping, "
         "data-start row, and fabric-slot rows for each pipeline — saved values "
         "override the auto-detection that runs against the .xlsx template. "
         "Leave a row blank to fall back to the template's auto-detected position."
-    )
+    ))
 
     pipelines = tc.list_pipelines()
     options = [f"{p.display_name}  [{p.pipeline_id}]" for p in pipelines]
     sel_idx = st.selectbox(
-        "Pipeline",
+        t("Pipeline"),
         options=range(len(options)),
         format_func=lambda i: options[i],
         key="admin_pipe_sel",
@@ -38,19 +39,19 @@ def show_pipeline_layout_admin() -> None:
 
     st.markdown(f"**{pipe.display_name}** — *{pipe.description}*")
     st.caption(
-        f"Template file: `data/buyplan_templates/{pipe.template_file}` · "
-        f"Config file: `data/buyplan_templates/{pipe.config_file}`"
+        f"{t('Template file:')} `data/buyplan_templates/{pipe.template_file}` · "
+        f"{t('Config file:')} `data/buyplan_templates/{pipe.config_file}`"
     )
 
     cfg = tc.load_config(pipe.pipeline_id)
 
-    with st.expander("📄 Template file", expanded=False):
+    with st.expander(f"📄 {t('Template file')}", expanded=False):
         if tc.template_exists(pipe.pipeline_id):
             tpl_bytes = tc.read_template_bytes(pipe.pipeline_id)
             sz = len(tpl_bytes)
             cdl, cup = st.columns(2)
             cdl.download_button(
-                f"⬇ Download {pipe.template_file}  ({sz:,} B)",
+                f"⬇ {t('Download')} {pipe.template_file}  ({sz:,} B)",
                 data=tpl_bytes,
                 file_name=pipe.template_file or "template.xlsx",
                 mime=_XLSX_MIME,
@@ -59,66 +60,66 @@ def show_pipeline_layout_admin() -> None:
             )
             with cup:
                 up = st.file_uploader(
-                    "Replace template (.xlsx)",
+                    t("Replace template (.xlsx)"),
                     type=["xlsx"],
                     key=f"admin_pipe_up_{pipe.pipeline_id}",
                 )
                 if up is not None and st.button(
-                        "💾 Replace template",
+                        f"💾 {t('Replace template')}",
                         key=f"admin_pipe_save_tpl_{pipe.pipeline_id}",
                         type="primary",
                         use_container_width=True):
                     try:
                         tc.write_template_bytes(pipe.pipeline_id, up.read())
-                        st.success("Template replaced.")
+                        st.success(t("Template replaced."))
                         st.rerun()
                     except Exception as exc:
-                        st.error(f"Failed: {exc}")
+                        st.error(f"{t('Failed:')} {exc}")
         else:
-            st.info("No template installed yet.")
+            st.info(t("No template installed yet."))
             up = st.file_uploader(
-                "Upload template (.xlsx)",
+                t("Upload template (.xlsx)"),
                 type=["xlsx"],
                 key=f"admin_pipe_up_new_{pipe.pipeline_id}",
             )
             if up is not None and st.button(
-                    "💾 Save template",
+                    f"💾 {t('Save template')}",
                     key=f"admin_pipe_save_new_{pipe.pipeline_id}",
                     type="primary"):
                 try:
                     tc.write_template_bytes(pipe.pipeline_id, up.read())
-                    st.success("Template saved.")
+                    st.success(t("Template saved."))
                     st.rerun()
                 except Exception as exc:
-                    st.error(f"Failed: {exc}")
+                    st.error(f"{t('Failed:')} {exc}")
 
     st.divider()
 
-    st.markdown("**Data-table position**")
+    st.markdown(f"**{t('Data-table position')}**")
     rc1, rc2, rc3 = st.columns(3)
     new_header_row = rc1.number_input(
-        "Header row",
+        t("Header row"),
         min_value=0, max_value=200, step=1,
         value=int(cfg.get("header_row") or 0),
-        help="Row number of the column-header row (0 = leave to auto-detect).",
+        help=t("Row number of the column-header row (0 = leave to auto-detect)."),
         key=f"admin_pipe_hr_{pipe.pipeline_id}",
     )
     new_data_row = rc2.number_input(
-        "Data start row",
+        t("Data start row"),
         min_value=0, max_value=200, step=1,
         value=int(cfg.get("data_start_row") or 0),
-        help="Row number of the first data row (0 = header_row + 1, or auto-detected).",
+        help=t("Row number of the first data row (0 = header_row + 1, or auto-detected)."),
         key=f"admin_pipe_dr_{pipe.pipeline_id}",
     )
     new_key_field = rc3.selectbox(
-        "Fabric key field",
+        t("Fabric key field"),
         options=["display_key", "composition"],
         index=0 if (cfg.get("fabric_key_field") or "display_key") == "display_key" else 1,
-        help="Which fabric_master field to write into the fabric-key column.",
+        help=t("Which fabric_master field to write into the fabric-key column."),
         key=f"admin_pipe_fkf_{pipe.pipeline_id}",
     )
 
-    st.markdown("**Column mapping** — logical field → Excel column letter")
+    st.markdown(f"**{t('Column mapping')}** — {t('logical field → Excel column letter')}")
     col_map = cfg.get("column_map") or {}
     df_cols = pd.DataFrame(
         [{"Field": k, "Column (A,B,C…)": v} for k, v in col_map.items()]
@@ -130,13 +131,13 @@ def show_pipeline_layout_admin() -> None:
         width="stretch",
         hide_index=True,
         column_config={
-            "Field":           st.column_config.TextColumn("Field", help="e.g. Style, PO Number, Color, 合同号"),
-            "Column (A,B,C…)": st.column_config.TextColumn("Column", help="Excel column letter (A, B, …, AA …) or 1-based number."),
+            "Field":           st.column_config.TextColumn(t("Field"), help=t("e.g. Style, PO Number, Color, 合同号")),
+            "Column (A,B,C…)": st.column_config.TextColumn(t("Column"), help=t("Excel column letter (A, B, …, AA …) or 1-based number.")),
         },
         key=f"admin_pipe_cols_{pipe.pipeline_id}",
     )
 
-    st.markdown("**Size columns** — size label → Excel column letter")
+    st.markdown(f"**{t('Size columns')}** — {t('size label → Excel column letter')}")
     sz_map = cfg.get("size_column_map") or {}
     df_sz = pd.DataFrame(
         [{"Size": k, "Column": v} for k, v in sz_map.items()]
@@ -149,7 +150,7 @@ def show_pipeline_layout_admin() -> None:
         key=f"admin_pipe_sz_{pipe.pipeline_id}",
     )
 
-    st.markdown("**Meta columns** — extra fields → Excel column letter")
+    st.markdown(f"**{t('Meta columns')}** — {t('extra fields → Excel column letter')}")
     meta_map = cfg.get("meta_column_map") or {}
     df_meta = pd.DataFrame(
         [{"Field": k, "Column": v} for k, v in meta_map.items()]
@@ -162,11 +163,11 @@ def show_pipeline_layout_admin() -> None:
 
     edited_slots_df = None
     if pipe.supports_fabric_slots:
-        st.markdown("**Fabric slots** — one row per fabric header in the template")
-        st.caption(
+        st.markdown(f"**{t('Fabric slots')}** — {t('one row per fabric header in the template')}")
+        st.caption(t(
             "Each slot has the row number and three columns: body part, HHN code, "
             "and the 综合标识 Key (display_key) cell."
-        )
+        ))
         slots = cfg.get("fabric_slots") or []
         if not slots:
             slots = [
@@ -183,23 +184,23 @@ def show_pipeline_layout_admin() -> None:
             df_slots[["row", "body_part", "hhn", "key"]],
             num_rows="dynamic", width="stretch", hide_index=True,
             column_config={
-                "row":       st.column_config.NumberColumn("Row", min_value=1, max_value=200, step=1),
-                "body_part": st.column_config.TextColumn("Body-part column"),
-                "hhn":       st.column_config.TextColumn("HHN column"),
-                "key":       st.column_config.TextColumn("综合标识 Key column"),
+                "row":       st.column_config.NumberColumn(t("Row"), min_value=1, max_value=200, step=1),
+                "body_part": st.column_config.TextColumn(t("Body-part column")),
+                "hhn":       st.column_config.TextColumn(t("HHN column")),
+                "key":       st.column_config.TextColumn(t("综合标识 Key column")),
             },
             key=f"admin_pipe_slots_{pipe.pipeline_id}",
         )
 
     new_notes = st.text_area(
-        "Notes (free-text, stored with the config)",
+        t("Notes (free-text, stored with the config)"),
         value=str(cfg.get("notes") or ""),
         height=70,
         key=f"admin_pipe_notes_{pipe.pipeline_id}",
     )
 
     sc1, sc2 = st.columns([1, 3])
-    if sc1.button("💾 Save layout", type="primary", use_container_width=True,
+    if sc1.button(f"💾 {t('Save layout')}", type="primary", use_container_width=True,
                   key=f"admin_pipe_save_{pipe.pipeline_id}"):
         new_col_map = {
             str(r["Field"]).strip(): str(r["Column (A,B,C…)"]).strip()
@@ -245,13 +246,13 @@ def show_pipeline_layout_admin() -> None:
         }
         try:
             path = tc.save_config(pipe.pipeline_id, new_cfg)
-            st.success(f"Saved → `{path.name}` · takes effect on next export.")
+            st.success(f"{t('Saved →')} `{path.name}` · {t('takes effect on next export.')}")
         except Exception as exc:
-            st.error(f"Save failed: {exc}")
+            st.error(f"{t('Save failed:')} {exc}")
 
-    if sc2.button("↩️ Reload from disk", use_container_width=False,
+    if sc2.button(f"↩️ {t('Reload from disk')}", use_container_width=False,
                   key=f"admin_pipe_reload_{pipe.pipeline_id}"):
         st.rerun()
 
-    with st.expander("👁  Current saved config (JSON)"):
+    with st.expander(f"👁  {t('Current saved config (JSON)')}"):
         st.code(_json.dumps(cfg, indent=2, ensure_ascii=False), language="json")

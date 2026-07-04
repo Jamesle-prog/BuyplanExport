@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from auth.companies import list_company_names, COMPANY_SKY_EAST
+from ui.i18n import t
 from ui.sky_east._shared import _parse_fabric_mapping_bytes
 from ui.sky_east.processing import _enrich_fabric_parts_from_cache
 from ui.stores import get_store
@@ -77,23 +78,23 @@ def _diff_fabric_parts(
         op = old_map.get((combo, seq))
         npart = new_map.get((combo, seq))
         if op is None:
-            rows.append({"Combo": combo, "Seq": seq, "Field": "(new fabric slot)",
-                        "Stored": "—", "In File": npart.display()})
+            rows.append({t("Combo"): combo, t("Seq"): seq, t("Field"): t("(new fabric slot)"),
+                        t("Stored"): "—", t("In File"): npart.display()})
             continue
         if npart is None:
             if will_delete_missing:
-                rows.append({"Combo": combo, "Seq": seq, "Field": "(slot removed)",
-                            "Stored": op.display(), "In File": "—"})
+                rows.append({t("Combo"): combo, t("Seq"): seq, t("Field"): t("(slot removed)"),
+                            t("Stored"): op.display(), t("In File"): "—"})
             else:
-                rows.append({"Combo": combo, "Seq": seq,
-                            "Field": "(not in file — kept, not deleted)",
-                            "Stored": op.display(), "In File": "(unchanged)"})
+                rows.append({t("Combo"): combo, t("Seq"): seq,
+                            t("Field"): t("(not in file — kept, not deleted)"),
+                            t("Stored"): op.display(), t("In File"): t("(unchanged)")})
             continue
         for attr, label in _DIFF_FIELDS:
             ov, nv = getattr(op, attr), getattr(npart, attr)
             if ov != nv:
-                rows.append({"Combo": combo, "Seq": seq, "Field": label,
-                            "Stored": ov or "—", "In File": nv or "—"})
+                rows.append({t("Combo"): combo, t("Seq"): seq, t("Field"): t(label),
+                            t("Stored"): ov or "—", t("In File"): nv or "—"})
     return rows
 
 
@@ -108,14 +109,14 @@ def show_fabric_mapping_tab() -> None:
     save data independently of order processing so it doesn't need
     re-uploading for every run.
     """
-    st.subheader("📐 Reference Data")
+    st.subheader(f"📐 {t('Reference Data')}")
     st.caption(
-        "💡 This tab holds **style→fabric assignments** and the **大货进度表** "
-        "(HHN contract progress). Fabric properties (composition · gsm · width) "
-        "live in **🧵 Fabric DB**; colour translations live in **🎨 Colors**."
+        t("💡 This tab holds **style→fabric assignments** and the **大货进度表** "
+          "(HHN contract progress). Fabric properties (composition · gsm · width) "
+          "live in **🧵 Fabric DB**; colour translations live in **🎨 Colors**.")
     )
 
-    fm_tab, pm_tab = st.tabs(["🧵 Style-Fabric Mapping", "📋 HHN Contract Progress (大货进度表)"])
+    fm_tab, pm_tab = st.tabs([f"🧵 {t('Style-Fabric Mapping')}", f"📋 {t('HHN Contract Progress (大货进度表)')}"])
     with fm_tab:
         _show_fabric_mapping_section()
     with pm_tab:
@@ -129,15 +130,15 @@ def _show_fabric_mapping_section() -> None:
     _hdr_col, _tpl_col = st.columns([3, 1])
     with _hdr_col:
         st.caption(
-            "Save style-to-fabric data independently of order processing. "
-            "The stored mapping is used by wash labels and buy plans."
+            t("Save style-to-fabric data independently of order processing. "
+              "The stored mapping is used by wash labels and buy plans.")
         )
     with _tpl_col:
         from po_extractor.ui_helpers.fabric_mapping_template import (
             generate_fabric_mapping_template as _gen_tpl,
         )
         st.download_button(
-            "📥 Download Template",
+            f"📥 {t('Download Template')}",
             data=_gen_tpl(),
             file_name="FabricMapping_Template.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -149,11 +150,11 @@ def _show_fabric_mapping_section() -> None:
     companies = list_company_names(active_only=True)
     default_idx = companies.index(COMPANY_SKY_EAST) if COMPANY_SKY_EAST in companies else 0
     fm_company = st.selectbox(
-        "Company / Client",
+        t("Company / Client"),
         companies,
         index=default_idx,
         key="fm_tab_company",
-        help="Fabric mappings are stored per company. Select the client this mapping belongs to.",
+        help=t("Fabric mappings are stored per company. Select the client this mapping belongs to."),
     )
     source = _company_to_source(fm_company)
 
@@ -161,53 +162,53 @@ def _show_fabric_mapping_section() -> None:
     existing_styles = _load_mapped_styles(source)
     if existing_styles:
         st.info(
-            f"**{fm_company}** currently has fabric data for **{len(existing_styles)}** "
-            f"style(s) stored in the database."
+            f"**{fm_company}** {t('currently has fabric data for')} **{len(existing_styles)}** "
+            f"{t('style(s) stored in the database.')}"
         )
-        with st.expander("View stored styles"):
+        with st.expander(t("View stored styles")):
             st.dataframe(
-                pd.DataFrame(sorted(existing_styles), columns=["Style"]),
+                pd.DataFrame(sorted(existing_styles), columns=[t("Style")]),
                 width="stretch", hide_index=True,
             )
     else:
-        st.info(f"No fabric mapping stored yet for **{fm_company}**.")
+        st.info(f"{t('No fabric mapping stored yet for')} **{fm_company}**.")
 
     # ── Duplicate-combo health check ──────────────────────────────────────────
-    with st.expander("🩺 Check for duplicate fabric mapping data"):
+    with st.expander(f"🩺 {t('Check for duplicate fabric mapping data')}"):
         st.caption(
-            "Scans **all companies** for styles whose fabric combo is stored "
-            "identically twice under different combo numbers — a leftover from "
-            "an import that saw the same style row more than once. Left alone, "
-            "each duplicate combo produces an extra, identical sheet in exports "
-            "that iterate one sheet per combo (e.g. the Sky East Buy Plan)."
+            t("Scans **all companies** for styles whose fabric combo is stored "
+              "identically twice under different combo numbers — a leftover from "
+              "an import that saw the same style row more than once. Left alone, "
+              "each duplicate combo produces an extra, identical sheet in exports "
+              "that iterate one sheet per combo (e.g. the Sky East Buy Plan).")
         )
-        if st.button("🔍 Scan for duplicates", key="fm_tab_dup_scan"):
+        if st.button(f"🔍 {t('Scan for duplicates')}", key="fm_tab_dup_scan"):
             st.session_state["fm_tab_dup_results"] = get_store().find_duplicate_fabric_combos()
 
         dup_results = st.session_state.get("fm_tab_dup_results")
         if dup_results is not None:
             if not dup_results:
-                st.success("✅ No duplicate fabric combos found.")
+                st.success(f"✅ {t('No duplicate fabric combos found.')}")
             else:
                 n_styles = len({(d["source"], d["style"]) for d in dup_results})
                 st.warning(
-                    f"⚠️ Found **{len(dup_results)}** duplicate combo group(s) "
-                    f"across **{n_styles}** style(s)."
+                    f"⚠️ {t('Found')} **{len(dup_results)}** {t('duplicate combo group(s)')} "
+                    f"{t('across')} **{n_styles}** {t('style(s).')}"
                 )
                 st.dataframe(
                     pd.DataFrame([
                         {
-                            "Source": d["source"], "Style": d["style"],
-                            "Keep Combo": d["keep_combo_idx"],
-                            "Remove Combo(s)": ", ".join(str(c) for c in d["remove_combo_idx"]),
-                            "Fabric": d["parts_preview"],
+                            t("Source"): d["source"], t("Style"): d["style"],
+                            t("Keep Combo"): d["keep_combo_idx"],
+                            t("Remove Combo(s)"): ", ".join(str(c) for c in d["remove_combo_idx"]),
+                            t("Fabric"): d["parts_preview"],
                         }
                         for d in dup_results
                     ]),
                     width="stretch", hide_index=True,
                 )
                 if st.button(
-                    "🧹 Remove all duplicate combos shown above",
+                    f"🧹 {t('Remove all duplicate combos shown above')}",
                     type="primary", key="fm_tab_dup_cleanup",
                 ):
                     dstore = get_store()
@@ -217,7 +218,7 @@ def _show_fabric_mapping_section() -> None:
                             n_deleted += dstore.delete_fabric_combo(
                                 d["source"], d["style"], cidx
                             )
-                    st.success(f"Removed {n_deleted} duplicate fabric part row(s).")
+                    st.success(f"{t('Removed')} {n_deleted} {t('duplicate fabric part row(s).')}")
                     st.session_state["fm_tab_dup_results"] = None
                     st.rerun()
 
@@ -225,21 +226,22 @@ def _show_fabric_mapping_section() -> None:
 
     # ── Import mode ───────────────────────────────────────────────────────────
     import_mode = st.radio(
-        "Import mode",
+        t("Import mode"),
         ["Upsert — update existing + add new",
          "Add new only — skip styles already in DB",
          "Replace all — clear existing first, then import"],
         key="fm_tab_mode",
+        format_func=lambda o: t(o),
         help=(
-            "**Upsert**: each style in the file overwrites whatever is stored for that style.  \n"
-            "**Add new only**: styles already in the DB are left unchanged.  \n"
-            "**Replace all**: ALL existing fabric data for this company is deleted before import."
+            t("**Upsert**: each style in the file overwrites whatever is stored for that style.  \n"
+              "**Add new only**: styles already in the DB are left unchanged.  \n"
+              "**Replace all**: ALL existing fabric data for this company is deleted before import.")
         ),
     )
 
     # ── File upload ───────────────────────────────────────────────────────────
     fm_file = st.file_uploader(
-        "Style-Fabric mapping file",
+        t("Style-Fabric mapping file"),
         type=["xlsx", "xls"],
         key="fm_tab_uploader",
         label_visibility="collapsed",
@@ -252,13 +254,13 @@ def _show_fabric_mapping_section() -> None:
     try:
         style_parts_map = _cached_parse_fabric_mapping(fm_file.getvalue())
     except Exception as exc:
-        st.error(f"Could not parse file: {exc}")
+        st.error(f"{t('Could not parse file:')} {exc}")
         return
 
     if not style_parts_map:
         st.warning(
-            "No valid style rows found in the file. "
-            "Check that the header row matches the template format."
+            t("No valid style rows found in the file. "
+              "Check that the header row matches the template format.")
         )
         return
 
@@ -281,9 +283,9 @@ def _show_fabric_mapping_section() -> None:
     diff_by_style: dict[str, list[dict]] = {}
     for style, parts in sorted(style_parts_map.items()):
         valid_parts = [p for p in parts if p.hhn_no]
-        row = {"Style": style, "Fabric Codes": len(valid_parts)}
+        row = {t("Style"): style, t("Fabric Codes"): len(valid_parts)}
         if not valid_parts:
-            row["Status"] = "⚠️ No fabric codes"
+            row[t("Status")] = f"⚠️ {t('No fabric codes')}"
             skip_rows.append(row)
         elif style in existing_styles:
             diff = _diff_fabric_parts(
@@ -292,13 +294,13 @@ def _show_fabric_mapping_section() -> None:
             )
             diff_by_style[style] = diff
             if diff:
-                row["Status"] = "♻️ Will update"
+                row[t("Status")] = f"♻️ {t('Will update')}"
                 changed_rows.append(row)
             else:
-                row["Status"] = "✓ Up to date"
+                row[t("Status")] = f"✓ {t('Up to date')}"
                 unchanged_rows.append(row)
         else:
-            row["Status"] = "🆕 New"
+            row[t("Status")] = f"🆕 {t('New')}"
             new_rows.append(row)
 
     preview_rows = new_rows + changed_rows + unchanged_rows + skip_rows
@@ -307,67 +309,67 @@ def _show_fabric_mapping_section() -> None:
     )
 
     # ── Preview ───────────────────────────────────────────────────────────────
-    st.markdown(f"**Preview — {fm_file.name}**")
+    st.markdown(f"**{t('Preview —')} {fm_file.name}**")
     mc = st.columns(4)
-    mc[0].metric("🆕 New styles",         n_new)
-    mc[1].metric("♻️ Will update",         n_update)
-    mc[2].metric("✓ Already up to date",  n_same)
-    mc[3].metric("⚠️ Skipped (no codes)", n_skip)
+    mc[0].metric(f"🆕 {t('New styles')}",         n_new)
+    mc[1].metric(f"♻️ {t('Will update')}",         n_update)
+    mc[2].metric(f"✓ {t('Already up to date')}",  n_same)
+    mc[3].metric(f"⚠️ {t('Skipped (no codes)')}", n_skip)
 
-    with st.expander("Show full style list", expanded=(len(preview_rows) <= 20)):
+    with st.expander(t("Show full style list"), expanded=(len(preview_rows) <= 20)):
         st.dataframe(pd.DataFrame(preview_rows), width="stretch", hide_index=True)
 
     # ── Diff for styles that will update ─────────────────────────────────────
     if existing_in_file and "Add new only" in import_mode:
         # These styles already exist, so Add-new-only skips them entirely —
         # a diff here would suggest changes that will not actually happen.
-        with st.expander(f"🔍 {len(existing_in_file)} existing style(s) — will be skipped"):
+        with st.expander(f"🔍 {len(existing_in_file)} {t('existing style(s) — will be skipped')}"):
             st.caption(
-                "Import mode is **Add new only**: styles already in the database are "
-                "left completely unchanged. None of these will be touched by this import."
+                t("Import mode is **Add new only**: styles already in the database are "
+                  "left completely unchanged. None of these will be touched by this import.")
             )
     elif changed_rows or unchanged_rows:
         diff_rows = [
-            {"Style": style, **d}
-            for style in (r["Style"] for r in changed_rows)
+            {t("Style"): style, **d}
+            for style in (r[t("Style")] for r in changed_rows)
             for d in diff_by_style[style]
         ]
         if len(diff_rows) > 30:
             st.caption(
-                f"⚠️ Large changeset — open the panel below to review all "
-                f"{len(diff_rows)} field-level changes before importing."
+                f"⚠️ {t('Large changeset — open the panel below to review all')} "
+                f"{len(diff_rows)} {t('field-level changes before importing.')}"
             )
         with st.expander(
-            f"🔍 Show differences for updating styles "
-            f"({n_update} of {n_update + n_same} actually changed — "
-            f"{len(diff_rows)} field change(s))",
+            f"🔍 {t('Show differences for updating styles')} "
+            f"({n_update} {t('of')} {n_update + n_same} {t('actually changed —')} "
+            f"{len(diff_rows)} {t('field change(s))')}",
             expanded=(0 < len(diff_rows) <= 30),
         ):
             if diff_rows:
                 st.dataframe(pd.DataFrame(diff_rows), width="stretch", hide_index=True)
                 if not will_delete_missing and any(
-                    d["Field"].startswith("(not in file") for d in diff_rows
+                    d[t("Field")].startswith("(not in file") for d in diff_rows
                 ):
                     st.caption(
-                        "💡 **(not in file — kept, not deleted)** rows stay in the database "
-                        "as-is under Upsert. Use **Replace all** if you need stale fabric "
-                        "slots actually removed."
+                        t("💡 **(not in file — kept, not deleted)** rows stay in the database "
+                          "as-is under Upsert. Use **Replace all** if you need stale fabric "
+                          "slots actually removed.")
                     )
             else:
                 st.caption(
-                    "No field-level differences — the stored data already matches the file."
+                    t("No field-level differences — the stored data already matches the file.")
                 )
 
     # ── Confirmation for Replace all ─────────────────────────────────────────
     confirmed_replace = True
     if "Replace all" in import_mode:
         st.warning(
-            f"⚠️ **Replace all** will permanently delete ALL existing fabric data for "
-            f"**{fm_company}** ({len(existing_styles)} style(s)) before importing. "
-            "This cannot be undone."
+            f"⚠️ {t('**Replace all** will permanently delete ALL existing fabric data for')} "
+            f"**{fm_company}** ({len(existing_styles)} {t('style(s)) before importing.')} "
+            f"{t('This cannot be undone.')}"
         )
         confirmed_replace = st.checkbox(
-            "I understand — delete existing data and replace with this file",
+            t("I understand — delete existing data and replace with this file"),
             key="fm_tab_replace_confirm",
         )
 
@@ -378,39 +380,39 @@ def _show_fabric_mapping_section() -> None:
     # even when its content otherwise matches the file.
     import_disabled = (not confirmed_replace) or (n_new + n_update + n_same == 0)
     if st.button(
-        "💾 Import Fabric Mapping", type="primary",
+        f"💾 {t('Import Fabric Mapping')}", type="primary",
         key="fm_tab_import_btn",
         disabled=import_disabled,
     ):
-        with st.spinner("Saving fabric mapping..."):
+        with st.spinner(t("Saving fabric mapping...")):
             try:
                 store = get_store()
 
                 if "Replace all" in import_mode:
                     deleted = store.delete_fabric_parts(source)
-                    st.caption(f"Deleted {deleted} existing fabric part(s) for {fm_company}.")
+                    st.caption(f"{t('Deleted')} {deleted} {t('existing fabric part(s) for')} {fm_company}.")
                     to_save = style_parts_map
                 elif "Add new only" in import_mode:
                     to_save = {s: p for s, p in style_parts_map.items()
                                if s not in existing_styles}
                     skipped_n = len(style_parts_map) - len(to_save)
                     if skipped_n:
-                        st.caption(f"Skipped {skipped_n} existing style(s).")
+                        st.caption(f"{t('Skipped')} {skipped_n} {t('existing style(s).')}")
                 else:  # Upsert
                     to_save = style_parts_map
 
                 if not to_save:
-                    st.warning("Nothing to import after applying the selected mode.")
+                    st.warning(t("Nothing to import after applying the selected mode."))
                 else:
                     store.save_fabric_parts_batch(source, to_save)
                     _enrich_fabric_parts_from_cache(to_save)
                     n_styles = len(to_save)
                     n_parts  = sum(len(v) for v in to_save.values())
                     st.success(
-                        f"✅ Saved **{n_parts}** fabric part(s) across "
-                        f"**{n_styles}** style(s) for **{fm_company}**."
+                        f"✅ {t('Saved')} **{n_parts}** {t('fabric part(s) across')} "
+                        f"**{n_styles}** {t('style(s) for')} **{fm_company}**."
                     )
                     _cached_parse_fabric_mapping.clear()
 
             except Exception as exc:
-                st.error(f"Import failed: {exc}")
+                st.error(f"{t('Import failed:')} {exc}")

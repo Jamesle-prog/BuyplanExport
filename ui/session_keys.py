@@ -63,7 +63,27 @@ class SK:
     PT_SELECTED_PLAN  = "pt_selected_plan"   # int — id of record selected in Plan
     PT_PLAN_OVERRIDE  = "pt_plan_override"   # dict[stage, int] — what-if day overrides
     PT_DELETE_CONFIRM = "pt_delete_confirm"  # bool — delete confirmation shown
+    PT_DELETE_FLASH   = "pt_delete_flash"    # str — one-shot success msg after delete
     PT_ACTIVE_TAB     = "pt_active_tab"      # int — active sub-tab index (0=Dashboard)
+    PT_ADD_CLIENT     = "pt_add_client"      # str — Add New tab's client filter
+
+    # ── GIII fax/portal extraction sections (MSG / KL / TK EU / InforNexus) ──
+    # *_SIG holds the uploader file-set signature the results were built from
+    # (ui.giii._shared.files_signature) — mismatch = stale results, dropped.
+    GIII_MSG_RESULTS   = "msg_results"       # list[dict] — parsed MSG POs
+    GIII_MSG_SIG       = "msg_results_sig"
+    GIII_KL_RESULTS    = "kl_results"        # list[dict] — parsed KL POs
+    GIII_KL_SIG        = "kl_results_sig"
+    GIII_TKEU_RESULTS  = "tk_eu_results"     # list[dict] — parsed TK EU POs
+    GIII_TKEU_SIG      = "tk_eu_results_sig"
+    GIII_IN_RESULTS    = "in_results"        # list[dict] — parsed InforNexus POs
+    GIII_IN_SIG        = "in_results_sig"
+    GIII_IN_KL_RESULTS = "in_kl_results"     # list[dict] — KL fax POs (comparison set)
+    GIII_IN_KL_SIG     = "in_kl_results_sig"
+
+    # GIII master-table persisted download (ui/giii/results.py)
+    GIII_MASTER_DL_BYTES = "master_dl_bytes"
+    GIII_MASTER_DL_FNAME = "master_dl_fname"
 
 
 # Allowed values for ``SK.SE_COLOR_SOURCE`` — controls where the buy-plan

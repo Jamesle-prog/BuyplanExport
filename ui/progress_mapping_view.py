@@ -14,6 +14,7 @@ from auth.companies import list_company_names, COMPANY_SKY_EAST
 from po_extractor.lookups.progress_lookup import parse_progress_rows, _norm_key
 from po_extractor.store._po_store_progress import _DB_TO_RECORD
 from ui.fabric_mapping_view import _company_to_source
+from ui.i18n import t
 from ui.stores import get_store
 
 
@@ -74,7 +75,7 @@ def _diff_progress_record(old_db_row: dict, new_record: dict) -> list[dict]:
         ov = str(old_record.get(key, "") or "")
         nv = str(new_record.get(key, "") or "")
         if ov != nv:
-            rows.append({"Field": label, "Stored": ov or "—", "In File": nv or "—"})
+            rows.append({t("Field"): t(label), t("Stored"): ov or "—", t("In File"): nv or "—"})
     return rows
 
 
@@ -85,21 +86,21 @@ def _diff_progress_record(old_db_row: dict, new_record: dict) -> list[dict]:
 def show_progress_mapping_section() -> None:
     """HHN Contract Progress — upload, preview, and manage per-company data."""
     st.caption(
-        "Save 大货进度表 (HHN Contract Progress) data independently of order "
-        "processing. Upload once here — every Sky East run and buy plan "
-        "afterward automatically uses the saved data, no need to re-upload "
-        "the same file every time. Pictures are not stored (text data only)."
+        t("Save 大货进度表 (HHN Contract Progress) data independently of order "
+          "processing. Upload once here — every Sky East run and buy plan "
+          "afterward automatically uses the saved data, no need to re-upload "
+          "the same file every time. Pictures are not stored (text data only).")
     )
 
     # ── Company selector ───────────────────────────────────────────────────
     companies = list_company_names(active_only=True)
     default_idx = companies.index(COMPANY_SKY_EAST) if COMPANY_SKY_EAST in companies else 0
     pm_company = st.selectbox(
-        "Company / Client",
+        t("Company / Client"),
         companies,
         index=default_idx,
         key="pm_tab_company",
-        help="Progress data is stored per company. Select the client this file belongs to.",
+        help=t("Progress data is stored per company. Select the client this file belongs to."),
     )
     source = _company_to_source(pm_company)
     store = get_store()
@@ -108,10 +109,10 @@ def show_progress_mapping_section() -> None:
     existing_count = store.count_progress_records(source)
     if existing_count:
         st.info(
-            f"**{pm_company}** currently has **{existing_count}** progress "
-            f"record(s) stored in the database."
+            f"**{pm_company}** {t('currently has')} **{existing_count}** {t('progress')} "
+            f"{t('record(s) stored in the database.')}"
         )
-        with st.expander("View stored records"):
+        with st.expander(t("View stored records")):
             records = store.load_progress_records(source)
             df = pd.DataFrame(records)
             show_cols = [c for c in
@@ -120,38 +121,39 @@ def show_progress_mapping_section() -> None:
                         if c in df.columns]
             st.dataframe(
                 df[show_cols].rename(columns={
-                    "contract_no": "Contract No.", "pc_no": "PC No.",
-                    "style_display": "Style", "brand": "Brand",
-                    "color": "Color (EN)", "cn_color": "Color (CN)",
-                    "color_code": "Color Code", "ex_fty": "Ex-Fty",
-                    "zalando_po": "PO#",
+                    "contract_no": t("Contract No."), "pc_no": t("PC No."),
+                    "style_display": t("Style"), "brand": t("Brand"),
+                    "color": t("Color (EN)"), "cn_color": t("Color (CN)"),
+                    "color_code": t("Color Code"), "ex_fty": t("Ex-Fty"),
+                    "zalando_po": t("PO#"),
                 }),
                 width="stretch", hide_index=True,
             )
     else:
-        st.info(f"No progress data stored yet for **{pm_company}**.")
+        st.info(f"{t('No progress data stored yet for')} **{pm_company}**.")
 
     st.divider()
 
     # ── Import mode ─────────────────────────────────────────────────────────
     import_mode = st.radio(
-        "Import mode",
+        t("Import mode"),
         ["Upsert — update existing + add new",
          "Add new only — skip records already in DB",
          "Replace all — clear existing first, then import"],
         key="pm_tab_mode",
+        format_func=lambda o: t(o),
         help=(
-            "**Upsert**: each row in the file overwrites whatever is stored for "
-            "that (PC No. · Style · Color) combination.  \n"
-            "**Add new only**: combinations already in the DB are left unchanged.  \n"
-            "**Replace all**: ALL existing progress data for this company is "
-            "deleted before import."
+            t("**Upsert**: each row in the file overwrites whatever is stored for "
+              "that (PC No. · Style · Color) combination.  \n"
+              "**Add new only**: combinations already in the DB are left unchanged.  \n"
+              "**Replace all**: ALL existing progress data for this company is "
+              "deleted before import.")
         ),
     )
 
     # ── File upload ─────────────────────────────────────────────────────────
     pm_file = st.file_uploader(
-        "HHN Contract Progress file (大货进度表)",
+        t("HHN Contract Progress file (大货进度表)"),
         type=["xlsx", "xls"],
         key="pm_tab_uploader",
         label_visibility="collapsed",
@@ -164,13 +166,13 @@ def show_progress_mapping_section() -> None:
     try:
         records = _cached_parse_progress(pm_file.getvalue())
     except Exception as exc:
-        st.error(f"Could not parse file: {exc}")
+        st.error(f"{t('Could not parse file:')} {exc}")
         return
 
     if not records:
         st.warning(
-            "No valid rows found in the file. "
-            "Check that the header row matches the expected 大货进度表 format."
+            t("No valid rows found in the file. "
+              "Check that the header row matches the expected 大货进度表 format.")
         )
         return
 
@@ -186,26 +188,26 @@ def show_progress_mapping_section() -> None:
     diff_by_key: dict[tuple, list[dict]] = {}
     for rec, key in keyed_records:
         row = {
-            "PC No.": rec.get("pc_no", ""), "Style": rec.get("style_display", ""),
-            "Color (EN)": rec.get("color", ""), "Color (CN)": rec.get("cn_color", ""),
-            "Color Code": rec.get("color_code", ""), "Label Color": rec.get("label_color", ""),
-            "Contract No.": rec.get("contract_no", ""),
-            "Ex-Fty": rec.get("ex_fty", ""), "Qty": rec.get("qty", ""),
+            t("PC No."): rec.get("pc_no", ""), t("Style"): rec.get("style_display", ""),
+            t("Color (EN)"): rec.get("color", ""), t("Color (CN)"): rec.get("cn_color", ""),
+            t("Color Code"): rec.get("color_code", ""), t("Label Color"): rec.get("label_color", ""),
+            t("Contract No."): rec.get("contract_no", ""),
+            t("Ex-Fty"): rec.get("ex_fty", ""), t("Qty"): rec.get("qty", ""),
         }
         if not key[1]:   # no style_norm — shouldn't happen (parser requires style)
-            row["Status"] = "⚠️ No style"
+            row[t("Status")] = f"⚠️ {t('No style')}"
             skip_rows.append(row)
         elif key in existing_keys:
             diff = _diff_progress_record(old_db_rows.get(key, {}), rec)
             diff_by_key[key] = diff
             if diff:
-                row["Status"] = "♻️ Will update"
+                row[t("Status")] = f"♻️ {t('Will update')}"
                 changed_rows.append(row)
             else:
-                row["Status"] = "✓ Up to date"
+                row[t("Status")] = f"✓ {t('Up to date')}"
                 unchanged_rows.append(row)
         else:
-            row["Status"] = "🆕 New"
+            row[t("Status")] = f"🆕 {t('New')}"
             new_rows.append(row)
 
     preview_rows = new_rows + changed_rows + unchanged_rows + skip_rows
@@ -214,92 +216,92 @@ def show_progress_mapping_section() -> None:
     )
 
     # ── Preview ──────────────────────────────────────────────────────────────
-    st.markdown(f"**Preview — {pm_file.name}**")
+    st.markdown(f"**{t('Preview —')} {pm_file.name}**")
     mc = st.columns(4)
-    mc[0].metric("🆕 New records",       n_new)
-    mc[1].metric("♻️ Will update",        n_update)
-    mc[2].metric("✓ Already up to date", n_same)
-    mc[3].metric("⚠️ Skipped",           n_skip)
+    mc[0].metric(f"🆕 {t('New records')}",       n_new)
+    mc[1].metric(f"♻️ {t('Will update')}",        n_update)
+    mc[2].metric(f"✓ {t('Already up to date')}", n_same)
+    mc[3].metric(f"⚠️ {t('Skipped')}",           n_skip)
 
-    with st.expander("Show full record list", expanded=(len(preview_rows) <= 20)):
+    with st.expander(t("Show full record list"), expanded=(len(preview_rows) <= 20)):
         st.dataframe(pd.DataFrame(preview_rows), width="stretch", hide_index=True)
 
     # ── Diff for records that will update ────────────────────────────────────
     if existing_in_file and "Add new only" in import_mode:
-        with st.expander(f"🔍 {len(existing_in_file)} existing record(s) — will be skipped"):
+        with st.expander(f"🔍 {len(existing_in_file)} {t('existing record(s) — will be skipped')}"):
             st.caption(
-                "Import mode is **Add new only**: records already in the database "
-                "are left completely unchanged. None of these will be touched by "
-                "this import."
+                t("Import mode is **Add new only**: records already in the database "
+                  "are left completely unchanged. None of these will be touched by "
+                  "this import.")
             )
     elif changed_rows or unchanged_rows:
         diff_rows = [
-            {"PC No.": rec.get("pc_no", ""), "Style": rec.get("style_display", ""),
-             "Color (EN)": rec.get("color", ""), **d}
+            {t("PC No."): rec.get("pc_no", ""), t("Style"): rec.get("style_display", ""),
+             t("Color (EN)"): rec.get("color", ""), **d}
             for rec, key in existing_in_file
             if key in diff_by_key
             for d in diff_by_key[key]
         ]
         if len(diff_rows) > 30:
             st.caption(
-                f"⚠️ Large changeset — open the panel below to review all "
-                f"{len(diff_rows)} field-level changes before importing."
+                f"⚠️ {t('Large changeset — open the panel below to review all')} "
+                f"{len(diff_rows)} {t('field-level changes before importing.')}"
             )
         with st.expander(
-            f"🔍 Show differences for updating records "
-            f"({n_update} of {n_update + n_same} actually changed — "
-            f"{len(diff_rows)} field change(s))",
+            f"🔍 {t('Show differences for updating records')} "
+            f"({n_update} {t('of')} {n_update + n_same} {t('actually changed —')} "
+            f"{len(diff_rows)} {t('field change(s))')}",
             expanded=(0 < len(diff_rows) <= 30),
         ):
             if diff_rows:
                 st.dataframe(pd.DataFrame(diff_rows), width="stretch", hide_index=True)
             else:
                 st.caption(
-                    "No field-level differences — the stored data already matches the file."
+                    t("No field-level differences — the stored data already matches the file.")
                 )
 
     # ── Confirmation for Replace all ─────────────────────────────────────────
     confirmed_replace = True
     if "Replace all" in import_mode:
         st.warning(
-            f"⚠️ **Replace all** will permanently delete ALL existing progress data "
-            f"for **{pm_company}** ({existing_count} record(s)) before importing. "
-            "This cannot be undone."
+            f"⚠️ {t('**Replace all** will permanently delete ALL existing progress data for')} "
+            f"**{pm_company}** ({existing_count} {t('record(s)) before importing.')} "
+            f"{t('This cannot be undone.')}"
         )
         confirmed_replace = st.checkbox(
-            "I understand — delete existing data and replace with this file",
+            t("I understand — delete existing data and replace with this file"),
             key="pm_tab_replace_confirm",
         )
 
     # ── Import button ─────────────────────────────────────────────────────────
     import_disabled = (not confirmed_replace) or (n_new + n_update + n_same == 0)
     if st.button(
-        "💾 Import Progress Data", type="primary",
+        f"💾 {t('Import Progress Data')}", type="primary",
         key="pm_tab_import_btn",
         disabled=import_disabled,
     ):
-        with st.spinner("Saving progress data..."):
+        with st.spinner(t("Saving progress data...")):
             try:
                 if "Replace all" in import_mode:
                     deleted = store.delete_progress_records(source)
-                    st.caption(f"Deleted {deleted} existing record(s) for {pm_company}.")
+                    st.caption(f"{t('Deleted')} {deleted} {t('existing record(s) for')} {pm_company}.")
                     to_save = records
                 elif "Add new only" in import_mode:
                     to_save = [rec for rec, key in keyed_records if key not in existing_keys]
                     skipped_n = len(records) - len(to_save)
                     if skipped_n:
-                        st.caption(f"Skipped {skipped_n} existing record(s).")
+                        st.caption(f"{t('Skipped')} {skipped_n} {t('existing record(s).')}")
                 else:  # Upsert
                     to_save = records
 
                 if not to_save:
-                    st.warning("Nothing to import after applying the selected mode.")
+                    st.warning(t("Nothing to import after applying the selected mode."))
                 else:
                     n_saved = store.save_progress_records_batch(source, to_save)
                     st.success(
-                        f"✅ Saved **{n_saved}** progress record(s) for **{pm_company}**."
+                        f"✅ {t('Saved')} **{n_saved}** {t('progress record(s) for')} **{pm_company}**."
                     )
                     _cached_parse_progress.clear()
 
             except Exception as exc:
-                st.error(f"Import failed: {exc}")
+                st.error(f"{t('Import failed:')} {exc}")

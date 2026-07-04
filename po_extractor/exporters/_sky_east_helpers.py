@@ -220,6 +220,7 @@ def _detect_nukuryou_layout(ws) -> tuple[int, dict[str, int], int]:
     for r in range(1, 11):
         row_sizes: dict[str, int] = {}
         non_size_cols: list[int] = []
+        color_found = False
         for cell in ws[r]:
             if cell.value is None:
                 continue
@@ -229,16 +230,17 @@ def _detect_nukuryou_layout(ws) -> tuple[int, dict[str, int], int]:
                 row_sizes.setdefault(sz, cell.column)
             elif norm in _NUK_COLOR_ALIASES:
                 color_col = cell.column
+                color_found = True
             else:
                 non_size_cols.append(cell.column)
 
         if len(row_sizes) >= 3:   # found the size header row
             size_header_row = r
             size_col_map = row_sizes
-            if not any(n == color_col for n in _NUK_COLOR_ALIASES):
-                # Colour column = leftmost non-size column in the same row
-                if non_size_cols:
-                    color_col = min(non_size_cols)
+            if not color_found and non_size_cols:
+                # No 颜色/Color header in this row — fall back to the
+                # leftmost non-size column.
+                color_col = min(non_size_cols)
             break
 
     # Fallbacks: canonical B-G layout

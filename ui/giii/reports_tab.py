@@ -5,7 +5,9 @@ import streamlit as st
 import pandas as pd
 
 from auth.users import get_user_companies, is_admin
+from ui.i18n import t
 from ui.session_keys import SK
+from ui.shared import guard_multiselect_state
 from ui.stores import get_store
 from ui.giii._shared import _XLSX_MIME, live_label
 from ui.giii.extraction import _run_from_history, _create_buyplan_bytes
@@ -30,9 +32,17 @@ def _show_reports_tab() -> None:
     username = st.session_state.get(SK.USERNAME, "")
     user_cos = get_user_companies(username)
     admin    = is_admin(username)
+    # Non-admin with no assigned companies must see nothing — an empty list
+    # falls through the store's falsy check to an unfiltered query.
+    if not admin and not user_cos:
+        st.info(t(
+            "No companies assigned to your account. "
+            "Contact an administrator to be granted access."
+        ))
+        return
     df       = store.list_pos(companies=user_cos if user_cos else None)
 
-    sub_gen, sub_tracker = st.tabs(["📥 Generate Outputs", "📋 PO Tracker"])
+    sub_gen, sub_tracker = st.tabs([f"📥 {t('Generate Outputs')}", f"📋 {t('PO Tracker')}"])
 
     with sub_gen:
         _show_generate_section(df, store)
@@ -46,28 +56,31 @@ def _show_reports_tab() -> None:
 # ---------------------------------------------------------------------------
 
 def _show_generate_section(df: pd.DataFrame, store) -> None:
-    st.markdown("**Generate Excel outputs from stored PO data**")
-    st.caption(
+    st.markdown(f"**{t('Generate Excel outputs from stored PO data')}**")
+    st.caption(t(
         "Filter and select POs below, then click **Generate All Outputs** to rebuild "
         "Buy Plan · Color Plan · PO Summary · Cross-Check from the stored data — "
         "no re-upload required."
-    )
+    ))
 
     if df.empty:
-        st.info("No POs stored yet. Upload PDFs via the **Upload** tab to get started.")
+        st.info(t("No POs stored yet. Upload PDFs via the **Upload** tab to get started."))
         return
 
     # ── Filters ──────────────────────────────────────────────────────────────
     fc1, fc2, fc3 = st.columns(3)
     with fc1:
         companies = sorted(df["company"].dropna().unique().tolist()) if "company" in df.columns else []
-        sel_co = st.multiselect("Company", companies, key="rpt_co_filter")
+        guard_multiselect_state("rpt_co_filter", companies)
+        sel_co = st.multiselect(t("Company"), companies, key="rpt_co_filter")
     with fc2:
         seasons = sorted(df["season"].dropna().unique().tolist()) if "season" in df.columns else []
-        sel_season = st.multiselect("Season", seasons, key="rpt_season_filter")
+        guard_multiselect_state("rpt_season_filter", seasons)
+        sel_season = st.multiselect(t("Season"), seasons, key="rpt_season_filter")
     with fc3:
         divs = sorted(df["division_name"].dropna().unique().tolist()) if "division_name" in df.columns else []
-        sel_div = st.multiselect("Division", divs, key="rpt_div_filter")
+        guard_multiselect_state("rpt_div_filter", divs)
+        sel_div = st.multiselect(t("Division"), divs, key="rpt_div_filter")
 
     filt_df = df.copy()
     if sel_co:
@@ -78,18 +91,24 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         filt_df = filt_df[filt_df["division_name"].isin(sel_div)]
 
     # ── PO selector ───────────────────────────────────────────────────────────
+    # Seed once (pre-select all visible POs), then guard — key= together with
+    # default= is the CLAUDE.md-banned desync pattern: the default is ignored
+    # once widget state exists, and stale POs silently blank the selection.
     po_opts = filt_df["po_number"].tolist()
+    if "rpt_po_select" not in st.session_state:
+        st.session_state["rpt_po_select"] = po_opts
+    else:
+        guard_multiselect_state("rpt_po_select", po_opts)
     selected = st.multiselect(
-        f"Select POs ({len(po_opts)} available after filters):",
+        f"{t('Select POs')} ({len(po_opts)} {t('available after filters')}):",
         options=po_opts,
-        default=po_opts,          # pre-select all visible POs
-        placeholder="Select one or more PO numbers…",
+        placeholder=t("Select one or more PO numbers…"),
         key="rpt_po_select",
     )
     if not po_opts:
-        st.warning("No POs match the current filters.")
+        st.warning(t("No POs match the current filters."))
         return
-    st.caption(f"**{len(selected)}** PO(s) selected")
+    st.caption(f"**{len(selected)}** {t('PO(s) selected')}")
 
     st.divider()
 
@@ -98,7 +117,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
 
     with c1:
         if st.button(
-            "📊 Generate All Outputs",
+            "📊 " + t("Generate All Outputs"),
             type="primary",
             disabled=not selected,
             use_container_width=True,
@@ -109,36 +128,36 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
 
     with c2:
         if st.button(
-            "🎨 Color Plan Only",
+            "🎨 " + t("Color Plan Only"),
             disabled=not selected,
             use_container_width=True,
             key="rpt_gen_cp_btn",
         ):
             st.session_state.pop("rpt_cp_bytes", None)
-            with st.spinner("Building color plan…"):
+            with st.spinner(t("Building color plan…")):
                 cp_bytes = _generate_color_plan_excel(selected, store)
             if cp_bytes:
                 st.session_state["rpt_cp_bytes"] = cp_bytes
             else:
-                st.warning("No size data found for selected POs.")
+                st.warning(t("No size data found for selected POs."))
 
     with c3:
         if st.button(
-            "📋 PO Summary Only",
+            "📋 " + t("PO Summary Only"),
             disabled=not selected,
             use_container_width=True,
             key="rpt_gen_ps_btn",
         ):
             st.session_state.pop("rpt_ps_bytes", None)
             ps_df = filt_df[filt_df["po_number"].isin(selected)]
-            with st.spinner("Building PO summary…"):
+            with st.spinner(t("Building PO summary…")):
                 df_sizes = store.load_size_rows(selected)
                 ps_bytes = _generate_po_summary_excel(ps_df, df_sizes=df_sizes)
             st.session_state["rpt_ps_bytes"] = ps_bytes
 
     with c4:
         if st.button(
-            "📐 KL Format Summary",
+            "📐 " + t("KL Format Summary"),
             disabled=not selected,
             use_container_width=True,
             key="rpt_gen_kl_btn",
@@ -146,7 +165,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         ):
             st.session_state.pop("rpt_kl_bytes", None)
             kl_df = filt_df[filt_df["po_number"].isin(selected)]
-            with st.spinner("Building KL-format summary…"):
+            with st.spinner(t("Building KL-format summary…")):
                 df_sizes = store.load_size_rows(selected)
                 kl_bytes = _generate_kl_format_excel_bytes(kl_df, df_sizes)
             if kl_bytes:
@@ -154,19 +173,19 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
                 issues = _check_kl_excel(kl_df, df_sizes, kl_bytes, verbose=False)
                 if issues:
                     st.warning(
-                        "**KL summary consistency check failed** — "
-                        "the file may have missing rows:\n\n"
+                        t("**KL summary consistency check failed** — "
+                          "the file may have missing rows:") + "\n\n"
                         + "\n".join(f"- {i}" for i in issues)
                     )
                 st.session_state["rpt_kl_bytes"] = kl_bytes
             else:
-                st.warning("No size data found for selected POs.")
+                st.warning(t("No size data found for selected POs."))
 
     # ── Action buttons — row 2 ────────────────────────────────────────────────
     c5, _c6, _c7, _c8 = st.columns(4)
     with c5:
         if st.button(
-            "📋 Create Buy Plan (生产计划单)",
+            "📋 " + t("Create Buy Plan (生产计划单)"),
             disabled=not selected,
             use_container_width=True,
             key="rpt_gen_bp_btn",
@@ -177,15 +196,15 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             ),
         ):
             st.session_state.pop("rpt_bp_bytes", None)
-            with st.spinner("Building production plan…"):
+            with st.spinner(t("Building production plan…")):
                 try:
                     bp_bytes = generate_giii_production_plan(selected, store)
                     if bp_bytes:
                         st.session_state["rpt_bp_bytes"] = bp_bytes
                     else:
-                        st.warning("No size data found for the selected POs.")
+                        st.warning(t("No size data found for the selected POs."))
                 except Exception as exc:
-                    st.error(f"Production plan generation failed: {exc}")
+                    st.error(t("Production plan generation failed:") + f" {exc}")
 
     # ── Download area ─────────────────────────────────────────────────────────
     if st.session_state.get("rpt_all_results"):
@@ -193,7 +212,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
 
     if st.session_state.get("rpt_cp_bytes"):
         st.download_button(
-            "⬇️ Download Color Plan (.xlsx)",
+            "⬇️ " + t("Download Color Plan (.xlsx)"),
             data=st.session_state["rpt_cp_bytes"],
             file_name="Color_Plan.xlsx",
             mime=_XLSX_MIME,
@@ -202,7 +221,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
 
     if st.session_state.get("rpt_ps_bytes"):
         st.download_button(
-            "⬇️ Download PO Summary (.xlsx)",
+            "⬇️ " + t("Download PO Summary (.xlsx)"),
             data=st.session_state["rpt_ps_bytes"],
             file_name="PO_Summary.xlsx",
             mime=_XLSX_MIME,
@@ -211,7 +230,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
 
     if st.session_state.get("rpt_kl_bytes"):
         st.download_button(
-            "⬇️ Download KL Format Summary (.xlsx)",
+            "⬇️ " + t("Download KL Format Summary (.xlsx)"),
             data=st.session_state["rpt_kl_bytes"],
             file_name="PO_Summary_KL.xlsx",
             mime=_XLSX_MIME,
@@ -220,7 +239,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
 
     if st.session_state.get("rpt_bp_bytes"):
         st.download_button(
-            "⬇️ Download Buy Plan — 生产计划单 (.xlsx)",
+            "⬇️ " + t("Download Buy Plan — 生产计划单 (.xlsx)"),
             data=st.session_state["rpt_bp_bytes"],
             file_name="GIII_Production_Plan.xlsx",
             mime=_XLSX_MIME,
@@ -233,24 +252,27 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
 # ---------------------------------------------------------------------------
 
 def _show_tracker_section(df: pd.DataFrame, user_cos: list, admin: bool) -> None:
-    st.markdown("**PO Tracker — commercial detail view**")
-    st.caption("One row per PO with all extracted commercial fields. Filter, pick columns, and download.")
+    st.markdown(f"**{t('PO Tracker — commercial detail view')}**")
+    st.caption(t("One row per PO with all extracted commercial fields. Filter, pick columns, and download."))
 
     if df.empty:
-        st.info("No POs stored yet. Upload PDFs via the **Upload** tab.")
+        st.info(t("No POs stored yet. Upload PDFs via the **Upload** tab."))
         return
 
     # ── Filters ──────────────────────────────────────────────────────────────
     fc1, fc2, fc3 = st.columns(3)
     with fc1:
         seasons = sorted(df["season"].dropna().unique().tolist()) if "season" in df.columns else []
-        sel_s = st.multiselect("Season", seasons, key="trk_season")
+        guard_multiselect_state("trk_season", seasons)
+        sel_s = st.multiselect(t("Season"), seasons, key="trk_season")
     with fc2:
         divs = sorted(df["division_name"].dropna().unique().tolist()) if "division_name" in df.columns else []
-        sel_d = st.multiselect("Division", divs, key="trk_div")
+        guard_multiselect_state("trk_div", divs)
+        sel_d = st.multiselect(t("Division"), divs, key="trk_div")
     with fc3:
         buyers = sorted(df["buyer"].dropna().unique().tolist()) if "buyer" in df.columns else []
-        sel_b = st.multiselect("Buyer", buyers, key="trk_buyer")
+        guard_multiselect_state("trk_buyer", buyers)
+        sel_b = st.multiselect(t("Buyer"), buyers, key="trk_buyer")
 
     view = df.copy()
     if sel_s:
@@ -261,25 +283,29 @@ def _show_tracker_section(df: pd.DataFrame, user_cos: list, admin: bool) -> None
         view = view[view["buyer"].isin(sel_b)]
 
     # ── Column selector ───────────────────────────────────────────────────────
+    # Seed once + guard instead of key= AND default= (banned desync pattern).
     avail   = [k for k in _TRACKER_COLS if k in view.columns]
     default = [k for k in _DEFAULT_COLS  if k in avail]
+    if "trk_cols" not in st.session_state:
+        st.session_state["trk_cols"] = default
+    else:
+        guard_multiselect_state("trk_cols", avail)
     picked  = st.multiselect(
-        "Columns",
+        t("Columns"),
         options=avail,
-        default=default,
         format_func=lambda k: _TRACKER_COLS.get(k, k),
         key="trk_cols",
     )
     show_cols  = picked or default
     display_df = view[show_cols].rename(columns=_TRACKER_COLS)
 
-    st.caption(f"**{len(display_df):,}** PO(s)")
+    st.caption(f"**{len(display_df):,}** {t('PO(s)')}")
     st.dataframe(display_df, use_container_width=True, hide_index=True)
 
     # ── Download ──────────────────────────────────────────────────────────────
     xlsx = _build_tracker_excel(display_df)
     st.download_button(
-        "⬇️ Download PO Tracker (.xlsx)",
+        "⬇️ " + t("Download PO Tracker (.xlsx)"),
         data=xlsx,
         file_name="po_tracker.xlsx",
         mime=_XLSX_MIME,
