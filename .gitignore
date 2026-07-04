@@ -49,6 +49,7 @@ data/image_folder_history.json
 
 # Local logs and temp
 *.log
+logs/
 tmp/
 temp/
 .codex_tmp/

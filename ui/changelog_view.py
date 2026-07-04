@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.27.1",
+        "date": "2026-07-04",
+        "entries": [
+            {"type": "docs", "text": "Added `docs/DEPLOYMENT.md` — a runbook for installing the app as a persistent Windows Service (NSSM: auto-start on boot, auto-restart on crash, rotated logs) instead of running it manually in a terminal. Covers getting the code onto a server, the Python/venv setup, first-run licensing and user setup, the firewall rule, a post-deploy verification checklist, and the update/rollback procedure"},
+        ],
+    },
+    {
         "version": "2.27.0",
         "date": "2026-07-04",
         "entries": [
