@@ -65,6 +65,7 @@ class SK:
     PT_DELETE_CONFIRM = "pt_delete_confirm"  # bool — delete confirmation shown
     PT_DELETE_FLASH   = "pt_delete_flash"    # str — one-shot success msg after delete
     PT_ACTIVE_TAB     = "pt_active_tab"      # int — active sub-tab index (0=Dashboard)
+    PT_ADD_CLIENT     = "pt_add_client"      # str — Add New tab's client filter
 
     # ── GIII fax/portal extraction sections (MSG / KL / TK EU / InforNexus) ──
     # *_SIG holds the uploader file-set signature the results were built from

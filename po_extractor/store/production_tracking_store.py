@@ -213,29 +213,92 @@ class ProductionTrackingStore(BaseSQLiteStore):
     ) -> list[dict]:
         """Return untracked (po_number, style, factory, company) combos.
 
-        Sourced from ``po_size_rows`` (not ``po_metadata``) because a single
-        PO can carry multiple distinct styles; po_metadata has only one style
-        column per PO and would miss multi-style orders.
+        Sourced from **both** client pipelines that feed the tracking table:
+          - GIII: ``po_size_rows`` (not ``po_metadata``, since a single PO can
+            carry multiple distinct styles; po_metadata has only one style
+            column per PO and would miss multi-style orders).
+          - Sky East: ``sky_east_items`` (``zalando_po`` → ``po_number``;
+            ``company`` is always the literal "Sky East" — that table has no
+            per-row company column because the whole store is one client).
+
+        Before this UNION, ``list_untracked_pos`` only queried the GIII
+        tables, so Sky East orders could never appear as tracking candidates
+        no matter which company the user had access to.
 
         Access-control contract (mirrors ``list_all``):
           - ``allow_all=True`` → no company filter (admin path)
           - ``allow_all=False`` + empty/None companies → return ``[]``
-          - ``allow_all=False`` + non-empty companies → filter by company
+          - ``allow_all=False`` + non-empty companies → filter by company;
+            the GIII branch matches ``po_metadata.company`` against
+            *companies*, the Sky East branch runs only when
+            ``COMPANY_SKY_EAST`` is one of *companies* (its rows are always
+            that literal company, so no per-row filter is needed).
 
         Runs against ``po_store.db_path`` — which in single-DB mode is the
-        same file as ``self.db_path``, so the same connection sees all tables.
+        same file as ``self.db_path`` (and always the same file as Sky
+        East's store, which shares the canonical DB path), so one connection
+        sees all tables.
         """
+        from auth.companies import COMPANY_SKY_EAST
+
         # Guard: non-admin with no assigned companies → nothing visible
         if not allow_all and not companies:
             return []
 
-        # Build the optional company WHERE fragment
+        include_giii = allow_all or bool(companies)
+        include_sky_east = allow_all or (companies and COMPANY_SKY_EAST in companies)
+        if not include_giii and not include_sky_east:
+            return []
+
+        # Build the optional company WHERE fragment (GIII branch only —
+        # Sky East is gated by include_sky_east above, not by this clause).
         company_clause = ""
         company_params: list[Any] = []
         if not allow_all and companies:
             ph = ",".join("?" * len(companies))
             company_clause = f" AND COALESCE(m.company, '') IN ({ph})"
             company_params = list(companies)
+
+        # production_tracking may live in a different DB file than the main
+        # app DB; sky_east_items never does (SkyEastStore always shares the
+        # canonical DB path), so it's addressed the same way in both cases.
+        pt_table = "production_tracking" if po_store.db_path == self.db_path else "pt.production_tracking"
+
+        branches: list[str] = []
+        params: list[Any] = []
+        if include_giii:
+            branches.append(f"""
+                SELECT DISTINCT
+                       s.po_number,
+                       COALESCE(s.style, '') AS style,
+                       COALESCE(m.factory, '') AS factory,
+                       COALESCE(m.company, '') AS company
+                FROM po_size_rows s
+                LEFT JOIN po_metadata m ON m.po_number = s.po_number
+                WHERE (s.po_number, COALESCE(s.style, '')) NOT IN
+                      (SELECT po_number, style FROM {pt_table})
+                {company_clause}
+            """)
+            params.extend(company_params)
+        if include_sky_east:
+            branches.append(f"""
+                SELECT DISTINCT
+                       i.zalando_po AS po_number,
+                       COALESCE(i.style, '') AS style,
+                       '' AS factory,
+                       ? AS company
+                FROM sky_east_items i
+                WHERE i.zalando_po IS NOT NULL AND i.zalando_po != ''
+                  AND (i.zalando_po, COALESCE(i.style, '')) NOT IN
+                      (SELECT po_number, style FROM {pt_table})
+            """)
+            params.append(COMPANY_SKY_EAST)
+
+        # Ordinal ORDER BY (not column names): the GIII branch's FROM/JOIN
+        # includes po_metadata, which also has a po_number column — an
+        # unqualified "ORDER BY po_number" is ambiguous whenever this runs
+        # as a single (non-UNION) SELECT instead of a compound one.
+        query = " UNION ".join(branches) + " ORDER BY 1, 2"
 
         import sqlite3
         from contextlib import closing
@@ -244,43 +307,10 @@ class ProductionTrackingStore(BaseSQLiteStore):
             # Attach the tracking DB if it's a different file.  In the
             # canonical po_history.db setup they're the same file, so we
             # can simply read the local production_tracking table.
-            if po_store.db_path == self.db_path:
-                rows = conn.execute(
-                    f"""
-                    SELECT DISTINCT
-                           s.po_number,
-                           COALESCE(s.style, '') AS style,
-                           COALESCE(m.factory, '') AS factory,
-                           COALESCE(m.company, '') AS company
-                    FROM po_size_rows s
-                    LEFT JOIN po_metadata m ON m.po_number = s.po_number
-                    WHERE (s.po_number, COALESCE(s.style, '')) NOT IN
-                          (SELECT po_number, style FROM production_tracking)
-                    {company_clause}
-                    ORDER BY s.po_number, s.style
-                    """,
-                    company_params,
-                ).fetchall()
-            else:
-                # Different DB files: attach the tracking DB read-only.
+            if po_store.db_path != self.db_path:
                 # Parameterised — an f-string breaks on any quote in the path.
                 conn.execute("ATTACH DATABASE ? AS pt", (self.db_path,))
-                rows = conn.execute(
-                    f"""
-                    SELECT DISTINCT
-                           s.po_number,
-                           COALESCE(s.style, '') AS style,
-                           COALESCE(m.factory, '') AS factory,
-                           COALESCE(m.company, '') AS company
-                    FROM po_size_rows s
-                    LEFT JOIN po_metadata m ON m.po_number = s.po_number
-                    WHERE (s.po_number, COALESCE(s.style, '')) NOT IN
-                          (SELECT po_number, style FROM pt.production_tracking)
-                    {company_clause}
-                    ORDER BY s.po_number, s.style
-                    """,
-                    company_params,
-                ).fetchall()
+            rows = conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
     # ── Compute helpers (pure-Python, no DB) ────────────────────────────────

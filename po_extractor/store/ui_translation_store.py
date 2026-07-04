@@ -1079,6 +1079,21 @@ _SEED: list[tuple[str, str, str, str]] = [
     ("**💌 Brevo — 300 emails/day free (best free tier)**\n\n1. Sign up at https://brevo.com\n2. Go to **Settings → SMTP & API → Generate a new SMTP key**\n3. **Username:** your Brevo account email address\n4. **Password:** paste the SMTP key (not your login password)\n5. **Sender:** any address you've verified in Brevo\n\n300 emails/day free — 3× more than SendGrid.", '**💌 Brevo — 每天300封免费（最佳免费额度）**\n\n1. 在 https://brevo.com 注册\n2. 进入 **Settings → SMTP & API → Generate a new SMTP key**\n3. **用户名：** 您的 Brevo 账户邮箱地址\n4. **密码：** 粘贴 SMTP 密钥（不是登录密码）\n5. **发件人：** 任意已在 Brevo 验证过的地址\n\n每天300封免费 — 是 SendGrid 的3倍。', 'label', 'admin'),
     ('**⚡ Resend — 100 emails/day free, 3,000/month**\n\n1. Sign up at https://resend.com\n2. Go to **API Keys → Create API Key**\n3. **Username:** `resend` (literally)\n4. **Password:** paste your API key\n5. **Sender:** must use a verified domain (e.g. `you@yourdomain.com`)\n   — free accounts can also use `onboarding@resend.dev` for testing\n\nUses SSL on port 465 (configured automatically).', '**⚡ Resend — 每天100封免费，每月3,000封**\n\n1. 在 https://resend.com 注册\n2. 进入 **API Keys → Create API Key**\n3. **用户名：** `resend`（原样填写）\n4. **密码：** 粘贴您的 API 密钥\n5. **发件人：** 必须使用已验证的域名（例如 `you@yourdomain.com`）\n   — 免费账户测试时也可使用 `onboarding@resend.dev`\n\n使用 465 端口的 SSL（自动配置）。', 'label', 'admin'),
     ('Brevo will accept the connection but **silently drop the email** without delivering it.\n\n**Fix:** Fill in the **Sender** field above with an email address you have verified in your Brevo account (e.g. `orders@yourdomain.com`), then click **Save**.\n\nVerify senders at: https://app.brevo.com/senders', 'Brevo 会接受连接，但**会静默丢弃邮件**而不予投递。\n\n**解决方法：** 在上方**发件人**字段中填入您已在 Brevo 账户中验证过的邮箱地址（例如 `orders@yourdomain.com`），然后点击**保存**。\n\n验证发件人：https://app.brevo.com/senders', 'label', 'admin'),
+
+    # Tracking sub-tab radio labels — passed through format_func=t as WHOLE
+    # strings (emoji included), so the static t()-literal-argument audit
+    # can't see them as "used" keys; add explicitly.
+    ('📊 Dashboard', '📊 仪表盘', 'header', 'tracking'),
+    ('📋 Overview', '📋 概览', 'header', 'tracking'),
+    ('✏️ Edit Record', '✏️ 编辑记录', 'header', 'tracking'),
+    ('➕ Add New', '➕ 新增跟踪', 'header', 'tracking'),
+    ('📅 Plan', '📅 计划', 'header', 'tracking'),
+
+    # Tracking → Add New: client filter (v2.26.6 — Sky East orders are now
+    # offered here too, so a mixed candidate list needs a way to narrow down).
+    # 'Client' is already seeded above (admin/label) with the same value.
+    ('All clients', '全部客户', 'label', 'tracking'),
+    ('Select PO / Style to start tracking', '选择要开始跟踪的订单/款式', 'label', 'tracking'),
 ]
 # fmt: on
 

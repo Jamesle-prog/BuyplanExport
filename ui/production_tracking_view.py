@@ -915,6 +915,27 @@ def _render_add_tab(
         st.info(t("All POs are already being tracked."))
         return
 
+    # ── Client filter ──────────────────────────────────────────────────────
+    # list_untracked_pos() now unions candidates from every client pipeline
+    # (GIII + Sky East) — with several clients mixed together the picker
+    # below can get long, so let the user narrow it down first.
+    ALL_CLIENTS = t("All clients")
+    clients = sorted({row["company"] for row in untracked if row.get("company")})
+    if len(clients) > 1:
+        client_options = [ALL_CLIENTS] + clients
+        # Selectbox (not multiselect) — reconcile manually: a stale stored
+        # value (e.g. the previously chosen client has no more untracked
+        # POs) must not linger un-rendered.
+        if st.session_state.get(SK.PT_ADD_CLIENT) not in client_options:
+            st.session_state[SK.PT_ADD_CLIENT] = ALL_CLIENTS
+        sel_client = st.selectbox(
+            t("Client"),
+            options=client_options,
+            key=SK.PT_ADD_CLIENT,
+        )
+        if sel_client != ALL_CLIENTS:
+            untracked = [row for row in untracked if row.get("company") == sel_client]
+
     # ── PO picker ────────────────────────────────────────────────────────────
     def _fmt_ut(row: dict) -> str:
         parts = [row["po_number"]]
@@ -926,7 +947,7 @@ def _render_add_tab(
 
     options = list(range(len(untracked)))
     selected_idx = st.selectbox(
-        "Select PO / Style to start tracking",
+        t("Select PO / Style to start tracking"),
         options=options,
         format_func=lambda i: _fmt_ut(untracked[i]),
         key="pt_add_picker",

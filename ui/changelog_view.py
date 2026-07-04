@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.27.0",
+        "date": "2026-07-04",
+        "entries": [
+            {"type": "feat", "text": "**Tracking → Add New can now track Sky East orders, not just GIII.** The untracked-PO picker only ever queried the GIII pipeline's tables, so a Sky East order could never be offered no matter which company you had access to. It now also pulls from Sky East's item table, and a new **Client** filter appears whenever more than one client has untracked orders, so a mixed list doesn't get unwieldy"},
+            {"type": "fix", "text": "The 🏭 Tracking sub-tab labels (Dashboard/Overview/Edit Record/Add New/Plan) didn't translate under the Chinese UI — they're rendered via a radio's `format_func`, which the i18n coverage audit couldn't see since the string isn't a literal argument to `t()`. Added their translations explicitly"},
+        ],
+    },
+    {
         "version": "2.26.5",
         "date": "2026-07-03",
         "entries": [
