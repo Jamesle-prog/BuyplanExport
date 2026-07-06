@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.27.4",
+        "date": "2026-07-06",
+        "entries": [
+            {"type": "feat", "text": "**Added an uninstaller to the install pack** (`Uninstall.bat` / `Uninstall.ps1`). Always removes the Python environment (`.venv`) and this computer's license, since both rebuild automatically on the next install. Your PO history, fabric database, and login accounts are kept by default — typing `DELETE` at the prompt is required to also erase those. Deleting the install folder itself and uninstalling Python 3.13 are left as manual steps, since the script can't safely remove files it's running from and Python may be shared with other software on the machine"},
+            {"type": "chore", "text": "The install pack's helper scripts (`Install.ps1`, `Install.bat`, `Start_PO_Extractor.bat`, the new uninstaller, `INSTALL_README.md`) are now tracked under `installer/` in this repo instead of only existing in an ad-hoc build folder, so rebuilding the distributable pack no longer depends on that folder still being around"},
+        ],
+    },
+    {
         "version": "2.27.3",
         "date": "2026-07-06",
         "entries": [
