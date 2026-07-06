@@ -51,6 +51,23 @@ account after that defaults to a regular user, same as before. Promote
 someone to admin from the app's own User Management screen once you have at
 least one admin account.)
 
+## Updating to a new version
+
+When you get a newer pack, you don't need to reinstall from scratch — updating
+in place keeps your PO history, fabric database, and login accounts exactly
+as they are.
+
+1. Extract the new pack anywhere (e.g. your Downloads folder — it doesn't
+   need to be near your existing install).
+2. In the new pack, double-click **`Update.bat`**.
+3. When it asks for the path to your existing install, paste the folder path
+   of your **current** installation (e.g. `C:\Apps\PO_Automation_GIII`).
+4. It copies in the new app code and refreshes dependencies. Your
+   `data\` folder, `auth\users.json`, `auth\license.key`, and `.venv\` are
+   never touched, no matter what the new pack contains.
+5. Once it says "Update complete", launch the app as usual from your
+   **existing** install's `Start_PO_Extractor.bat`.
+
 ## Uninstalling
 
 Double-click **`Uninstall.bat`**. It always removes the Python environment

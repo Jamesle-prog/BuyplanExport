@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.27.7",
+        "date": "2026-07-06",
+        "entries": [
+            {"type": "feat", "text": "**Added an updater to the install pack** (`Update.bat` / `Update.ps1`). Run it from a newly-extracted pack folder, point it at an existing install, and it copies in the new app code and refreshes dependencies — `data\\`, `auth\\users.json`, `auth\\license.key`, `auth\\smtp_settings.json`, and `.venv\\` are explicitly excluded from the copy and never touched, even if a future pack happened to contain files by those names. Verified with a smoke test where the source pack deliberately included conflicting files under those exact names, to confirm the exclusion is defensive rather than incidental"},
+        ],
+    },
+    {
         "version": "2.27.6",
         "date": "2026-07-06",
         "entries": [
