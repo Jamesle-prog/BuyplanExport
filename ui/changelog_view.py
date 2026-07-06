@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.27.5",
+        "date": "2026-07-06",
+        "entries": [
+            {"type": "security", "text": "**This machine's `auth/license.key` had been committed to git** — `.gitignore` excluded `auth/license_key.txt`, but the file the app actually writes is `auth/license.key`, so the typo never matched and every clone/archive carried this dev machine's hardware-fingerprint key. Fixed the filename in `.gitignore` and untracked the file (kept on disk locally — the running app is unaffected). Not a live exposure risk in practice since `Install.ps1`/`docs/DEPLOYMENT.md` both regenerate a fresh key unconditionally on setup, but it had no business being in git history going forward"},
+        ],
+    },
+    {
         "version": "2.27.4",
         "date": "2026-07-06",
         "entries": [

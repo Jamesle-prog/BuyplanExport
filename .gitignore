@@ -62,7 +62,7 @@ temp/
 /zalandoFile/
 
 # Auth / license artifacts (keep code, exclude installed keys)
-auth/license_key.txt
+auth/license.key
 auth/users.db
 auth/users.db-*
 auth/users.json
