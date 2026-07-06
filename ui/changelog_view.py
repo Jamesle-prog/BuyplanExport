@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.27.6",
+        "date": "2026-07-06",
+        "entries": [
+            {"type": "fix", "text": "**Resetting an existing user's password via `setup_users.py` silently demoted admins back to a regular user.** `create_user()` always wrote whatever `role` it was given, defaulting to `user` — unlike `companies`/`modules`/`email`, it never fell back to the account's existing role when the caller didn't specify one. Since `setup_users.py` never passed a role except for the very first bootstrap account, re-running it against an existing admin (e.g. to change their password) quietly took away their admin access with no warning. `create_user()` now preserves the existing role when none is given, same as its other fields; explicitly passing a role (the admin User Management screen, and the first-run bootstrap) still overrides it as before"},
+        ],
+    },
+    {
         "version": "2.27.5",
         "date": "2026-07-06",
         "entries": [

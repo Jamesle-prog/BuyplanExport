@@ -69,7 +69,7 @@ def _save(users: dict) -> None:
 # ------------------------------------------------------------------ #
 
 def create_user(username: str, password: str,
-                role: str = ROLE_USER,
+                role: str | None = None,
                 companies: list[str] | None = None,
                 email: str | None = None,
                 modules: list[str] | None = None) -> None:
@@ -80,7 +80,7 @@ def create_user(username: str, password: str,
     existing = users.get(username, {})
     users[username] = {
         "password": hashed,
-        "role": role,
+        "role": role if role is not None else existing.get("role", ROLE_USER),
         "companies": companies if companies is not None else existing.get("companies", []),
         "email": (email if email is not None else existing.get("email", "")) or "",
         "modules": modules if modules is not None else existing.get("modules", []),

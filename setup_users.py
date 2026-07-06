@@ -4,17 +4,18 @@ Run once before first use:
     python setup_users.py
 
 Re-run any time to add or reset a user. Existing users are overwritten
-if you enter the same username again. The very first account created on
-a fresh install (no users.json yet) is automatically made an admin, since
-otherwise there's no way to bootstrap admin access on a new install without
-hand-editing auth/users.json.
+if you enter the same username again — resetting a password this way keeps
+that account's existing role (admin stays admin). The very first account
+created on a fresh install (no users.json yet) is automatically made an
+admin, since otherwise there's no way to bootstrap admin access on a new
+install without hand-editing auth/users.json.
 """
 import getpass
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from auth.users import create_user, list_users, ROLE_ADMIN, ROLE_USER
+from auth.users import create_user, get_user, list_users, ROLE_ADMIN
 
 BANNER = """
 ╔══════════════════════════════════════╗
@@ -39,10 +40,12 @@ def prompt_user() -> tuple[str, str] | None:
         return username, pw1
 
 
-def role_for_slot(first_run: bool, created_so_far: int) -> str:
-    """The very first account on a fresh install bootstraps as admin;
-    every other slot (including later ones in the same run) is a regular user."""
-    return ROLE_ADMIN if (first_run and created_so_far == 0) else ROLE_USER
+def role_for_slot(first_run: bool, created_so_far: int) -> str | None:
+    """The very first account on a fresh install bootstraps as admin. Every
+    other slot returns None, meaning create_user() leaves role untouched --
+    a brand-new username still defaults to a regular user, but resetting an
+    existing username's password preserves whatever role it already had."""
+    return ROLE_ADMIN if (first_run and created_so_far == 0) else None
 
 
 def main():
@@ -60,7 +63,8 @@ def main():
         username, password = result
         role = role_for_slot(first_run, created)
         create_user(username, password, role=role)
-        print(f"  ✓ User '{username}' saved{' as admin' if role == ROLE_ADMIN else ''}.\n")
+        final_role = get_user(username)["role"]
+        print(f"  ✓ User '{username}' saved (role: {final_role}).\n")
         created += 1
 
     users = list_users()

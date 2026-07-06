@@ -57,3 +57,28 @@ def test_change_password_preserves_modules(tmp_path, monkeypatch):
 def test_all_modules_have_labels():
     for m in users.ALL_MODULES:
         assert m in users.MODULE_LABELS
+
+
+def test_create_user_without_role_preserves_existing_admin_on_reset(tmp_path, monkeypatch):
+    """Resetting an existing admin's password (e.g. via setup_users.py, which
+    omits `role` for anyone but the very first bootstrap account) must not
+    silently demote them back to a regular user."""
+    monkeypatch.setattr(users, "_USERS_FILE", str(tmp_path / "users.json"))
+    users.create_user("james", "oldpw", role=users.ROLE_ADMIN)
+    users.create_user("james", "newpw")  # role omitted, as setup_users.py does
+    info = users.get_user("james")
+    assert info["role"] == users.ROLE_ADMIN
+    assert users.verify_password("james", "newpw") is True
+
+
+def test_create_user_without_role_defaults_brand_new_account_to_user(tmp_path, monkeypatch):
+    monkeypatch.setattr(users, "_USERS_FILE", str(tmp_path / "users.json"))
+    users.create_user("newperson", "pw")  # role omitted, no existing record
+    assert users.get_user("newperson")["role"] == users.ROLE_USER
+
+
+def test_create_user_with_explicit_role_still_overrides_existing(tmp_path, monkeypatch):
+    monkeypatch.setattr(users, "_USERS_FILE", str(tmp_path / "users.json"))
+    users.create_user("bob", "pw", role=users.ROLE_USER)
+    users.create_user("bob", "pw2", role=users.ROLE_ADMIN)  # deliberate promotion
+    assert users.get_user("bob")["role"] == users.ROLE_ADMIN
