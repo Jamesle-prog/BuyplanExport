@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.27.3",
+        "date": "2026-07-06",
+        "entries": [
+            {"type": "fix", "text": "**`setup_users.py` had no way to create the first admin account.** It always created accounts as role `user` (the default on `create_user()`), so a brand-new install — including from the installer pack — had no login that could reach the User Management screen without hand-editing `auth/users.json`. On a fresh install (no accounts yet), the very first account created is now automatically made admin; every account after that still defaults to a regular user as before"},
+        ],
+    },
+    {
         "version": "2.27.2",
         "date": "2026-07-04",
         "entries": [
