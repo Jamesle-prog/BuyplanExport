@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.29.1",
+        "date": "2026-07-07",
+        "entries": [
+            {"type": "fix", "text": "**Pipeline convergence phase 3: Sky East parse failures now land in the persistent Exception Queue** (the same one GIII parse failures use, tagged with company \"Sky East\") instead of existing only as a red line in the upload log that vanished with the browser session. They show up in the Exception Queue panel for admins and Sky East-permitted users, with the file name and failure reason"},
+        ],
+    },
+    {
         "version": "2.29.0",
         "date": "2026-07-07",
         "entries": [

@@ -8,7 +8,7 @@ import zipfile
 
 import streamlit as st
 
-from auth.companies import SOURCE_SKY_EAST
+from auth.companies import COMPANY_SKY_EAST, SOURCE_SKY_EAST
 from po_extractor.utils.price_mask import mask_prices_excel_batch
 from ui.session_keys import SK
 from ui.shared import ProgressTracker, save_images_to_disk, EXTRACTED_IMAGES_DIR
@@ -329,6 +329,18 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
                 except Exception as exc:
                     st.write(f"  {fname}: {exc}")
                     log.append(f'<span style="color:#dc3545">{fname}</span>: {exc}')
+                    # Persist to the shared exception queue (same destination
+                    # GIII parse failures go to) so the failure survives the
+                    # session instead of living only in this log panel.
+                    try:
+                        get_store().save_exception(
+                            po_number="", file_name=fname,
+                            company=COMPANY_SKY_EAST,
+                            reason=f"Sky East parse failed: {exc}",
+                            processed_by=st.session_state.get(SK.USERNAME, ""),
+                        )
+                    except Exception:
+                        pass  # queueing must never mask the original error
 
             if not contracts:
                 status.update(label="No valid contracts could be parsed.", state="error")

@@ -164,3 +164,24 @@ def test_backend_validation_clean_contract_reports_no_issues():
     report = validate_contracts([_make_contract([_make_item(ex_fty_date="2026-05-01")])])
     assert report["sku_coverage_pct"] == 100.0
     assert all(not v for v in report["issues"].values())
+
+
+# ── Phase 3: shared exception queue accepts Sky East failures ────────────────
+
+def test_exception_queue_stores_and_filters_sky_east_failures(tmp_path):
+    from po_extractor.store.po_store import POStore
+    store = POStore(str(tmp_path / "po.db"))
+    store.save_exception(po_number="", file_name="bad_contract.xlsx",
+                         company="Sky East",
+                         reason="Sky East parse failed: boom",
+                         processed_by="tester")
+    store.save_exception(po_number="PO1", file_name="po1.pdf",
+                         company="GIII", reason="giii failure")
+
+    se_df = store.list_exceptions(companies=["Sky East"])
+    assert len(se_df) == 1
+    assert se_df.iloc[0]["file_name"] == "bad_contract.xlsx"
+    assert se_df.iloc[0]["status"] == "pending"
+
+    all_df = store.list_exceptions()
+    assert set(all_df["company"]) == {"Sky East", "GIII"}
