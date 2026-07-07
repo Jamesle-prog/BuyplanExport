@@ -12,7 +12,8 @@ from openpyxl.utils import get_column_letter
 from auth.companies import COMPANY_GIII, COMPANY_SKY_EAST
 from po_extractor.ui_helpers.combined_summary import (
     STANDARD_KEYS, STANDARD_LABELS,
-    combine_standard, giii_pos_to_standard, sky_east_items_to_standard,
+    build_contract_maps, combine_standard,
+    giii_pos_to_standard, sky_east_items_to_standard,
 )
 from ui.i18n import t
 from ui.session_keys import SK
@@ -232,8 +233,20 @@ def _show_all_orders(user_cos: list[str], admin_mode: bool) -> None:
 
     frames = []
     if can_see_giii:
-        giii_df = get_store().list_pos(companies=user_cos if user_cos and not admin_mode else None)
-        frames.append(giii_pos_to_standard(giii_df))
+        store = get_store()
+        giii_df = store.list_pos(companies=user_cos if user_cos and not admin_mode else None)
+        # GIII contract numbers come from the stored HHN 大货进度表 records
+        # (uploaded per company via the HHN Contract Progress tab), matched
+        # by PO number first, then style.
+        progress_records: list[dict] = []
+        if not giii_df.empty and "company" in giii_df.columns:
+            from ui.fabric_mapping_view import _company_to_source
+            for comp in giii_df["company"].dropna().unique():
+                progress_records.extend(
+                    store.load_progress_records(_company_to_source(str(comp))))
+        by_po, by_style = build_contract_maps(progress_records)
+        frames.append(giii_pos_to_standard(
+            giii_df, contract_by_po=by_po, contract_by_style=by_style))
     if can_see_zalando:
         se_store = get_sky_east_store()
         se_items = se_store.list_items()

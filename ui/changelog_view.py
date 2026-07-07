@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.28.1",
+        "date": "2026-07-07",
+        "entries": [
+            {"type": "fix", "text": "**All Orders: GIII's Contract No. now comes from the HHN 大货进度表 progress records** instead of just mirroring the PO number. Matched by the progress sheet's PO# column first (normalized, so casing/whitespace differences don't matter), falling back to a style match when PO# is blank — and left empty when the progress data has no row for the order, rather than showing a misleading value. Upload the 大货进度表 per company via the HHN Contract Progress tab to populate it"},
+        ],
+    },
+    {
         "version": "2.28.0",
         "date": "2026-07-07",
         "entries": [

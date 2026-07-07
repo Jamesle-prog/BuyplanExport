@@ -6,6 +6,7 @@ import pandas as pd
 from po_extractor.ui_helpers.combined_summary import (
     STANDARD_KEYS,
     STANDARD_LABELS,
+    build_contract_maps,
     combine_standard,
     giii_pos_to_standard,
     sky_east_items_to_standard,
@@ -42,13 +43,42 @@ def test_giii_maps_to_standard_shape():
     assert list(out.columns) == STANDARD_KEYS
     row = out.iloc[0]
     assert row["po_number"] == "PO123"
-    assert row["contract_no"] == "PO123"        # GIII: PO doubles as contract
+    assert row["contract_no"] == ""             # no progress data → blank, not PO
     assert row["color"] == ""                   # not at PO grain
     assert row["brand_customer"] == "Macy's"
     assert row["order_date"] == "2026-01-02"
     assert row["ex_fty_date"] == "2026-03-04"
     assert row["units"] == 100
     assert row["source"] == "infor_nexus"
+
+
+def test_giii_contract_no_resolved_from_progress_by_po():
+    """GIII contract numbers come from the HHN 大货进度表 progress records,
+    matched on the sheet's PO# column (stored under the 'zalando_po' key)."""
+    by_po, by_style = build_contract_maps([
+        {"contract_no": "HHN-2026-001", "zalando_po": "po 123", "style": "OTHER"},
+    ])
+    out = giii_pos_to_standard(_giii_df(), contract_by_po=by_po, contract_by_style=by_style)
+    # "po 123" normalizes to PO123 — matches despite casing/whitespace
+    assert out.iloc[0]["contract_no"] == "HHN-2026-001"
+
+
+def test_giii_contract_no_falls_back_to_style_match():
+    by_po, by_style = build_contract_maps([
+        {"contract_no": "HHN-2026-002", "zalando_po": "", "style": "st1"},
+    ])
+    out = giii_pos_to_standard(_giii_df(), contract_by_po=by_po, contract_by_style=by_style)
+    assert out.iloc[0]["contract_no"] == "HHN-2026-002"
+
+
+def test_build_contract_maps_first_contract_wins_and_blanks_skipped():
+    by_po, by_style = build_contract_maps([
+        {"contract_no": "",     "zalando_po": "PO9", "style": "S9"},   # blank contract skipped
+        {"contract_no": "C-1",  "zalando_po": "PO9", "style": "S9"},
+        {"contract_no": "C-2",  "zalando_po": "PO9", "style": "S9"},  # later duplicate ignored
+    ])
+    assert by_po == {"PO9": "C-1"}
+    assert by_style == {"S9": "C-1"}
 
 
 def test_sky_east_maps_to_standard_shape():

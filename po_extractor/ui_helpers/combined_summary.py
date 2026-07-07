@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from ..lookups.progress_lookup import _norm_key
+
 # Ordered standard column set: (key, English header label).
 # Keys are snake_case for DataFrame use; labels are what views/exports show.
 STANDARD_COLUMNS: list[tuple[str, str]] = [
@@ -44,13 +46,44 @@ def _empty_standard() -> pd.DataFrame:
     return pd.DataFrame(columns=STANDARD_KEYS)
 
 
-def giii_pos_to_standard(df: pd.DataFrame) -> pd.DataFrame:
+def build_contract_maps(progress_records: list[dict]) -> tuple[dict[str, str], dict[str, str]]:
+    """Build contract-number lookups from stored 大货进度表 progress records
+    (the record shape returned by ``POStore.load_progress_records()``).
+
+    Returns ``(by_po, by_style)``:
+      * by_po    — normalized PO# ("zalando_po" record key, which despite the
+                   name is the sheet's generic buyer-PO column) -> contract_no
+      * by_style — normalized style -> contract_no (fallback when the sheet's
+                   PO# column is blank, as it often is)
+
+    First non-empty contract wins per key, so re-listed colour rows of the
+    same contract line don't flip-flop the mapping.
+    """
+    by_po: dict[str, str] = {}
+    by_style: dict[str, str] = {}
+    for rec in progress_records or []:
+        contract = (rec.get("contract_no") or "").strip()
+        if not contract:
+            continue
+        po_key = _norm_key(rec.get("zalando_po") or "")
+        if po_key and po_key not in by_po:
+            by_po[po_key] = contract
+        style_key = _norm_key(rec.get("style") or "")
+        if style_key and style_key not in by_style:
+            by_style[style_key] = contract
+    return by_po, by_style
+
+
+def giii_pos_to_standard(df: pd.DataFrame,
+                         contract_by_po: dict[str, str] | None = None,
+                         contract_by_style: dict[str, str] | None = None) -> pd.DataFrame:
     """Map a ``PoStore.list_pos()`` DataFrame to the standard shape.
 
     GIII grain is one row per PO (color lives one level deeper in
-    po_size_rows, so it stays blank here).  GIII has no separate contract
-    number — the PO number doubles as it, matching the existing
-    "PC No. mirrors po_number" convention in the Summary view.
+    po_size_rows, so it stays blank here).  GIII's contract number comes
+    from the HHN 大货进度表 progress records (see ``build_contract_maps``):
+    matched by PO number first, then by style; blank when the progress
+    sheet has no row for the order.
     """
     if df is None or df.empty:
         return _empty_standard()
@@ -60,10 +93,23 @@ def giii_pos_to_standard(df: pd.DataFrame) -> pd.DataFrame:
             return df[name].fillna(default)
         return pd.Series([default] * len(df), index=df.index)
 
+    by_po = contract_by_po or {}
+    by_style = contract_by_style or {}
+
+    def contract_for(row_po: str, row_style: str) -> str:
+        return (by_po.get(_norm_key(row_po))
+                or by_style.get(_norm_key(row_style))
+                or "")
+
+    contract_no = [
+        contract_for(p, s)
+        for p, s in zip(col("po_number"), col("style"))
+    ]
+
     out = pd.DataFrame({
         "company":           col("company"),
         "po_number":         col("po_number"),
-        "contract_no":       col("po_number"),
+        "contract_no":       pd.Series(contract_no, index=df.index),
         "style":             col("style"),
         "color":             "",
         "brand_customer":    col("customer"),
