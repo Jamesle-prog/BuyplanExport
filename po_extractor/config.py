@@ -71,6 +71,7 @@ KL_DESC_PATTERN    = r'DESCRIPTION\s+(.*?)\s+HANGER'
 FORMAT_INFOR_NEXUS = "infor_nexus"
 FORMAT_LEGACY = "legacy_giii"
 FORMAT_EXCEL_ZALANDO = "excel_zalando"
+FORMAT_SKY_EAST = "sky_east"
 FORMAT_UNKNOWN = "unknown"
 
 # ── Paths (resolved relative to this file: po_extractor/ → project root) ─────

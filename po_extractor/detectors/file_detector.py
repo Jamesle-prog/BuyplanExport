@@ -21,7 +21,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-from auth.companies import COMPANY_GIII
+from auth.companies import COMPANY_GIII, COMPANY_SKY_EAST
 
 # fmt: off
 _PDF_EXTS   = {".pdf"}
@@ -145,41 +145,54 @@ def _detect_excel(path: str, filename: str) -> DetectionResult:
     try:
         wb = openpyxl.open(path, read_only=True, data_only=True) if hasattr(openpyxl, "open") \
              else openpyxl.load_workbook(path, read_only=True, data_only=True)
-        sheet_names = wb.sheetnames
-        wb.close()
     except Exception as exc:
         return DetectionResult(
             filename=filename, file_type="excel", format_id="unknown",
             companies=[], confidence="low", error=str(exc),
         )
 
-    # Check sheet names against known patterns
-    sheet_set = {s.strip() for s in sheet_names}
+    try:
+        sheet_names = wb.sheetnames
+        sheet_set = {s.strip() for s in sheet_names}
 
-    from ..config import FORMAT_EXCEL_ZALANDO
+        from ..config import FORMAT_EXCEL_ZALANDO, FORMAT_SKY_EAST
 
-    # Zalando two-row mapping format
-    if "1.1.PO_Client" in sheet_set:
+        # Zalando two-row mapping format (cheap sheet-name signal first)
+        if "1.1.PO_Client" in sheet_set:
+            return DetectionResult(
+                filename=filename, file_type="excel", format_id=FORMAT_EXCEL_ZALANDO,
+                companies=["Zalando"], confidence="high",
+                detail="Found sheet '1.1.PO_Client' — Zalando mapping format.",
+            )
+
+        # Older single-row header variant
+        if "1.PO_Client" in sheet_set:
+            return DetectionResult(
+                filename=filename, file_type="excel", format_id=FORMAT_EXCEL_ZALANDO,
+                companies=["Zalando"], confidence="medium",
+                detail="Found sheet '1.PO_Client' — possible older Zalando format.",
+            )
+
+        # Sky East purchase contract — keyword scan of the leading cells,
+        # same signature the Sky East parser itself locks onto.
+        from ..parsers.sky_east_order import looks_like_sky_east_contract
+        if looks_like_sky_east_contract(wb):
+            from auth.companies import companies_for_format
+            candidates = companies_for_format(FORMAT_SKY_EAST) or [COMPANY_SKY_EAST]
+            return DetectionResult(
+                filename=filename, file_type="excel", format_id=FORMAT_SKY_EAST,
+                companies=candidates, confidence="high",
+                detail="Sky East purchase-contract keywords found in sheet header.",
+            )
+
+        # Generic Excel with no known sheet pattern
         return DetectionResult(
-            filename=filename, file_type="excel", format_id=FORMAT_EXCEL_ZALANDO,
-            companies=["Zalando"], confidence="high",
-            detail="Found sheet '1.1.PO_Client' — Zalando mapping format.",
+            filename=filename, file_type="excel", format_id="excel_unknown",
+            companies=[], confidence="low",
+            detail=f"No recognised sheet found. Sheets: {', '.join(sheet_names[:5])}",
         )
-
-    # Older single-row header variant
-    if "1.PO_Client" in sheet_set:
-        return DetectionResult(
-            filename=filename, file_type="excel", format_id=FORMAT_EXCEL_ZALANDO,
-            companies=["Zalando"], confidence="medium",
-            detail="Found sheet '1.PO_Client' — possible older Zalando format.",
-        )
-
-    # Generic Excel with no known sheet pattern
-    return DetectionResult(
-        filename=filename, file_type="excel", format_id="excel_unknown",
-        companies=[], confidence="low",
-        detail=f"No recognised sheet found. Sheets: {', '.join(sheet_names[:5])}",
-    )
+    finally:
+        wb.close()
 
 
 # ── Batch detection ───────────────────────────────────────────────────────────

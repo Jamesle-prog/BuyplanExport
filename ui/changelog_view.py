@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.28.2",
+        "date": "2026-07-07",
+        "entries": [
+            {"type": "refactor", "text": "**Pipeline convergence phase 1: Sky East now goes through the same front door as GIII.** The universal file detector recognizes Sky East purchase contracts by content (same keyword signature the parser locks onto), a canonical `parse_sky_east_order()` lives in the parsers facade alongside `parse_pdf()` (the Sky East upload flow now calls it instead of importing parser internals), and the superseded hardcoded-layout Sky East parser is no longer exported. Sky East is also registered as an Excel format on its company entry, so format→company resolution works for it like it does for the PDF formats"},
+        ],
+    },
+    {
         "version": "2.28.1",
         "date": "2026-07-07",
         "entries": [

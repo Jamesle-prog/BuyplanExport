@@ -275,7 +275,7 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
     Fabric mapping is no longer accepted here — upload it independently via
     the 🧵 Fabric Mapping section in the Contract History tab.
     """
-    from po_extractor.parsers.sky_east_order import parse as se_parse
+    from po_extractor.parsers import parse_sky_east_order as se_parse
     from po_extractor.utils.image_extractor import ImageCache
 
     import shutil as _shutil

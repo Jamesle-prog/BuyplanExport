@@ -224,6 +224,23 @@ _CONTRACT_SIGNALS = frozenset({
 })
 
 
+def looks_like_sky_east_contract(wb) -> bool:
+    """Cheap Sky East signature check for the universal file detector.
+
+    Scans the first 15 rows × 9 columns of each sheet for the same contract
+    keywords ``_find_contract_sheet`` scores on.  Uses ``iter_rows`` (not
+    ``ws.cell``) so it also works on read-only workbooks, which is how the
+    detector opens files.
+    """
+    for ws in wb.worksheets:
+        for row in ws.iter_rows(min_row=1, max_row=15, max_col=9, values_only=True):
+            for val in row:
+                raw = str(val or "").strip().lower()
+                if raw and any(sig in raw for sig in _CONTRACT_SIGNALS):
+                    return True
+    return False
+
+
 def _find_contract_sheet(wb):
     """Return the worksheet most likely to be the Sky East purchase contract.
 

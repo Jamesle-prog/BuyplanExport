@@ -46,8 +46,8 @@ _DEFAULTS: list[dict] = [
     {
         "name": COMPANY_SKY_EAST,
         "display_name": "Sky East",
-        "file_types": [],
-        "formats": [],
+        "file_types": ["excel"],
+        "formats": ["sky_east"],
         "excel_sheet": None,
         "color": "#2ca02c",
         "active": True,
@@ -58,6 +58,7 @@ _DEFAULTS: list[dict] = [
 FORMAT_TO_COMPANIES: dict[str, list[str]] = {
     "infor_nexus": [COMPANY_GIII],
     "legacy_giii": [COMPANY_GIII],
+    "sky_east":    [COMPANY_SKY_EAST],
 }
 
 

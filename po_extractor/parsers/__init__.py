@@ -1,10 +1,10 @@
 from ..config import FORMAT_INFOR_NEXUS, FORMAT_LEGACY
 from ..detectors import detect_format
 from ..models import POData
+from ..models.sky_east_data import SkyEastContract
 from ..utils.pdf_reader import read_pdf_text
-from . import infor_nexus, legacy_giii, deepseek_parser
+from . import infor_nexus, legacy_giii, deepseek_parser, sky_east_order
 from .client_excel import parse_client_excel
-from .sky_east_excel import parse_sky_east
 
 
 def parse_pdf(pdf_path: str) -> POData:
@@ -43,4 +43,14 @@ def parse_excel(xlsx_path: str, sheet_name: str = "1.1.PO_Client") -> POData:
     return parse_client_excel(xlsx_path, sheet_name=sheet_name)
 
 
-__all__ = ["parse_pdf", "parse_pdf_ai", "parse_excel", "parse_sky_east"]
+def parse_sky_east_order(xlsx_path: str, processed_by: str = "") -> SkyEastContract:
+    """Canonical Sky East purchase-contract parser (dynamic layout detection).
+
+    The old ``sky_east_excel.parse_sky_east`` (hardcoded row/column positions)
+    is superseded by this and intentionally no longer exported — import
+    from here, not from parser modules directly.
+    """
+    return sky_east_order.parse(xlsx_path, processed_by=processed_by)
+
+
+__all__ = ["parse_pdf", "parse_pdf_ai", "parse_excel", "parse_sky_east_order"]
