@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.28.0",
+        "date": "2026-07-07",
+        "entries": [
+            {"type": "feat", "text": "**Summary → new 🧾 All Orders sub-tab: every client's orders in one combined table with standardized columns.** GIII POs and Sky East contract items previously lived in separate lists with different headers; they now map into one standard column set (Company, PO Number, Contract No., Style, Color, Brand/Customer, Factory, COO, Order Date, Ex-Fty Date, Units, Unit Price, Total Cost, Season, Source) with client filter, PO/contract/style/color search, a column picker, and a single-sheet Excel download. Fields one client can't provide stay blank rather than shifting the header, so the layout is identical no matter which clients contribute rows. Company-permission gating matches the rest of the Summary tab"},
+            {"type": "refactor", "text": "The standard column mapping lives in a new backend module (`po_extractor/ui_helpers/combined_summary.py`) with adapters per pipeline, so future views and exporters can reuse the same standardized shape instead of hand-mapping each client's schema — first step of the GIII/Sky East structural-convergence plan's shared read-side model"},
+        ],
+    },
+    {
         "version": "2.27.8",
         "date": "2026-07-06",
         "entries": [

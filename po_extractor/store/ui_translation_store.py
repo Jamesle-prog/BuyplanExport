@@ -1094,6 +1094,19 @@ _SEED: list[tuple[str, str, str, str]] = [
     # 'Client' is already seeded above (admin/label) with the same value.
     ('All clients', '全部客户', 'label', 'tracking'),
     ('Select PO / Style to start tracking', '选择要开始跟踪的订单/款式', 'label', 'tracking'),
+
+    # Summary → All Orders (v2.28.0 — combined cross-client PO table with
+    # standardized headers).
+    ('All Orders', '全部订单', 'header', 'summary'),
+    ("Every client's orders in one table with standardized columns — GIII POs and Sky East contract items side by side.",
+     '所有客户的订单汇总在一张表中，列名统一标准化 — GIII 订单与天东合同项目并列显示。', 'label', 'summary'),
+    ('Search (PO / Contract / Style / Color)', '搜索（订单号 / 合同号 / 款式 / 颜色）', 'label', 'summary'),
+    ('row(s)', '行', 'label', 'summary'),
+    ('units', '件', 'label', 'summary'),
+    ('Download All Orders (.xlsx)', '下载全部订单 (.xlsx)', 'button', 'summary'),
+    ('Brand / Customer', '品牌/客户', 'header', 'summary'),
+    ('Order Date', '下单日期', 'header', 'summary'),
+    ('Unit Price', '单价', 'header', 'summary'),
 ]
 # fmt: on
 

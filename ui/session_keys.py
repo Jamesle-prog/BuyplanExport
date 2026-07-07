@@ -67,6 +67,11 @@ class SK:
     PT_ACTIVE_TAB     = "pt_active_tab"      # int — active sub-tab index (0=Dashboard)
     PT_ADD_CLIENT     = "pt_add_client"      # str — Add New tab's client filter
 
+    # ── Summary — combined All Orders sub-tab ─────────────────────────────────
+    SUM_ALL_CLIENTS   = "sum_all_clients"    # list[str] — company filter multiselect
+    SUM_ALL_SEARCH    = "sum_all_search"     # str — PO/style/color search box
+    SUM_ALL_COLS      = "sum_all_cols"       # list[str] — standard-column picker
+
     # ── GIII fax/portal extraction sections (MSG / KL / TK EU / InforNexus) ──
     # *_SIG holds the uploader file-set signature the results were built from
     # (ui.giii._shared.files_signature) — mismatch = stale results, dropped.

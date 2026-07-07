@@ -10,7 +10,12 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from auth.companies import COMPANY_GIII, COMPANY_SKY_EAST
+from po_extractor.ui_helpers.combined_summary import (
+    STANDARD_KEYS, STANDARD_LABELS,
+    combine_standard, giii_pos_to_standard, sky_east_items_to_standard,
+)
 from ui.i18n import t
+from ui.session_keys import SK
 from ui.shared import _th, _tr, guard_multiselect_state
 from ui.stores import get_store, get_sky_east_store
 
@@ -199,13 +204,104 @@ def show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
         ))
         return
 
-    tab_overview, tab_tracker = st.tabs([f"📊 {t('Overview')}", f"📋 {t('PO Tracker')}"])
+    tab_overview, tab_tracker, tab_all = st.tabs([
+        f"📊 {t('Overview')}", f"📋 {t('PO Tracker')}", f"🧾 {t('All Orders')}",
+    ])
 
     with tab_tracker:
         _show_po_tracker(user_cos, admin_mode)
 
     with tab_overview:
         _show_overview(user_cos, admin_mode)
+
+    with tab_all:
+        _show_all_orders(user_cos, admin_mode)
+
+
+def _show_all_orders(user_cos: list[str], admin_mode: bool) -> None:
+    """One combined table of every client's orders in the standard column set."""
+    st.subheader(f"🧾 {t('All Orders')}")
+    st.caption(t(
+        "Every client's orders in one table with standardized columns — "
+        "GIII POs and Sky East contract items side by side."
+    ))
+
+    unrestricted = admin_mode or not user_cos
+    can_see_giii    = unrestricted or bool(user_cos)
+    can_see_zalando = unrestricted or COMPANY_SKY_EAST in [c.strip() for c in user_cos]
+
+    frames = []
+    if can_see_giii:
+        giii_df = get_store().list_pos(companies=user_cos if user_cos and not admin_mode else None)
+        frames.append(giii_pos_to_standard(giii_df))
+    if can_see_zalando:
+        se_store = get_sky_east_store()
+        se_items = se_store.list_items()
+        contracts = se_store.list_contracts()
+        pc_dates = (dict(zip(contracts["pc_no"], contracts["pc_date"].fillna("")))
+                    if not contracts.empty else {})
+        frames.append(sky_east_items_to_standard(
+            se_items, company=COMPANY_SKY_EAST, pc_dates=pc_dates))
+
+    df = combine_standard(*frames)
+    if df.empty:
+        st.info(t("No order data available for your permitted companies."))
+        return
+
+    # ── Filters ──────────────────────────────────────────────────────────────
+    fc1, fc2 = st.columns([1, 2])
+    with fc1:
+        companies = sorted(x for x in df["company"].dropna().unique().tolist() if x)
+        guard_multiselect_state(SK.SUM_ALL_CLIENTS, companies)
+        sel_cos = st.multiselect(t("Client"), companies, key=SK.SUM_ALL_CLIENTS)
+    with fc2:
+        query = st.text_input(
+            t("Search (PO / Contract / Style / Color)"),
+            key=SK.SUM_ALL_SEARCH, placeholder="PO123 / PC001 / ...",
+        ).strip()
+
+    if sel_cos:
+        df = df[df["company"].isin(sel_cos)]
+    if query:
+        q = query.lower()
+        mask = (
+            df["po_number"].astype(str).str.lower().str.contains(q, na=False)
+            | df["contract_no"].astype(str).str.lower().str.contains(q, na=False)
+            | df["style"].astype(str).str.lower().str.contains(q, na=False)
+            | df["color"].astype(str).str.lower().str.contains(q, na=False)
+        )
+        df = df[mask]
+
+    # ── Column picker (standard keys, English labels translated on screen) ──
+    if SK.SUM_ALL_COLS not in st.session_state:
+        st.session_state[SK.SUM_ALL_COLS] = STANDARD_KEYS
+    else:
+        guard_multiselect_state(SK.SUM_ALL_COLS, STANDARD_KEYS)
+    picked = st.multiselect(
+        t("Columns"),
+        options=STANDARD_KEYS,
+        format_func=lambda k: STANDARD_LABELS.get(k, k),
+        key=SK.SUM_ALL_COLS,
+    )
+    show = picked or STANDARD_KEYS
+
+    display = df[show].rename(columns={k: _th(STANDARD_LABELS[k]) for k in show})
+    st.caption(f"{len(display):,} {t('row(s)')} · "
+               f"{int(df['units'].sum()):,} {t('units')}")
+    st.dataframe(display, use_container_width=True, hide_index=True)
+
+    # ── Download (English standard headers, language-independent) ───────────
+    buf = io.BytesIO()
+    export = df[show].rename(columns=STANDARD_LABELS)
+    with pd.ExcelWriter(buf, engine="openpyxl") as wr:
+        export.to_excel(wr, sheet_name="All Orders", index=False)
+    st.download_button(
+        "⬇️ " + t("Download All Orders (.xlsx)"),
+        data=buf.getvalue(),
+        file_name="all_orders.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="sum_all_dl",
+    )
 
 
 def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
