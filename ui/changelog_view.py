@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.29.0",
+        "date": "2026-07-07",
+        "entries": [
+            {"type": "feat", "text": "**Pipeline convergence phase 2: Sky East contracts now grade their own quality the way GIII POs do.** The parser computes a real confidence score (100 minus 10 per missing contract-header field, replacing the old crude 100-or-50) and a `validation_status` of valid/warning/exception on the same scale as GIII's, so both pipelines' quality grades mean the same thing downstream. The item-level import checks (blank style/color, negative quantities, non-standard HHN, unparseable dates, Config SKU coverage) moved from the upload screen into the backend (`po_extractor/parsers/sky_east_validation.py`) — the UI still shows identical warnings, but the checks are now reusable and testable outside Streamlit"},
+        ],
+    },
+    {
         "version": "2.28.2",
         "date": "2026-07-07",
         "entries": [

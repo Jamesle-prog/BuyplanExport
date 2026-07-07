@@ -738,6 +738,19 @@ def parse(path: str, processed_by: str = "") -> SkyEastContract:
 
     wb.close()
 
+    # Confidence + validation status — same formula and scale the GIII PDF
+    # parsers use (100 minus 10 per missing key field; "exception" when the
+    # file yielded no line items at all), so downstream consumers can treat
+    # both pipelines' quality grades interchangeably.
+    _key_fields = [pc_no, pc_date, party_a, party_b, currency, payment]
+    confidence = 100 - 10 * sum(1 for f in _key_fields if not (f or "").strip())
+    if not items:
+        validation_status = "exception"
+    elif confidence >= 70:
+        validation_status = "valid"
+    else:
+        validation_status = "warning"
+
     return SkyEastContract(
         pc_no            = pc_no,
         pc_date          = pc_date,
@@ -751,7 +764,8 @@ def parse(path: str, processed_by: str = "") -> SkyEastContract:
         file_path        = path,
         extracted_at     = now_str,
         parser_version   = PARSER_VERSION,
-        parse_confidence = 100 if (pc_no and items) else 50,
+        parse_confidence = confidence,
+        validation_status = validation_status,
         source_file_hash = file_hash,
         processed_by     = processed_by,
         skipped_zero_qty = skipped_zero_qty,

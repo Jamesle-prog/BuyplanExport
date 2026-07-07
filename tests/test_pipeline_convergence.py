@@ -102,3 +102,65 @@ def test_facade_parses_sky_east_end_to_end(tmp_path):
     # carries traceability fields.
     assert contract.processed_by == "test"
     assert contract.source_file_hash
+
+
+# ── Phase 2: parser-level quality grading, GIII semantics ────────────────────
+
+def _make_item(**over):
+    from po_extractor.models.sky_east_data import SkyEastItem
+    base = dict(
+        pc_no="PC1", zalando_po="PO1", style="ST1", config_sku="SKU-1",
+        article_name="A", brand="Anna Field", color_name="Blue",
+        colour_code="Q11", launch_date="", fabric_item_no="HHP-JS-12345",
+        fabrication="", contract_no="", sizes={"S": 1}, total_qty=1,
+        fob_usd=1.0, total_cost_usd=1.0,
+    )
+    base.update(over)
+    return SkyEastItem(**base)
+
+
+def _make_contract(items, **over):
+    from po_extractor.models.sky_east_data import SkyEastContract
+    base = dict(pc_no="PC1", pc_date="2026-01-01", buyer="B", seller="S",
+                currency="USD", payment_terms="TT", trade_term="FOB")
+    base.update(over)
+    return SkyEastContract(items=items, **base)
+
+
+def test_sky_east_contract_has_validation_status_field():
+    c = _make_contract([_make_item()])
+    assert hasattr(c, "validation_status")
+
+
+def test_parsed_header_only_contract_grades_as_exception(tmp_path):
+    """No line items → 'exception', matching the GIII parsers' convention."""
+    from po_extractor.parsers import parse_sky_east_order
+    p = tmp_path / "se_contract.xlsx"
+    _make_sky_east_xlsx(str(p))
+    contract = parse_sky_east_order(str(p))
+    assert contract.items == []
+    assert contract.validation_status == "exception"
+    assert isinstance(contract.parse_confidence, int)
+
+
+def test_backend_validation_reports_item_issues():
+    from po_extractor.parsers.sky_east_validation import validate_contracts
+    good = _make_item()
+    bad = _make_item(style="", color_name="", sizes={"S": -5},
+                     fabric_item_no="WRONGFORMAT", ex_fty_date="not-a-date",
+                     config_sku="")
+    report = validate_contracts([_make_contract([good, bad])])
+    assert report["total_items"] == 2
+    assert report["sku_covered"] == 1
+    assert report["sku_coverage_pct"] == 50.0
+    assert len(report["issues"]["missing_style_color"]) == 2   # style + color
+    assert len(report["issues"]["negative_qty"]) == 1
+    assert len(report["issues"]["bad_hhn"]) == 1
+    assert len(report["issues"]["bad_ex_fty_date"]) == 1
+
+
+def test_backend_validation_clean_contract_reports_no_issues():
+    from po_extractor.parsers.sky_east_validation import validate_contracts
+    report = validate_contracts([_make_contract([_make_item(ex_fty_date="2026-05-01")])])
+    assert report["sku_coverage_pct"] == 100.0
+    assert all(not v for v in report["issues"].values())

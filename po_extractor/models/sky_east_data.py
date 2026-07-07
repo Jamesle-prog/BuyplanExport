@@ -40,6 +40,7 @@ class SkyEastContract:
     extracted_at: str | None = None
     parser_version: str | None = None
     parse_confidence: int | None = None
+    validation_status: str | None = None   # "valid" | "warning" | "exception" — same scale as POMetadata
     source_file_hash: str | None = None
     processed_by: str | None = None
     # Rows dropped for having 0 total units — {"row": int, "style": str, "po": str}.
