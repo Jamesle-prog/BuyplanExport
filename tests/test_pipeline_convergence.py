@@ -185,3 +185,21 @@ def test_exception_queue_stores_and_filters_sky_east_failures(tmp_path):
 
     all_df = store.list_exceptions()
     assert set(all_df["company"]) == {"Sky East", "GIII"}
+
+
+# ── Phase 4: one output-format catalogue for both pipelines ──────────────────
+
+def test_sky_east_exporters_registered_alongside_giii():
+    import po_extractor.exporters  # noqa: F401 — triggers registration
+    from po_extractor.exporters.registry import all_formats, get
+
+    ids = {f.format_id for f in all_formats()}
+    # GIII formats (pre-existing)
+    assert {"buy_plan", "color_plan", "po_summary", "cross_check"} <= ids
+    # Sky East formats (phase 4)
+    assert {"se_buy_plan", "se_nukuryou"} <= ids
+
+    se_bp = get("se_buy_plan")
+    assert se_bp.extension == ".xlsx"
+    assert callable(se_bp.export_fn)
+    assert get("se_nukuryou").export_fn is not None

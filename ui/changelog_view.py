@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.29.2",
+        "date": "2026-07-07",
+        "entries": [
+            {"type": "refactor", "text": "**Pipeline convergence phase 4: Sky East's Buy Plan and 核料 exporters are registered in the output-format registry** alongside GIII's four formats, so there is now one catalogue of every output the system can produce instead of Sky East's exporters being invisible to format discovery. No behavior change to the exports themselves"},
+        ],
+    },
+    {
         "version": "2.29.1",
         "date": "2026-07-07",
         "entries": [

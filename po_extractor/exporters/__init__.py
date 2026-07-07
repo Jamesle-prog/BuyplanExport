@@ -21,11 +21,17 @@ __all__ = [
 ]
 
 # ---------------------------------------------------------------------------
-# Format registry — register the 4 core PDF-pipeline output formats
+# Format registry — every pipeline's output formats register here, so
+# format discovery (admin screens, docs, tooling) sees one catalogue.
 # ---------------------------------------------------------------------------
 from .registry import OutputFormat, register
 
+# GIII PDF pipeline
 register(OutputFormat("buy_plan",    "1.0", "Buy Plan",    "PO×Color×Size per style sheet",          "transformed_data_by_style_filtered_with_totals_and_metadata", ".xlsx", export_buyplan))
 register(OutputFormat("color_plan",  "1.0", "Color Plan",  "Color×Size pivot per style tab",          "color_plan_by_style", ".xlsx", export_color_plan))
 register(OutputFormat("po_summary",  "1.0", "PO Summary",  "One row per PO+Color with metadata",      "po_summary",          ".xlsx", export_po_summary))
 register(OutputFormat("cross_check", "1.0", "Cross Check", "Unit reconciliation across all outputs",  "cross_check",         ".xlsx", export_cross_check))
+
+# Sky East Excel pipeline
+register(OutputFormat("se_buy_plan", "1.0", "Sky East Buy Plan", "Contract items × sizes on the Sky East template, with photos", "sky_east_buy_plan", ".xlsx", export_sky_east_buyplan))
+register(OutputFormat("se_nukuryou", "1.0", "Sky East 核料",     "Fabric-consumption workbook derived from contract items",       "sky_east_nukuryou", ".xlsx", export_sky_east_nukuryou))
