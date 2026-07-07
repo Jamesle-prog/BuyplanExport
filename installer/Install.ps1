@@ -27,7 +27,11 @@ function Find-Python313 {
     try {
         $pyList = & py -0p 2>$null
         foreach ($line in $pyList) {
-            if ($line -match "3\.13\S*\s+(.+python\.exe)") {
+            # Anchor the path capture on a drive letter: py -0p marks the
+            # default interpreter with a "*" between version and path
+            # (" -V:3.13 *  C:\...\python.exe"), which a bare ".+" capture
+            # would swallow into the path and break Test-Path.
+            if ($line -match "3\.13" -and $line -match "([A-Za-z]:\\[^*]*python\.exe)") {
                 $candidate = $matches[1].Trim()
                 if (Test-Path $candidate) { return $candidate }
             }
@@ -80,15 +84,27 @@ if (Test-Path $venvPython) {
     Write-Ok "Virtual environment already exists -- reusing it."
 } else {
     & $pythonExe -m venv $venvDir
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $venvPython)) {
+        Write-Err "Failed to create the virtual environment (exit code $LASTEXITCODE)."
+        exit 1
+    }
     Write-Ok "Created virtual environment at .venv\"
 }
 
 # ---------------------------------------------------------------------------
 # 3. Install dependencies (pinned, known-good versions)
 # ---------------------------------------------------------------------------
+# Note: $ErrorActionPreference = "Stop" does NOT apply to native commands,
+# so each exit code below is checked explicitly -- otherwise a failed pip
+# (e.g. network drop) would still end in "Install complete!".
 Write-Step "Installing dependencies (this can take a few minutes)..."
 & $venvPython -m pip install --upgrade pip --quiet
 & $venvPython -m pip install -r (Join-Path $AppDir "requirements.lock")
+if ($LASTEXITCODE -ne 0) {
+    Write-Err "Dependency install failed (exit code $LASTEXITCODE)."
+    Write-Err "Check your internet connection and run Install.bat again -- it's safe to re-run."
+    exit 1
+}
 Write-Ok "Dependencies installed."
 
 # ---------------------------------------------------------------------------
@@ -97,6 +113,11 @@ Write-Ok "Dependencies installed."
 Write-Step "Registering the license for this computer..."
 Push-Location $AppDir
 & $venvPython -m auth.generate_license
+if ($LASTEXITCODE -ne 0) {
+    Pop-Location
+    Write-Err "License registration failed (exit code $LASTEXITCODE)."
+    exit 1
+}
 Write-Ok "License registered."
 
 # ---------------------------------------------------------------------------

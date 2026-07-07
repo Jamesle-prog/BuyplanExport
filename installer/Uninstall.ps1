@@ -20,8 +20,16 @@ Write-Host "App folder: $AppDir"
 # ---------------------------------------------------------------------------
 Write-Step "Checking whether the app is currently running..."
 
+# Match on ExecutablePath, not just CommandLine -- Start_PO_Extractor.bat
+# launches ".venv\Scripts\python.exe" via a RELATIVE path, so the command
+# line never contains the install folder; the executable path always does.
+# Missing a running instance here matters: deleting .venv while its
+# python.exe is running fails on the locked file mid-removal.
 $running = Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -and $_.CommandLine -like "*streamlit*" -and $_.CommandLine -like "*$AppDir*" }
+    Where-Object {
+        ($_.ExecutablePath -and $_.ExecutablePath -like "$AppDir\*") -or
+        ($_.CommandLine -and $_.CommandLine -like "*$AppDir*")
+    }
 
 if ($running) {
     Write-Warn "The app looks like it's running right now (PID: $($running.ProcessId -join ', '))."
@@ -83,6 +91,27 @@ if ($confirm -eq "DELETE") {
     if (Test-Path $usersFile) {
         Remove-Item $usersFile -Force
         Write-Ok "Removed auth\users.json (all login accounts)"
+    }
+
+    # smtp_settings.json can hold an SMTP password -- a full wipe must not
+    # leave a credential file behind. companies.json and custom_fibers.json
+    # are runtime-edited settings; the app reseeds defaults on next install.
+    $smtpFile = Join-Path $AppDir "auth\smtp_settings.json"
+    if (Test-Path $smtpFile) {
+        Remove-Item $smtpFile -Force
+        Write-Ok "Removed auth\smtp_settings.json (email server settings)"
+    }
+
+    $companiesFile = Join-Path $AppDir "auth\companies.json"
+    if (Test-Path $companiesFile) {
+        Remove-Item $companiesFile -Force
+        Write-Ok "Removed auth\companies.json (company list)"
+    }
+
+    $fibersFile = Join-Path $AppDir "po_extractor\data\custom_fibers.json"
+    if (Test-Path $fibersFile) {
+        Remove-Item $fibersFile -Force
+        Write-Ok "Removed po_extractor\data\custom_fibers.json (custom fibers)"
     }
 
     $dataDir = Join-Path $AppDir "data"

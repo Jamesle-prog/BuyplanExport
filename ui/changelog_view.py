@@ -10,6 +10,17 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.27.8",
+        "date": "2026-07-06",
+        "entries": [
+            {"type": "fix", "text": "**Update.bat would have overwritten user-customized settings with factory defaults.** The updater's protect-list only covered databases and account/license files — but companies, size order, output schema, custom fibers, and the buy-plan template workbooks are all edited at runtime through the app's admin screens AND ship in the pack, so an update would have silently reset them. The `data\\` directories and `auth\\companies.json` are now excluded from the copy wholesale, so a future runtime-editable file can't reintroduce the bug by being forgotten. Verified with an adversarial test where the pack deliberately carried factory versions of every such file"},
+            {"type": "fix", "text": "**Update/Uninstall couldn't tell the app was running.** Their check matched the process command line, but `Start_PO_Extractor.bat` launches Python via a relative path, so the command line never contains the install folder — the scripts always said \"Not running\" and Uninstall could then die mid-removal on the locked `.venv\\python.exe`. Detection now matches the process's executable path, which is always absolute"},
+            {"type": "fix", "text": "Install/Update now verify each native step actually succeeded (venv creation, pip install, license registration) instead of printing \"complete!\" even after e.g. a network failure — PowerShell's error handling doesn't cover native commands' exit codes"},
+            {"type": "security", "text": "Uninstall's full-wipe (`DELETE`) path now also removes `auth\\smtp_settings.json` (which can hold an SMTP password), `auth\\companies.json`, and `po_extractor\\data\\custom_fibers.json` — a \"remove everything\" run no longer leaves a credential file behind"},
+            {"type": "fix", "text": "Install's Python detection no longer trips over the `*` default-interpreter marker in `py -0p` output when 3.13 is the system default (the captured path started with `*` and failed validation, falling back to guessed install locations)"},
+        ],
+    },
+    {
         "version": "2.27.7",
         "date": "2026-07-06",
         "entries": [

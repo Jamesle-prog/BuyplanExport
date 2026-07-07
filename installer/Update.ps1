@@ -43,8 +43,14 @@ Write-Ok "Target install: $resolvedTarget"
 # ---------------------------------------------------------------------------
 Write-Step "Checking whether the app is currently running..."
 
+# Match on ExecutablePath, not just CommandLine -- Start_PO_Extractor.bat
+# launches ".venv\Scripts\python.exe" via a RELATIVE path, so the command
+# line never contains the install folder; the executable path always does.
 $running = Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -and $_.CommandLine -like "*streamlit*" -and $_.CommandLine -like "*$resolvedTarget*" }
+    Where-Object {
+        ($_.ExecutablePath -and $_.ExecutablePath -like "$resolvedTarget\*") -or
+        ($_.CommandLine -and $_.CommandLine -like "*$resolvedTarget*")
+    }
 
 if ($running) {
     Write-Warn "The app looks like it's running (PID: $($running.ProcessId -join ', '))."
@@ -65,16 +71,26 @@ if ($running) {
 # 2. Copy the new code over the target -- explicitly never touching data,
 #    accounts, or the license, regardless of whether this pack happens to
 #    contain files by those names.
+#
+#    The data\ directories are excluded WHOLESALE (not file-by-file): besides
+#    the SQLite DBs they hold files the app edits at runtime through its admin
+#    screens -- companies, size order, output schema, custom fibers, and the
+#    buy-plan template workbooks -- all of which also ship in the pack with
+#    factory defaults. A file-by-file exclude list would clobber the user's
+#    live edits the first time a new runtime-editable file was forgotten here.
+#    (Template layout updates are delivered through Admin > Templates instead.)
 # ---------------------------------------------------------------------------
 Write-Step "Copying updated files into $resolvedTarget ..."
-Write-Host "    Never touched, no matter what: .venv\, logs\, auth\users.json," -ForegroundColor DarkGray
-Write-Host "    auth\license.key, auth\smtp_settings.json, data\*.db and its -journal/-wal/-shm files" -ForegroundColor DarkGray
+Write-Host "    Never touched, no matter what: .venv\, logs\, data\ (databases," -ForegroundColor DarkGray
+Write-Host "    templates, size order, schema, custom fibers), auth\users.json," -ForegroundColor DarkGray
+Write-Host "    auth\license.key, auth\companies.json, auth\smtp_settings.json" -ForegroundColor DarkGray
 
 $robocopyArgs = @(
     $SourceDir, $resolvedTarget,
     "/E",
-    "/XF", "users.json", "license.key", "smtp_settings.json", "*.db", "*.db-journal", "*.db-wal", "*.db-shm",
-    "/XD", ".venv", "logs",
+    "/XF", "users.json", "license.key", "smtp_settings.json", "companies.json",
+           "*.db", "*.db-journal", "*.db-wal", "*.db-shm",
+    "/XD", ".venv", "logs", "data",
     "/NFL", "/NDL", "/NJH"
 )
 robocopy @robocopyArgs | Out-Null
@@ -93,6 +109,12 @@ Write-Step "Refreshing dependencies..."
 $venvPython = Join-Path $resolvedTarget ".venv\Scripts\python.exe"
 if (Test-Path $venvPython) {
     & $venvPython -m pip install -r (Join-Path $resolvedTarget "requirements.lock") --quiet
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err "pip failed (exit code $LASTEXITCODE) -- the new code is in place but its"
+        Write-Err "dependencies may be missing. Check your internet connection and re-run"
+        Write-Err "this update; it's safe to run repeatedly."
+        exit 1
+    }
     Write-Ok "Dependencies up to date."
 } else {
     Write-Warn "No .venv found in the target -- run Install.ps1 there first, then re-run this update."

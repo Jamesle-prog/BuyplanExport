@@ -62,9 +62,12 @@ as they are.
 2. In the new pack, double-click **`Update.bat`**.
 3. When it asks for the path to your existing install, paste the folder path
    of your **current** installation (e.g. `C:\Apps\PO_Automation_GIII`).
-4. It copies in the new app code and refreshes dependencies. Your
-   `data\` folder, `auth\users.json`, `auth\license.key`, and `.venv\` are
-   never touched, no matter what the new pack contains.
+4. It copies in the new app code and refreshes dependencies. Never touched,
+   no matter what the new pack contains: your `data\` folders (databases,
+   buy-plan templates, size order, schema, custom fibers), `auth\users.json`,
+   `auth\companies.json`, `auth\smtp_settings.json`, `auth\license.key`,
+   and `.venv\`. (Because `data\` is preserved wholesale, template layout
+   updates arrive via the app's Admin > Templates screen, not via update.)
 5. Once it says "Update complete", launch the app as usual from your
    **existing** install's `Start_PO_Extractor.bat`.
 
