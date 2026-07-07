@@ -187,6 +187,70 @@ def test_exception_queue_stores_and_filters_sky_east_failures(tmp_path):
     assert set(all_df["company"]) == {"Sky East", "GIII"}
 
 
+# ── Phase 5: shared read-side row shape ──────────────────────────────────────
+
+def test_load_standard_orders_combines_both_stores(tmp_path):
+    """One backend call returns both pipelines' orders in the standard shape."""
+    from po_extractor.models.po_data import POData, POMetadata, SizeRow
+    from po_extractor.store.po_store import POStore
+    from po_extractor.store.sky_east_store import SkyEastStore
+    from po_extractor.ui_helpers.combined_summary import (
+        STANDARD_KEYS, load_standard_orders,
+    )
+
+    po_store = POStore(str(tmp_path / "po.db"))
+    se_store = SkyEastStore(str(tmp_path / "po.db"))
+
+    po_store.check_and_save(POData(
+        metadata=POMetadata(po_number="PO777", style="ST7", company="GIII",
+                            po_date="2026-01-05", xport_date="2026-04-01"),
+        size_rows=[SizeRow("PO777", "ST7", "Black", "M", 40, "")],
+    ))
+    se_store.save_contract_checked(_make_contract(
+        [_make_item(pc_no="PC9", zalando_po="PO888", total_qty=9)], pc_no="PC9"))
+
+    df = load_standard_orders(po_store, se_store)
+    assert list(df.columns) == STANDARD_KEYS
+    assert set(df["po_number"]) == {"PO777", "PO888"}
+    assert set(df["source"]) == {None, "sky_east"} or "sky_east" in set(df["source"])
+
+    # Pipeline toggles mirror the access-control gating consumers need.
+    only_giii = load_standard_orders(po_store, se_store, include_sky_east=False)
+    assert set(only_giii["po_number"]) == {"PO777"}
+    only_se = load_standard_orders(po_store, se_store, include_giii=False)
+    assert set(only_se["po_number"]) == {"PO888"}
+
+
+def test_sky_east_items_to_size_rows_matches_po_size_rows_grain():
+    import pandas as pd
+    from po_extractor.ui_helpers.combined_summary import (
+        SIZE_ROW_KEYS, sky_east_items_to_size_rows,
+    )
+    items = pd.DataFrame([{
+        "pc_no": "PC1", "zalando_po": "PO1", "style": "ST1",
+        "color_name": "Blue", "xs": 0, "s": 10, "m": 20, "l": 0,
+        "xl": 5, "xxl": 0, "total_qty": 35,
+    }])
+    rows = sky_east_items_to_size_rows(items)
+    assert list(rows.columns) == SIZE_ROW_KEYS
+    # Zero buckets dropped; one row per used size, GIII po_size_rows grain.
+    assert len(rows) == 3
+    assert set(rows["size"]) == {"S", "M", "XL"}
+    assert rows["units"].sum() == 35
+    assert (rows["po_number"] == "PO1").all()
+    assert (rows["color"] == "Blue").all()
+
+
+def test_sky_east_items_to_size_rows_empty_input():
+    import pandas as pd
+    from po_extractor.ui_helpers.combined_summary import (
+        SIZE_ROW_KEYS, sky_east_items_to_size_rows,
+    )
+    out = sky_east_items_to_size_rows(pd.DataFrame())
+    assert list(out.columns) == SIZE_ROW_KEYS
+    assert out.empty
+
+
 # ── Phase 4: one output-format catalogue for both pipelines ──────────────────
 
 def test_sky_east_exporters_registered_alongside_giii():

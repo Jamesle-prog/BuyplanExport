@@ -14,6 +14,8 @@ clients contribute rows.
 """
 from __future__ import annotations
 
+import re as _re
+
 import pandas as pd
 
 from ..lookups.progress_lookup import _norm_key
@@ -181,3 +183,89 @@ def combine_standard(*frames: pd.DataFrame) -> pd.DataFrame:
         return _empty_standard()
     out = pd.concat(usable, ignore_index=True)
     return out[STANDARD_KEYS]
+
+
+# ---------------------------------------------------------------------------
+# One-call loaders — consumers ask for "all orders in the standard shape"
+# instead of orchestrating per-pipeline store reads themselves.
+# ---------------------------------------------------------------------------
+
+def load_standard_orders(po_store, sky_east_store,
+                         companies: list[str] | None = None,
+                         include_giii: bool = True,
+                         include_sky_east: bool = True,
+                         sky_east_company: str = "Sky East") -> pd.DataFrame:
+    """Load every pipeline's orders as ONE standard-shape DataFrame.
+
+    ``po_store`` / ``sky_east_store`` are the canonical store objects (from
+    the store factories); ``companies`` filters the GIII side like
+    ``list_pos(companies=...)`` does.  GIII contract numbers are resolved
+    from each company's stored 大货进度表 progress records automatically.
+    """
+    frames = []
+    if include_giii:
+        giii_df = po_store.list_pos(companies=companies)
+        progress_records: list[dict] = []
+        if not giii_df.empty and "company" in giii_df.columns:
+            for comp in giii_df["company"].dropna().unique():
+                # Same display-name → source-key rule as
+                # ui.fabric_mapping_view._company_to_source (backend can't
+                # import UI modules, so the regex is repeated here).
+                source = _re.sub(r'[^a-z0-9]+', '_', str(comp).strip().lower()).strip('_')
+                progress_records.extend(po_store.load_progress_records(source))
+        by_po, by_style = build_contract_maps(progress_records)
+        frames.append(giii_pos_to_standard(
+            giii_df, contract_by_po=by_po, contract_by_style=by_style))
+    if include_sky_east:
+        se_items = sky_east_store.list_items()
+        contracts = sky_east_store.list_contracts()
+        pc_dates = (dict(zip(contracts["pc_no"], contracts["pc_date"].fillna("")))
+                    if not contracts.empty else {})
+        frames.append(sky_east_items_to_standard(
+            se_items, company=sky_east_company, pc_dates=pc_dates))
+    return combine_standard(*frames)
+
+
+# ---------------------------------------------------------------------------
+# Size-grain adapter — sky_east_items in GIII's po_size_rows shape
+# ---------------------------------------------------------------------------
+
+# Fixed size buckets of the sky_east_items schema, in display order.
+SKY_EAST_SIZE_COLS = ["xs", "s", "m", "l", "xl", "xxl"]
+
+SIZE_ROW_KEYS = ["company", "po_number", "contract_no", "style", "color",
+                 "size", "units"]
+
+
+def sky_east_items_to_size_rows(df: pd.DataFrame,
+                                company: str = "Sky East") -> pd.DataFrame:
+    """Explode ``sky_east_items`` rows into one row per size — the same
+    PO/style/color/size/units grain GIII's ``po_size_rows`` table has, so
+    size-level consumers can treat both pipelines identically.
+
+    Zero-quantity size buckets are dropped (a contract item never uses all
+    six buckets; emitting empty ones would triple the row count for noise).
+    """
+    if df is None or df.empty:
+        return pd.DataFrame(columns=SIZE_ROW_KEYS)
+
+    rows: list[dict] = []
+    for rec in df.to_dict("records"):
+        for size in SKY_EAST_SIZE_COLS:
+            units = rec.get(size)
+            try:
+                units = int(units or 0)
+            except (TypeError, ValueError):
+                units = 0
+            if units == 0:
+                continue
+            rows.append({
+                "company":     company,
+                "po_number":   rec.get("zalando_po") or "",
+                "contract_no": rec.get("pc_no") or "",
+                "style":       rec.get("style") or "",
+                "color":       rec.get("color_name") or "",
+                "size":        size.upper(),
+                "units":       units,
+            })
+    return pd.DataFrame(rows, columns=SIZE_ROW_KEYS)

@@ -11,9 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from auth.companies import COMPANY_GIII, COMPANY_SKY_EAST
 from po_extractor.ui_helpers.combined_summary import (
-    STANDARD_KEYS, STANDARD_LABELS,
-    build_contract_maps, combine_standard,
-    giii_pos_to_standard, sky_east_items_to_standard,
+    STANDARD_KEYS, STANDARD_LABELS, load_standard_orders,
 )
 from ui.i18n import t
 from ui.session_keys import SK
@@ -231,32 +229,13 @@ def _show_all_orders(user_cos: list[str], admin_mode: bool) -> None:
     can_see_giii    = unrestricted or bool(user_cos)
     can_see_zalando = unrestricted or COMPANY_SKY_EAST in [c.strip() for c in user_cos]
 
-    frames = []
-    if can_see_giii:
-        store = get_store()
-        giii_df = store.list_pos(companies=user_cos if user_cos and not admin_mode else None)
-        # GIII contract numbers come from the stored HHN 大货进度表 records
-        # (uploaded per company via the HHN Contract Progress tab), matched
-        # by PO number first, then style.
-        progress_records: list[dict] = []
-        if not giii_df.empty and "company" in giii_df.columns:
-            from ui.fabric_mapping_view import _company_to_source
-            for comp in giii_df["company"].dropna().unique():
-                progress_records.extend(
-                    store.load_progress_records(_company_to_source(str(comp))))
-        by_po, by_style = build_contract_maps(progress_records)
-        frames.append(giii_pos_to_standard(
-            giii_df, contract_by_po=by_po, contract_by_style=by_style))
-    if can_see_zalando:
-        se_store = get_sky_east_store()
-        se_items = se_store.list_items()
-        contracts = se_store.list_contracts()
-        pc_dates = (dict(zip(contracts["pc_no"], contracts["pc_date"].fillna("")))
-                    if not contracts.empty else {})
-        frames.append(sky_east_items_to_standard(
-            se_items, company=COMPANY_SKY_EAST, pc_dates=pc_dates))
-
-    df = combine_standard(*frames)
+    df = load_standard_orders(
+        get_store(), get_sky_east_store(),
+        companies=user_cos if user_cos and not admin_mode else None,
+        include_giii=can_see_giii,
+        include_sky_east=can_see_zalando,
+        sky_east_company=COMPANY_SKY_EAST,
+    )
     if df.empty:
         st.info(t("No order data available for your permitted companies."))
         return
@@ -341,33 +320,33 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
         if not se_items.empty:
             se_df = se_items
 
-    # Build unified summary rows (one row per Company)
+    # Build unified summary rows (one row per Company) from the standard
+    # cross-pipeline shape — no per-pipeline branching here anymore.
     # Columns: Company | POs | Styles | Units | Latest Ex-Fty | Factory | COO | Source
+    std_df = load_standard_orders(
+        get_store(), get_sky_east_store(),
+        companies=user_cos if user_cos else None,
+        include_giii=can_see_giii,
+        include_sky_east=can_see_zalando,
+        sky_east_company=COMPANY_SKY_EAST,
+    )
+
+    def _mode_nonblank(series: pd.Series) -> str:
+        vals = series.replace("", pd.NA).dropna()
+        return vals.mode()[0] if not vals.empty else ""
+
     summary_rows = []
-
-    if can_see_giii and not giii_df.empty:
-        for company, grp in giii_df.groupby("company", dropna=False):
-            summary_rows.append({
-                "Company":       company or "—",
-                "Source":        COMPANY_GIII,
-                "POs":           grp["po_number"].nunique(),
-                "Styles":        grp["style"].nunique() if "style" in grp.columns else 0,
-                "Units":         int(grp["total_units"].sum()) if "total_units" in grp.columns else 0,
-                "Factory":       grp["factory"].mode()[0] if "factory" in grp.columns and not grp["factory"].dropna().empty else "",
-                "COO":           grp["country_of_origin"].mode()[0] if "country_of_origin" in grp.columns and not grp["country_of_origin"].dropna().empty else "",
-                "Latest Ex-Fty": grp["xport_date"].max() if "xport_date" in grp.columns else "",
-            })
-
-    if can_see_zalando and not se_df.empty:
+    for company, grp in std_df.groupby("company", dropna=False):
+        is_sky_east = (grp["source"] == "sky_east").all()
         summary_rows.append({
-            "Company":       COMPANY_SKY_EAST,
-            "Source":        COMPANY_SKY_EAST,
-            "POs":           se_df["zalando_po"].nunique() if "zalando_po" in se_df.columns else 0,
-            "Styles":        se_df["style"].nunique() if "style" in se_df.columns else 0,
-            "Units":         int(se_df["total_qty"].sum()) if "total_qty" in se_df.columns else 0,
-            "Factory":       "",
-            "COO":           "",
-            "Latest Ex-Fty": se_df["ex_fty_date"].max() if "ex_fty_date" in se_df.columns else "",
+            "Company":       company or "—",
+            "Source":        COMPANY_SKY_EAST if is_sky_east else COMPANY_GIII,
+            "POs":           grp["po_number"].nunique(),
+            "Styles":        grp["style"].nunique(),
+            "Units":         int(grp["units"].sum()),
+            "Factory":       _mode_nonblank(grp["factory"]),
+            "COO":           _mode_nonblank(grp["country_of_origin"]),
+            "Latest Ex-Fty": grp["ex_fty_date"].max(),
         })
 
     # Top metrics

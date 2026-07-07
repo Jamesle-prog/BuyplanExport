@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.30.0",
+        "date": "2026-07-07",
+        "entries": [
+            {"type": "feat", "text": "**Pipeline convergence phase 5: one shared read-side shape for cross-client order data.** A single backend call (`load_standard_orders()`) now returns every pipeline's orders as one standardized DataFrame — GIII contract numbers resolved from the 大货进度表 automatically, Sky East order dates from contract headers, with per-pipeline include toggles for permission gating. A companion adapter (`sky_east_items_to_size_rows()`) explodes Sky East items to the same PO/style/color/size/units grain as GIII's size rows, so size-level consumers can treat both pipelines identically"},
+            {"type": "refactor", "text": "Summary → Overview's per-company aggregate table is now computed from the standard shape with a single groupby instead of separate GIII and Sky East code branches; the All Orders tab loads through the same backend call. On-screen result is unchanged — the same numbers now come from one code path instead of three"},
+        ],
+    },
+    {
         "version": "2.29.2",
         "date": "2026-07-07",
         "entries": [
