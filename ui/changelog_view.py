@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.30.1",
+        "date": "2026-07-08",
+        "entries": [
+            {"type": "refactor", "text": "**GIII tab bar now matches Sky East's layout**: same order (Upload → 📦 Generate / Export → PO History → Missing Fields) and same label style — plain text with 📦 only on the output tab, and the Missing Fields count shown as a plain number like Sky East's. The 🔴 pending-exception alert on PO History is GIII-specific and stays"},
+        ],
+    },
+    {
         "version": "2.30.0",
         "date": "2026-07-07",
         "entries": [

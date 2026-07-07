@@ -304,20 +304,21 @@ def show_smart_upload_tab():
         _exc_df = pd.DataFrame()
     _exc_count = (len(_exc_df[_exc_df["status"] == "pending"])
                   if not _exc_df.empty and "status" in _exc_df.columns else 0)
-    history_label = f"📚 {t('PO History')}" + (f"  🔴 {_exc_count}" if _exc_count else "")
+    # Tab bar mirrors the Sky East tab exactly — same order (Upload →
+    # Generate/Export → History → Missing Fields) and same label style
+    # (plain text, 📦 only on the output tab, plain count on Missing
+    # Fields). The 🔴 on PO History is the pending-exception alert and is
+    # GIII-specific; it stays.
+    history_label = t("PO History") + (f"  🔴 {_exc_count}" if _exc_count else "")
 
     _missing_df    = _compute_giii_missing_df()
     _missing_count = len(_missing_df)
-    missing_label  = f"✏️ {t('Missing Fields')}" + (
-        f"  🔴 {_missing_count}" if _missing_count else ""
-    )
+    _mf = t("Missing Fields")
+    missing_label  = (f"{_mf}  {_missing_count}" if _missing_count else _mf)
 
-    # "Generate / Export" (not "Reports") — same name as Sky East's output tab,
-    # since both regenerate downloadable files from stored data. 📦 is the
-    # output emoji app-wide; 📤 stays reserved for uploads.
-    tab_upload, tab_history, tab_reports, tab_missing = st.tabs(
-        [f"📤 {t('Upload')}", history_label,
-         f"📦 {t('Generate / Export')}", missing_label]
+    tab_upload, tab_reports, tab_history, tab_missing = st.tabs(
+        [t("Upload"), f"📦 {t('Generate / Export')}",
+         history_label, missing_label]
     )
 
     with tab_upload:
