@@ -19,7 +19,7 @@ import streamlit as st
 from ui.giii._shared import (
     _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature,
     FAX_SIZE_ORDER, XL_NAVY, XL_WHITE, XL_YELLOW, XL_GREY, XL_LTBLUE,
-    drop_stale_results, iter_pdf_payloads,
+    drop_stale_results, iter_pdf_payloads, make_excel_style_kit,
 )
 from ui.i18n import t
 from ui.session_keys import SK
@@ -202,51 +202,14 @@ def _build_excel_bytes(results: list[dict]) -> bytes:
     all_sizes  = {s[0] for po in results for li in po['line_items'] for s in li['sizes']}
     sizes_cols = [s for s in _SIZE_ORDER if s in all_sizes]
 
-    def _side():
-        return Side(style='thin', color='FF000000')
+    _kit = make_excel_style_kit()
+    _border, _fill, _align = _kit.border, _kit.fill, _kit.align
+    _style, _hdr, _autofit = _kit.style, _kit.hdr, _kit.autofit
 
-    def _border():
-        s = _side()
-        return Border(left=s, right=s, top=s, bottom=s)
-
-    def _hdr_font():
-        return Font(name='Arial', bold=True, color=_WHITE, size=10)
-
-    def _hdr_fill():
-        return PatternFill('solid', fgColor=_NAVY)
-
-    def _hdr_align():
-        return Alignment(horizontal='center', vertical='center', wrap_text=True)
-
+    # _body_font stays local: the builder body uses it directly for the
+    # summary/total cells, beyond what _kit.style covers.
     def _body_font(bold=False):
         return Font(name='Arial', bold=bold, size=10)
-
-    def _fill(colour):
-        return PatternFill('solid', fgColor=colour) if colour else PatternFill()
-
-    def _align(h='left'):
-        return Alignment(horizontal=h, vertical='center')
-
-    def _style(cell, bold=False, bg=None, align='left', num_fmt=None):
-        cell.font      = _body_font(bold)
-        cell.fill      = _fill(bg)
-        cell.alignment = _align(align)
-        cell.border    = _border()
-        if num_fmt:
-            cell.number_format = num_fmt
-
-    def _hdr(cell, value):
-        cell.value     = value
-        cell.font      = _hdr_font()
-        cell.fill      = _hdr_fill()
-        cell.alignment = _hdr_align()
-        cell.border    = _border()
-
-    def _autofit(ws, mn=8, mx=50):
-        for col in ws.columns:
-            ltr = get_column_letter(col[0].column)
-            w   = max((len(str(c.value or '')) for c in col), default=0)
-            ws.column_dimensions[ltr].width = min(max(w + 2, mn), mx)
 
     wb = Workbook()
 

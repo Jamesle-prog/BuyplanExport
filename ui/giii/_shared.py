@@ -93,6 +93,58 @@ XL_LTBLUE = 'FFDEEAF1'
 XL_GREEN  = 'FFE2EFDA'
 
 
+def make_excel_style_kit(hdr_bg: str = XL_NAVY, autofit_max: int = 50):
+    """Standard cell styling for the GIII extraction Excel builders.
+
+    Returns a namespace of the helpers every builder previously nested
+    inline (border/fill/align/style/hdr/autofit) — Arial 10, thin black
+    borders, white-on-``hdr_bg`` wrapped headers. ``hdr_bg`` sets the
+    default header colour (TK EU uses its teal); ``hdr()`` still accepts a
+    per-call ``bg`` override.
+    """
+    from types import SimpleNamespace
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    def side():
+        return Side(style='thin', color='FF000000')
+
+    def border():
+        s = side()
+        return Border(left=s, right=s, top=s, bottom=s)
+
+    def fill(colour):
+        return PatternFill('solid', fgColor=colour) if colour else PatternFill()
+
+    def align(h='left'):
+        return Alignment(horizontal=h, vertical='center')
+
+    def style(cell, bold=False, bg=None, align='left', num_fmt=None):
+        cell.font      = Font(name='Arial', bold=bold, size=10)
+        cell.fill      = fill(bg)
+        cell.alignment = Alignment(horizontal=align, vertical='center')
+        cell.border    = border()
+        if num_fmt:
+            cell.number_format = num_fmt
+
+    def hdr(cell, value, bg=None):
+        cell.value     = value
+        cell.font      = Font(name='Arial', bold=True, color=XL_WHITE, size=10)
+        cell.fill      = fill(bg or hdr_bg)
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell.border    = border()
+
+    def autofit(ws, mn=8, mx=None):
+        mx = autofit_max if mx is None else mx
+        for col in ws.columns:
+            ltr = get_column_letter(col[0].column)
+            w   = max((len(str(c.value or '')) for c in col), default=0)
+            ws.column_dimensions[ltr].width = min(max(w + 2, mn), mx)
+
+    return SimpleNamespace(side=side, border=border, fill=fill, align=align,
+                           style=style, hdr=hdr, autofit=autofit)
+
+
 def iter_pdf_payloads(files):
     """Yield ``(name, pdf_bytes, email_subject)`` for each uploaded file.
 

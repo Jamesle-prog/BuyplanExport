@@ -18,7 +18,7 @@ import streamlit as st
 from ui.giii._shared import (
     _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature,
     FAX_SIZE_ORDER, XL_NAVY, XL_WHITE, XL_YELLOW, XL_GREY, XL_LTBLUE, XL_GREEN,
-    drop_stale_results,
+    drop_stale_results, make_excel_style_kit,
 )
 from ui.i18n import t
 from ui.session_keys import SK
@@ -222,39 +222,9 @@ def _build_kl_excel(results: list[dict]) -> bytes:
     all_sizes  = {s[0] for po in results for li in po['line_items'] for s in li['sizes']}
     sizes_cols = [s for s in _SIZE_ORDER if s in all_sizes]
 
-    def _side():
-        return Side(style='thin', color='FF000000')
-
-    def _border():
-        s = _side()
-        return Border(left=s, right=s, top=s, bottom=s)
-
-    def _hdr(cell, value):
-        cell.value     = value
-        cell.font      = Font(name='Arial', bold=True, color=_WHITE, size=10)
-        cell.fill      = PatternFill('solid', fgColor=_NAVY)
-        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-        cell.border    = _border()
-
-    def _fill(colour):
-        return PatternFill('solid', fgColor=colour) if colour else PatternFill()
-
-    def _align(h='left'):
-        return Alignment(horizontal=h, vertical='center')
-
-    def _style(cell, bold=False, bg=None, align='left', num_fmt=None):
-        cell.font      = Font(name='Arial', bold=bold, size=10)
-        cell.fill      = _fill(bg)
-        cell.alignment = _align(align)
-        cell.border    = _border()
-        if num_fmt:
-            cell.number_format = num_fmt
-
-    def _autofit(ws, mn=8, mx=50):
-        for col in ws.columns:
-            ltr = get_column_letter(col[0].column)
-            w   = max((len(str(c.value or '')) for c in col), default=0)
-            ws.column_dimensions[ltr].width = min(max(w + 2, mn), mx)
+    _kit = make_excel_style_kit()
+    _border, _fill, _align = _kit.border, _kit.fill, _kit.align
+    _style, _hdr, _autofit = _kit.style, _kit.hdr, _kit.autofit
 
     wb = Workbook()
 

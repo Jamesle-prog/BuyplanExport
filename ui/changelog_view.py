@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.30.8",
+        "date": "2026-07-08",
+        "entries": [
+            {"type": "refactor", "text": "**The Excel cell-styling helpers nested inside the MSG, KL, and TK EU workbook builders are combined into one shared style kit** (`make_excel_style_kit` in `ui/giii/_shared.py`) — Arial 10, thin borders, white-on-navy wrapped headers, bounded autofit — with TK EU keeping its teal header via a parameter. Golden style tests were added first and pass unchanged after the swap, proving the generated workbooks are styled identically. InforNexus's builder keeps its own helpers for now (different palette/width variants)"},
+        ],
+    },
+    {
         "version": "2.30.7",
         "date": "2026-07-08",
         "entries": [
