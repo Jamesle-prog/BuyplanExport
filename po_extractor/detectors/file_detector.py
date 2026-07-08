@@ -71,7 +71,10 @@ def _detect_pdf(path: str, filename: str) -> DetectionResult:
         from auth.companies import companies_for_format  # type: ignore
 
     try:
-        text = read_pdf_text(path)
+        # Detection only needs the header keywords — first pages suffice;
+        # the parser re-detects on the FULL text before parsing, so a
+        # (theoretical) later-page-only signal still routes correctly there.
+        text = read_pdf_text(path, max_pages=3)
     except Exception as exc:
         return DetectionResult(
             filename=filename, file_type="pdf", format_id="unknown",

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.30.9",
+        "date": "2026-07-08",
+        "entries": [
+            {"type": "perf", "text": "**GIII upload auto-detection is much faster.** Two fixes: (1) detection results are now cached per uploaded file set — previously EVERY interaction on the page (a checkbox, opening an expander) re-read and re-classified the entire PDF batch on the Streamlit rerun; (2) classification now reads only the first 3 pages of each PDF instead of the whole document, since the format keywords are header-level (parsing still reads the full document, and the parser re-detects on full text, so routing is unaffected)"},
+        ],
+    },
+    {
         "version": "2.30.8",
         "date": "2026-07-08",
         "entries": [

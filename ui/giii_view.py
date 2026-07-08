@@ -34,7 +34,7 @@ from ui.shared import (
 from ui.i18n import t
 from ui.stores import get_store, get_app_settings_store
 
-from ui.giii._shared import _XLSX_MIME, _CONF_BADGE
+from ui.giii._shared import _XLSX_MIME, _CONF_BADGE, files_signature
 from ui.giii.extraction import _run_smart_processing
 from ui.giii.excel_extraction import _run_excel_extraction
 from ui.giii.results import _show_smart_downloads, _show_excel_downloads
@@ -222,7 +222,18 @@ def _show_giii_upload_section():
                 f.write(uf.getbuffer())
             saved_paths[uf.name] = p
 
-        detections = detect_files(list(saved_paths.values()))
+        # Detection reads every PDF — cache it per uploaded file set, or any
+        # widget interaction on this tab (a checkbox, an expander) re-parses
+        # the whole batch on the rerun. Same signature pattern the results
+        # panels use.
+        _det_sig = files_signature(uploaded)
+        if st.session_state.get(SK.GIII_DETECT_SIG) == _det_sig \
+                and st.session_state.get(SK.GIII_DETECTIONS) is not None:
+            detections = st.session_state[SK.GIII_DETECTIONS]
+        else:
+            detections = detect_files(list(saved_paths.values()))
+            st.session_state[SK.GIII_DETECTIONS] = detections
+            st.session_state[SK.GIII_DETECT_SIG] = _det_sig
         st.session_state.smart_detections = detections
 
         # ── Detection summary table ───────────────────────────────────────────────
