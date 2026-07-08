@@ -12,13 +12,15 @@ are rendered normally.
 from __future__ import annotations
 
 import io
-import os
 import re
-import tempfile
 
 import streamlit as st
 
-from ui.giii._shared import _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature
+from ui.giii._shared import (
+    _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature,
+    FAX_SIZE_ORDER, XL_NAVY, XL_WHITE, XL_YELLOW, XL_GREY, XL_LTBLUE,
+    drop_stale_results, iter_pdf_payloads,
+)
 from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import _th
@@ -157,50 +159,21 @@ def _extract_and_parse_msgs(msg_files) -> list[dict]:
     """Accept Streamlit UploadedFiles — .msg (embedded-PDF fax emails) or the
     same fax PDFs uploaded directly — and return parsed PO dicts."""
     results: list[dict] = []
-    with tempfile.TemporaryDirectory() as tmp:
-        for uf in msg_files:
-            subject = ''
-            if uf.name.lower().endswith('.pdf'):
-                # Bare fax PDF uploaded directly — no email wrapper to unpack.
-                pdf_data: bytes | None = bytes(uf.getbuffer())
-            else:
-                import extract_msg
-                msg_path = os.path.join(tmp, uf.name)
-                with open(msg_path, 'wb') as f:
-                    f.write(uf.getbuffer())
+    for name, pdf_data, subject in iter_pdf_payloads(msg_files):
+        try:
+            po = _parse_pdf_bytes(pdf_data)
+        except Exception as exc:
+            st.warning(f"{t('Parse error in')} {name}: {exc}")
+            continue
 
-                try:
-                    msg = extract_msg.openMsg(msg_path)
-                except Exception as exc:
-                    st.warning(f"{t('Could not open')} {uf.name}: {exc}")
-                    continue
+        # Derive PO number from email subject as fallback (.msg only)
+        if po['po_number'] == '?' and subject:
+            nums = [p for p in subject.split() if re.match(r'CSK[A-Z0-9]+', p)]
+            if nums:
+                po['po_number'] = nums[0]
 
-                subject = msg.subject or ''
-                pdf_data = None
-                for att in msg.attachments:
-                    fname = (att.longFilename or att.shortFilename or '').lower()
-                    if fname.endswith('.pdf'):
-                        pdf_data = att.data
-                        break
-
-                if pdf_data is None:
-                    st.warning(f"{t('No PDF attachment in')} {uf.name} — {t('skipped.')}")
-                    continue
-
-            try:
-                po = _parse_pdf_bytes(pdf_data)
-            except Exception as exc:
-                st.warning(f"{t('Parse error in')} {uf.name}: {exc}")
-                continue
-
-            # Derive PO number from email subject as fallback (.msg only)
-            if po['po_number'] == '?' and subject:
-                nums = [p for p in subject.split() if re.match(r'CSK[A-Z0-9]+', p)]
-                if nums:
-                    po['po_number'] = nums[0]
-
-            po['source_file'] = uf.name
-            results.append(po)
+        po['source_file'] = name
+        results.append(po)
 
     return results
 
@@ -209,15 +182,15 @@ def _extract_and_parse_msgs(msg_files) -> list[dict]:
 # Excel builder (in-memory)
 # ---------------------------------------------------------------------------
 
-_SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '1X', '2X', '3X']
+_SIZE_ORDER = FAX_SIZE_ORDER
 
 # Colours
-_NAVY    = 'FF1F3864'
-_WHITE   = 'FFFFFFFF'
-_YELLOW  = 'FFFFF2CC'
+_NAVY    = XL_NAVY
+_WHITE   = XL_WHITE
+_YELLOW  = XL_YELLOW
 _ORANGE  = 'FFF4B942'
-_LT_BLUE = 'FFDEEAF1'
-_GREY    = 'FFD9D9D9'
+_LT_BLUE = XL_LTBLUE
+_GREY    = XL_GREY
 _BLACK   = 'FF000000'
 
 
@@ -554,12 +527,7 @@ def show_msg_upload_section() -> None:
         st.session_state[SK.GIII_MSG_RESULTS] = results
         st.session_state[SK.GIII_MSG_SIG]     = sig
 
-    results = st.session_state.get(SK.GIII_MSG_RESULTS)
-    if results and st.session_state.get(SK.GIII_MSG_SIG) != sig:
-        # Upload selection changed since extraction — drop the stale results
-        # so a swapped file set can't display/download the previous batch.
-        st.session_state[SK.GIII_MSG_RESULTS] = None
-        results = None
+    results = drop_stale_results(SK.GIII_MSG_RESULTS, SK.GIII_MSG_SIG, sig)
     if not results:
         return
 

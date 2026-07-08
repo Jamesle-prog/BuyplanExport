@@ -15,7 +15,11 @@ import re
 
 import streamlit as st
 
-from ui.giii._shared import _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature
+from ui.giii._shared import (
+    _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature,
+    FAX_SIZE_ORDER, XL_NAVY, XL_WHITE, XL_YELLOW, XL_GREY, XL_LTBLUE, XL_GREEN,
+    drop_stale_results,
+)
 from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import _th
@@ -199,15 +203,15 @@ def _parse_kl_pdfs(pdf_files) -> list[dict]:
 # Excel builder
 # ---------------------------------------------------------------------------
 
-_SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '1X', '2X', '3X']
+_SIZE_ORDER = FAX_SIZE_ORDER
 
-_NAVY    = 'FF1F3864'
-_WHITE   = 'FFFFFFFF'
-_YELLOW  = 'FFFFF2CC'
+_NAVY    = XL_NAVY
+_WHITE   = XL_WHITE
+_YELLOW  = XL_YELLOW
 _ORANGE  = 'FFF4B942'
-_LT_BLUE = 'FFDEEAF1'
-_GREY    = 'FFD9D9D9'
-_GREEN   = 'FFE2EFDA'
+_LT_BLUE = XL_LTBLUE
+_GREY    = XL_GREY
+_GREEN   = XL_GREEN
 
 
 def _build_kl_excel(results: list[dict]) -> bytes:
@@ -544,12 +548,7 @@ def show_kl_upload_section() -> None:
         st.session_state[SK.GIII_KL_RESULTS] = results
         st.session_state[SK.GIII_KL_SIG]     = sig
 
-    results = st.session_state.get(SK.GIII_KL_RESULTS)
-    if results and st.session_state.get(SK.GIII_KL_SIG) != sig:
-        # Upload selection changed since extraction — drop the stale results
-        # so a swapped file set can't display/download the previous batch.
-        st.session_state[SK.GIII_KL_RESULTS] = None
-        results = None
+    results = drop_stale_results(SK.GIII_KL_RESULTS, SK.GIII_KL_SIG, sig)
     if not results:
         return
 

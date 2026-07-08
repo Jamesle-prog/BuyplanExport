@@ -14,14 +14,14 @@ Layout differences from CSKHHA/Ross MSG format:
 from __future__ import annotations
 
 import io
-import os
 import re
-import tempfile
 
 import streamlit as st
 
 from ui.giii._shared import (
     _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature,
+    FAX_SIZE_ORDER, XL_NAVY, XL_WHITE, XL_YELLOW, XL_GREY, XL_LTBLUE, XL_GREEN,
+    drop_stale_results, iter_pdf_payloads,
 )
 from ui.i18n import t
 from ui.session_keys import SK
@@ -149,46 +149,21 @@ def _extract_and_parse_tk_eu(msg_files) -> list[dict]:
     """Accept Streamlit UploadedFiles — .msg (embedded-PDF fax emails) or the
     same fax PDFs uploaded directly — and return parsed TK EU PO dicts."""
     results: list[dict] = []
-    with tempfile.TemporaryDirectory() as tmp:
-        for uf in msg_files:
-            if uf.name.lower().endswith('.pdf'):
-                # Bare fax PDF uploaded directly — no email wrapper to unpack.
-                pdf_data = bytes(uf.getbuffer())
-            else:
-                import extract_msg
-                msg_path = os.path.join(tmp, uf.name)
-                with open(msg_path, 'wb') as f:
-                    f.write(uf.getbuffer())
-                try:
-                    msg = extract_msg.openMsg(msg_path)
-                except Exception as exc:
-                    st.warning(f"Could not open {uf.name}: {exc}")
-                    continue
+    for name, pdf_data, _subject in iter_pdf_payloads(msg_files):
+        try:
+            po = _parse_tk_eu_pdf(pdf_data)
+        except Exception as exc:
+            st.warning(f"Parse error in {name}: {exc}")
+            continue
 
-                pdf_data = None
-                for att in msg.attachments:
-                    if (att.longFilename or att.shortFilename or '').lower().endswith('.pdf'):
-                        pdf_data = att.data
-                        break
+        # Derive PO number from filename if not found
+        if po['po_number'] == '?':
+            m = re.search(r'(DU\w+U)', name)
+            if m:
+                po['po_number'] = m.group(1)
 
-                if pdf_data is None:
-                    st.warning(f"No PDF in {uf.name} — skipped.")
-                    continue
-
-            try:
-                po = _parse_tk_eu_pdf(pdf_data)
-            except Exception as exc:
-                st.warning(f"Parse error in {uf.name}: {exc}")
-                continue
-
-            # Derive PO number from filename if not found
-            if po['po_number'] == '?':
-                m = re.search(r'(DU\w+U)', uf.name)
-                if m:
-                    po['po_number'] = m.group(1)
-
-            po['source_file'] = uf.name
-            results.append(po)
+        po['source_file'] = name
+        results.append(po)
 
     return results
 
@@ -197,14 +172,14 @@ def _extract_and_parse_tk_eu(msg_files) -> list[dict]:
 # Excel builder
 # ---------------------------------------------------------------------------
 
-_SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '1X', '2X', '3X']
+_SIZE_ORDER = FAX_SIZE_ORDER
 
-_NAVY    = 'FF1F3864'
-_WHITE   = 'FFFFFFFF'
-_YELLOW  = 'FFFFF2CC'
-_LT_BLUE = 'FFDEEAF1'
-_GREY    = 'FFD9D9D9'
-_GREEN   = 'FFE2EFDA'
+_NAVY    = XL_NAVY
+_WHITE   = XL_WHITE
+_YELLOW  = XL_YELLOW
+_LT_BLUE = XL_LTBLUE
+_GREY    = XL_GREY
+_GREEN   = XL_GREEN
 _TEAL    = 'FF1F6B75'  # TK EU accent colour
 
 
@@ -473,11 +448,7 @@ def show_tk_eu_upload_section() -> None:
         st.session_state[SK.GIII_TKEU_SIG]     = sig
 
     # Drop stale results when the uploaded file set changed since extraction.
-    if (st.session_state.get(SK.GIII_TKEU_RESULTS) is not None
-            and st.session_state.get(SK.GIII_TKEU_SIG) != sig):
-        st.session_state[SK.GIII_TKEU_RESULTS] = None
-
-    results = st.session_state.get(SK.GIII_TKEU_RESULTS)
+    results = drop_stale_results(SK.GIII_TKEU_RESULTS, SK.GIII_TKEU_SIG, sig)
     if not results:
         return
 

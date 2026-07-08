@@ -79,6 +79,72 @@ def files_signature(files) -> tuple:
     return tuple(sorted((f.name, getattr(f, "size", None)) for f in (files or [])))
 
 
+# Canonical fax-PO size column order (msg / kl / tk_eu builders).
+# infornexus_extraction keeps its own superset — its output column order is
+# part of that workbook's layout and must not silently change.
+FAX_SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '1X', '2X', '3X']
+
+# Shared workbook palette (every GIII extraction Excel builder uses these).
+XL_NAVY   = 'FF1F3864'
+XL_WHITE  = 'FFFFFFFF'
+XL_YELLOW = 'FFFFF2CC'
+XL_GREY   = 'FFD9D9D9'
+XL_LTBLUE = 'FFDEEAF1'
+XL_GREEN  = 'FFE2EFDA'
+
+
+def iter_pdf_payloads(files):
+    """Yield ``(name, pdf_bytes, email_subject)`` for each uploaded file.
+
+    Accepts the mixed uploads the fax sections take: bare fax ``.pdf`` files
+    pass straight through (subject ``''``); ``.msg`` Outlook emails are
+    unpacked to their first PDF attachment, with the email subject carried
+    along for PO-number fallbacks. Unreadable emails and emails without a
+    PDF attachment are warned about and skipped — shared by the MSG and
+    TK EU sections, which previously each had their own copy of this loop.
+    """
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        for uf in files:
+            if uf.name.lower().endswith('.pdf'):
+                yield uf.name, bytes(uf.getbuffer()), ''
+                continue
+
+            import extract_msg
+            msg_path = os.path.join(tmp, uf.name)
+            with open(msg_path, 'wb') as f:
+                f.write(uf.getbuffer())
+            try:
+                msg = extract_msg.openMsg(msg_path)
+            except Exception as exc:
+                st.warning(f"Could not open {uf.name}: {exc}")
+                continue
+
+            pdf_data = None
+            for att in msg.attachments:
+                if (att.longFilename or att.shortFilename or '').lower().endswith('.pdf'):
+                    pdf_data = att.data
+                    break
+            if pdf_data is None:
+                st.warning(f"No PDF attachment in {uf.name} — skipped.")
+                continue
+
+            yield uf.name, pdf_data, (msg.subject or '')
+
+
+def drop_stale_results(results_key: str, sig_key: str, sig: tuple):
+    """Return current results for *results_key*, dropping them first if the
+    uploader's file set changed since extraction (signature mismatch) — a
+    swapped selection must not display/download the previous batch."""
+    results = st.session_state.get(results_key)
+    if results and st.session_state.get(sig_key) != sig:
+        st.session_state[results_key] = None
+        results = None
+    return results
+
+
 _SIZE_CODES = r'(?:XXS|XS|XXL|XL|[123]XL|[123]X|OSFM|OSM|OSF|OS|S|M|L)'
 _FIRST_RE   = re.compile(
     rf'^(\d{{3}})\s+(\S+)\s+(.+?)\s+({_SIZE_CODES})\s+(\d+)\s+(\d{{12,13}})\s+([\d.]+)'

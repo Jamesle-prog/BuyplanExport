@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.30.7",
+        "date": "2026-07-08",
+        "entries": [
+            {"type": "refactor", "text": "**GIII extraction modules de-duplicated into shared helpers** (`ui/giii/_shared.py`): the .msg→PDF unwrap loop (previously copy-pasted between the MSG and TK EU sections), the stale-results guard (three copies), the fax size-column order, and the workbook colour palette (four copies each) now live in one place. No behavior change — locked by regression tests that pin the historical size order and palette values, since both are part of the generated workbooks' layout"},
+        ],
+    },
+    {
         "version": "2.30.6",
         "date": "2026-07-08",
         "entries": [
