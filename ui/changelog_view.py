@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.30.4",
+        "date": "2026-07-08",
+        "entries": [
+            {"type": "refactor", "text": "**GIII → New Contracts redesigned: the specialized PO extractors (MSG/Vendor Fax, KL PDFs, InforNexus, TK EU) are now collapsed expanders under an \"Other PO types\" section** beneath the main PO uploader, instead of four fully-rendered sections stacked down the page. Same page, same functionality — open only the type you're working with. Expander labels are translated for the Chinese UI"},
+        ],
+    },
+    {
         "version": "2.30.3",
         "date": "2026-07-08",
         "entries": [

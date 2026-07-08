@@ -501,8 +501,8 @@ def _build_excel_bytes(results: list[dict]) -> bytes:
 def show_msg_upload_section() -> None:
     """Render the MSG / Vendor Fax PO upload section inside the GIII Upload tab."""
 
-    st.divider()
-    st.markdown("#### 📧 MSG / Vendor Fax POs")
+    # No divider/header here — this renders inside a labeled expander on the
+    # GIII New Contracts tab, which already names the section.
     st.caption(t(
         "Upload Outlook **.msg** emails (vendor fax copies from AS400). "
         "The system extracts the embedded PDF, parses PO fields, and produces "

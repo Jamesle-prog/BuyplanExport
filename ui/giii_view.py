@@ -330,10 +330,25 @@ def show_smart_upload_tab():
 
     with tab_upload:
         _show_giii_upload_section()
-        _show_msg_upload_section()
-        _show_kl_upload_section()
-        _show_infornexus_upload_section()
-        _show_tk_eu_upload_section()
+
+        # Specialized PO extractors live in collapsed expanders under the
+        # main uploader — one page, but only the type being used is open,
+        # instead of four fully-rendered sections stacked down the screen.
+        st.divider()
+        st.markdown(f"**{t('Other PO types')}**")
+        st.caption(t(
+            "Specialized extractors for POs that arrive as fax emails or "
+            "portal PDFs. Open the type you need — each produces its own "
+            "formatted Excel."
+        ))
+        with st.expander("📧 " + t("MSG / Vendor Fax POs")):
+            _show_msg_upload_section()
+        with st.expander("📄 " + t("KL PO PDFs")):
+            _show_kl_upload_section()
+        with st.expander("🗂 " + t("InforNexus POs")):
+            _show_infornexus_upload_section()
+        with st.expander("🇬🇧 " + t("TK EU POs (Kostroma / TJX UK)")):
+            _show_tk_eu_upload_section()
 
     with tab_history:
         _show_history(exc_df=_exc_df)

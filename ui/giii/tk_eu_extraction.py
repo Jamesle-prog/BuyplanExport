@@ -423,8 +423,8 @@ def _build_tk_eu_excel(results: list[dict]) -> bytes:
 def show_tk_eu_upload_section() -> None:
     """Render the TK EU PO MSG upload section inside the GIII Upload tab."""
 
-    st.divider()
-    st.markdown("#### 🇬🇧 TK EU POs (Kostroma / TJX UK)")
+    # No divider/header here — this renders inside a labeled expander on the
+    # GIII New Contracts tab, which already names the section.
     st.caption(t(
         "Upload Outlook **.msg** vendor fax emails for TK EU / Kostroma purchase orders (TJX UK). "
         "The system extracts the embedded PDF, parses PO fields, and produces a formatted Excel."

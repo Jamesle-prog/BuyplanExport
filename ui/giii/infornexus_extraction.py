@@ -426,8 +426,8 @@ def build_comparison_excel(kl_results: list[dict], in_results: list[dict]) -> by
 def show_infornexus_upload_section() -> None:
     """InforNexus PO upload + optional comparison against KL PDFs."""
 
-    st.divider()
-    st.markdown("#### 🗂 InforNexus POs")
+    # No divider/header here — this renders inside a labeled expander on the
+    # GIII New Contracts tab, which already names the section.
     st.caption(t(
         "Upload InforNexus-format PO PDFs. "
         "Optionally also upload the matching KL fax PDFs to generate a side-by-side comparison."

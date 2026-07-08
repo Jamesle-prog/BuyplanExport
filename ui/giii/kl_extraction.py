@@ -505,8 +505,8 @@ def _build_kl_excel(results: list[dict]) -> bytes:
 def show_kl_upload_section() -> None:
     """Render the KL PO PDF upload section inside the GIII Upload tab."""
 
-    st.divider()
-    st.markdown("#### 📄 KL PO PDFs")
+    # No divider/header here — this renders inside a labeled expander on the
+    # GIII New Contracts tab, which already names the section.
     st.caption(t(
         "Upload KL-format purchase order PDFs directly. "
         "The system parses PO fields, MSRP details, HTS codes and produces "

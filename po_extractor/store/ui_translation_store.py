@@ -1112,6 +1112,16 @@ _SEED: list[tuple[str, str, str, str]] = [
     # tab now just points at the Reference Data tab.
     ('Style-Fabric mapping and HHN contract progress are managed in the 📐 Reference Data tab — upload them once there, every run uses the saved data.',
      '款式-面料映射和HHN大货进度在 📐 参考数据 标签页中管理 — 在那里上传一次，之后每次处理都会自动使用已保存的数据。', 'label', 'giii'),
+
+    # GIII → New Contracts redesign (v2.30.4): specialized PO extractors
+    # collapsed into expanders under the main uploader.
+    ('Other PO types', '其他订单类型', 'header', 'giii'),
+    ('Specialized extractors for POs that arrive as fax emails or portal PDFs. Open the type you need — each produces its own formatted Excel.',
+     '针对以传真邮件或门户PDF形式到达的订单的专用提取器。打开所需的类型 — 每种类型都会生成各自的格式化Excel。', 'label', 'giii'),
+    ('MSG / Vendor Fax POs', 'MSG / 供应商传真订单', 'header', 'giii'),
+    ('KL PO PDFs', 'KL 订单 PDF', 'header', 'giii'),
+    ('InforNexus POs', 'InforNexus 订单', 'header', 'giii'),
+    ('TK EU POs (Kostroma / TJX UK)', 'TK EU 订单（Kostroma / TJX UK）', 'header', 'giii'),
 ]
 # fmt: on
 
