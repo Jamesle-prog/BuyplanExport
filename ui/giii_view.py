@@ -304,12 +304,13 @@ def show_smart_upload_tab():
         _exc_df = pd.DataFrame()
     _exc_count = (len(_exc_df[_exc_df["status"] == "pending"])
                   if not _exc_df.empty and "status" in _exc_df.columns else 0)
-    # Tab bar mirrors the Sky East tab exactly — same order (Upload →
-    # Generate/Export → History → Missing Fields) and same label style
-    # (plain text, 📦 only on the output tab, plain count on Missing
-    # Fields). The 🔴 on PO History is the pending-exception alert and is
-    # GIII-specific; it stays.
-    history_label = t("PO History") + (f"  🔴 {_exc_count}" if _exc_count else "")
+    # Tab bar mirrors the Sky East tab exactly — same order AND the same
+    # menu names (New Contracts → Generate/Export → Contract History →
+    # Missing Fields; GIII orders carry HHN contract numbers via the
+    # 大货进度表, so "contract" applies to this pipeline too). The 🔴 on
+    # Contract History is the pending-exception alert and is GIII-specific;
+    # it stays.
+    history_label = t("Contract History") + (f"  🔴 {_exc_count}" if _exc_count else "")
 
     _missing_df    = _compute_giii_missing_df()
     _missing_count = len(_missing_df)
@@ -317,7 +318,7 @@ def show_smart_upload_tab():
     missing_label  = (f"{_mf}  {_missing_count}" if _missing_count else _mf)
 
     tab_upload, tab_reports, tab_history, tab_missing = st.tabs(
-        [t("Upload"), f"📦 {t('Generate / Export')}",
+        [t("New Contracts"), f"📦 {t('Generate / Export')}",
          history_label, missing_label]
     )
 

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.30.2",
+        "date": "2026-07-08",
+        "entries": [
+            {"type": "refactor", "text": "**GIII tab bar now uses the same menu names as Sky East**: \"Upload\" → \"New Contracts\" and \"PO History\" → \"Contract History\", so both client tabs read identically (New Contracts → 📦 Generate / Export → Contract History → Missing Fields). GIII orders carry HHN contract numbers via the 大货进度表, so the contract terminology fits this pipeline too. Chinese translations already covered both names"},
+        ],
+    },
+    {
         "version": "2.30.1",
         "date": "2026-07-08",
         "entries": [
