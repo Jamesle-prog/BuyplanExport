@@ -1122,6 +1122,13 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('KL PO PDFs', 'KL 订单 PDF', 'header', 'giii'),
     ('InforNexus POs', 'InforNexus 订单', 'header', 'giii'),
     ('TK EU POs (Kostroma / TJX UK)', 'TK EU 订单（Kostroma / TJX UK）', 'header', 'giii'),
+
+    # GIII → New Contracts: AI toggle moved to Admin → Settings (v2.30.5);
+    # the upload page only reports the active mode now.
+    ('AI extraction (DeepSeek) is ON — configured by your admin in Admin → Settings.',
+     'AI提取（DeepSeek）已开启 — 由管理员在 管理 → 设置 中配置。', 'label', 'giii'),
+    ('AI extraction is enabled but no DeepSeek API key is configured — files will be processed with the built-in parser. Set the key in Admin → Settings.',
+     'AI提取已启用，但未配置DeepSeek API密钥 — 文件将使用内置解析器处理。请在 管理 → 设置 中配置密钥。', 'label', 'giii'),
 ]
 # fmt: on
 

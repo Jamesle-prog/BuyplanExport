@@ -185,37 +185,26 @@ def _show_giii_upload_section():
         help="Replace FOB / cost / price values with *** in all output files.",
     )
 
-    # ── AI Extraction toggle ──────────────────────────────────────────────────
+    # ── AI extraction is an admin-level choice (Admin → Settings) ────────────
+    # The per-run toggle + session key override that used to live here was a
+    # second place to configure the same thing; the admin setting alone now
+    # decides, and this page just shows the active mode.
     _settings = get_app_settings_store()
-    _default_method = _settings.get(KEY_EXTRACTION_METHOD, "regex")
-    _api_key        = _settings.get(KEY_DEEPSEEK_API_KEY, "")
-    _ds_model       = _settings.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
-
-    with st.expander("🤖 " + t("AI Extraction (DeepSeek)"), expanded=(_default_method == "deepseek")):
-        st.caption(t(
-            "Use the DeepSeek API to extract PO fields instead of the built-in regex parser.  "
-            "Useful for non-standard layouts or when you want AI-assisted field recognition."
+    _method   = _settings.get(KEY_EXTRACTION_METHOD, "regex")
+    _api_key  = _settings.get(KEY_DEEPSEEK_API_KEY, "")
+    _ds_model = _settings.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
+    _use_ai   = (_method == "deepseek")
+    if _use_ai and _api_key:
+        st.caption("🤖 " + t(
+            "AI extraction (DeepSeek) is ON — configured by your admin in "
+            "Admin → Settings."
+        ) + f" `{_ds_model}`")
+    elif _use_ai and not _api_key:
+        st.warning("⚠️ " + t(
+            "AI extraction is enabled but no DeepSeek API key is configured — "
+            "files will be processed with the built-in parser. Set the key in "
+            "Admin → Settings."
         ))
-        use_ai = st.toggle(
-            t("Use DeepSeek AI extraction"),
-            value=(_default_method == "deepseek"),
-            key="smart_use_ai",
-        )
-        if use_ai:
-            session_key = st.text_input(
-                t("API Key (leave blank to use admin-configured key)"),
-                value="",
-                type="password",
-                placeholder="sk-… (optional override)",
-                key="smart_ds_api_key_override",
-            )
-            effective_key = session_key.strip() or _api_key
-            if not effective_key:
-                st.warning("⚠️ " + t("No DeepSeek API key configured. Set one in Admin → Settings or enter above."))
-            else:
-                st.caption(f"{t('Model')}: `{_ds_model}` · " + t("key ending") + f" …{effective_key[-4:]}")
-        else:
-            effective_key = ""
 
     st.divider()
 
@@ -257,11 +246,10 @@ def _show_giii_upload_section():
                      use_container_width=True, key="smart_run"):
             st.session_state.smart_results = None
             st.session_state.smart_log = []
-            _use_ai   = st.session_state.get("smart_use_ai", False)
-            _eff_key  = st.session_state.get("smart_ds_api_key_override", "").strip() or _api_key
             _run_smart_processing(
                 detections, saved_paths, mask_prices,
-                use_ai=_use_ai, deepseek_api_key=_eff_key, deepseek_model=_ds_model,
+                use_ai=(_use_ai and bool(_api_key)),
+                deepseek_api_key=_api_key, deepseek_model=_ds_model,
             )
     finally:
         # Files have been read into memory (detection + processing) — temp dir no longer needed

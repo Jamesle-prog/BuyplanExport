@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.30.5",
+        "date": "2026-07-08",
+        "entries": [
+            {"type": "refactor", "text": "**AI extraction is now an admin-only choice.** The 🤖 AI Extraction expander (per-run toggle + session API-key override) on GIII → New Contracts is gone — the extraction method, DeepSeek key, and model are configured solely in **Admin → Settings**, which already had the full section. The upload page now just shows a one-line note when AI mode is active (or a warning if it's enabled without a key, in which case files fall back to the built-in parser)"},
+        ],
+    },
+    {
         "version": "2.30.4",
         "date": "2026-07-08",
         "entries": [
