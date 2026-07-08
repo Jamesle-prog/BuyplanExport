@@ -1129,6 +1129,16 @@ _SEED: list[tuple[str, str, str, str]] = [
      'AI提取（DeepSeek）已开启 — 由管理员在 管理 → 设置 中配置。', 'label', 'giii'),
     ('AI extraction is enabled but no DeepSeek API key is configured — files will be processed with the built-in parser. Set the key in Admin → Settings.',
      'AI提取已启用，但未配置DeepSeek API密钥 — 文件将使用内置解析器处理。请在 管理 → 设置 中配置密钥。', 'label', 'giii'),
+
+    # MSG / TK EU sections accept bare fax PDFs in addition to .msg (v2.30.6)
+    ('Upload .msg vendor fax emails — or the fax PDFs directly — to get started.',
+     '上传 .msg 供应商传真邮件 — 或直接上传传真PDF文件 — 即可开始。', 'label', 'giii'),
+    ('Upload TK EU .msg vendor fax emails — or the fax PDFs directly — to get started.',
+     '上传 TK EU .msg 供应商传真邮件 — 或直接上传传真PDF文件 — 即可开始。', 'label', 'giii'),
+    ('Upload Outlook **.msg** emails (vendor fax copies from AS400) — or the fax **PDF** files directly. The system extracts the PDF, parses PO fields, and produces a formatted Excel workbook ready for download.',
+     '上传 Outlook **.msg** 邮件（来自AS400的供应商传真副本）— 或直接上传传真 **PDF** 文件。系统会提取PDF、解析订单字段，并生成可下载的格式化Excel工作簿。', 'label', 'giii'),
+    ('Upload Outlook **.msg** vendor fax emails for TK EU / Kostroma purchase orders (TJX UK) — or the fax **PDF** files directly. The system extracts the PDF, parses PO fields, and produces a formatted Excel.',
+     '上传 TK EU / Kostroma 采购订单（TJX UK）的 Outlook **.msg** 供应商传真邮件 — 或直接上传传真 **PDF** 文件。系统会提取PDF、解析订单字段，并生成格式化Excel。', 'label', 'giii'),
 ]
 # fmt: on
 

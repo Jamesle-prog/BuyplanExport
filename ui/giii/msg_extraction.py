@@ -154,32 +154,38 @@ def _parse_pdf_bytes(pdf_bytes: bytes) -> dict:
 
 
 def _extract_and_parse_msgs(msg_files) -> list[dict]:
-    """Accept a list of Streamlit UploadedFile (.msg), return parsed PO dicts."""
-    import extract_msg
-
+    """Accept Streamlit UploadedFiles — .msg (embedded-PDF fax emails) or the
+    same fax PDFs uploaded directly — and return parsed PO dicts."""
     results: list[dict] = []
     with tempfile.TemporaryDirectory() as tmp:
         for uf in msg_files:
-            msg_path = os.path.join(tmp, uf.name)
-            with open(msg_path, 'wb') as f:
-                f.write(uf.getbuffer())
+            subject = ''
+            if uf.name.lower().endswith('.pdf'):
+                # Bare fax PDF uploaded directly — no email wrapper to unpack.
+                pdf_data: bytes | None = bytes(uf.getbuffer())
+            else:
+                import extract_msg
+                msg_path = os.path.join(tmp, uf.name)
+                with open(msg_path, 'wb') as f:
+                    f.write(uf.getbuffer())
 
-            try:
-                msg = extract_msg.openMsg(msg_path)
-            except Exception as exc:
-                st.warning(f"{t('Could not open')} {uf.name}: {exc}")
-                continue
+                try:
+                    msg = extract_msg.openMsg(msg_path)
+                except Exception as exc:
+                    st.warning(f"{t('Could not open')} {uf.name}: {exc}")
+                    continue
 
-            pdf_data: bytes | None = None
-            for att in msg.attachments:
-                fname = (att.longFilename or att.shortFilename or '').lower()
-                if fname.endswith('.pdf'):
-                    pdf_data = att.data
-                    break
+                subject = msg.subject or ''
+                pdf_data = None
+                for att in msg.attachments:
+                    fname = (att.longFilename or att.shortFilename or '').lower()
+                    if fname.endswith('.pdf'):
+                        pdf_data = att.data
+                        break
 
-            if pdf_data is None:
-                st.warning(f"{t('No PDF attachment in')} {uf.name} — {t('skipped.')}")
-                continue
+                if pdf_data is None:
+                    st.warning(f"{t('No PDF attachment in')} {uf.name} — {t('skipped.')}")
+                    continue
 
             try:
                 po = _parse_pdf_bytes(pdf_data)
@@ -187,10 +193,9 @@ def _extract_and_parse_msgs(msg_files) -> list[dict]:
                 st.warning(f"{t('Parse error in')} {uf.name}: {exc}")
                 continue
 
-            # Derive PO number from email subject as fallback
-            if po['po_number'] == '?':
-                subj = msg.subject or ''
-                nums = [p for p in subj.split() if re.match(r'CSK[A-Z0-9]+', p)]
+            # Derive PO number from email subject as fallback (.msg only)
+            if po['po_number'] == '?' and subject:
+                nums = [p for p in subject.split() if re.match(r'CSK[A-Z0-9]+', p)]
                 if nums:
                     po['po_number'] = nums[0]
 
@@ -504,21 +509,21 @@ def show_msg_upload_section() -> None:
     # No divider/header here — this renders inside a labeled expander on the
     # GIII New Contracts tab, which already names the section.
     st.caption(t(
-        "Upload Outlook **.msg** emails (vendor fax copies from AS400). "
-        "The system extracts the embedded PDF, parses PO fields, and produces "
-        "a formatted Excel workbook ready for download."
+        "Upload Outlook **.msg** emails (vendor fax copies from AS400) — or "
+        "the fax **PDF** files directly. The system extracts the PDF, parses "
+        "PO fields, and produces a formatted Excel workbook ready for download."
     ))
 
     uploaded_msgs = st.file_uploader(
-        "Upload .msg files",
-        type=["msg"],
+        "Upload .msg or fax PDF files",
+        type=["msg", "pdf"],
         accept_multiple_files=True,
         label_visibility="collapsed",
         key="msg_uploader",
     )
 
     if not uploaded_msgs:
-        st.info(t("Upload one or more .msg vendor fax emails to get started."))
+        st.info(t("Upload .msg vendor fax emails — or the fax PDFs directly — to get started."))
         return
 
     st.caption(f"{len(uploaded_msgs)} " + t("file(s) selected"))
@@ -531,14 +536,15 @@ def show_msg_upload_section() -> None:
     if st.button(t("▶  Extract MSG POs"), type="primary", use_container_width=True, key="run_msg"):
         st.session_state[SK.GIII_MSG_RESULTS] = None
         with st.spinner(t("Extracting PDFs and parsing POs…")):
-            try:
-                import extract_msg  # noqa: F401 — verify library present
-            except ImportError:
-                st.error(t(
-                    "**extract-msg** library not installed. "
-                    "Run `pip install extract-msg` and restart the app."
-                ))
-                return
+            if any(uf.name.lower().endswith(".msg") for uf in uploaded_msgs):
+                try:
+                    import extract_msg  # noqa: F401 — verify library present
+                except ImportError:
+                    st.error(t(
+                        "**extract-msg** library not installed. "
+                        "Run `pip install extract-msg` and restart the app."
+                    ))
+                    return
             results = _extract_and_parse_msgs(uploaded_msgs)
 
         if not results:

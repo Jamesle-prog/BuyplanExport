@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.30.6",
+        "date": "2026-07-08",
+        "entries": [
+            {"type": "feat", "text": "**MSG/Vendor Fax and TK EU sections now accept the fax PDFs directly**, not only Outlook .msg emails. Files ending in .pdf skip the email-unpacking step and go straight to the same parser; .msg files work exactly as before (including the PO-number-from-subject fallback, which only applies to emails). The extract-msg library is now only required when the batch actually contains .msg files"},
+        ],
+    },
+    {
         "version": "2.30.5",
         "date": "2026-07-08",
         "entries": [

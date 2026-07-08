@@ -146,30 +146,34 @@ def _parse_tk_eu_pdf(pdf_bytes: bytes) -> dict:
 
 
 def _extract_and_parse_tk_eu(msg_files) -> list[dict]:
-    """Accept Streamlit UploadedFile .msg list, return parsed TK EU PO dicts."""
-    import extract_msg
-
+    """Accept Streamlit UploadedFiles — .msg (embedded-PDF fax emails) or the
+    same fax PDFs uploaded directly — and return parsed TK EU PO dicts."""
     results: list[dict] = []
     with tempfile.TemporaryDirectory() as tmp:
         for uf in msg_files:
-            msg_path = os.path.join(tmp, uf.name)
-            with open(msg_path, 'wb') as f:
-                f.write(uf.getbuffer())
-            try:
-                msg = extract_msg.openMsg(msg_path)
-            except Exception as exc:
-                st.warning(f"Could not open {uf.name}: {exc}")
-                continue
+            if uf.name.lower().endswith('.pdf'):
+                # Bare fax PDF uploaded directly — no email wrapper to unpack.
+                pdf_data = bytes(uf.getbuffer())
+            else:
+                import extract_msg
+                msg_path = os.path.join(tmp, uf.name)
+                with open(msg_path, 'wb') as f:
+                    f.write(uf.getbuffer())
+                try:
+                    msg = extract_msg.openMsg(msg_path)
+                except Exception as exc:
+                    st.warning(f"Could not open {uf.name}: {exc}")
+                    continue
 
-            pdf_data = None
-            for att in msg.attachments:
-                if (att.longFilename or att.shortFilename or '').lower().endswith('.pdf'):
-                    pdf_data = att.data
-                    break
+                pdf_data = None
+                for att in msg.attachments:
+                    if (att.longFilename or att.shortFilename or '').lower().endswith('.pdf'):
+                        pdf_data = att.data
+                        break
 
-            if pdf_data is None:
-                st.warning(f"No PDF in {uf.name} — skipped.")
-                continue
+                if pdf_data is None:
+                    st.warning(f"No PDF in {uf.name} — skipped.")
+                    continue
 
             try:
                 po = _parse_tk_eu_pdf(pdf_data)
@@ -426,20 +430,21 @@ def show_tk_eu_upload_section() -> None:
     # No divider/header here — this renders inside a labeled expander on the
     # GIII New Contracts tab, which already names the section.
     st.caption(t(
-        "Upload Outlook **.msg** vendor fax emails for TK EU / Kostroma purchase orders (TJX UK). "
-        "The system extracts the embedded PDF, parses PO fields, and produces a formatted Excel."
+        "Upload Outlook **.msg** vendor fax emails for TK EU / Kostroma "
+        "purchase orders (TJX UK) — or the fax **PDF** files directly. The "
+        "system extracts the PDF, parses PO fields, and produces a formatted Excel."
     ))
 
     uploaded_msgs = st.file_uploader(
-        "Upload TK EU .msg files",
-        type=["msg"],
+        "Upload TK EU .msg or fax PDF files",
+        type=["msg", "pdf"],
         accept_multiple_files=True,
         label_visibility="collapsed",
         key="tk_eu_uploader",
     )
 
     if not uploaded_msgs:
-        st.info(t("Upload one or more TK EU .msg vendor fax emails to get started."))
+        st.info(t("Upload TK EU .msg vendor fax emails — or the fax PDFs directly — to get started."))
         return
 
     sig = files_signature(uploaded_msgs)
@@ -453,11 +458,12 @@ def show_tk_eu_upload_section() -> None:
                  use_container_width=True, key="run_tk_eu"):
         st.session_state[SK.GIII_TKEU_RESULTS] = None
         with st.spinner(t("Extracting PDFs and parsing POs…")):
-            try:
-                import extract_msg  # noqa
-            except ImportError:
-                st.error(t("**extract-msg** library not installed. Run `pip install extract-msg`."))
-                return
+            if any(uf.name.lower().endswith(".msg") for uf in uploaded_msgs):
+                try:
+                    import extract_msg  # noqa
+                except ImportError:
+                    st.error(t("**extract-msg** library not installed. Run `pip install extract-msg`."))
+                    return
             results = _extract_and_parse_tk_eu(uploaded_msgs)
 
         if not results:
