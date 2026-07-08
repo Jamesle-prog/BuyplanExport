@@ -1107,6 +1107,11 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Brand / Customer', '品牌/客户', 'header', 'summary'),
     ('Order Date', '下单日期', 'header', 'summary'),
     ('Unit Price', '单价', 'header', 'summary'),
+
+    # GIII → New Contracts: fabric-mapping upload moved out (v2.30.3) — the
+    # tab now just points at the Reference Data tab.
+    ('Style-Fabric mapping and HHN contract progress are managed in the 📐 Reference Data tab — upload them once there, every run uses the saved data.',
+     '款式-面料映射和HHN大货进度在 📐 参考数据 标签页中管理 — 在那里上传一次，之后每次处理都会自动使用已保存的数据。', 'label', 'giii'),
 ]
 # fmt: on
 

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.30.3",
+        "date": "2026-07-08",
+        "entries": [
+            {"type": "refactor", "text": "**Removed the duplicate fabric-mapping upload from GIII → New Contracts.** Style-Fabric mapping (and HHN contract progress) are managed centrally in the 📐 Reference Data tab — per company and saved persistently — so the ad-hoc upload expander on the GIII upload screen was a second, competing way to do the same thing. The upload tab now shows a one-line pointer to Reference Data instead"},
+        ],
+    },
+    {
         "version": "2.30.2",
         "date": "2026-07-08",
         "entries": [

@@ -38,7 +38,7 @@ from ui.giii._shared import _XLSX_MIME, _CONF_BADGE
 from ui.giii.extraction import _run_smart_processing
 from ui.giii.excel_extraction import _run_excel_extraction
 from ui.giii.results import _show_smart_downloads, _show_excel_downloads
-from ui.giii.reference import _show_giii_reference_section, _compute_giii_missing_df
+from ui.giii.reference import _compute_giii_missing_df
 from ui.giii.history import _show_history
 from ui.giii.missing_view import _show_giii_missing_fields_section
 from ui.giii.reports_tab import _show_reports_tab
@@ -167,8 +167,14 @@ def _show_giii_upload_section():
     if uploaded:
         st.caption(f"{len(uploaded)} " + t("file(s) selected"))
 
-    with st.expander("➕ " + t("Reference files (Fabric Mapping)")):
-        _show_giii_reference_section()
+    # Fabric mapping upload used to be duplicated here in an expander; it is
+    # managed centrally in the 📐 Reference Data tab (per company, persistent),
+    # so this tab only points there now.
+    st.caption("💡 " + t(
+        "Style-Fabric mapping and HHN contract progress are managed in the "
+        "📐 Reference Data tab — upload them once there, every run uses the "
+        "saved data."
+    ))
 
     _show_image_folder_expander("giii_images_dir", "giii_images_dir_apply")
 
