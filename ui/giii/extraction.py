@@ -449,6 +449,12 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
             for p in masked_paths:
                 zf.write(p, os.path.basename(p))
         out["masked_zip"] = mbuf.getvalue()
+    elif mask_prices:
+        # Masking was requested but produced nothing — persist that fact so
+        # the results panel can say WHY there is no masked download, instead
+        # of the button silently not appearing (the per-file warnings above
+        # scroll away with the processing status).
+        out["mask_failed"] = _mask_errors or ["no files could be masked"]
 
     out["pipeline"] = "pdf"
     return out

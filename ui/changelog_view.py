@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.30.10",
+        "date": "2026-07-08",
+        "entries": [
+            {"type": "fix", "text": "**Masked-price download: when masking produces no files, the results now say so explicitly** (with the failure reasons) instead of the 🔒 download button silently not appearing. The per-file failure warnings previously scrolled away with the processing status, leaving no visible trace of why there was nothing to download"},
+        ],
+    },
+    {
         "version": "2.30.9",
         "date": "2026-07-08",
         "entries": [

@@ -315,6 +315,11 @@ def _show_smart_downloads(outputs: dict):
                         file_name=f"{company}_masked.zip", mime="application/zip",
                         use_container_width=True, key=f"dl_{company}_mask",
                     )
+            elif grp.get("mask_failed"):
+                st.error(
+                    "🔒 Price masking produced no files — no masked download. "
+                    + " · ".join(grp["mask_failed"][:5])
+                )
 
         elif pipeline == "excel":
             cols = st.columns(3)
