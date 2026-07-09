@@ -87,7 +87,8 @@ class _MockCprs:
                                "resultJson": {"value": "CTN# + net wt"}},
         }
     def evaluate(self, order):
-        return [{"domain": "packaging",
+        return [{"domain": "packaging", "subtype": "pre_pack_ratio",
+                 "status": "confirmed",
                  "resultJson": {"ratio": "1-2-2-1", "pcs_per_carton": 36}}]
     def manual_image(self, image_id): return None
 
@@ -149,6 +150,18 @@ def test_assemble_rows_empty():
     import pandas as pd
     from po_extractor.exporters.giii_buyplan_export import assemble_buyplan_rows
     assert assemble_buyplan_rows(pd.DataFrame(), pd.DataFrame()) == []
+
+
+def test_red_sticker_pending_input_shows_marker():
+    """Live CPRS returns pending_input (waiting on dim_code) for the red sticker."""
+    class C(_MockCprs):
+        def carton_results(self, order):
+            return {"red_carton_sticker": {"status": "pending_input",
+                    "resultJson": {"waiting_for": "dim_code"}}}
+    ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
+               _rows(), cprs=C()))
+    grid = _grid(ws)
+    assert grid[9][-10:][2] == "待定:dim_code"
 
 
 def test_dynamic_sizes_only_present_ones():

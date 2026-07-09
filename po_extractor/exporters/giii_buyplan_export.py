@@ -211,34 +211,73 @@ def _resolve_cprs_fields(rows: list[BuyPlanRow], header: BuyPlanHeader, cprs):
     return out
 
 
+def _pending(rj: dict) -> str:
+    """Marker for a pending_input result — what runtime value it's waiting on."""
+    w = rj.get("waiting_for", "")
+    return f"待定:{w}" if w else "待定"
+
+
 def _packaging_results(cprs, order: dict) -> dict:
-    out = {}
+    """Prepack ratio (T) and pcs/box (U) from the packaging domain.
+
+    Real CPRS shapes (verified live): ``pre_pack_ratio`` carries the ratio when
+    confirmed, and can be ``conflict``/``not_applicable``/``pending_input``.
+    Pack-out per carton has no single field — it's factory-advised at runtime
+    (see ``ucc_label`` workflow) — so pcs/box is left blank unless a confirmed
+    numeric field appears.
+    """
+    out = {"ratio": "", "pcs_box": ""}
     for res in cprs.evaluate(order):
         if res.get("domain") != "packaging":
             continue
+        sub, status = res.get("subtype", ""), res.get("status")
         rj = res.get("resultJson", {}) or {}
-        if "ratio" in rj and "ratio" not in out:
-            out["ratio"] = str(rj.get("ratio", ""))
-        for k in ("pcs_per_carton", "units_per_carton", "pack_out"):
-            if k in rj and "pcs_box" not in out:
-                out["pcs_box"] = str(rj.get(k, ""))
+        if sub == "pre_pack_ratio" and not out["ratio"]:
+            if status == "not_applicable":
+                out["ratio"] = ""
+            elif status == "conflict":
+                out["ratio"] = "冲突"
+            elif status == "pending_input":
+                out["ratio"] = _pending(rj)
+            else:
+                out["ratio"] = str(rj.get("ratio") or rj.get("pre_pack_ratio")
+                                   or rj.get("pack_ratio") or "")
+        for k in ("pcs_per_carton", "units_per_carton", "pack_out", "packs_per_carton"):
+            if rj.get(k) and not out["pcs_box"]:
+                out["pcs_box"] = str(rj.get(k))
     return out
 
 
 def _sticker_text(res) -> str:
+    """Red-sticker cell (P) — status-aware."""
     if not res:
         return ""
-    if res.get("status") == "not_applicable":
+    status = res.get("status")
+    if status == "not_applicable":
         return "无需"
     rj = res.get("resultJson", {}) or {}
-    return str(rj.get("code") or rj.get("value") or rj.get("standard") or "")
+    if status == "pending_input":
+        return _pending(rj)   # e.g. red sticker waits on dim_code at runtime
+    return str(rj.get("code") or rj.get("dim_code") or rj.get("customer_code")
+               or rj.get("value") or "")
 
 
 def _result_text(res) -> str:
-    if not res or res.get("status") == "not_applicable":
+    """Carton-mark cell (Q) — status-aware."""
+    if not res:
+        return ""
+    status = res.get("status")
+    if status == "not_applicable":
         return ""
     rj = res.get("resultJson", {}) or {}
-    return str(rj.get("value") or rj.get("standard") or rj.get("code") or "")
+    if status == "pending_input":
+        return _pending(rj)
+    if status == "conflict":
+        return "冲突"
+    txt = rj.get("value") or rj.get("standard") or rj.get("code")
+    if txt:
+        return str(txt)
+    return "见要求" if rj.get("required") else ""
 
 
 def _image_bytes(cprs, res):

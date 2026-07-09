@@ -101,14 +101,12 @@ class CprsClient:
             return None
         best = None
         for c in self.list_clients():
-            name = _norm(c.get("name", ""))
-            if not name:
-                continue
-            if name == target or target in name or name in target:
-                # Prefer an exact/containment hit; first such wins.
-                return c.get("id")
-            if best is None and (set(target.split()) & set(name.split())):
-                best = c.get("id")
+            names = [_norm(c.get("name", "")), _norm(c.get("brand", ""))]
+            for name in filter(None, names):
+                if name == target or target in name or name in target:
+                    return c.get("id")   # exact/containment hit wins
+                if best is None and (set(target.split()) & set(name.split())):
+                    best = c.get("id")
         return best
 
     def list_warehouses(self, client_id: str) -> list[dict]:
@@ -135,8 +133,8 @@ class CprsClient:
         toks = set(target.split())
         best = None
         for a in self.list_accounts(client_id):
-            code = a.get("code") or a.get("accountCode")
-            name = _norm(a.get("name", "") or a.get("displayName", ""))
+            code = a.get("account_code") or a.get("code") or a.get("accountCode")
+            name = _norm(a.get("account_name", "") or a.get("name", ""))
             code_n = _norm(code or "")
             if code_n and code_n in target:
                 return code
@@ -152,7 +150,8 @@ class CprsClient:
         data = self._get("/warehouse-lookup/resolve",
                          {"ship_to": ship_to, "client_id": client_id})
         if isinstance(data, dict):
-            return data.get("warehouseCode") or data.get("code")
+            return (data.get("warehouse_code") or data.get("warehouseCode")
+                    or data.get("code"))
         return None
 
     def warehouse_flags(self, client_id: str, warehouse_code: str) -> dict:
@@ -160,9 +159,10 @@ class CprsClient:
         from the brand's warehouse defaults (drives cols V/W)."""
         wc = _norm(warehouse_code)
         for w in self.list_warehouses(client_id):
-            if _norm(w.get("code", "") or w.get("warehouseCode", "")) == wc:
-                return {"rfid": _as_bool(w.get("rfid")),
-                        "msrp": _as_bool(w.get("msrp"))}
+            code = w.get("warehouse_code") or w.get("code") or w.get("warehouseCode")
+            if _norm(code or "") == wc:
+                return {"rfid": _as_bool(w.get("rfid_default", w.get("rfid"))),
+                        "msrp": _as_bool(w.get("msrp_required_default", w.get("msrp")))}
         return {"rfid": None, "msrp": None}
 
     # ── evaluation (cached per order key) ────────────────────────────────────

@@ -98,23 +98,33 @@ def test_resolve_client_fuzzy_and_cached(patched):
 
 
 def test_resolve_account_matches_catalog(patched):
+    # Real API field names: account_code / account_name.
     patched({"/clients/a1/accounts": _Resp(200, [
-        {"code": "MACYS", "name": "Macy's"},
-        {"code": "ROSS", "name": "Ross Stores"},
+        {"account_code": "MACYS", "account_name": "Macy's"},
+        {"account_code": "ROSS", "account_name": "Ross Stores"},
     ])})
     c = CprsClient("http://h:3100", "k")
     assert c.resolve_account("MY MACY'S OMNI CHANNEL", "a1") == "MACYS"
 
 
-def test_warehouse_flags_bool_coercion(patched):
+def test_warehouse_flags_real_field_names(patched):
+    # Real API: warehouse_code / rfid_default / msrp_required_default.
     patched({"/clients/a1/warehouses": _Resp(200, [
-        {"code": "UC", "rfid": "Yes", "msrp": True},
-        {"code": "DN", "rfid": "No", "msrp": "no"},
+        {"warehouse_code": "UC", "rfid_default": True, "msrp_required_default": True},
+        {"warehouse_code": "DN", "rfid_default": False, "msrp_required_default": False},
     ])})
     c = CprsClient("http://h:3100", "k")
     assert c.warehouse_flags("a1", "UC") == {"rfid": True, "msrp": True}
     assert c.warehouse_flags("a1", "DN") == {"rfid": False, "msrp": False}
     assert c.warehouse_flags("a1", "ZZ") == {"rfid": None, "msrp": None}
+
+
+def test_resolve_client_matches_brand_field(patched):
+    patched({"/clients": _Resp(200, [
+        {"id": "a1", "name": "DKNY Sportswear", "brand": "DKNY"},
+    ])})
+    c = CprsClient("http://h:3100", "k")
+    assert c.resolve_client("DKNY") == "a1"          # matches brand field
 
 
 def test_carton_results_grouped_by_subtype(patched):

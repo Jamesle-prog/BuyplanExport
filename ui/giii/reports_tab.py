@@ -63,28 +63,27 @@ def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame) -> by
     from po_extractor.ui_helpers.combined_summary import build_contract_maps
     from po_extractor.utils.cprs_client import cprs_from_settings
     from ui.fabric_mapping_view import _company_to_source
-    from ui.stores import get_app_settings_store, get_color_translation_store
+    from ui.stores import get_app_settings_store
 
     df_size = store.load_size_rows(selected)
     if df_size is None or df_size.empty:
         return None
     df_meta = filt_df[filt_df["po_number"].isin(selected)].copy()
 
-    # Contract numbers from the 大货进度表, per company present in the selection.
+    # Contract numbers AND Chinese colours both come from the 大货进度表.
     progress: list[dict] = []
     if "company" in df_meta.columns:
         for comp in df_meta["company"].dropna().unique():
             progress.extend(store.load_progress_records(_company_to_source(str(comp))))
     by_po, by_style = build_contract_maps(progress)
 
-    # Simple EN→CN colour lookup (upper-keyed), collapsed from the translation store.
+    # 中文颜色 from 进度表: {EN colour (upper) -> CN colour}.
     color_lookup: dict[str, str] = {}
-    try:
-        for (client, brand, en_norm), cn in get_color_translation_store().build_lookup_dict().items():
-            if cn:
-                color_lookup.setdefault(str(en_norm).strip().upper(), cn)
-    except Exception:
-        pass
+    for rec in progress:
+        en = str(rec.get("color", "") or "").strip().upper()
+        cn = rec.get("cn_color", "") or ""
+        if en and cn:
+            color_lookup.setdefault(en, cn)
 
     rows = assemble_buyplan_rows(df_size, df_meta, contract_by_po=by_po,
                                  contract_by_style=by_style, color_lookup=color_lookup)
@@ -98,9 +97,31 @@ def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame) -> by
     supplier = str(df_meta["factory"].dropna().iloc[0]) if "factory" in df_meta.columns and not df_meta["factory"].dropna().empty else ""
     desc = str(df_meta["style_description"].dropna().iloc[0]) if "style_description" in df_meta.columns and not df_meta["style_description"].dropna().empty else ""
 
+    # 面料信息 from 款式面料表格 (style-fabric mapping) for the primary style.
+    fabric = ""
+    styles = [r.style for r in rows if r.style]
+    if styles:
+        parts_by_style = store.load_fabric_parts_for_styles(list(dict.fromkeys(styles)))
+        primary = styles[0]
+        fabric = _format_fabric(parts_by_style.get(primary, []))
+
     cprs = cprs_from_settings(get_app_settings_store())
-    header = BuyPlanHeader(brand=brand, supplier=supplier, description=desc)
+    header = BuyPlanHeader(brand=brand, supplier=supplier, description=desc, fabric=fabric)
     return export_giii_buyplan(header, rows, cprs=cprs)
+
+
+def _format_fabric(parts: list) -> str:
+    """Render style-fabric-mapping parts into the 面料/FIBER header line, e.g.
+    'HB-XD6786 94%rayon 6%span 200gsm 有效170cm'. Uses the first (main) part."""
+    if not parts:
+        return ""
+    p = parts[0]
+    bits = [getattr(p, "hhn_no", "") or "", getattr(p, "composition", "") or ""]
+    if getattr(p, "weight_gsm", 0):
+        bits.append(f"{p.weight_gsm}gsm")
+    if getattr(p, "width_cm", 0):
+        bits.append(f"有效{p.width_cm}cm")
+    return " ".join(b for b in bits if b).strip()
 
 
 def _show_generate_section(df: pd.DataFrame, store) -> None:

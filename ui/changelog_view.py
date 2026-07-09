@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.35.1",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "fix", "text": "**GIII buy plan reconciled against the live CPRS API.** Corrected the client's field names to the real ones (`account_code`, `warehouse_code`, `rfid_default`, `msrp_required_default`) and made the requirement parsing status-aware for the real response shapes — not_applicable→无需, pending_input→a 待定:&lt;field&gt; marker (e.g. the red sticker waits on a runtime `dim_code`), conflict→冲突. Verified end-to-end live: MSRP/RFID resolve correctly from the warehouse code"},
+            {"type": "fix", "text": "**中文颜色 now comes from the 大货进度表** (progress records' EN→CN colour), not the general colour-translation store; **面料信息 now comes from the 款式面料表格** (style-fabric mapping) for the buy plan's primary style, matching the intended sources"},
+        ],
+    },
+    {
         "version": "2.35.0",
         "date": "2026-07-09",
         "entries": [
