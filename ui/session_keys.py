@@ -70,6 +70,8 @@ class SK:
     # ── GIII — upload auto-detection cache ────────────────────────────────────
     GIII_DETECTIONS   = "giii_detections"     # list[DetectionResult] for current upload set
     GIII_DETECT_SIG   = "giii_detect_sig"     # files_signature the detections were built from
+    GIII_OTHER_GROUPS = "giii_other_groups"   # dict[class -> UploadedFiles] for Other PO types
+    GIII_OTHER_SIG    = "giii_other_sig"      # files_signature the groups were built from
 
     # ── Summary — combined All Orders sub-tab ─────────────────────────────────
     SUM_ALL_CLIENTS   = "sum_all_clients"    # list[str] — company filter multiselect

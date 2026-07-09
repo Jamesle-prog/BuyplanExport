@@ -423,8 +423,14 @@ def build_comparison_excel(kl_results: list[dict], in_results: list[dict]) -> by
 # Streamlit section
 # ---------------------------------------------------------------------------
 
-def show_infornexus_upload_section() -> None:
-    """InforNexus PO upload + optional comparison against KL PDFs."""
+def show_infornexus_upload_section(files=None) -> None:
+    """InforNexus PO upload + optional comparison against KL PDFs.
+
+    ``files`` — pre-routed UploadedFiles from the combined "Other PO types"
+    uploader (auto-detection); ``None`` renders this section's own uploader.
+    The KL-comparison uploader always renders — comparison files are chosen
+    manually either way.
+    """
 
     # No divider/header here — this renders inside a labeled expander on the
     # GIII New Contracts tab, which already names the section.
@@ -433,15 +439,23 @@ def show_infornexus_upload_section() -> None:
         "Optionally also upload the matching KL fax PDFs to generate a side-by-side comparison."
     ))
 
-    col_in, col_kl = st.columns(2)
-    with col_in:
-        st.markdown("**InforNexus PDFs**")
-        in_files = st.file_uploader(
-            "InforNexus PDFs", type=["pdf"], accept_multiple_files=True,
-            label_visibility="collapsed", key="in_uploader",
-        )
-        if in_files:
-            st.caption(f"{len(in_files)} {t('file(s)')}")
+    if files is None:
+        col_in, col_kl = st.columns(2)
+        with col_in:
+            st.markdown("**InforNexus PDFs**")
+            in_files = st.file_uploader(
+                "InforNexus PDFs", type=["pdf"], accept_multiple_files=True,
+                label_visibility="collapsed", key="in_uploader",
+            )
+            if in_files:
+                st.caption(f"{len(in_files)} {t('file(s)')}")
+    else:
+        in_files = [uf for uf in files if uf.name.lower().endswith(".pdf")]
+        skipped = len(files) - len(in_files)
+        if skipped:
+            st.warning(f"{skipped} " + t(
+                "file(s) skipped — InforNexus POs are portal PDFs, not .msg emails."))
+        col_kl = st.container()
 
     with col_kl:
         st.markdown("**KL Fax PDFs** *(for comparison)*")
@@ -453,7 +467,8 @@ def show_infornexus_upload_section() -> None:
             st.caption(f"{len(kl_files)} {t('file(s)')}")
 
     if not in_files:
-        st.info(t("Upload InforNexus PDFs to get started."))
+        if files is None:
+            st.info(t("Upload InforNexus PDFs to get started."))
         return
 
     in_sig = files_signature(in_files)

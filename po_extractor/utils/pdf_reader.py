@@ -23,6 +23,22 @@ def read_pdf_text(pdf_path: str, max_pages: int | None = None) -> str:
         doc.close()
 
 
+def read_pdf_bytes_text(pdf_data: bytes, max_pages: int | None = None) -> str:
+    """Like :func:`read_pdf_text` but for in-memory PDF bytes (e.g. a PDF
+    attachment extracted from an Outlook .msg)."""
+    doc = pdfium.PdfDocument(pdf_data)
+    try:
+        pages = []
+        for i, page in enumerate(doc):
+            if max_pages is not None and i >= max_pages:
+                break
+            textpage = page.get_textpage()
+            pages.append(textpage.get_text_range())
+        return "\n".join(pages)
+    finally:
+        doc.close()
+
+
 def read_pdf_pages(pdf_path: str) -> list[str]:
     """Return per-page text."""
     doc = pdfium.PdfDocument(pdf_path)

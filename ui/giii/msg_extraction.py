@@ -439,8 +439,12 @@ def _build_excel_bytes(results: list[dict]) -> bytes:
 # Streamlit section
 # ---------------------------------------------------------------------------
 
-def show_msg_upload_section() -> None:
-    """Render the MSG / Vendor Fax PO upload section inside the GIII Upload tab."""
+def show_msg_upload_section(files=None) -> None:
+    """Render the MSG / Vendor Fax PO section inside the GIII Upload tab.
+
+    ``files`` — pre-routed UploadedFiles from the combined "Other PO types"
+    uploader (auto-detection); ``None`` renders this section's own uploader.
+    """
 
     # No divider/header here — this renders inside a labeled expander on the
     # GIII New Contracts tab, which already names the section.
@@ -450,17 +454,21 @@ def show_msg_upload_section() -> None:
         "PO fields, and produces a formatted Excel workbook ready for download."
     ))
 
-    uploaded_msgs = st.file_uploader(
-        "Upload .msg or fax PDF files",
-        type=["msg", "pdf"],
-        accept_multiple_files=True,
-        label_visibility="collapsed",
-        key="msg_uploader",
-    )
-
-    if not uploaded_msgs:
-        st.info(t("Upload .msg vendor fax emails — or the fax PDFs directly — to get started."))
-        return
+    if files is None:
+        uploaded_msgs = st.file_uploader(
+            "Upload .msg or fax PDF files",
+            type=["msg", "pdf"],
+            accept_multiple_files=True,
+            label_visibility="collapsed",
+            key="msg_uploader",
+        )
+        if not uploaded_msgs:
+            st.info(t("Upload .msg vendor fax emails — or the fax PDFs directly — to get started."))
+            return
+    else:
+        uploaded_msgs = files
+        if not uploaded_msgs:
+            return
 
     st.caption(f"{len(uploaded_msgs)} " + t("file(s) selected"))
 

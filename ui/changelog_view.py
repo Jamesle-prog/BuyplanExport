@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.31.0",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "feat", "text": "**Other PO types combined into one uploader with automatic type detection.** Instead of picking the right section (MSG fax / KL / InforNexus / TK EU), drop any mix of .msg emails and PDFs into one drop zone — each file's type is determined from its **content** (InforNexus portal keywords; Kostroma/TJX UK markers; the KL MSRP block; AS400 fax-doubled text) and routed to the right extractor, which opens below with its files pre-loaded. Extension plays no role, since the same fax documents arrive both inside .msg emails and as bare PDFs. Unrecognized files are listed explicitly rather than silently dropped, and classification is cached per file set (and reads only each document's first pages), so it doesn't re-run on every page interaction"},
+            {"type": "feat", "text": "The KL extractor now also accepts .msg-wrapped KL POs (the router can hand it fax emails); the InforNexus section keeps its manual side-by-side KL-comparison uploader"},
+        ],
+    },
+    {
         "version": "2.30.10",
         "date": "2026-07-08",
         "entries": [

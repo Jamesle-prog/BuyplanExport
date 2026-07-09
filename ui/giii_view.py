@@ -154,6 +154,43 @@ def _show_excel_tab():
 # GIII upload section (inner tab of Smart Upload)
 # ---------------------------------------------------------------------------
 
+def _classify_other_pos(files) -> dict[str, list]:
+    """Group the combined uploader's files by detected PO type.
+
+    Content-based: each file's PDF text (first pages; .msg unwrapped first)
+    goes through the specialized-PO classifier. Cached per uploaded file
+    set — classification reads every file, so it must not re-run on every
+    Streamlit rerun (same pattern as the main uploader's detection cache).
+    """
+    sig = files_signature(files)
+    if (st.session_state.get(SK.GIII_OTHER_SIG) == sig
+            and st.session_state.get(SK.GIII_OTHER_GROUPS) is not None):
+        return st.session_state[SK.GIII_OTHER_GROUPS]
+
+    from po_extractor.detectors.specialized_po import classify_giii_po_text
+    from po_extractor.utils.pdf_reader import read_pdf_bytes_text
+    from ui.giii._shared import iter_pdf_payloads
+
+    cls_by_name: dict[str, str] = {}
+    with st.spinner(t("Detecting PO types…")):
+        for name, pdf_bytes, _subject in iter_pdf_payloads(files):
+            try:
+                text = read_pdf_bytes_text(pdf_bytes, max_pages=3)
+            except Exception:
+                text = ""
+            cls_by_name[name] = classify_giii_po_text(text)
+
+    groups: dict[str, list] = {}
+    for uf in files:
+        # Files iter_pdf_payloads skipped (unreadable .msg, no attachment)
+        # fall into "unknown" so they are surfaced, not silently dropped.
+        groups.setdefault(cls_by_name.get(uf.name, "unknown"), []).append(uf)
+
+    st.session_state[SK.GIII_OTHER_GROUPS] = groups
+    st.session_state[SK.GIII_OTHER_SIG] = sig
+    return groups
+
+
 def _show_giii_upload_section():
     """Upload + process panel (inner tab of GIII)."""
     st.markdown(f"**{t('PO Files')}** (PDF · XLSX · XLSM · XLS)")
@@ -330,24 +367,42 @@ def show_smart_upload_tab():
     with tab_upload:
         _show_giii_upload_section()
 
-        # Specialized PO extractors live in collapsed expanders under the
-        # main uploader — one page, but only the type being used is open,
-        # instead of four fully-rendered sections stacked down the screen.
+        # Combined specialized-PO uploader: one drop zone, each file's type
+        # detected from its CONTENT (extension is untrustworthy — the same
+        # fax documents arrive both inside .msg emails and as bare PDFs) and
+        # routed to the right extractor automatically.
         st.divider()
         st.markdown(f"**{t('Other PO types')}**")
         st.caption(t(
-            "Specialized extractors for POs that arrive as fax emails or "
-            "portal PDFs. Open the type you need — each produces its own "
-            "formatted Excel."
+            "Drop fax .msg emails or fax/portal PDFs here — each file's PO "
+            "type (MSG fax / KL / InforNexus / TK EU) is detected "
+            "automatically from its content and routed to the right "
+            "extractor below."
         ))
-        with st.expander("📧 " + t("MSG / Vendor Fax POs")):
-            _show_msg_upload_section()
-        with st.expander("📄 " + t("KL PO PDFs")):
-            _show_kl_upload_section()
-        with st.expander("🗂 " + t("InforNexus POs")):
-            _show_infornexus_upload_section()
-        with st.expander("🇬🇧 " + t("TK EU POs (Kostroma / TJX UK)")):
-            _show_tk_eu_upload_section()
+        other_files = st.file_uploader(
+            "Other PO files", type=["msg", "pdf"], accept_multiple_files=True,
+            label_visibility="collapsed", key="other_po_uploader",
+        )
+        if other_files:
+            groups = _classify_other_pos(other_files)
+
+            unknown = groups.get("unknown", [])
+            if unknown:
+                st.warning("❓ " + t(
+                    "Could not determine the PO type of:"
+                ) + " " + ", ".join(uf.name for uf in unknown))
+
+            for cls, icon, label, renderer in [
+                ("vendor_fax",  "📧", "MSG / Vendor Fax POs",           _show_msg_upload_section),
+                ("kl",          "📄", "KL PO PDFs",                     _show_kl_upload_section),
+                ("infor_nexus", "🗂", "InforNexus POs",                 _show_infornexus_upload_section),
+                ("tk_eu",       "🇬🇧", "TK EU POs (Kostroma / TJX UK)",  _show_tk_eu_upload_section),
+            ]:
+                subset = groups.get(cls, [])
+                if not subset:
+                    continue
+                with st.expander(f"{icon} {t(label)} ({len(subset)})", expanded=True):
+                    renderer(files=subset)
 
     with tab_history:
         _show_history(exc_df=_exc_df)

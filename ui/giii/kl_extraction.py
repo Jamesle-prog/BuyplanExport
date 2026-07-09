@@ -18,7 +18,7 @@ import streamlit as st
 from ui.giii._shared import (
     _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature,
     FAX_SIZE_ORDER, XL_NAVY, XL_WHITE, XL_YELLOW, XL_GREY, XL_LTBLUE, XL_GREEN,
-    drop_stale_results, make_excel_style_kit,
+    drop_stale_results, iter_pdf_payloads, make_excel_style_kit,
 )
 from ui.i18n import t
 from ui.session_keys import SK
@@ -183,18 +183,20 @@ def _parse_kl_pdf(pdf_bytes: bytes) -> dict:
 
 
 def _parse_kl_pdfs(pdf_files) -> list[dict]:
-    """Accept a list of Streamlit UploadedFile (.pdf), return parsed PO dicts."""
+    """Accept Streamlit UploadedFiles — bare .pdf or .msg-wrapped (the
+    auto-router can hand this section KL POs that arrived as fax emails) —
+    and return parsed PO dicts."""
     results: list[dict] = []
-    for uf in pdf_files:
+    for name, pdf_data, _subject in iter_pdf_payloads(pdf_files):
         try:
-            po = _parse_kl_pdf(uf.read())
+            po = _parse_kl_pdf(pdf_data)
         except Exception as exc:
-            st.warning(f"{t('Parse error in')} {uf.name}: {exc}")
+            st.warning(f"{t('Parse error in')} {name}: {exc}")
             continue
         if po['po_number'] == '?':
             # derive from filename e.g. LSKHHN015R-G5DTN93C 5.13.pdf
-            po['po_number'] = uf.name.split('-')[0] if '-' in uf.name else uf.name
-        po['source_file'] = uf.name
+            po['po_number'] = name.split('-')[0] if '-' in name else name
+        po['source_file'] = name
         results.append(po)
     return results
 
@@ -476,8 +478,12 @@ def _build_kl_excel(results: list[dict]) -> bytes:
 # Streamlit section
 # ---------------------------------------------------------------------------
 
-def show_kl_upload_section() -> None:
-    """Render the KL PO PDF upload section inside the GIII Upload tab."""
+def show_kl_upload_section(files=None) -> None:
+    """Render the KL PO section inside the GIII Upload tab.
+
+    ``files`` — pre-routed UploadedFiles from the combined "Other PO types"
+    uploader (auto-detection); ``None`` renders this section's own uploader.
+    """
 
     # No divider/header here — this renders inside a labeled expander on the
     # GIII New Contracts tab, which already names the section.
@@ -487,17 +493,21 @@ def show_kl_upload_section() -> None:
         "a formatted Excel workbook ready for download."
     ))
 
-    uploaded_pdfs = st.file_uploader(
-        "Upload KL PO PDF files",
-        type=["pdf"],
-        accept_multiple_files=True,
-        label_visibility="collapsed",
-        key="kl_uploader",
-    )
-
-    if not uploaded_pdfs:
-        st.info(t("Upload one or more KL PO PDF files to get started."))
-        return
+    if files is None:
+        uploaded_pdfs = st.file_uploader(
+            "Upload KL PO PDF files",
+            type=["pdf"],
+            accept_multiple_files=True,
+            label_visibility="collapsed",
+            key="kl_uploader",
+        )
+        if not uploaded_pdfs:
+            st.info(t("Upload one or more KL PO PDF files to get started."))
+            return
+    else:
+        uploaded_pdfs = files
+        if not uploaded_pdfs:
+            return
 
     st.caption(f"{len(uploaded_pdfs)} " + t("file(s) selected"))
 

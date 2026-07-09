@@ -1139,6 +1139,14 @@ _SEED: list[tuple[str, str, str, str]] = [
      '上传 Outlook **.msg** 邮件（来自AS400的供应商传真副本）— 或直接上传传真 **PDF** 文件。系统会提取PDF、解析订单字段，并生成可下载的格式化Excel工作簿。', 'label', 'giii'),
     ('Upload Outlook **.msg** vendor fax emails for TK EU / Kostroma purchase orders (TJX UK) — or the fax **PDF** files directly. The system extracts the PDF, parses PO fields, and produces a formatted Excel.',
      '上传 TK EU / Kostroma 采购订单（TJX UK）的 Outlook **.msg** 供应商传真邮件 — 或直接上传传真 **PDF** 文件。系统会提取PDF、解析订单字段，并生成格式化Excel。', 'label', 'giii'),
+
+    # Combined "Other PO types" uploader with automatic type detection (v2.31.0)
+    ('Drop fax .msg emails or fax/portal PDFs here — each file\'s PO type (MSG fax / KL / InforNexus / TK EU) is detected automatically from its content and routed to the right extractor below.',
+     '将传真 .msg 邮件或传真/门户PDF文件拖放到此处 — 系统会根据文件内容自动识别每个文件的订单类型（MSG传真 / KL / InforNexus / TK EU），并自动分配到下方对应的提取器。', 'label', 'giii'),
+    ('Detecting PO types…', '正在识别订单类型…', 'label', 'giii'),
+    ('Could not determine the PO type of:', '无法识别以下文件的订单类型：', 'label', 'giii'),
+    ('file(s) skipped — InforNexus POs are portal PDFs, not .msg emails.',
+     '个文件已跳过 — InforNexus 订单是门户PDF文件，不是 .msg 邮件。', 'label', 'giii'),
 ]
 # fmt: on
 

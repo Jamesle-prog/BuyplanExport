@@ -377,8 +377,12 @@ def _build_tk_eu_excel(results: list[dict]) -> bytes:
 # Streamlit section
 # ---------------------------------------------------------------------------
 
-def show_tk_eu_upload_section() -> None:
-    """Render the TK EU PO MSG upload section inside the GIII Upload tab."""
+def show_tk_eu_upload_section(files=None) -> None:
+    """Render the TK EU PO section inside the GIII Upload tab.
+
+    ``files`` — pre-routed UploadedFiles from the combined "Other PO types"
+    uploader (auto-detection); ``None`` renders this section's own uploader.
+    """
 
     # No divider/header here — this renders inside a labeled expander on the
     # GIII New Contracts tab, which already names the section.
@@ -388,17 +392,21 @@ def show_tk_eu_upload_section() -> None:
         "system extracts the PDF, parses PO fields, and produces a formatted Excel."
     ))
 
-    uploaded_msgs = st.file_uploader(
-        "Upload TK EU .msg or fax PDF files",
-        type=["msg", "pdf"],
-        accept_multiple_files=True,
-        label_visibility="collapsed",
-        key="tk_eu_uploader",
-    )
-
-    if not uploaded_msgs:
-        st.info(t("Upload TK EU .msg vendor fax emails — or the fax PDFs directly — to get started."))
-        return
+    if files is None:
+        uploaded_msgs = st.file_uploader(
+            "Upload TK EU .msg or fax PDF files",
+            type=["msg", "pdf"],
+            accept_multiple_files=True,
+            label_visibility="collapsed",
+            key="tk_eu_uploader",
+        )
+        if not uploaded_msgs:
+            st.info(t("Upload TK EU .msg vendor fax emails — or the fax PDFs directly — to get started."))
+            return
+    else:
+        uploaded_msgs = files
+        if not uploaded_msgs:
+            return
 
     sig = files_signature(uploaded_msgs)
 
