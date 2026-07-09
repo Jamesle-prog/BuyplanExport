@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.31.1",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "docs", "text": "Added `docs/GIII_BuyPlan_Field_Mapping.md` — the field-mapping spec for the real GIII buy-plan format (the one all GIII POs use, DKNY being one brand). Maps every cell to its source (PO record · HHN 大货进度表 · color-translation) and defines how the two carton-image columns (红色箱贴纸 / 主箱唛) and warehouse/account resolution come live from the CPRS knowledge base API. This is the pre-build spec for a Sky-East-class GIII exporter; no code behavior changes yet"},
+        ],
+    },
+    {
         "version": "2.31.0",
         "date": "2026-07-09",
         "entries": [
