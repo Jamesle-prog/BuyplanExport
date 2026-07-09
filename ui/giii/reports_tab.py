@@ -55,6 +55,54 @@ def _show_reports_tab() -> None:
 # Generate Outputs sub-tab
 # ---------------------------------------------------------------------------
 
+def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame) -> bytes | None:
+    """Assemble and export the CPRS-integrated GIII buy plan for *selected* POs."""
+    from po_extractor.exporters import (
+        assemble_buyplan_rows, export_giii_buyplan, BuyPlanHeader,
+    )
+    from po_extractor.ui_helpers.combined_summary import build_contract_maps
+    from po_extractor.utils.cprs_client import cprs_from_settings
+    from ui.fabric_mapping_view import _company_to_source
+    from ui.stores import get_app_settings_store, get_color_translation_store
+
+    df_size = store.load_size_rows(selected)
+    if df_size is None or df_size.empty:
+        return None
+    df_meta = filt_df[filt_df["po_number"].isin(selected)].copy()
+
+    # Contract numbers from the 大货进度表, per company present in the selection.
+    progress: list[dict] = []
+    if "company" in df_meta.columns:
+        for comp in df_meta["company"].dropna().unique():
+            progress.extend(store.load_progress_records(_company_to_source(str(comp))))
+    by_po, by_style = build_contract_maps(progress)
+
+    # Simple EN→CN colour lookup (upper-keyed), collapsed from the translation store.
+    color_lookup: dict[str, str] = {}
+    try:
+        for (client, brand, en_norm), cn in get_color_translation_store().build_lookup_dict().items():
+            if cn:
+                color_lookup.setdefault(str(en_norm).strip().upper(), cn)
+    except Exception:
+        pass
+
+    rows = assemble_buyplan_rows(df_size, df_meta, contract_by_po=by_po,
+                                 contract_by_style=by_style, color_lookup=color_lookup)
+    if not rows:
+        return None
+
+    brand = ""
+    for c in ("division_name", "style_group", "company"):
+        if c in df_meta.columns and not df_meta[c].dropna().empty:
+            brand = str(df_meta[c].dropna().iloc[0]); break
+    supplier = str(df_meta["factory"].dropna().iloc[0]) if "factory" in df_meta.columns and not df_meta["factory"].dropna().empty else ""
+    desc = str(df_meta["style_description"].dropna().iloc[0]) if "style_description" in df_meta.columns and not df_meta["style_description"].dropna().empty else ""
+
+    cprs = cprs_from_settings(get_app_settings_store())
+    header = BuyPlanHeader(brand=brand, supplier=supplier, description=desc)
+    return export_giii_buyplan(header, rows, cprs=cprs)
+
+
 def _show_generate_section(df: pd.DataFrame, store) -> None:
     st.markdown(f"**{t('Generate Excel outputs from stored PO data')}**")
     st.caption(t(
@@ -182,7 +230,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
                 st.warning(t("No size data found for selected POs."))
 
     # ── Action buttons — row 2 ────────────────────────────────────────────────
-    c5, _c6, _c7, _c8 = st.columns(4)
+    c5, c6, _c7, _c8 = st.columns(4)
     with c5:
         if st.button(
             "📋 " + t("Create Buy Plan (生产计划单)"),
@@ -205,6 +253,30 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
                         st.warning(t("No size data found for the selected POs."))
                 except Exception as exc:
                     st.error(t("Production plan generation failed:") + f" {exc}")
+
+    with c6:
+        if st.button(
+            "🧭 " + t("Buy Plan + Requirements (CPRS)"),
+            disabled=not selected,
+            use_container_width=True,
+            key="rpt_gen_cprs_bp_btn",
+            help=t(
+                "The full A–W GIII buy plan with client requirements resolved "
+                "live from the CPRS knowledge base — red-sticker code, carton "
+                "mark, prepack ratio, PCs/box, MSRP and RFID. Configure CPRS in "
+                "Admin → Settings; without it those columns are left blank."
+            ),
+        ):
+            st.session_state.pop("rpt_cprs_bp_bytes", None)
+            with st.spinner(t("Building buy plan (resolving CPRS requirements)…")):
+                try:
+                    out = _build_cprs_buyplan(selected, store, filt_df)
+                    if out:
+                        st.session_state["rpt_cprs_bp_bytes"] = out
+                    else:
+                        st.warning(t("No size data found for the selected POs."))
+                except Exception as exc:
+                    st.error(t("Buy plan generation failed:") + f" {exc}")
 
     # ── Download area ─────────────────────────────────────────────────────────
     if st.session_state.get("rpt_all_results"):
@@ -244,6 +316,15 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             file_name="GIII_Production_Plan.xlsx",
             mime=_XLSX_MIME,
             key="rpt_bp_dl",
+        )
+
+    if st.session_state.get("rpt_cprs_bp_bytes"):
+        st.download_button(
+            "⬇️ " + t("Download Buy Plan + Requirements (.xlsx)"),
+            data=st.session_state["rpt_cprs_bp_bytes"],
+            file_name="GIII_Buy_Plan_CPRS.xlsx",
+            mime=_XLSX_MIME,
+            key="rpt_cprs_bp_dl",
         )
 
 

@@ -83,6 +83,84 @@ class BuyPlanHeader:
     updated_2nd: str = ""
 
 
+def _col(df, *names):
+    """Return the first present column name from *names* (case-insensitive)."""
+    lower = {c.lower(): c for c in df.columns}
+    for n in names:
+        if n.lower() in lower:
+            return lower[n.lower()]
+    return None
+
+
+def assemble_buyplan_rows(df_size, df_meta, *, contract_by_po=None,
+                          contract_by_style=None, color_lookup=None) -> list[BuyPlanRow]:
+    """Assemble BuyPlanRows (one per PO × Color) from stored GIII frames.
+
+    Pure — dataframes/dicts in, rows out (no store/CPRS). *df_size* has
+    po_number/style/color/size/units; *df_meta* one row per PO. Contract maps
+    (from the 大货进度表) and the EN→CN color lookup fill A and H.
+    """
+    from ..lookups.progress_lookup import _norm_key
+
+    contract_by_po = contract_by_po or {}
+    contract_by_style = contract_by_style or {}
+    color_lookup = color_lookup or {}
+
+    if df_size is None or df_size.empty:
+        return []
+
+    po_c   = _col(df_size, "po_number", "PO Number")
+    style_c = _col(df_size, "style", "Style")
+    color_c = _col(df_size, "color", "Color")
+    size_c = _col(df_size, "size", "Size")
+    units_c = _col(df_size, "units", "Units")
+
+    # Metadata lookup by PO number.
+    meta_by_po: dict[str, dict] = {}
+    if df_meta is not None and not df_meta.empty:
+        mpo = _col(df_meta, "po_number", "PO Number")
+        for rec in df_meta.to_dict("records"):
+            meta_by_po[str(rec.get(mpo, ""))] = rec
+
+    def m(po, *names, default=""):
+        rec = meta_by_po.get(str(po), {})
+        for n in names:
+            for k in rec:
+                if k.lower() == n.lower() and rec[k] not in (None, ""):
+                    return rec[k]
+        return default
+
+    rows: list[BuyPlanRow] = []
+    grp_keys = [k for k in (po_c, color_c) if k]
+    for (key, sub) in df_size.groupby(grp_keys, dropna=False):
+        po = key[0] if isinstance(key, tuple) else key
+        color = key[1] if isinstance(key, tuple) and len(key) > 1 else ""
+        style = str(sub.iloc[0][style_c]) if style_c else ""
+        sizes = {}
+        for _, sr in sub.iterrows():
+            sz = str(sr[size_c]).strip() if size_c else ""
+            if sz:
+                sizes[sz] = sizes.get(sz, 0) + int(sr[units_c] or 0) if units_c else 0
+
+        contract = (contract_by_po.get(_norm_key(po))
+                    or contract_by_style.get(_norm_key(style)) or "")
+        color_en = str(color or "")
+        packaging = str(m(po, "packaging"))
+        rows.append(BuyPlanRow(
+            contract_no=contract, style=style, po_number=str(po),
+            cpo=str(m(po, "cpo")), ship_to=str(m(po, "ship_to")),
+            buyer=str(m(po, "buyer", "customer")),
+            color_en=color_en,
+            color_cn=str(color_lookup.get(color_en, "")
+                         or color_lookup.get(color_en.strip().upper(), "")),
+            sizes=sizes, ex_fty=str(m(po, "xport_date", "factory_ship_date")),
+            packing_method=packaging,
+            is_prepack=("PPK" in packaging.upper() or "PREPACK" in packaging.upper())
+                       if packaging else None,
+        ))
+    return rows
+
+
 def _present_sizes(rows: list[BuyPlanRow]) -> list[str]:
     """Union of size keys across rows, in a stable garment order."""
     order = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "1X", "2X", "3X",

@@ -1145,6 +1145,14 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Save CPRS settings', '保存 CPRS 设置', 'button', 'admin'),
     ('✅ CPRS settings saved.', '✅ CPRS 设置已保存。', 'label', 'admin'),
 
+    # GIII buy plan + CPRS generate button (Step 2c)
+    ('Buy Plan + Requirements (CPRS)', '采购计划 + 要求（CPRS）', 'button', 'giii'),
+    ('The full A–W GIII buy plan with client requirements resolved live from the CPRS knowledge base — red-sticker code, carton mark, prepack ratio, PCs/box, MSRP and RFID. Configure CPRS in Admin → Settings; without it those columns are left blank.',
+     '完整的 A–W GIII 采购计划，客户要求通过 CPRS 知识库实时解析 — 红色箱贴代码、主箱唛、预包比例、每箱件数、MSRP 和 RFID。请在 管理 → 设置 中配置 CPRS；未配置时这些列留空。', 'label', 'giii'),
+    ('Building buy plan (resolving CPRS requirements)…', '正在生成采购计划（解析 CPRS 要求）…', 'label', 'giii'),
+    ('Buy plan generation failed:', '采购计划生成失败：', 'label', 'giii'),
+    ('Download Buy Plan + Requirements (.xlsx)', '下载采购计划 + 要求 (.xlsx)', 'button', 'giii'),
+
     # MSG / TK EU sections accept bare fax PDFs in addition to .msg (v2.30.6)
     ('Upload .msg vendor fax emails — or the fax PDFs directly — to get started.',
      '上传 .msg 供应商传真邮件 — 或直接上传传真PDF文件 — 即可开始。', 'label', 'giii'),

@@ -117,6 +117,40 @@ def test_red_sticker_not_applicable_becomes_wuxu():
     assert grid[9][-10:][2] == "无需"   # red sticker not_applicable → 无需
 
 
+def test_assemble_rows_from_frames():
+    import pandas as pd
+    from po_extractor.exporters.giii_buyplan_export import assemble_buyplan_rows
+
+    df_size = pd.DataFrame([
+        {"po_number": "PO1", "style": "ST1", "color": "NAVY", "size": "S", "units": 10},
+        {"po_number": "PO1", "style": "ST1", "color": "NAVY", "size": "M", "units": 20},
+        {"po_number": "PO1", "style": "ST1", "color": "CLAY", "size": "S", "units": 5},
+    ])
+    df_meta = pd.DataFrame([
+        {"po_number": "PO1", "style": "ST1", "cpo": "C9", "buyer": "MY MACY'S",
+         "ship_to": "NJ DC", "xport_date": "2026-07-01", "packaging": "PPK flat pack"},
+    ])
+    rows = assemble_buyplan_rows(
+        df_size, df_meta,
+        contract_by_po={"PO1": "HHN-001"},
+        color_lookup={"NAVY": "藏青", "CLAY": "泥粉"},
+    )
+    assert len(rows) == 2                       # NAVY + CLAY
+    navy = next(r for r in rows if r.color_en == "NAVY")
+    assert navy.contract_no == "HHN-001"
+    assert navy.color_cn == "藏青"
+    assert navy.sizes == {"S": 10, "M": 20}
+    assert navy.cpo == "C9" and navy.buyer == "MY MACY'S"
+    assert navy.ex_fty == "2026-07-01"
+    assert navy.is_prepack is True             # "PPK" in packaging
+
+
+def test_assemble_rows_empty():
+    import pandas as pd
+    from po_extractor.exporters.giii_buyplan_export import assemble_buyplan_rows
+    assert assemble_buyplan_rows(pd.DataFrame(), pd.DataFrame()) == []
+
+
 def test_dynamic_sizes_only_present_ones():
     rows = [BuyPlanRow(style="X", color_en="RED", sizes={"M": 5, "XL": 3})]
     ws = _load(export_giii_buyplan(BuyPlanHeader(), rows, cprs=None))

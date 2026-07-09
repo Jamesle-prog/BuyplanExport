@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.35.0",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "feat", "text": "**GIII buy-plan build, step 2c — wired end-to-end.** GIII → 📦 Generate / Export has a new **🧭 Buy Plan + Requirements (CPRS)** button: it assembles buy-plan rows from the selected POs' stored size rows + metadata, resolves contract numbers from the 大货进度表 and Chinese colours from the translation store, pulls the client requirements (red sticker, carton mark, prepack ratio, PCs/box, MSRP, RFID) live from CPRS when configured, and downloads the finished A–W GIII buy plan. Works with or without CPRS (requirement columns blank when it's not set up). Completes the GIII buy-plan build (steps 2a–2c)"},
+        ],
+    },
+    {
         "version": "2.34.0",
         "date": "2026-07-09",
         "entries": [
