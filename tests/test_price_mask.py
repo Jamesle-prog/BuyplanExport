@@ -92,3 +92,55 @@ def test_excel_rejects_legacy_xls(tmp_path):
     p.write_bytes(b"not a real xls")
     with pytest.raises(ValueError, match="legacy .xls"):
         mask_prices_excel(str(p), str(tmp_path))
+
+
+# ── AI-assisted detection (DeepSeek call mocked) ─────────────────────────────
+
+import po_extractor.utils.price_mask as pm
+
+
+def test_detect_prices_ai_parses_and_normalizes(monkeypatch):
+    monkeypatch.setattr(pm, "_deepseek_json",
+                        lambda *a, **k: {"prices": ["$1,200.00", "69", "  "]})
+    got = pm.detect_prices_ai("irrelevant", api_key="k")
+    assert got == {"1200.00", "69"}   # currency/commas stripped, blanks dropped
+
+
+def test_detect_prices_ai_no_key_is_empty(monkeypatch):
+    # No API call attempted without a key → empty set, regex still the floor.
+    called = {"n": 0}
+    def _spy(*a, **k):
+        called["n"] += 1
+        return {}
+    monkeypatch.setattr(pm, "_deepseek_json", _spy)
+    assert pm.detect_prices_ai("text", api_key="") == set()
+    # _deepseek_json itself guards empty key, but detect_prices_ai passes through;
+    # the real guard is inside _deepseek_json (tested below).
+
+
+def test_deepseek_json_returns_empty_without_key():
+    assert pm._deepseek_json("sys", "user", api_key="", model="m") == {}
+
+
+def test_ai_columns_union_with_keywords(tmp_path, monkeypatch):
+    # A price column whose header has NO keyword ("Deal") — only AI can catch it.
+    monkeypatch.setattr(pm, "_deepseek_json",
+                        lambda *a, **k: {"price_headers": ["Deal"]})
+    src = _build_xlsx(tmp_path, [
+        ["Style", "Deal", "Qty"],
+        ["ST1",   4.17,   100],
+    ])
+    out = mask_prices_excel(str(src) if not isinstance(src, str) else src,
+                            str(tmp_path), api_key="k")
+    rows = _read_masked(out)
+    assert rows[1][1] == "***"   # "Deal" column masked via AI
+    assert rows[1][2] == 100     # Qty untouched
+
+
+def test_ai_failure_falls_back_to_keywords(tmp_path, monkeypatch):
+    # AI returns nothing (as if the call failed) — keyword detection still works.
+    monkeypatch.setattr(pm, "_deepseek_json", lambda *a, **k: {})
+    src = _build_xlsx(tmp_path, [["Style", "FOB"], ["ST1", 4.17]])
+    out = mask_prices_excel(src, str(tmp_path), api_key="k")
+    rows = _read_masked(out)
+    assert rows[1][1] == "***"   # FOB still masked by keyword

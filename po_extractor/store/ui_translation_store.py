@@ -1130,6 +1130,12 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('AI extraction is enabled but no DeepSeek API key is configured — files will be processed with the built-in parser. Set the key in Admin → Settings.',
      'AI提取已启用，但未配置DeepSeek API密钥 — 文件将使用内置解析器处理。请在 管理 → 设置 中配置密钥。', 'label', 'giii'),
 
+    # AI-assisted price masking (admin setting, v2.32.0)
+    ('AI-assisted price masking', 'AI辅助价格屏蔽', 'header', 'admin'),
+    ('When masking prices, also ask DeepSeek to find prices from context (e.g. a whole-dollar FOB the pattern misses). AI findings are added to the built-in detection, never replace it. Uses the API key above; if it\'s unset or the call fails, masking falls back to the built-in rules.',
+     '屏蔽价格时，同时让DeepSeek根据上下文识别价格（例如正则无法识别的整数FOB）。AI识别结果会补充到内置检测中，而非替代它。使用上方配置的API密钥；若未配置或调用失败，屏蔽将回退到内置规则。', 'label', 'admin'),
+    ('Use AI to detect prices when masking', '屏蔽时使用AI识别价格', 'label', 'admin'),
+
     # MSG / TK EU sections accept bare fax PDFs in addition to .msg (v2.30.6)
     ('Upload .msg vendor fax emails — or the fax PDFs directly — to get started.',
      '上传 .msg 供应商传真邮件 — 或直接上传传真PDF文件 — 即可开始。', 'label', 'giii'),

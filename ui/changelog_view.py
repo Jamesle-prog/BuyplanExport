@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.32.0",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "feat", "text": "**Optional AI-assisted price masking (DeepSeek).** A new **Admin → Settings** toggle (“Use AI to detect prices when masking”, off by default) lets the masker ask DeepSeek to identify prices from context — catching ones the built-in rules can't, like a whole-dollar FOB or an oddly-formatted amount, and price columns whose header has no recognized keyword. AI findings are **unioned** with the pattern/keyword detection, never replace it, so the built-in rules stay the floor even if AI is off or the call fails. Applies to every masking path (GIII PDF, GIII/Zalando Excel, Sky East). Uses the existing DeepSeek key; graceful fallback when unset or unreachable"},
+        ],
+    },
+    {
         "version": "2.31.4",
         "date": "2026-07-09",
         "entries": [

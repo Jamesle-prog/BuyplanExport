@@ -205,8 +205,11 @@ def _se_mask_order_files(order_paths, log: list[str]) -> bytes | None:
     mask_out_dir = tempfile.mkdtemp()
     try:
         _mask_errors: list[str] = []
+        from ui.giii._shared import mask_ai_creds as _mask_ai_creds
+        _ai_key, _ai_model = _mask_ai_creds()
         masked_files = mask_prices_excel_batch(
-            [p for _, p in order_paths], mask_out_dir, errors=_mask_errors
+            [p for _, p in order_paths], mask_out_dir, errors=_mask_errors,
+            api_key=_ai_key, model=_ai_model,
         )
         for _me in _mask_errors:
             st.warning(f"Price-mask failed — {_me} (file NOT in masked zip)")

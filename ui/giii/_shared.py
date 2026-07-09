@@ -186,6 +186,25 @@ def iter_pdf_payloads(files):
             yield uf.name, pdf_data, (msg.subject or '')
 
 
+def mask_ai_creds() -> tuple[str | None, str]:
+    """Return (api_key, model) for AI-assisted price masking.
+
+    The api_key is the configured DeepSeek key only when the admin has enabled
+    "AI-assisted price masking" (Admin → Settings); otherwise None, so masking
+    uses the built-in pattern/keyword rules alone. Shared by every price-mask
+    call site (GIII PDF, GIII/Zalando Excel, Sky East).
+    """
+    from po_extractor.store.app_settings_store import (
+        KEY_MASK_USE_AI, KEY_DEEPSEEK_API_KEY, KEY_DEEPSEEK_MODEL,
+    )
+    from ui.stores import get_app_settings_store
+    s = get_app_settings_store()
+    model = s.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
+    if s.get(KEY_MASK_USE_AI, "false") == "true":
+        return (s.get(KEY_DEEPSEEK_API_KEY, "") or None), model
+    return None, model
+
+
 def drop_stale_results(results_key: str, sig_key: str, sig: tuple):
     """Return current results for *results_key*, dropping them first if the
     uploader's file set changed since extraction (signature mismatch) — a

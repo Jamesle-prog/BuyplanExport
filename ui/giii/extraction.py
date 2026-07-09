@@ -24,7 +24,10 @@ from po_extractor.utils.price_mask import mask_prices_batch
 from ui.session_keys import SK
 from ui.shared import ProgressTracker, images_dir as _get_images_dir
 from ui.stores import get_store
-from ui.giii._shared import _enrich_cn_color, _XLSX_MIME, _CSV_MIME, _ZIP_MIME
+from ui.giii._shared import (
+    _enrich_cn_color, _XLSX_MIME, _CSV_MIME, _ZIP_MIME,
+    mask_ai_creds as _mask_ai_creds,
+)
 
 _ProgressTracker = ProgressTracker
 
@@ -127,8 +130,10 @@ def _run_extraction(uploaded_files, mask_prices: bool, company: str = ""):
             tracker.step(f"Masking prices in {len(pdf_paths)} PDF(s)")
             st.write(f"Masking prices in {len(pdf_paths)} PDF(s)…")
             _mask_errors: list[str] = []
+            _ai_key, _ai_model = _mask_ai_creds()
             masked_paths = mask_prices_batch(pdf_paths, out_dir,
-                                             errors=_mask_errors)
+                                             errors=_mask_errors,
+                                             api_key=_ai_key, model=_ai_model)
             for _me in _mask_errors:
                 st.warning(f"Price-mask failed — {_me} (file NOT in masked output)")
 
@@ -427,7 +432,9 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
     masked_paths = []
     if mask_prices:
         _mask_errors: list[str] = []
-        masked_paths = mask_prices_batch(paths, out_dir, errors=_mask_errors)
+        _ai_key, _ai_model = _mask_ai_creds()
+        masked_paths = mask_prices_batch(paths, out_dir, errors=_mask_errors,
+                                         api_key=_ai_key, model=_ai_model)
         for _me in _mask_errors:
             st.warning(f"Price-mask failed — {_me} (file NOT in masked output)")
 

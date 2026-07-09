@@ -14,6 +14,7 @@ from po_extractor.store.app_settings_store import (
     KEY_EXTRACTION_METHOD,
     KEY_DEEPSEEK_MODEL,
     KEY_COLOR_AI_ENHANCE,
+    KEY_MASK_USE_AI,
 )
 from po_extractor.utils.deepseek_client import chat_kwargs as _chat_kwargs
 
@@ -146,6 +147,20 @@ def _show_deepseek_settings(store) -> None:
             disabled=(chosen_method == "regex"),
         )
 
+    st.divider()
+    st.markdown(f"**🔒 {t('AI-assisted price masking')}**")
+    st.caption(t(
+        "When masking prices, also ask DeepSeek to find prices from context "
+        "(e.g. a whole-dollar FOB the pattern misses). AI findings are added to "
+        "the built-in detection, never replace it. Uses the API key above; if "
+        "it's unset or the call fails, masking falls back to the built-in rules."
+    ))
+    mask_ai = st.toggle(
+        t("Use AI to detect prices when masking"),
+        value=(store.get(KEY_MASK_USE_AI, "false") == "true"),
+        key="admin_mask_use_ai",
+    )
+
     col_test, col_save = st.columns([1, 1])
     with col_test:
         if st.button(f"🔌 {t('Test API key')}", key="admin_deepseek_test",
@@ -161,6 +176,7 @@ def _show_deepseek_settings(store) -> None:
             user = st.session_state.get(SK.USERNAME, "")
             store.set(KEY_EXTRACTION_METHOD, chosen_method, updated_by=user)
             store.set(KEY_DEEPSEEK_MODEL,    new_model,      updated_by=user)
+            store.set(KEY_MASK_USE_AI, "true" if mask_ai else "false", updated_by=user)
             if new_key:
                 store.set(KEY_DEEPSEEK_API_KEY, new_key, updated_by=user)
             st.success(t("✅ AI extraction settings saved."))

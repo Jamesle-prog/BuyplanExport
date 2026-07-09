@@ -14,6 +14,7 @@ from po_extractor.ui_helpers.color_enrichment import enrich_hhp_colors
 from po_extractor.utils.price_mask import mask_prices_excel_batch
 from auth.companies import get_company
 from ui.stores import get_store, get_color_translation_store
+from ui.giii._shared import mask_ai_creds as _mask_ai_creds
 from ui.giii.extraction import _save_fabric_parts_from_df
 
 
@@ -139,8 +140,10 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
         mask_out_dir = tempfile.mkdtemp()
         try:
             _mask_errors: list[str] = []
+            _ai_key, _ai_model = _mask_ai_creds()
             masked_files = mask_prices_excel_batch(paths, mask_out_dir,
-                                                   errors=_mask_errors)
+                                                   errors=_mask_errors,
+                                                   api_key=_ai_key, model=_ai_model)
             for _me in _mask_errors:
                 log.append(f"⚠️ price-mask failed — {_me} (file NOT in masked zip)")
             if masked_files:
@@ -347,8 +350,10 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
             mask_out_dir = tempfile.mkdtemp()
             try:
                 _mask_errors: list[str] = []
+                _ai_key, _ai_model = _mask_ai_creds()
                 masked_files = mask_prices_excel_batch(excel_paths, mask_out_dir,
-                                                       errors=_mask_errors)
+                                                       errors=_mask_errors,
+                                                       api_key=_ai_key, model=_ai_model)
                 for _me in _mask_errors:
                     st.warning(f"Price-mask failed — {_me} (file NOT in masked zip)")
                     log.append(f"⚠️ price-mask failed — {_me}")
