@@ -87,6 +87,8 @@ Grain: one row per **PO × Color**; contract/style span-merge across their rows.
 | S | 是否预包 / Prepack (Y/N) | PO | `packaging` | whether the order ships as a prepack (PPK) — **from the PO** (PPK marker) |
 | T | 预包比例 / Prepack Ratio | **CPRS** | — | pack size-assortment (e.g. 1-2-2-1) — CPRS `packaging`, see §4b |
 | U | 每箱件数 / PCs per Box | **CPRS** | — | pack-out per carton — CPRS `packaging`, see §4b |
+| V | MSRP | **CPRS** | — | warehouse-driven MSRP requirement, see §4c (price value on KL POs) |
+| W | RFID | **CPRS** | — | warehouse-driven RFID requirement, see §4c |
 
 ---
 
@@ -134,6 +136,20 @@ opens identically in Excel/WPS.
   *"CK Ross blouses: 6 pre-packs/box, 36 pcs/carton"*, *"KL TR098:
   6 pcs/carton"*).
 
+### 4c — Compliance columns V · W (warehouse-driven, CPRS)
+
+Both resolve from the **warehouse code** (col E), per the CPRS API's own rule:
+*"RFID, MSRP-required, and label language are not on the PO — they come from
+the warehouseCode."* Available directly on the brand's warehouse defaults
+(`GET /clients/:id/warehouses` returns RFID/MSRP per DC) or in the `/evaluate`
+result.
+
+- **V — MSRP:** whether an MSRP price ticket is required (warehouse Yes/No —
+  e.g. DKNY `UC`=Yes, `DN`=No). If the actual MSRP *price value* is what's
+  wanted, that's on the PO where present (`msrp`, e.g. KL "$59").
+- **W — RFID:** whether RFID hangtags/labels are required (warehouse Yes/No).
+  Never carried on the PO — always warehouse-driven.
+
 ---
 
 ## 5. Footer & subtotals
@@ -170,6 +186,9 @@ neither. This is why the build is a Sky-East-class exporter, not a template swap
   that triggers T and U.
 - **预包比例 (T) / 每箱件数 (U)** — **RESOLVED: CPRS-sourced** (`packaging`
   domain — client-mandated prepack ratio and pack-out per carton).
+- **MSRP (V) / RFID (W)** — **RESOLVED: CPRS-sourced**, warehouse-driven from
+  col E (per the API's warehouse→RFID/MSRP defaults). MSRP price *value*, if
+  needed, is PO-sourced (`msrp`).
 
 ---
 

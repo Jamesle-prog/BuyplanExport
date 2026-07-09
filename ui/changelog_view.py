@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.32.2",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "docs", "text": "GIII buy-plan spec: added **MSRP (V)** and **RFID (W)** as two separate columns, both **CPRS-sourced and warehouse-driven** (resolved from the warehouse code in col E — the CPRS API states RFID/MSRP-required never come from the PO). Noted that the MSRP price *value*, if needed, is available on KL POs (`msrp`)"},
+        ],
+    },
+    {
         "version": "2.32.1",
         "date": "2026-07-09",
         "entries": [
