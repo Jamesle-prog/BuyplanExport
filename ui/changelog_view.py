@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.31.2",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "docs", "text": "GIII buy-plan field-mapping spec: resolved the open question on the 备注 (Remarks) column — it is **PO-sourced** (`packaging`/`hanger`, e.g. 平装+衣架), not a CPRS lookup"},
+        ],
+    },
+    {
         "version": "2.31.1",
         "date": "2026-07-09",
         "entries": [

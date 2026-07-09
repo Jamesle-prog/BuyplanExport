@@ -83,7 +83,7 @@ Grain: one row per **PO × Color**; contract/style span-merge across their rows.
 | O | 离厂时间 / X-FTY | 进度表 → PO | `ex_fty` → `xport_date` | 进度表 first, PO fallback |
 | **P** | **红色箱贴纸 / Red Box Sticker** | **CPRS** | — | see §4 |
 | **Q** | **主箱唛 / Main Carton Mark** | **CPRS** | — | see §4 |
-| R | 备注 / Remarks | PO | `packaging` / `hanger` | e.g. 平装+衣架; optionally CPRS `packaging/packing_method` |
+| R | 备注 / Remarks | PO | `packaging` / `hanger` | e.g. 平装+衣架 (flat pack + hanger) — **PO-sourced** (not CPRS) |
 
 ---
 
@@ -145,8 +145,8 @@ neither. This is why the build is a Sky-East-class exporter, not a template swap
   `pending_input` like `confirmed` for display (with a log note).
 - **CPRS availability** — if the KB is unreachable or no API key is configured,
   P/Q fall back to blank/无需 with a warning; the buy plan still generates.
-- **备注 (R)** — confirm whether this is PO-sourced (`packaging`/`hanger`) or
-  should also come from CPRS `packaging/packing_method`.
+- **备注 (R)** — **RESOLVED: PO-sourced** (`packaging`/`hanger`, e.g. 平装+衣架).
+  Not a CPRS lookup.
 
 ---
 
