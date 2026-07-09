@@ -11,6 +11,9 @@ from .sky_east_buyplan_export import (
     check_nukuryou_ready,
     build_cross_comparison,
 )
+from .giii_buyplan_export import (
+    export_giii_buyplan, BuyPlanHeader, BuyPlanRow,
+)
 
 __all__ = [
     "export_csvs", "export_buyplan", "export_color_plan",
@@ -18,6 +21,7 @@ __all__ = [
     "export_hhp_buyplan", "export_hhp_template_p",
     "export_sky_east_buyplan", "export_sky_east_nukuryou",
     "check_nukuryou_ready", "build_cross_comparison",
+    "export_giii_buyplan", "BuyPlanHeader", "BuyPlanRow",
 ]
 
 # ---------------------------------------------------------------------------

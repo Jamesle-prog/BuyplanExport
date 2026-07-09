@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.34.0",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "feat", "text": "**GIII buy-plan build, step 2b: the GIII buy-plan exporter.** Added `po_extractor/exporters/giii_buyplan_export.py` — generates the real GIII 生产计划单 (buy plan) A–W bilingual layout: manufacturer banner, supplier/fabric/description header block, two-row EN+中文 column headers, one data row per PO × color with a dynamic size block, a grand TTL, and per-color subtotals. The requirement-driven columns (red sticker, carton mark, prepack ratio, PCs/box, MSRP, RFID) and the warehouse code resolve live from CPRS when a client is configured, and are left blank (buy plan still generates) when it isn't. Built as a from-scratch workbook generator rather than a fill-in template — more testable and robust to size-count changes. 5 exporter tests (with and without a mock CPRS). Pipeline/UI wiring is step 2c"},
+        ],
+    },
+    {
         "version": "2.33.0",
         "date": "2026-07-09",
         "entries": [
