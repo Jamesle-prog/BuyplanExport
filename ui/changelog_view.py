@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.31.4",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "docs", "text": "GIII buy-plan field-mapping spec: renamed the R column 备注 → **包装方式 (Packing Method)**, and added two new columns — **S 每箱件数 (PCs per Box)** and **T 是否预包 (Prepack Y/N)** — both provisionally sourced from CPRS's `packaging` domain (which carries the per-brand/account prepack + packs-per-carton rules), flagged for source confirmation"},
+        ],
+    },
+    {
         "version": "2.31.3",
         "date": "2026-07-09",
         "entries": [

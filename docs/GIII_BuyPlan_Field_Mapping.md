@@ -83,7 +83,9 @@ Grain: one row per **PO × Color**; contract/style span-merge across their rows.
 | O | 离厂时间 / X-FTY | 进度表 → PO | `ex_fty` → `xport_date` | 进度表 first, PO fallback |
 | **P** | **红色箱贴纸 / Red Box Sticker** | **CPRS** | — | see §4 |
 | **Q** | **主箱唛 / Main Carton Mark** | **CPRS** | — | see §4 |
-| R | 备注 / Remarks | PO | `packaging` / `hanger` | e.g. 平装+衣架 (flat pack + hanger) — **PO-sourced** (not CPRS) |
+| R | 包装方式 / Packing Method | PO | `packaging` / `hanger` | e.g. 平装+衣架 (flat pack + hanger) — **PO-sourced** (renamed from 备注) |
+| S | 每箱件数 / PCs per Box | **CPRS** | — | packs-per-carton × pack qty, from CPRS `packaging` rules — see §4b *(confirm source)* |
+| T | 是否预包 / Prepack (Y/N) | **CPRS** | — | whether prepack (PPK) applies for this account — CPRS `packaging`/prepack — see §4b *(confirm source)* |
 
 ---
 
@@ -115,6 +117,23 @@ The exporter will embed the CPRS image bytes the same way the Sky East exporter
 handles DISPIMG-style images (openpyxl image anchor into the cell), so the output
 opens identically in Excel/WPS.
 
+### 4b — Packing columns S · T (new; not in the reference sample)
+
+Both come from the same `/evaluate` call, `domain == "packaging"` results:
+
+- **S — 每箱件数 (PCs per Box):** the pack-out quantity per carton. For a
+  prepack this is *packs-per-carton × pack-qty*; for flat-pack bulk it's the
+  carton pack quantity. CPRS carries these per brand/account (e.g. *"CK Ross
+  blouses: 6 pre-packs/box, 36 pcs/carton"*, *"KL TR098: 6 pcs/carton"*).
+- **T — 是否预包 (Prepack Y/N):** whether the order ships as a prepack (PPK)
+  assortment — CPRS resolves this from account/warehouse (e.g. DKNY
+  off-price / AMRG prepack via DIM code). Drives whether S uses the prepack
+  math and whether a red PPK sticker is needed (ties to col P).
+
+**Confirm before build:** if in practice pcs/box or the prepack flag is written
+on the PO itself (rather than resolved from the client's rules), these move to
+**PO** source — flagged in §6.
+
 ---
 
 ## 5. Footer & subtotals
@@ -145,8 +164,11 @@ neither. This is why the build is a Sky-East-class exporter, not a template swap
   `pending_input` like `confirmed` for display (with a log note).
 - **CPRS availability** — if the KB is unreachable or no API key is configured,
   P/Q fall back to blank/无需 with a warning; the buy plan still generates.
-- **备注 (R)** — **RESOLVED: PO-sourced** (`packaging`/`hanger`, e.g. 平装+衣架).
-  Not a CPRS lookup.
+- **包装方式 (R)** — **RESOLVED: PO-sourced** (`packaging`/`hanger`, e.g.
+  平装+衣架). Renamed from 备注. Not a CPRS lookup.
+- **每箱件数 (S) / 是否预包 (T)** — **assumed CPRS** (`packaging` domain); the KB
+  carries per-brand/account prepack + packs-per-carton rules. **Confirm**
+  whether these are instead written on the PO — if so, they become PO-sourced.
 
 ---
 
