@@ -15,6 +15,8 @@ from po_extractor.store.app_settings_store import (
     KEY_DEEPSEEK_MODEL,
     KEY_COLOR_AI_ENHANCE,
     KEY_MASK_USE_AI,
+    KEY_CPRS_BASE_URL,
+    KEY_CPRS_API_KEY,
 )
 from po_extractor.utils.deepseek_client import chat_kwargs as _chat_kwargs
 
@@ -97,9 +99,54 @@ def show_settings_admin() -> None:
     st.markdown("---")
     _show_color_ai_enhance_settings(store)
 
+    # ── CPRS Knowledge Base ──────────────────────────────────────────────────
+    st.markdown("---")
+    _show_cprs_settings(store)
+
     # ── Fabric Master Database ───────────────────────────────────────────────
     st.markdown("---")
     _show_fabric_db_settings()
+
+
+# ---------------------------------------------------------------------------
+# CPRS Knowledge Base sub-section
+# ---------------------------------------------------------------------------
+
+def _show_cprs_settings(store) -> None:
+    st.markdown(f"#### 🧭 {t('CPRS Knowledge Base')}")
+    st.caption(t(
+        "The Client PO Requirements System resolves carton marking, red-sticker "
+        "codes, prepack ratio, pack-out, and MSRP/RFID for GIII buy plans. "
+        "Configure its API here; leave blank to disable (buy plans still "
+        "generate, with those fields left blank)."
+    ))
+
+    cur_url = store.get(KEY_CPRS_BASE_URL, "")
+    cur_key = store.get(KEY_CPRS_API_KEY, "")
+
+    new_url = st.text_input(
+        t("CPRS base URL"), value=cur_url,
+        placeholder="http://localhost:3100", key="admin_cprs_url",
+    )
+    new_key = st.text_input(
+        t("CPRS API key"), value=cur_key, type="password",
+        placeholder="x-api-key …", key="admin_cprs_key",
+    )
+
+    col_test, col_save = st.columns([1, 1])
+    with col_test:
+        if st.button(f"🔌 {t('Test connection')}", key="admin_cprs_test",
+                     disabled=not new_url.strip()):
+            from po_extractor.utils.cprs_client import CprsClient
+            ok, msg = CprsClient(new_url, new_key).health()
+            (st.success if ok else st.error)(f"{'✅' if ok else '❌'} {msg}")
+    with col_save:
+        if st.button(f"💾 {t('Save CPRS settings')}", key="admin_cprs_save",
+                     type="primary"):
+            user = st.session_state.get(SK.USERNAME, "")
+            store.set(KEY_CPRS_BASE_URL, new_url.strip(), updated_by=user)
+            store.set(KEY_CPRS_API_KEY, new_key.strip(), updated_by=user)
+            st.success(t("✅ CPRS settings saved."))
 
 
 # ---------------------------------------------------------------------------

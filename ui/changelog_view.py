@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.33.0",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "feat", "text": "**GIII buy-plan build, step 2a: CPRS knowledge-base client.** Added `po_extractor/utils/cprs_client.py` — a read-only, cached, gracefully-degrading REST client that resolves brand→clientId, ship-to→warehouse, buyer→account, the carton requirements, and warehouse RFID/MSRP flags from the CPRS API (the data behind the buy plan's red-sticker / carton-mark / MSRP / RFID columns). Configure it under **Admin → Settings → 🧭 CPRS Knowledge Base** (base URL, API key, Test-connection button); leave blank to disable, in which case buy plans still generate with those fields blank. This is the dependency root for the GIII buy-plan exporter (steps 2b/2c to follow)"},
+        ],
+    },
+    {
         "version": "2.32.2",
         "date": "2026-07-09",
         "entries": [

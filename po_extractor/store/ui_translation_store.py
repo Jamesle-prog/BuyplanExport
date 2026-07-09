@@ -1136,6 +1136,15 @@ _SEED: list[tuple[str, str, str, str]] = [
      '屏蔽价格时，同时让DeepSeek根据上下文识别价格（例如正则无法识别的整数FOB）。AI识别结果会补充到内置检测中，而非替代它。使用上方配置的API密钥；若未配置或调用失败，屏蔽将回退到内置规则。', 'label', 'admin'),
     ('Use AI to detect prices when masking', '屏蔽时使用AI识别价格', 'label', 'admin'),
 
+    # CPRS knowledge-base settings (Step 2a, v2.33.0)
+    ('CPRS Knowledge Base', 'CPRS 知识库', 'header', 'admin'),
+    ('The Client PO Requirements System resolves carton marking, red-sticker codes, prepack ratio, pack-out, and MSRP/RFID for GIII buy plans. Configure its API here; leave blank to disable (buy plans still generate, with those fields left blank).',
+     '客户订单要求系统（CPRS）为GIII采购计划解析纸箱唛头、红色箱贴代码、预包比例、每箱件数以及MSRP/RFID。在此配置其API；留空则禁用（采购计划仍会生成，相关字段留空）。', 'label', 'admin'),
+    ('CPRS base URL', 'CPRS 基础网址', 'label', 'admin'),
+    ('CPRS API key', 'CPRS API 密钥', 'label', 'admin'),
+    ('Save CPRS settings', '保存 CPRS 设置', 'button', 'admin'),
+    ('✅ CPRS settings saved.', '✅ CPRS 设置已保存。', 'label', 'admin'),
+
     # MSG / TK EU sections accept bare fax PDFs in addition to .msg (v2.30.6)
     ('Upload .msg vendor fax emails — or the fax PDFs directly — to get started.',
      '上传 .msg 供应商传真邮件 — 或直接上传传真PDF文件 — 即可开始。', 'label', 'giii'),
