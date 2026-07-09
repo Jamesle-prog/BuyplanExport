@@ -84,8 +84,9 @@ Grain: one row per **PO × Color**; contract/style span-merge across their rows.
 | **P** | **红色箱贴纸 / Red Box Sticker** | **CPRS** | — | see §4 |
 | **Q** | **主箱唛 / Main Carton Mark** | **CPRS** | — | see §4 |
 | R | 包装方式 / Packing Method | PO | `packaging` / `hanger` | e.g. 平装+衣架 (flat pack + hanger) — **PO-sourced** (renamed from 备注) |
-| S | 每箱件数 / PCs per Box | **CPRS** | — | packs-per-carton × pack qty, from CPRS `packaging` rules — see §4b *(confirm source)* |
-| T | 是否预包 / Prepack (Y/N) | **CPRS** | — | whether prepack (PPK) applies for this account — CPRS `packaging`/prepack — see §4b *(confirm source)* |
+| S | 是否预包 / Prepack (Y/N) | PO | `packaging` | whether the order ships as a prepack (PPK) — **from the PO** (PPK marker) |
+| T | 预包比例 / Prepack Ratio | **CPRS** | — | pack size-assortment (e.g. 1-2-2-1) — CPRS `packaging`, see §4b |
+| U | 每箱件数 / PCs per Box | **CPRS** | — | pack-out per carton — CPRS `packaging`, see §4b |
 
 ---
 
@@ -117,22 +118,21 @@ The exporter will embed the CPRS image bytes the same way the Sky East exporter
 handles DISPIMG-style images (openpyxl image anchor into the cell), so the output
 opens identically in Excel/WPS.
 
-### 4b — Packing columns S · T (new; not in the reference sample)
+### 4b — Packing columns S · T · U (new; not in the reference sample)
 
-Both come from the same `/evaluate` call, `domain == "packaging"` results:
-
-- **S — 每箱件数 (PCs per Box):** the pack-out quantity per carton. For a
-  prepack this is *packs-per-carton × pack-qty*; for flat-pack bulk it's the
-  carton pack quantity. CPRS carries these per brand/account (e.g. *"CK Ross
-  blouses: 6 pre-packs/box, 36 pcs/carton"*, *"KL TR098: 6 pcs/carton"*).
-- **T — 是否预包 (Prepack Y/N):** whether the order ships as a prepack (PPK)
-  assortment — CPRS resolves this from account/warehouse (e.g. DKNY
-  off-price / AMRG prepack via DIM code). Drives whether S uses the prepack
-  math and whether a red PPK sticker is needed (ties to col P).
-
-**Confirm before build:** if in practice pcs/box or the prepack flag is written
-on the PO itself (rather than resolved from the client's rules), these move to
-**PO** source — flagged in §6.
+- **S — 是否预包 (Prepack Y/N):** whether the order ships as a prepack (PPK)
+  assortment. **PO-sourced** — the order itself says whether it's a prepack
+  (PPK marker in the PO packing info). This flag is the trigger: when it's
+  yes, T and U apply, and a red PPK sticker may be needed (ties to col P).
+- **T — 预包比例 (Prepack Ratio):** the size assortment inside one pack
+  (e.g. `1-2-2-1` across S-M-L-XL). **CPRS-sourced** — `/evaluate`,
+  `domain == "packaging"`; the client's rules define the mandated ratio per
+  brand/account.
+- **U — 每箱件数 (PCs per Box):** the pack-out quantity per carton
+  (*packs-per-carton × pack-qty* for a prepack; carton pack quantity for
+  flat-pack bulk). **CPRS-sourced** — same `packaging` evaluation (e.g.
+  *"CK Ross blouses: 6 pre-packs/box, 36 pcs/carton"*, *"KL TR098:
+  6 pcs/carton"*).
 
 ---
 
@@ -166,9 +166,10 @@ neither. This is why the build is a Sky-East-class exporter, not a template swap
   P/Q fall back to blank/无需 with a warning; the buy plan still generates.
 - **包装方式 (R)** — **RESOLVED: PO-sourced** (`packaging`/`hanger`, e.g.
   平装+衣架). Renamed from 备注. Not a CPRS lookup.
-- **每箱件数 (S) / 是否预包 (T)** — **assumed CPRS** (`packaging` domain); the KB
-  carries per-brand/account prepack + packs-per-carton rules. **Confirm**
-  whether these are instead written on the PO — if so, they become PO-sourced.
+- **是否预包 (S)** — **RESOLVED: PO-sourced** (PPK marker in the PO). The flag
+  that triggers T and U.
+- **预包比例 (T) / 每箱件数 (U)** — **RESOLVED: CPRS-sourced** (`packaging`
+  domain — client-mandated prepack ratio and pack-out per carton).
 
 ---
 

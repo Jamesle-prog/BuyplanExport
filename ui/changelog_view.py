@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.32.1",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "docs", "text": "GIII buy-plan spec: resolved the packing-column sources — **是否预包 (Prepack Y/N) is PO-sourced** (the PPK marker on the order, which triggers the rest), while **预包比例 (Prepack Ratio)** and **每箱件数 (PCs per Box)** are **CPRS-sourced** (`packaging` domain, client-mandated). Added Prepack Ratio as its own column (S/T/U = Prepack · Ratio · PCs-per-Box)"},
+        ],
+    },
+    {
         "version": "2.32.0",
         "date": "2026-07-09",
         "entries": [
