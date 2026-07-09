@@ -170,16 +170,29 @@ def _present_sizes(rows: list[BuyPlanRow]) -> list[str]:
     return ordered + [s for s in sorted(seen) if s not in order]
 
 
-def _resolve_cprs_fields(rows: list[BuyPlanRow], header: BuyPlanHeader, cprs):
+def _resolve_cprs_fields(rows: list[BuyPlanRow], header: BuyPlanHeader, cprs,
+                         manual: dict | None = None, translate=None):
     """Return {id(row): {warehouse, red_sticker, carton_mark, prepack_ratio,
-    pcs_box, msrp, rfid, red_img, mark_img}} using the CPRS client. Blank
-    dict entries when *cprs* is None or a lookup fails (graceful)."""
+    pcs_box, msrp, rfid, red_img, mark_img}} using the CPRS client.
+
+    *manual* carries operator-supplied runtime values CPRS can't provide:
+    ``dim_code`` (the pre-pack DIM code the red sticker must show) and
+    ``pcs_box`` (factory pack-out per carton). *translate* is an optional
+    English→Chinese callable applied to CPRS requirement wording.
+    Blank entries when *cprs* is None or a lookup fails (graceful)."""
     out: dict[int, dict] = {}
     if cprs is None:
         return out
     client_id = cprs.resolve_client(header.brand) if header.brand else None
     if not client_id:
         return out
+
+    manual = manual or {}
+    dim_code = str(manual.get("dim_code", "") or "").strip()
+    manual_pcs = str(manual.get("pcs_box", "") or "").strip()
+
+    def cn(txt: str) -> str:
+        return translate(txt) if (translate and txt) else txt
 
     for r in rows:
         wh = r.warehouse_code or (cprs.resolve_warehouse(r.ship_to, client_id) or "")
@@ -189,6 +202,9 @@ def _resolve_cprs_fields(rows: list[BuyPlanRow], header: BuyPlanHeader, cprs):
             order["warehouseCode"] = wh
         if account:
             order["accountCode"] = account
+        # Supplying the DIM code resolves the red sticker from pending→confirmed.
+        if dim_code:
+            order["contextFields"] = {"dim_code": dim_code}
 
         carton = cprs.carton_results(order)
         flags = cprs.warehouse_flags(client_id, wh) if wh else {"rfid": None, "msrp": None}
@@ -199,16 +215,33 @@ def _resolve_cprs_fields(rows: list[BuyPlanRow], header: BuyPlanHeader, cprs):
 
         out[id(r)] = {
             "warehouse": wh,
-            "red_sticker": _sticker_text(red),
-            "carton_mark": _result_text(mark),
+            "red_sticker": _red_sticker_text(r, red, dim_code),
+            "carton_mark": cn(_result_text(mark)),
             "prepack_ratio": pack.get("ratio", ""),
-            "pcs_box": pack.get("pcs_box", ""),
+            "pcs_box": manual_pcs or pack.get("pcs_box", ""),
             "msrp": _yn(flags.get("msrp")),
             "rfid": _yn(flags.get("rfid")),
             "red_img": _image_bytes(cprs, red),
             "mark_img": _image_bytes(cprs, mark),
         }
     return out
+
+
+def _red_sticker_text(row, red_res, dim_code: str) -> str:
+    """Red sticker (P). Required only for PREPACK orders — check that first
+    (verified live: DKNY red sticker ``applies_to`` RETAIL pre-pack orders and
+    must show the DIM code). Non-prepack → 无需; prepack → the DIM code the
+    sticker must carry (operator-supplied), else a 待定 marker."""
+    if row.is_prepack is False:
+        return "无需"
+    if red_res and red_res.get("status") == "not_applicable":
+        return "无需"
+    if dim_code:
+        return dim_code
+    rj = (red_res or {}).get("resultJson") or {}
+    if red_res and red_res.get("status") == "pending_input":
+        return _pending(rj)
+    return str(rj.get("code") or rj.get("dim_code") or "")
 
 
 def _pending(rj: dict) -> str:
@@ -248,20 +281,6 @@ def _packaging_results(cprs, order: dict) -> dict:
     return out
 
 
-def _sticker_text(res) -> str:
-    """Red-sticker cell (P) — status-aware."""
-    if not res:
-        return ""
-    status = res.get("status")
-    if status == "not_applicable":
-        return "无需"
-    rj = res.get("resultJson", {}) or {}
-    if status == "pending_input":
-        return _pending(rj)   # e.g. red sticker waits on dim_code at runtime
-    return str(rj.get("code") or rj.get("dim_code") or rj.get("customer_code")
-               or rj.get("value") or "")
-
-
 def _result_text(res) -> str:
     """Carton-mark cell (Q) — status-aware."""
     if not res:
@@ -293,8 +312,13 @@ def _yn(v) -> str:
 
 
 def export_giii_buyplan(header: BuyPlanHeader, rows: list[BuyPlanRow],
-                        cprs=None) -> bytes:
-    """Build the GIII buy-plan workbook and return the .xlsx bytes."""
+                        cprs=None, manual: dict | None = None,
+                        translate=None) -> bytes:
+    """Build the GIII buy-plan workbook and return the .xlsx bytes.
+
+    *manual* — operator runtime values ({"dim_code", "pcs_box"}); *translate*
+    — optional English→Chinese callable for CPRS requirement wording.
+    """
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
@@ -302,7 +326,7 @@ def export_giii_buyplan(header: BuyPlanHeader, rows: list[BuyPlanRow],
     sizes = _present_sizes(rows)
     n_left, n_size, n_right = len(_LEFT), len(sizes), len(_RIGHT)
     n_cols = n_left + n_size + n_right
-    cprs_fields = _resolve_cprs_fields(rows, header, cprs)
+    cprs_fields = _resolve_cprs_fields(rows, header, cprs, manual, translate)
 
     wb = Workbook()
     ws = wb.active

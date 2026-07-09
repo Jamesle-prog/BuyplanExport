@@ -1153,6 +1153,14 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Buy plan generation failed:', '采购计划生成失败：', 'label', 'giii'),
     ('Download Buy Plan + Requirements (.xlsx)', '下载采购计划 + 要求 (.xlsx)', 'button', 'giii'),
 
+    # CPRS buy-plan manual runtime inputs + translation
+    ('Buy Plan requirement inputs (for CPRS buy plan)', '采购计划要求输入项（用于 CPRS 采购计划）', 'label', 'giii'),
+    ('Values CPRS resolves at runtime, not from the PO. The red sticker is only required for prepack orders — when it is, it must show the pre-pack DIM code below. Requirement wording from CPRS is in English; enable translation to render it in Chinese on the buy plan.',
+     'CPRS 在运行时解析的值，而非来自订单。红色箱贴仅预包订单需要 — 需要时须显示下方的预包 DIM 代码。CPRS 返回的要求文字为英文；启用翻译可在采购计划中显示为中文。', 'label', 'giii'),
+    ('Red sticker DIM code (pre-pack)', '红色箱贴 DIM 代码（预包）', 'label', 'giii'),
+    ('PCs per box (factory pack-out)', '每箱件数（工厂装箱）', 'label', 'giii'),
+    ('Translate CPRS requirement text to Chinese (DeepSeek)', '将 CPRS 要求文字翻译为中文（DeepSeek）', 'label', 'giii'),
+
     # MSG / TK EU sections accept bare fax PDFs in addition to .msg (v2.30.6)
     ('Upload .msg vendor fax emails — or the fax PDFs directly — to get started.',
      '上传 .msg 供应商传真邮件 — 或直接上传传真PDF文件 — 即可开始。', 'label', 'giii'),

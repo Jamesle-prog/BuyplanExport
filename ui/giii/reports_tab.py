@@ -55,7 +55,8 @@ def _show_reports_tab() -> None:
 # Generate Outputs sub-tab
 # ---------------------------------------------------------------------------
 
-def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame) -> bytes | None:
+def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame,
+                        manual: dict | None = None, translate=None) -> bytes | None:
     """Assemble and export the CPRS-integrated GIII buy plan for *selected* POs."""
     from po_extractor.exporters import (
         assemble_buyplan_rows, export_giii_buyplan, BuyPlanHeader,
@@ -107,7 +108,7 @@ def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame) -> by
 
     cprs = cprs_from_settings(get_app_settings_store())
     header = BuyPlanHeader(brand=brand, supplier=supplier, description=desc, fabric=fabric)
-    return export_giii_buyplan(header, rows, cprs=cprs)
+    return export_giii_buyplan(header, rows, cprs=cprs, manual=manual, translate=translate)
 
 
 def _format_fabric(parts: list) -> str:
@@ -178,6 +179,24 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         st.warning(t("No POs match the current filters."))
         return
     st.caption(f"**{len(selected)}** {t('PO(s) selected')}")
+
+    # ── CPRS buy-plan runtime inputs (values CPRS can't provide) ──────────────
+    with st.expander("🧭 " + t("Buy Plan requirement inputs (for CPRS buy plan)")):
+        st.caption(t(
+            "Values CPRS resolves at runtime, not from the PO. The red sticker "
+            "is only required for prepack orders — when it is, it must show the "
+            "pre-pack DIM code below. Requirement wording from CPRS is in English; "
+            "enable translation to render it in Chinese on the buy plan."
+        ))
+        mc1, mc2 = st.columns(2)
+        with mc1:
+            st.text_input(t("Red sticker DIM code (pre-pack)"), key="rpt_dim_code",
+                          placeholder="e.g. MY")
+        with mc2:
+            st.text_input(t("PCs per box (factory pack-out)"), key="rpt_pcs_box",
+                          placeholder="e.g. 36")
+        st.checkbox(t("Translate CPRS requirement text to Chinese (DeepSeek)"),
+                    key="rpt_cprs_translate", value=False)
 
     st.divider()
 
@@ -291,7 +310,13 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             st.session_state.pop("rpt_cprs_bp_bytes", None)
             with st.spinner(t("Building buy plan (resolving CPRS requirements)…")):
                 try:
-                    out = _build_cprs_buyplan(selected, store, filt_df)
+                    manual = {"dim_code": st.session_state.get("rpt_dim_code", ""),
+                              "pcs_box": st.session_state.get("rpt_pcs_box", "")}
+                    translate = None
+                    if st.session_state.get("rpt_cprs_translate"):
+                        from ui.giii._shared import make_en_to_cn_translator
+                        translate = make_en_to_cn_translator()
+                    out = _build_cprs_buyplan(selected, store, filt_df, manual, translate)
                     if out:
                         st.session_state["rpt_cprs_bp_bytes"] = out
                     else:

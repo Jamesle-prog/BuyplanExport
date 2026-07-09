@@ -93,13 +93,20 @@ class _MockCprs:
     def manual_image(self, image_id): return None
 
 
+def _prepack_rows():
+    r = _rows()
+    for row in r:
+        row.is_prepack = True
+    return r
+
+
 def test_export_with_cprs_fills_kb_columns():
     ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
                _rows(), cprs=_MockCprs()))
     grid = _grid(ws)
     last10 = grid[9][-10:]  # 总数量 .. RFID  (right block)
     # right block order: total, ex_fty, red, mark, packing, prepack, ratio, pcs, msrp, rfid
-    assert last10[2] == "MY"            # red sticker code
+    assert last10[2] == "无需"           # non-prepack → red sticker not required (checked first)
     assert last10[3] == "CTN# + net wt"  # carton mark
     assert last10[6] == "1-2-2-1"       # prepack ratio (CPRS)
     assert last10[7] == "36"            # pcs/box (CPRS)
@@ -107,15 +114,43 @@ def test_export_with_cprs_fills_kb_columns():
     assert last10[9] == "Y"             # RFID
 
 
-def test_red_sticker_not_applicable_becomes_wuxu():
+def test_red_sticker_non_prepack_is_wuxu():
+    """Not a prepack → red sticker not required, even if CPRS is pending."""
     class C(_MockCprs):
         def carton_results(self, order):
-            return {"red_carton_sticker": {"status": "not_applicable"}}
-        def warehouse_flags(self, cid, wh): return {"rfid": False, "msrp": False}
+            return {"red_carton_sticker": {"status": "pending_input",
+                    "resultJson": {"waiting_for": "dim_code"}}}
     ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
-               _rows(), cprs=C()))
-    grid = _grid(ws)
-    assert grid[9][-10:][2] == "无需"   # red sticker not_applicable → 无需
+               _rows(), cprs=C()))   # _rows() is non-prepack
+    assert _grid(ws)[9][-10:][2] == "无需"
+
+
+def test_prepack_red_sticker_pending_without_dim_code():
+    class C(_MockCprs):
+        def carton_results(self, order):
+            return {"red_carton_sticker": {"status": "pending_input",
+                    "resultJson": {"waiting_for": "dim_code"}}}
+    ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
+               _prepack_rows(), cprs=C()))
+    assert _grid(ws)[9][-10:][2] == "待定:dim_code"
+
+
+def test_prepack_red_sticker_shows_dim_code_when_supplied():
+    ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
+               _prepack_rows(), cprs=_MockCprs(), manual={"dim_code": "MY"}))
+    assert _grid(ws)[9][-10:][2] == "MY"   # prepack + supplied DIM code
+
+
+def test_manual_pcs_box_override():
+    ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
+               _prepack_rows(), cprs=_MockCprs(), manual={"pcs_box": "48"}))
+    assert _grid(ws)[9][-10:][7] == "48"   # manual pcs/box wins over CPRS's 36
+
+
+def test_translate_applied_to_carton_mark():
+    ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
+               _rows(), cprs=_MockCprs(), translate=lambda s: "【译】" + s))
+    assert _grid(ws)[9][-10:][3] == "【译】CTN# + net wt"
 
 
 def test_assemble_rows_from_frames():
@@ -150,18 +185,6 @@ def test_assemble_rows_empty():
     import pandas as pd
     from po_extractor.exporters.giii_buyplan_export import assemble_buyplan_rows
     assert assemble_buyplan_rows(pd.DataFrame(), pd.DataFrame()) == []
-
-
-def test_red_sticker_pending_input_shows_marker():
-    """Live CPRS returns pending_input (waiting on dim_code) for the red sticker."""
-    class C(_MockCprs):
-        def carton_results(self, order):
-            return {"red_carton_sticker": {"status": "pending_input",
-                    "resultJson": {"waiting_for": "dim_code"}}}
-    ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
-               _rows(), cprs=C()))
-    grid = _grid(ws)
-    assert grid[9][-10:][2] == "待定:dim_code"
 
 
 def test_dynamic_sizes_only_present_ones():

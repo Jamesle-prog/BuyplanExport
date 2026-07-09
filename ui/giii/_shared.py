@@ -205,6 +205,51 @@ def mask_ai_creds() -> tuple[str | None, str]:
     return None, model
 
 
+def make_en_to_cn_translator():
+    """Return a cached English→Chinese translator callable (DeepSeek), or None
+    if no API key is configured. Used to render CPRS requirement wording (which
+    comes back in English) as Chinese on the GIII buy plan. Text that already
+    contains Chinese is passed through untouched."""
+    from po_extractor.store.app_settings_store import (
+        KEY_DEEPSEEK_API_KEY, KEY_DEEPSEEK_MODEL,
+    )
+    from ui.stores import get_app_settings_store
+    s = get_app_settings_store()
+    key = s.get(KEY_DEEPSEEK_API_KEY, "")
+    if not key:
+        return None
+    model = s.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
+    cache: dict[str, str] = {}
+
+    def translate(text: str) -> str:
+        text = (text or "").strip()
+        if not text or any("一" <= c <= "鿿" for c in text):
+            return text
+        if text in cache:
+            return cache[text]
+        try:
+            from openai import OpenAI
+            from po_extractor.utils.deepseek_client import chat_kwargs, max_tokens_for
+            client = OpenAI(api_key=key, base_url="https://api.deepseek.com")
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content":
+                           "Translate the user's English garment packaging / "
+                           "carton requirement text into concise Simplified "
+                           "Chinese. Return only the translation."},
+                          {"role": "user", "content": text[:2000]}],
+                max_tokens=max_tokens_for(model, 256),
+                **chat_kwargs(model),
+            )
+            out = (resp.choices[0].message.content or "").strip() or text
+        except Exception:
+            out = text
+        cache[text] = out
+        return out
+
+    return translate
+
+
 def drop_stale_results(results_key: str, sig_key: str, sig: tuple):
     """Return current results for *results_key*, dropping them first if the
     uploader's file set changed since extraction (signature mismatch) — a

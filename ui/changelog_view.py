@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.36.0",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "feat", "text": "**GIII buy plan: red sticker now checks prepack first, plus manual runtime inputs and Chinese translation.** Verified live against CPRS: the red carton sticker is required only for **prepack** orders and must show the pre-pack **DIM code**. So the buy plan now writes 无需 for non-prepack rows, and for prepack rows shows the DIM code (a new generate-time input) — supplying it also resolves the CPRS requirement from pending to confirmed. Added generate-time inputs for the **DIM code** and **PCs-per-box** (which CPRS leaves to the factory at runtime), plus an optional **translate CPRS requirement text to Chinese** toggle (DeepSeek), since the knowledge base returns wording in English. All under a new expander in GIII → 📦 Generate / Export"},
+        ],
+    },
+    {
         "version": "2.35.1",
         "date": "2026-07-09",
         "entries": [
