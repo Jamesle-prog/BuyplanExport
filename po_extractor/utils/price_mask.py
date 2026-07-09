@@ -11,10 +11,24 @@ Output is saved to output_dir/masked/<original_filename>.
 import os
 import re
 
-_PRICE_RE = re.compile(r'^\d+\.\d{2}$')
+# A PDF token counts as a price when it is a decimal amount with exactly two
+# fraction digits, optionally led by a currency symbol and using comma
+# thousands separators. The two-decimal requirement keeps this conservative —
+# it won't grab bare integers (quantities, UPCs, PO numbers).
+#   matches: 4.17 · 69.00 · 1,234.00 · 12,345.67 · $4.17 · €1,000.00 · 45.00%? (no)
+_PRICE_RE = re.compile(r'^[$£€¥]?\d[\d,]*\.\d{2}$')
 
-# Header keywords that identify "price" columns in Excel sheets
-_PRICE_KEYWORDS = ("fob", "cost", "price", "usd", "amount", "total cost", "unit price")
+# Header keywords that identify "price" columns in Excel sheets. Any column
+# whose header (first 25 rows) contains one of these has its NUMERIC cells
+# masked — text cells (names, headers) are left intact, so broad keywords are
+# safe. Covers the price/cost headers this system's own exports actually use
+# (FOB, MSRP, unit/extended cost, line total, …) plus currency-symbol headers
+# like "Line Total ($)".
+_PRICE_KEYWORDS = (
+    "fob", "cost", "price", "usd", "amount", "total cost", "unit price",
+    "msrp", "srp", "rrp", "retail", "wholesale", "extended", "line total",
+    "$", "€", "£", "¥",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -130,12 +144,18 @@ def mask_prices_excel(xlsx_path: str, output_dir: str,
                 if isinstance(cell.value, (int, float)):
                     cell.value = "***"
                 else:
-                    # String: try to parse as number (e.g. "12.50")
+                    # String value in a price column: parse as a number after
+                    # stripping currency symbols / thousands commas / spaces,
+                    # so "$4.17", "1,234.00", "€1000" also mask. Header text and
+                    # genuinely non-numeric strings fail the parse and stay.
+                    cleaned = str(cell.value).translate(
+                        {ord(ch): None for ch in "$£€¥, "}
+                    ).strip()
                     try:
-                        float(str(cell.value).replace(",", "").strip())
+                        float(cleaned)
                         cell.value = "***"
                     except (ValueError, TypeError):
-                        pass   # leave header text and non-numeric strings
+                        pass
 
     wb.save(out_path)
     wb.close()

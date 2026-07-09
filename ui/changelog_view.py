@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.31.3",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "fix", "text": "**Price masking now catches prices it used to miss.** PDF masking previously only matched plain `123.45` amounts — it now also masks prices with thousands separators (`1,234.00`, `12,345.67`) and currency prefixes (`$4.17`, `€1,000.00`, `£`, `¥`), while still leaving bare integers (quantities, UPCs, PO numbers) untouched. Excel masking gained more price-header keywords (**MSRP, SRP/RRP, retail, wholesale, extended, line total**, and currency-symbol headers like `Line Total ($)`) — a real gap, since MSRP and line-total columns weren't being masked before — and now also masks currency-formatted string values (`$69.00`) inside detected price columns. Text cells in those columns (e.g. a `Retail Partner` name) are still left intact"},
+        ],
+    },
+    {
         "version": "2.31.2",
         "date": "2026-07-09",
         "entries": [
