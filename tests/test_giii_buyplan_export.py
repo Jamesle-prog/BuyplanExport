@@ -87,9 +87,9 @@ class _MockCprs:
                                "resultJson": {"value": "CTN# + net wt"}},
         }
     def evaluate(self, order):
-        return [{"domain": "packaging", "subtype": "pre_pack_ratio",
-                 "status": "confirmed",
-                 "resultJson": {"ratio": "1-2-2-1", "pcs_per_carton": 36}}]
+        return []
+    def prepack_spec(self, cid, account):
+        return {"ratio": "1-2-2-1", "pcs_box": "6"}
     def manual_image(self, image_id): return None
 
 
@@ -100,18 +100,27 @@ def _prepack_rows():
     return r
 
 
-def test_export_with_cprs_fills_kb_columns():
+def test_export_non_prepack_columns():
+    """Non-prepack: red sticker 无需, and ratio/pcs blank (prepack-only)."""
     ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
                _rows(), cprs=_MockCprs()))
-    grid = _grid(ws)
-    last10 = grid[9][-10:]  # 总数量 .. RFID  (right block)
-    # right block order: total, ex_fty, red, mark, packing, prepack, ratio, pcs, msrp, rfid
-    assert last10[2] == "无需"           # non-prepack → red sticker not required (checked first)
+    last10 = _grid(ws)[9][-10:]  # total, ex_fty, red, mark, packing, prepack, ratio, pcs, msrp, rfid
+    assert last10[2] == "无需"           # non-prepack → red sticker not required
     assert last10[3] == "CTN# + net wt"  # carton mark
-    assert last10[6] == "1-2-2-1"       # prepack ratio (CPRS)
-    assert last10[7] == "36"            # pcs/box (CPRS)
+    assert last10[6] in ("", None)      # ratio blank (not a prepack)
+    assert last10[7] in ("", None)      # pcs/box blank (not a prepack)
     assert last10[8] == "Y"             # MSRP (warehouse UC = yes)
     assert last10[9] == "Y"             # RFID
+
+
+def test_prepack_shows_ratio_and_pcs_box():
+    """Prepack: per-account ratio + pieces-per-bag from prepack_spec."""
+    ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
+               _prepack_rows(), cprs=_MockCprs(), manual={"dim_code": "MY"}))
+    last10 = _grid(ws)[9][-10:]
+    assert last10[2] == "MY"        # red sticker DIM code
+    assert last10[6] == "1-2-2-1"   # prepack ratio (per-account)
+    assert last10[7] == "6"         # PCs/box = pieces_per_bag
 
 
 def test_red_sticker_non_prepack_is_wuxu():

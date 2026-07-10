@@ -185,6 +185,41 @@ class CprsClient:
                 out[r.get("subtype", "")] = r
         return out
 
+    def prepack_spec(self, client_id: str, account_code: str) -> dict:
+        """Return {"ratio": <alpha|numeric>, "pcs_box": <pieces_per_bag>} for an
+        account's prepack, read from the ``pre_pack_ratio`` requirement's
+        per-account ``ratios`` (which ``/evaluate`` can't hand over cleanly
+        because the two tier-1 rules conflict without an account filter)."""
+        key = ("ppr", client_id)
+        if key not in self._cache:
+            data = self._get("/search/requirements",
+                             {"clientId": client_id, "subtype": "pre_pack_ratio",
+                              "limit": 10})
+            items = data.get("data") or data.get("items") or data.get("results") \
+                if isinstance(data, dict) else (data if isinstance(data, list) else [])
+            ratios: dict[str, dict] = {}
+            for it in (items or []):
+                so = (it or {}).get("structured_output") or {}
+                for acct, spec in (so.get("ratios") or {}).items():
+                    if isinstance(spec, dict):
+                        ratios.setdefault(_norm(acct), spec)
+            self._cache[key] = ratios
+        ratios = self._cache[key]
+        if not (ratios and account_code):
+            return {"ratio": "", "pcs_box": ""}
+        target = _norm(account_code)
+        spec = ratios.get(target)
+        if spec is None:                     # token-overlap fallback (MARMAXX, TK_MAXX…)
+            toks = set(target.split())
+            for k, v in ratios.items():
+                if toks & set(k.split()):
+                    spec = v
+                    break
+        if not spec:
+            return {"ratio": "", "pcs_box": ""}
+        return {"ratio": str(spec.get("alpha") or spec.get("numeric") or ""),
+                "pcs_box": str(spec.get("pieces_per_bag") or "")}
+
     def manual_image(self, image_id: str) -> bytes | None:
         """Fetch a requirement's illustrative artwork as raw bytes."""
         if not (self.base and image_id):

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.36.1",
+        "date": "2026-07-09",
+        "entries": [
+            {"type": "feat", "text": "**Prepack orders now show the real ratio and PCs-per-box.** The prepack ratio and pieces-per-bag turned out to live per-account inside the CPRS `pre_pack_ratio` requirement (which is why `/evaluate` reported a conflict — two tier-1 rules with no account filter). The buy plan now reads them directly by the row's account: e.g. ROSS → ratio `4-14 1-1`, 6 pcs/box; MARMAXX → `S-XL 1-2-2-1`, 6. Both columns fill only for prepack orders (checked first, like the red sticker), and a manually-entered PCs/box still overrides. Verified live against CPRS"},
+        ],
+    },
+    {
         "version": "2.36.0",
         "date": "2026-07-09",
         "entries": [

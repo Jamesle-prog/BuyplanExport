@@ -211,14 +211,22 @@ def _resolve_cprs_fields(rows: list[BuyPlanRow], header: BuyPlanHeader, cprs,
 
         red = carton.get("red_carton_sticker")
         mark = carton.get("carton_marking") or carton.get("warehouse_diamond")
-        pack = _packaging_results(cprs, order)
+
+        # Prepack ratio (T) + PCs/box (U) are per-account in the pre_pack_ratio
+        # requirement — only meaningful for prepack orders, so check that first.
+        ratio, pcs_box = "", ""
+        if r.is_prepack and account and hasattr(cprs, "prepack_spec"):
+            spec = cprs.prepack_spec(client_id, account)
+            ratio, pcs_box = spec.get("ratio", ""), spec.get("pcs_box", "")
+        if not ratio:
+            ratio = _packaging_results(cprs, order).get("ratio", "")
 
         out[id(r)] = {
             "warehouse": wh,
             "red_sticker": _red_sticker_text(r, red, dim_code),
             "carton_mark": cn(_result_text(mark)),
-            "prepack_ratio": pack.get("ratio", ""),
-            "pcs_box": manual_pcs or pack.get("pcs_box", ""),
+            "prepack_ratio": ratio if r.is_prepack is not False else "",
+            "pcs_box": manual_pcs or pcs_box,
             "msrp": _yn(flags.get("msrp")),
             "rfid": _yn(flags.get("rfid")),
             "red_img": _image_bytes(cprs, red),

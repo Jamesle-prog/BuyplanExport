@@ -138,6 +138,19 @@ def test_carton_results_grouped_by_subtype(patched):
     assert set(res) == {"red_carton_sticker", "carton_marking"}
 
 
+def test_prepack_spec_extracts_per_account_ratio(patched):
+    patched({"/search/requirements": _Resp(200, {"data": [
+        {"structured_output": {"ratios": {
+            "ROSS": {"alpha": None, "numeric": "4-14 1-1", "pieces_per_bag": 6},
+            "MARMAXX": {"alpha": "S-XL 1-2-2-1", "pieces_per_bag": 6},
+        }}},
+    ]})})
+    c = CprsClient("http://h:3100", "k")
+    assert c.prepack_spec("a1", "ROSS") == {"ratio": "4-14 1-1", "pcs_box": "6"}
+    assert c.prepack_spec("a1", "MARMAXX") == {"ratio": "S-XL 1-2-2-1", "pcs_box": "6"}
+    assert c.prepack_spec("a1", "UNKNOWN") == {"ratio": "", "pcs_box": ""}
+
+
 def test_get_failure_returns_empty_not_raise(patched):
     patched({"/clients": _Resp(500, {})})
     assert CprsClient("http://h:3100", "k").list_clients() == []
