@@ -10,6 +10,7 @@ from po_extractor.ui_helpers import (
     generate_po_summary_excel as _generate_po_summary_excel_impl,
     generate_kl_format_excel as _generate_kl_format_excel_impl,
 )
+from ui.i18n import t
 from ui.shared import build_image_cache_for_ids as _build_image_cache_for_ids
 from ui.shared import persisted_download
 from auth.companies import COMPANY_SKY_EAST
@@ -207,6 +208,30 @@ def _show_downloads(outputs: dict, key_prefix: str = "dl"):
             )
             st.caption("Price-redacted copies of all uploaded PDFs")
 
+    _show_requirements_download(outputs, key_prefix)
+
+
+def _show_requirements_download(outputs: dict, key_prefix: str) -> None:
+    """CPRS requirements document — generated automatically at upload time.
+
+    Warnings render even when NO document was produced (e.g. every brand
+    unknown to CPRS, or CPRS unreachable) — a silently missing download was
+    the review's main finding."""
+    for w in outputs.get("requirements_warns", []):
+        st.warning(f"🧭 {w}")
+    if not outputs.get("requirements_bytes"):
+        return
+    st.download_button(
+        label="🧭 " + t("PO Requirements 要求文档 (.xlsx)"),
+        data=outputs["requirements_bytes"],
+        file_name="PO_Requirements.xlsx",
+        mime=_XLSX_MIME,
+        use_container_width=True,
+        key=f"{key_prefix}_reqdoc",
+    )
+    st.caption(t("Client requirements per PO from the CPRS knowledge base — "
+                 "labels, hangtags, packaging, carton marking, testing"))
+
 
 def _show_excel_downloads(outputs: dict):
     st.divider()
@@ -320,6 +345,7 @@ def _show_smart_downloads(outputs: dict):
                     "🔒 Price masking produced no files — no masked download. "
                     + " · ".join(grp["mask_failed"][:5])
                 )
+            _show_requirements_download(grp, key_prefix=f"dl_{company}")
 
         elif pipeline == "excel":
             cols = st.columns(3)

@@ -103,6 +103,84 @@ def _image_bytes(cprs, res):
     return cprs.manual_image(img_id) if img_id else None
 
 
+def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
+    """Resolve the FULL requirement set for freshly-uploaded POs (the
+    upload-time requirements document — all domains, not just the buy-plan
+    columns).
+
+    *pos* is a list of parsed ``POData``. Returns ``(contexts, warnings)``
+    where each context is one PO's order context plus every CPRS result::
+
+        {po_number, style, brand, warehouse, account, channel, results: [...]}
+
+    Order contexts are deduped — POs sharing (brand, warehouse, buyer) reuse
+    one evaluation. Graceful: no CPRS / unknown brand → ([], [reason]).
+    """
+    warnings: list[str] = []
+    if cprs is None:
+        return [], ["CPRS not configured — no requirements document generated."]
+
+    contexts: list[dict] = []
+    eval_cache: dict[tuple, list] = {}
+    client_cache: dict[str, str | None] = {}
+
+    for po in pos:
+        m = po.metadata
+        po_no = m.po_number or "?"
+        # Brand: division carries it for GIII PDFs (e.g. "DKNY"), customer as
+        # fallback, company last.
+        brand = (m.division_name or m.division or m.customer or m.company or "").strip()
+        if brand not in client_cache:
+            client_cache[brand] = cprs.resolve_client(brand) if brand else None
+        client_id = client_cache[brand]
+        if not client_id:
+            warnings.append(f"PO {po_no}: brand '{brand or '—'}' not found in CPRS "
+                            f"— skipped in requirements document.")
+            continue
+
+        # Warehouse: the PO's destination code IS the DC code when present;
+        # otherwise resolve the ship-to address.
+        wh = (m.destination_code or "").strip() \
+            or (cprs.resolve_warehouse(m.ship_to or "", client_id) or "")
+        if not wh:
+            warnings.append(f"PO {po_no}: warehouse not resolved — "
+                            f"warehouse-level requirements may be missing.")
+
+        buyer = (m.buyer or m.customer or "").strip()
+        account = cprs.resolve_account(buyer, client_id) if buyer else None
+
+        acct_type = ""
+        if account:   # guard: None == None would adopt an arbitrary row's type
+            for a in getattr(cprs, "list_accounts", lambda _c: [])(client_id) or []:
+                if (a.get("account_code") or a.get("code")) == account:
+                    acct_type = a.get("account_type", "")
+                    break
+
+        order = {"clientId": client_id, "channel": _channel_for(acct_type)}
+        if wh:
+            order["warehouseCode"] = wh
+        if account:
+            order["accountCode"] = account
+        if m.country_of_origin:
+            order["coo"] = m.country_of_origin
+
+        ckey = tuple(sorted((k, str(v)) for k, v in order.items()))
+        if ckey not in eval_cache:
+            eval_cache[ckey] = cprs.evaluate(order)
+        results = eval_cache[ckey]
+        if not results:
+            warnings.append(f"PO {po_no}: CPRS returned no requirements "
+                            f"(service unreachable or empty rule set).")
+
+        contexts.append({
+            "po_number": po_no, "style": m.style or "",
+            "brand": brand, "warehouse": wh, "account": account or "",
+            "channel": order["channel"], "results": results,
+        })
+
+    return contexts, warnings
+
+
 def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
                          translate=None) -> tuple[dict[int, RowRequirements], list[str]]:
     """Resolve CPRS requirements for buy-plan *rows*.

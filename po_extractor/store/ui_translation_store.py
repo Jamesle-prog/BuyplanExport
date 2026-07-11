@@ -1167,6 +1167,12 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Resolving CPRS requirements…', '正在解析 CPRS 要求…', 'label', 'giii'),
     ('Default for every PO; override per PO below.', '所有订单的默认值；可在下方按订单覆盖。', 'label', 'giii'),
 
+    # Upload-time PO requirements document (CPRS)
+    ('PO Requirements 要求文档 (.xlsx)', '订单要求文档 (.xlsx)', 'button', 'giii'),
+    ('Client requirements per PO from the CPRS knowledge base — labels, hangtags, packaging, carton marking, testing',
+     '来自 CPRS 知识库的每个订单的客户要求 — 标签、吊牌、包装、箱唛、测试', 'label', 'giii'),
+    ('Requirements document skipped', '要求文档已跳过', 'label', 'giii'),
+
     # MSG / TK EU sections accept bare fax PDFs in addition to .msg (v2.30.6)
     ('Upload .msg vendor fax emails — or the fax PDFs directly — to get started.',
      '上传 .msg 供应商传真邮件 — 或直接上传传真PDF文件 — 即可开始。', 'label', 'giii'),

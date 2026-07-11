@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.39.0",
+        "date": "2026-07-11",
+        "entries": [
+            {"type": "feat", "text": "**Uploading GIII POs now also pulls each PO's client requirements into an Excel requirements document.** When CPRS is configured, the upload pipeline resolves the full requirement set per PO (brand from the PO's division, warehouse from its destination code or ship-to, account from the buyer) and produces **PO_Requirements.xlsx**: a Summary sheet with per-status counts per PO, plus one sheet per PO listing every requirement — labels, hangtags, packaging, carton marking, testing — with bilingual status markers (必须/待定/冲突/不适用), the requirement wording, and its manual source. POs sharing an order context are evaluated once. A 🧭 download button appears with the other outputs; unresolvable brands/warehouses are warned about, and any CPRS failure skips the document without failing the upload"},
+        ],
+    },
+    {
         "version": "2.38.0",
         "date": "2026-07-10",
         "entries": [

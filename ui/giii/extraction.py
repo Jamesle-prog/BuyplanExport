@@ -173,11 +173,43 @@ def _run_extraction(uploaded_files, mask_prices: bool, company: str = ""):
                 zf.write(p, os.path.basename(p))
         outputs["masked_zip"] = mask_buf.getvalue()
 
+    # PO requirements document (CPRS) — pulled automatically at upload time.
+    _req = _build_requirements_doc(pos)
+    if _req:
+        outputs["requirements_bytes"], outputs["requirements_warns"] = _req
+
     st.session_state.results = outputs
     st.session_state.parse_log = log
     # All outputs are now in session_state — clean up temp dirs
     _shutil.rmtree(tmpdir,  ignore_errors=True)
     _shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def _build_requirements_doc(pos) -> tuple[bytes, list[str]] | None:
+    """Resolve CPRS requirements for freshly-uploaded POs and build the
+    requirements workbook. Returns (xlsx_bytes, warnings) or None when CPRS
+    is unconfigured / nothing resolved. Never raises — a requirements-doc
+    failure must not fail the upload."""
+    try:
+        from ui.stores import get_cprs_client
+        cprs = get_cprs_client()
+        if cprs is None:
+            return None
+        from po_extractor.ui_helpers.giii_requirements import resolve_po_requirements
+        from po_extractor.exporters.giii_requirements_export import (
+            export_giii_requirements,
+        )
+        contexts, warns = resolve_po_requirements(cprs, pos)
+        if not contexts:
+            # No document, but the WHY must still reach the results panel —
+            # same discoverability rule as mask_failed (nothing rendered
+            # inside st.status survives the next rerun).
+            return (None, warns) if warns else None
+        return export_giii_requirements(contexts, warns), warns
+    except Exception as exc:
+        from ui.i18n import t as _t
+        st.warning(_t("Requirements document skipped") + f" — {exc}")
+        return None
 
 
 def _log_save_results(results: list[tuple], log: list) -> None:
@@ -462,6 +494,11 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
         # of the button silently not appearing (the per-file warnings above
         # scroll away with the processing status).
         out["mask_failed"] = _mask_errors or ["no files could be masked"]
+
+    # PO requirements document (CPRS) — pulled automatically at upload time.
+    _req = _build_requirements_doc(pos)
+    if _req:
+        out["requirements_bytes"], out["requirements_warns"] = _req
 
     out["pipeline"] = "pdf"
     return out
