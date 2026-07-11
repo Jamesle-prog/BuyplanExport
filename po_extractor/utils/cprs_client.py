@@ -47,7 +47,7 @@ class CprsClient:
             import requests
             r = requests.get(self.base + path, params=params,
                              headers=self._headers(), timeout=self.timeout)
-            if r.status_code != 200:
+            if not (200 <= r.status_code < 300):
                 return None
             return r.json()
         except Exception:
@@ -62,7 +62,8 @@ class CprsClient:
                               headers={**self._headers(),
                                        "Content-Type": "application/json"},
                               timeout=self.timeout)
-            if r.status_code != 200:
+            # NestJS returns 201 for POST — accept any 2xx, not just 200.
+            if not (200 <= r.status_code < 300):
                 return None
             return r.json()
         except Exception:
@@ -110,7 +111,10 @@ class CprsClient:
             cid = c.get("id")
             name = _norm(c.get("name", ""))
             brand = _norm(c.get("brand", ""))
-            if target in (name, brand):
+            division = _norm(c.get("division", ""))
+            # GIII PDFs often carry the DIVISION code (e.g. "DW"), not the
+            # brand name — match it as strongly as the brand field.
+            if target in (name, brand, division):
                 score = 0 if target == name else 1
             elif name and (target in name or name in target):
                 score = 2 + abs(len(name.split()) - len(target.split()))

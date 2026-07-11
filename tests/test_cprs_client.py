@@ -127,6 +127,22 @@ def test_resolve_client_matches_brand_field(patched):
     assert c.resolve_client("DKNY") == "a1"          # matches brand field
 
 
+def test_evaluate_accepts_http_201(patched):
+    """NestJS returns 201 for POST — a 200-only check silently emptied every
+    evaluation (the requirements integration's worst live bug)."""
+    patched({"/evaluate": _Resp(201, {"results": [
+        {"domain": "label", "subtype": "care", "status": "confirmed"}]})})
+    c = CprsClient("http://h:3100", "k")
+    assert len(c.evaluate({"clientId": "a1"})) == 1
+
+
+def test_resolve_client_matches_division_code(patched):
+    patched({"/clients": _Resp(200, [
+        {"id": "a1", "name": "DKNY Sportswear", "brand": "DKNY", "division": "DW"},
+    ])})
+    assert CprsClient("http://h:3100", "k").resolve_client("DW") == "a1"
+
+
 def test_carton_results_grouped_by_subtype(patched):
     patched({"/evaluate": _Resp(200, {"results": [
         {"domain": "carton", "subtype": "red_carton_sticker", "status": "confirmed"},

@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.39.1",
+        "date": "2026-07-11",
+        "entries": [
+            {"type": "fix", "text": "**CPRS evaluate calls were silently returning nothing through the client** — the API answers POST with HTTP 201 (NestJS default) and the client only accepted 200, so every `/evaluate` came back empty (blank carton/requirement fields in earlier live runs). The client now accepts any 2xx. Verified live: a real DKNY PO now pulls **51 requirements** into the requirements document (35 confirmed / 8 pending / 8 N/A)"},
+            {"type": "fix", "text": "Brand resolution now also matches the CPRS client's **division code** — real GIII PDFs carry the division (e.g. `DW`) rather than the brand name, which previously failed to resolve and skipped the PO from the requirements document"},
+        ],
+    },
+    {
         "version": "2.39.0",
         "date": "2026-07-11",
         "entries": [
