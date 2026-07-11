@@ -55,21 +55,14 @@ def _show_reports_tab() -> None:
 # Generate Outputs sub-tab
 # ---------------------------------------------------------------------------
 
-def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame,
-                        manual: dict | None = None, translate=None) -> bytes | None:
-    """Assemble and export the CPRS-integrated GIII buy plan for *selected* POs.
-
-    Also stashes the requirement-resolution preview + warnings in session
-    state (``rpt_cprs_preview`` / ``rpt_cprs_warns``) so the operator can
-    verify what CPRS resolved before sending the file to the factory.
+def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame):
+    """Assemble the buy-plan inputs for *selected* POs; return (header, rows)
+    or None when the selection has no size data. Resolution/export are
+    separate steps so requirements can be checked WITHOUT generating a file.
     """
-    from po_extractor.exporters import (
-        assemble_buyplan_rows, export_giii_buyplan, BuyPlanHeader,
-    )
+    from po_extractor.exporters import assemble_buyplan_rows, BuyPlanHeader
     from po_extractor.ui_helpers.combined_summary import build_contract_maps
-    from po_extractor.ui_helpers.giii_requirements import resolve_requirements
     from ui.fabric_mapping_view import _company_to_source
-    from ui.stores import get_cprs_client
 
     df_size = store.load_size_rows(selected)
     if df_size is None or df_size.empty:
@@ -111,11 +104,18 @@ def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame,
         primary = styles[0]
         fabric = _format_fabric(parts_by_style.get(primary, []))
 
-    cprs = get_cprs_client()
     header = BuyPlanHeader(brand=brand, supplier=supplier, description=desc, fabric=fabric)
+    return header, rows
 
-    reqs, warns = resolve_requirements(cprs, brand, rows, manual=manual,
-                                       translate=translate)
+
+def _resolve_and_stash(header, rows, manual: dict | None, translate) -> dict:
+    """Resolve CPRS requirements, stash preview + warnings in session state,
+    and return the requirements dict (shared by check-only and generate)."""
+    from po_extractor.ui_helpers.giii_requirements import resolve_requirements
+    from ui.stores import get_cprs_client
+
+    reqs, warns = resolve_requirements(get_cprs_client(), header.brand, rows,
+                                       manual=manual, translate=translate)
     st.session_state["rpt_cprs_warns"] = warns
     st.session_state["rpt_cprs_preview"] = [
         {"PO": r.po_number, "Color": r.color_en,
@@ -124,6 +124,17 @@ def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame,
          "每箱件数": q.pcs_box, "MSRP": q.msrp, "RFID": q.rfid}
         for r in rows for q in [reqs.get(id(r))] if q is not None
     ]
+    return reqs
+
+
+def _build_cprs_buyplan_bytes(selected: list[str], store, filt_df: pd.DataFrame,
+                              manual: dict | None = None, translate=None) -> bytes | None:
+    from po_extractor.exporters import export_giii_buyplan
+    assembled = _build_cprs_buyplan(selected, store, filt_df)
+    if not assembled:
+        return None
+    header, rows = assembled
+    reqs = _resolve_and_stash(header, rows, manual, translate)
     return export_giii_buyplan(header, rows, requirements=reqs)
 
 
@@ -207,10 +218,21 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         mc1, mc2 = st.columns(2)
         with mc1:
             st.text_input(t("Red sticker DIM code (pre-pack)"), key="rpt_dim_code",
-                          placeholder="e.g. MY")
+                          placeholder="e.g. MY",
+                          help=t("Default for every PO; override per PO below."))
         with mc2:
             st.text_input(t("PCs per box (factory pack-out)"), key="rpt_pcs_box",
                           placeholder="e.g. 36")
+        # Per-PO DIM overrides — POs in one generation can carry different
+        # pre-pack codes. Seed from the current selection, keep prior edits.
+        prev = {r["PO"]: r["DIM"] for r in st.session_state.get("rpt_dim_rows", [])}
+        dim_df = st.data_editor(
+            pd.DataFrame({"PO": selected,
+                          "DIM": [prev.get(po, "") for po in selected]}),
+            hide_index=True, use_container_width=True, key="rpt_dim_editor",
+            column_config={"PO": st.column_config.TextColumn(disabled=True)},
+        )
+        st.session_state["rpt_dim_rows"] = dim_df.to_dict("records")
         st.checkbox(t("Translate CPRS requirement text to Chinese (DeepSeek)"),
                     key="rpt_cprs_translate", value=False)
 
@@ -287,6 +309,19 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
 
     # ── Action buttons — row 2 ────────────────────────────────────────────────
     c5, c6, _c7, _c8 = st.columns(4)
+
+    def _cprs_manual_inputs() -> dict:
+        return {"dim_code": st.session_state.get("rpt_dim_code", ""),
+                "pcs_box": st.session_state.get("rpt_pcs_box", ""),
+                "dim_codes": {r["PO"]: r["DIM"]
+                              for r in st.session_state.get("rpt_dim_rows", [])
+                              if str(r.get("DIM", "")).strip()}}
+
+    def _cprs_translator():
+        if st.session_state.get("rpt_cprs_translate"):
+            from ui.giii._shared import make_en_to_cn_translator
+            return make_en_to_cn_translator()
+        return None
     with c5:
         if st.button(
             "📋 " + t("Create Buy Plan (生产计划单)"),
@@ -326,15 +361,32 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             st.session_state.pop("rpt_cprs_bp_bytes", None)
             with st.spinner(t("Building buy plan (resolving CPRS requirements)…")):
                 try:
-                    manual = {"dim_code": st.session_state.get("rpt_dim_code", ""),
-                              "pcs_box": st.session_state.get("rpt_pcs_box", "")}
-                    translate = None
-                    if st.session_state.get("rpt_cprs_translate"):
-                        from ui.giii._shared import make_en_to_cn_translator
-                        translate = make_en_to_cn_translator()
-                    out = _build_cprs_buyplan(selected, store, filt_df, manual, translate)
+                    out = _build_cprs_buyplan_bytes(
+                        selected, store, filt_df,
+                        _cprs_manual_inputs(), _cprs_translator())
                     if out:
                         st.session_state["rpt_cprs_bp_bytes"] = out
+                    else:
+                        st.warning(t("No size data found for the selected POs."))
+                except Exception as exc:
+                    st.error(t("Buy plan generation failed:") + f" {exc}")
+
+    with _c7:
+        if st.button(
+            "🔍 " + t("Check requirements only"),
+            disabled=not selected,
+            use_container_width=True,
+            key="rpt_check_cprs_btn",
+            help=t("Resolve CPRS requirements for the selected POs and show "
+                   "the preview below — without generating a workbook."),
+        ):
+            st.session_state.pop("rpt_cprs_bp_bytes", None)
+            with st.spinner(t("Resolving CPRS requirements…")):
+                try:
+                    assembled = _build_cprs_buyplan(selected, store, filt_df)
+                    if assembled:
+                        _resolve_and_stash(assembled[0], assembled[1],
+                                           _cprs_manual_inputs(), _cprs_translator())
                     else:
                         st.warning(t("No size data found for the selected POs."))
                 except Exception as exc:
@@ -380,15 +432,19 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             key="rpt_bp_dl",
         )
 
-    if st.session_state.get("rpt_cprs_bp_bytes"):
+    # Preview + warnings render for BOTH flows: check-only and generate.
+    if st.session_state.get("rpt_cprs_preview") is not None:
         for w in st.session_state.get("rpt_cprs_warns", []):
             st.warning(f"🧭 {w}")
         preview = st.session_state.get("rpt_cprs_preview")
         if preview:
             with st.expander("🧭 " + t("CPRS requirement resolution (verify before sending)"),
-                             expanded=bool(st.session_state.get("rpt_cprs_warns"))):
+                             expanded=not st.session_state.get("rpt_cprs_bp_bytes")
+                                      or bool(st.session_state.get("rpt_cprs_warns"))):
                 st.dataframe(pd.DataFrame(preview), use_container_width=True,
                              hide_index=True)
+
+    if st.session_state.get("rpt_cprs_bp_bytes"):
         st.download_button(
             "⬇️ " + t("Download Buy Plan + Requirements (.xlsx)"),
             data=st.session_state["rpt_cprs_bp_bytes"],

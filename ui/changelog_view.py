@@ -10,6 +10,16 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.38.0",
+        "date": "2026-07-10",
+        "entries": [
+            {"type": "feat", "text": "**Carton artwork now embeds into the buy plan.** The red-sticker and 主箱唛 images CPRS provides render inside their cells (sized to fit, row height adjusted) like the reference workbook's DISPIMG images — with the text value kept underneath, and unreadable image bytes skipped rather than failing the export"},
+            {"type": "feat", "text": "**Per-PO DIM codes.** The requirement-inputs expander now has an editable PO → DIM table, so one generation can carry different pre-pack codes per PO; the single DIM field acts as the default for unlisted POs"},
+            {"type": "feat", "text": "**🔍 Check requirements only** — resolve and preview the CPRS requirements for the selected POs without generating a workbook (assembly, resolution, and export are now separate steps)"},
+            {"type": "docs", "text": "Buy-plan validation via CPRS `/production-submission/compare` is documented as **blocked by API-key scope** — verified live that the current key is read/evaluate-only and upload requires an admin/editor role. Ask the CPRS admin for a broader key to unlock it"},
+        ],
+    },
+    {
         "version": "2.37.0",
         "date": "2026-07-10",
         "entries": [

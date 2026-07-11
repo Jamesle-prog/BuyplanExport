@@ -82,6 +82,16 @@ def test_no_cprs_and_no_brand_warn():
     assert any("No brand" in w for w in w2)
 
 
+def test_per_po_dim_codes_override_global():
+    rows = [_row(po_number="PO1", buyer="ROSS", is_prepack=True),
+            _row(po_number="PO2", buyer="ROSS", is_prepack=True, color_en="X")]
+    reqs, _ = resolve_requirements(
+        _Cprs(), "DKNY", rows,
+        manual={"dim_code": "GL", "dim_codes": {"PO1": "AA"}})
+    assert reqs[id(rows[0])].red_sticker == "AA"   # per-PO override
+    assert reqs[id(rows[1])].red_sticker == "GL"   # global fallback
+
+
 def test_prepack_rows_get_ratio_and_warn_when_missing():
     rows = [_row(buyer="ROSS", is_prepack=True),
             _row(buyer="MY MACY'S", is_prepack=True, color_en="X")]

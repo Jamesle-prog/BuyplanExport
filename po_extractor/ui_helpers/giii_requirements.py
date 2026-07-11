@@ -122,8 +122,15 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
         return {}, [f"Brand '{brand}' not found in CPRS — requirement columns left blank."]
 
     manual = manual or {}
-    dim_code = str(manual.get("dim_code", "") or "").strip()
+    global_dim = str(manual.get("dim_code", "") or "").strip()
+    # Per-PO DIM codes (POs in one generation can carry different pre-pack
+    # codes); the single dim_code acts as the fallback for unlisted POs.
+    dim_map = {str(k).strip(): str(v).strip()
+               for k, v in (manual.get("dim_codes") or {}).items() if str(v).strip()}
     manual_pcs = str(manual.get("pcs_box", "") or "").strip()
+
+    def dim_for(row) -> str:
+        return dim_map.get(str(row.po_number).strip(), global_dim)
 
     # account code -> type, for channel derivation
     acct_type = {}
@@ -139,7 +146,9 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
     ctx_cache: dict[tuple, RowRequirements] = {}
 
     for r in rows:
-        ctx_key = (r.warehouse_code or r.ship_to or "", r.buyer or "", bool(r.is_prepack))
+        dim_code = dim_for(r)
+        ctx_key = (r.warehouse_code or r.ship_to or "", r.buyer or "",
+                   bool(r.is_prepack), dim_code)
         cached = ctx_cache.get(ctx_key)
         if cached is not None:
             out[id(r)] = cached

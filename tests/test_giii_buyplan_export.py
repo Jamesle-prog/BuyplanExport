@@ -156,6 +156,33 @@ def test_manual_pcs_box_override():
     assert _grid(ws)[9][-10:][7] == "48"   # manual pcs/box wins over CPRS's 36
 
 
+_TINY_PNG = (b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00'
+             b'\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9c'
+             b'c\xf8\xff\xff?\x00\x05\xfe\x02\xfe\xa75\x81\x84\x00\x00\x00\x00'
+             b'IEND\xaeB`\x82')
+
+
+def test_requirement_artwork_embedded_into_cells():
+    from po_extractor.ui_helpers.giii_requirements import RowRequirements
+    rows = _prepack_rows()
+    reqs = {id(r): RowRequirements(red_sticker="MY", red_img=_TINY_PNG,
+                                   mark_img=_TINY_PNG) for r in rows}
+    ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
+               rows, requirements=reqs))
+    # one red-sticker + one carton-mark image per row
+    assert len(ws._images) == 2 * len(rows)
+    # text value still present underneath the artwork
+    assert _grid(ws)[9][-10:][2] == "MY"
+
+
+def test_bad_image_bytes_never_break_export():
+    from po_extractor.ui_helpers.giii_requirements import RowRequirements
+    rows = _rows()
+    reqs = {id(r): RowRequirements(red_img=b"not a png") for r in rows}
+    ws = _load(export_giii_buyplan(BuyPlanHeader(), rows, requirements=reqs))
+    assert len(ws._images) == 0            # skipped, not crashed
+
+
 def test_translate_applied_to_carton_mark():
     ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
                _rows(), cprs=_MockCprs(), translate=lambda s: "【译】" + s))

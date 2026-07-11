@@ -1161,6 +1161,11 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('PCs per box (factory pack-out)', '每箱件数（工厂装箱）', 'label', 'giii'),
     ('Translate CPRS requirement text to Chinese (DeepSeek)', '将 CPRS 要求文字翻译为中文（DeepSeek）', 'label', 'giii'),
     ('CPRS requirement resolution (verify before sending)', 'CPRS 要求解析结果（发送前请核对）', 'label', 'giii'),
+    ('Check requirements only', '仅检查要求', 'button', 'giii'),
+    ('Resolve CPRS requirements for the selected POs and show the preview below — without generating a workbook.',
+     '为所选订单解析 CPRS 要求并在下方显示预览 — 不生成工作簿。', 'label', 'giii'),
+    ('Resolving CPRS requirements…', '正在解析 CPRS 要求…', 'label', 'giii'),
+    ('Default for every PO; override per PO below.', '所有订单的默认值；可在下方按订单覆盖。', 'label', 'giii'),
 
     # MSG / TK EU sections accept bare fax PDFs in addition to .msg (v2.30.6)
     ('Upload .msg vendor fax emails — or the fax PDFs directly — to get started.',

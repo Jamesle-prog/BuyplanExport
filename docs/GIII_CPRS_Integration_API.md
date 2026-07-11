@@ -61,16 +61,22 @@ must never return the stale no-context result).
 
 ## Staged next phases
 
-1. **Carton images in cells** — `red_img`/`mark_img` bytes are already fetched;
-   embed into P/Q cells (openpyxl anchor, sized to row) for DISPIMG parity with
-   the reference workbook.
-2. **Per-row DIM codes** — today one DIM code applies to the whole generation;
-   POs with different prepack codes need a small editable table (PO → code).
-3. **Requirements panel** — resolve + preview CPRS requirements for selected
-   POs *without* generating a workbook (same service call, read-only view).
-4. **Buy-plan validation** — CPRS `POST /production-submission/upload` +
-   `/compare` can diff a finished buy plan against the client's rules; natural
-   post-export check.
-5. **CPRS data hygiene** — surface `conflict` results (e.g. two tier-1
-   `pre_pack_ratio` rules) to whoever curates the KB; the buy plan can only
-   mark them 冲突.
+1. ~~**Carton images in cells**~~ — **DONE (v2.38.0)**: `red_img`/`mark_img`
+   bytes embed into the 红色箱贴纸/主箱唛 cells (openpyxl anchor, ≤76px,
+   row height bumped); text value stays underneath; bad bytes are skipped,
+   never fail the export.
+2. ~~**Per-row DIM codes**~~ — **DONE (v2.38.0)**: `manual["dim_codes"]`
+   (PO → code) with `manual["dim_code"]` as global fallback; the resolution
+   context key includes the effective code. UI: editable PO→DIM table in the
+   requirement-inputs expander.
+3. ~~**Requirements panel**~~ — **DONE (v2.38.0)**: 🔍 *Check requirements
+   only* resolves + shows the preview without generating a workbook (assembly
+   and resolution are now separate steps from export).
+4. **Buy-plan validation** — **BLOCKED: key scope.** The current CPRS key is
+   limited to read/evaluate endpoints; `POST /production-submission/upload`
+   requires role admin/editor (verified live: 403 with explicit scope
+   message). Needs a higher-privilege key from the CPRS admin, then: upload
+   generated xlsx → `/compare` → show diff summary post-export.
+5. **CPRS data hygiene** — ongoing: `conflict` results (e.g. two tier-1
+   `pre_pack_ratio` rules) can only render 冲突 here; the fix belongs in the
+   knowledge base.

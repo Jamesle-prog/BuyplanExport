@@ -259,6 +259,29 @@ def export_giii_buyplan(header: BuyPlanHeader, rows: list[BuyPlanRow],
         ci += 1
 
     # ── Data rows ────────────────────────────────────────────────────────────
+    def _embed(img_bytes: bytes | None, col: int, row_no: int) -> bool:
+        """Anchor requirement artwork (red sticker / carton mark) into a cell,
+        DISPIMG-style like the reference workbook. Never fails the export —
+        a bad image just leaves the text value in place."""
+        if not img_bytes:
+            return False
+        try:
+            import io as _io
+            from openpyxl.drawing.image import Image as XLImage
+            img = XLImage(_io.BytesIO(img_bytes))
+            scale = min(1.0, 76.0 / img.height if img.height else 1.0,
+                        76.0 / img.width if img.width else 1.0)
+            img.height, img.width = int(img.height * scale), int(img.width * scale)
+            ws.add_image(img, f"{get_column_letter(col)}{row_no}")
+            ws.row_dimensions[row_no].height = max(
+                ws.row_dimensions[row_no].height or 0, 60)
+            return True
+        except Exception:
+            return False
+
+    red_col = n_left + n_size + 3   # 红色箱贴纸 (P-equivalent)
+    mark_col = red_col + 1          # 主箱唛 (Q-equivalent)
+
     r = hr2 + 1
     for row in rows:
         cf = cprs_fields.get(id(row), {})
@@ -279,6 +302,9 @@ def export_giii_buyplan(header: BuyPlanHeader, rows: list[BuyPlanRow],
             cell(r, ci, int(row.sizes.get(s, 0) or 0)); ci += 1
         for v in right_vals:
             cell(r, ci, v); ci += 1
+        # Requirement artwork on top of (not instead of) the text values.
+        _embed(cf.get("red_img"), red_col, r)
+        _embed(cf.get("mark_img"), mark_col, r)
         r += 1
 
     # ── TTL + per-color subtotals ────────────────────────────────────────────
