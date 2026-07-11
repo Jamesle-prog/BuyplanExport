@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.37.0",
+        "date": "2026-07-10",
+        "entries": [
+            {"type": "refactor", "text": "**CPRS integration redesigned into a proper service layer** (`po_extractor/ui_helpers/giii_requirements.py`, design in `docs/GIII_CPRS_Integration_API.md`). Requirement resolution moved out of the exporter into one typed call returning per-row requirements **plus warnings** — unmatched buyers, unresolved ship-tos, and missing prepack ratios now surface in the UI instead of silently blanking cells. Rows sharing an order context (warehouse + buyer + prepack) resolve once, not once per row"},
+            {"type": "fix", "text": "**Three integration bugs found in review:** (1) the evaluate cache ignored `contextFields`, so a supplied DIM code could return the stale no-context result; (2) the evaluate **channel was hardcoded WHOLESALE** — it now derives from the CPRS account type (Macy's.com → ECOMM, Ross → OFF_PRICE, …), which changes which requirements match; (3) brand matching could arbitrarily pick \"DKNY Suits\" vs \"DKNY Sportswear\" for a bare \"DKNY\" — candidates are now ranked. Also: ship-to warehouse lookups are cached, and the CPRS client itself is session-cached (`ui/stores.py`) instead of rebuilt on every click"},
+            {"type": "feat", "text": "**Resolution preview before sending:** after generating a Buy Plan + Requirements, an expander shows exactly what CPRS resolved per PO (warehouse, account, channel, red sticker, ratio, PCs/box, MSRP, RFID) with any warnings above it — so the operator verifies against the factory's expectations before downloading"},
+        ],
+    },
+    {
         "version": "2.36.1",
         "date": "2026-07-09",
         "entries": [

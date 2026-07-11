@@ -135,3 +135,27 @@ def get_production_tracking_store() -> ProductionTrackingStore:
 def list_all_brands(company: str) -> list[str]:
     """See ``po_extractor.store.list_all_brands``."""
     return _list_all_brands(company)
+
+
+@functools.cache
+def _cprs_client_cached(base_url: str, api_key: str):
+    from po_extractor.utils.cprs_client import CprsClient
+    return CprsClient(base_url, api_key)
+
+
+def get_cprs_client():
+    """Return the session-cached CPRS client, or None when unconfigured.
+
+    Cached per (base_url, api_key) so the client's internal reference-data /
+    evaluation caches survive Streamlit reruns — previously a fresh client
+    was built on every generate click, refetching everything. Changing the
+    settings yields new args and therefore a fresh client.
+    """
+    from po_extractor.store.app_settings_store import (
+        KEY_CPRS_BASE_URL, KEY_CPRS_API_KEY,
+    )
+    s = get_app_settings_store()
+    base = (s.get(KEY_CPRS_BASE_URL, "") or "").strip()
+    if not base:
+        return None
+    return _cprs_client_cached(base, s.get(KEY_CPRS_API_KEY, "") or "")

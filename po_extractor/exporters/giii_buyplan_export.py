@@ -170,171 +170,34 @@ def _present_sizes(rows: list[BuyPlanRow]) -> list[str]:
     return ordered + [s for s in sorted(seen) if s not in order]
 
 
-def _resolve_cprs_fields(rows: list[BuyPlanRow], header: BuyPlanHeader, cprs,
-                         manual: dict | None = None, translate=None):
-    """Return {id(row): {warehouse, red_sticker, carton_mark, prepack_ratio,
-    pcs_box, msrp, rfid, red_img, mark_img}} using the CPRS client.
-
-    *manual* carries operator-supplied runtime values CPRS can't provide:
-    ``dim_code`` (the pre-pack DIM code the red sticker must show) and
-    ``pcs_box`` (factory pack-out per carton). *translate* is an optional
-    English→Chinese callable applied to CPRS requirement wording.
-    Blank entries when *cprs* is None or a lookup fails (graceful)."""
-    out: dict[int, dict] = {}
-    if cprs is None:
-        return out
-    client_id = cprs.resolve_client(header.brand) if header.brand else None
-    if not client_id:
-        return out
-
-    manual = manual or {}
-    dim_code = str(manual.get("dim_code", "") or "").strip()
-    manual_pcs = str(manual.get("pcs_box", "") or "").strip()
-
-    def cn(txt: str) -> str:
-        return translate(txt) if (translate and txt) else txt
-
-    for r in rows:
-        wh = r.warehouse_code or (cprs.resolve_warehouse(r.ship_to, client_id) or "")
-        account = cprs.resolve_account(r.buyer, client_id) if r.buyer else None
-        order = {"clientId": client_id, "channel": "WHOLESALE"}
-        if wh:
-            order["warehouseCode"] = wh
-        if account:
-            order["accountCode"] = account
-        # Supplying the DIM code resolves the red sticker from pending→confirmed.
-        if dim_code:
-            order["contextFields"] = {"dim_code": dim_code}
-
-        carton = cprs.carton_results(order)
-        flags = cprs.warehouse_flags(client_id, wh) if wh else {"rfid": None, "msrp": None}
-
-        red = carton.get("red_carton_sticker")
-        mark = carton.get("carton_marking") or carton.get("warehouse_diamond")
-
-        # Prepack ratio (T) + PCs/box (U) are per-account in the pre_pack_ratio
-        # requirement — only meaningful for prepack orders, so check that first.
-        ratio, pcs_box = "", ""
-        if r.is_prepack and account and hasattr(cprs, "prepack_spec"):
-            spec = cprs.prepack_spec(client_id, account)
-            ratio, pcs_box = spec.get("ratio", ""), spec.get("pcs_box", "")
-        if not ratio:
-            ratio = _packaging_results(cprs, order).get("ratio", "")
-
-        out[id(r)] = {
-            "warehouse": wh,
-            "red_sticker": _red_sticker_text(r, red, dim_code),
-            "carton_mark": cn(_result_text(mark)),
-            "prepack_ratio": ratio if r.is_prepack is not False else "",
-            "pcs_box": manual_pcs or pcs_box,
-            "msrp": _yn(flags.get("msrp")),
-            "rfid": _yn(flags.get("rfid")),
-            "red_img": _image_bytes(cprs, red),
-            "mark_img": _image_bytes(cprs, mark),
-        }
-    return out
-
-
-def _red_sticker_text(row, red_res, dim_code: str) -> str:
-    """Red sticker (P). Required only for PREPACK orders — check that first
-    (verified live: DKNY red sticker ``applies_to`` RETAIL pre-pack orders and
-    must show the DIM code). Non-prepack → 无需; prepack → the DIM code the
-    sticker must carry (operator-supplied), else a 待定 marker."""
-    if row.is_prepack is False:
-        return "无需"
-    if red_res and red_res.get("status") == "not_applicable":
-        return "无需"
-    if dim_code:
-        return dim_code
-    rj = (red_res or {}).get("resultJson") or {}
-    if red_res and red_res.get("status") == "pending_input":
-        return _pending(rj)
-    return str(rj.get("code") or rj.get("dim_code") or "")
-
-
-def _pending(rj: dict) -> str:
-    """Marker for a pending_input result — what runtime value it's waiting on."""
-    w = rj.get("waiting_for", "")
-    return f"待定:{w}" if w else "待定"
-
-
-def _packaging_results(cprs, order: dict) -> dict:
-    """Prepack ratio (T) and pcs/box (U) from the packaging domain.
-
-    Real CPRS shapes (verified live): ``pre_pack_ratio`` carries the ratio when
-    confirmed, and can be ``conflict``/``not_applicable``/``pending_input``.
-    Pack-out per carton has no single field — it's factory-advised at runtime
-    (see ``ucc_label`` workflow) — so pcs/box is left blank unless a confirmed
-    numeric field appears.
-    """
-    out = {"ratio": "", "pcs_box": ""}
-    for res in cprs.evaluate(order):
-        if res.get("domain") != "packaging":
-            continue
-        sub, status = res.get("subtype", ""), res.get("status")
-        rj = res.get("resultJson", {}) or {}
-        if sub == "pre_pack_ratio" and not out["ratio"]:
-            if status == "not_applicable":
-                out["ratio"] = ""
-            elif status == "conflict":
-                out["ratio"] = "冲突"
-            elif status == "pending_input":
-                out["ratio"] = _pending(rj)
-            else:
-                out["ratio"] = str(rj.get("ratio") or rj.get("pre_pack_ratio")
-                                   or rj.get("pack_ratio") or "")
-        for k in ("pcs_per_carton", "units_per_carton", "pack_out", "packs_per_carton"):
-            if rj.get(k) and not out["pcs_box"]:
-                out["pcs_box"] = str(rj.get(k))
-    return out
-
-
-def _result_text(res) -> str:
-    """Carton-mark cell (Q) — status-aware."""
-    if not res:
-        return ""
-    status = res.get("status")
-    if status == "not_applicable":
-        return ""
-    rj = res.get("resultJson", {}) or {}
-    if status == "pending_input":
-        return _pending(rj)
-    if status == "conflict":
-        return "冲突"
-    txt = rj.get("value") or rj.get("standard") or rj.get("code")
-    if txt:
-        return str(txt)
-    return "见要求" if rj.get("required") else ""
-
-
-def _image_bytes(cprs, res):
-    if not res:
-        return None
-    rj = res.get("resultJson", {}) or {}
-    img_id = rj.get("image_id") or rj.get("imageId")
-    return cprs.manual_image(img_id) if img_id else None
-
-
 def _yn(v) -> str:
     return "" if v is None else ("Y" if v else "N")
 
 
 def export_giii_buyplan(header: BuyPlanHeader, rows: list[BuyPlanRow],
                         cprs=None, manual: dict | None = None,
-                        translate=None) -> bytes:
+                        translate=None, requirements: dict | None = None) -> bytes:
     """Build the GIII buy-plan workbook and return the .xlsx bytes.
 
-    *manual* — operator runtime values ({"dim_code", "pcs_box"}); *translate*
-    — optional English→Chinese callable for CPRS requirement wording.
+    Requirement resolution lives in
+    :mod:`po_extractor.ui_helpers.giii_requirements` — pass its output as
+    *requirements* ({id(row): RowRequirements}); or pass *cprs* (+ *manual* /
+    *translate*) and it is resolved here for convenience.
     """
+    from dataclasses import asdict
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
+    from ..ui_helpers.giii_requirements import resolve_requirements
 
     sizes = _present_sizes(rows)
     n_left, n_size, n_right = len(_LEFT), len(sizes), len(_RIGHT)
     n_cols = n_left + n_size + n_right
-    cprs_fields = _resolve_cprs_fields(rows, header, cprs, manual, translate)
+
+    if requirements is None and cprs is not None:
+        requirements, _ = resolve_requirements(cprs, header.brand, rows,
+                                               manual=manual, translate=translate)
+    cprs_fields = {rid: asdict(req) for rid, req in (requirements or {}).items()}
 
     wb = Workbook()
     ws = wb.active

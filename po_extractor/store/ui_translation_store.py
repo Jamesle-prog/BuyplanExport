@@ -1160,6 +1160,7 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Red sticker DIM code (pre-pack)', '红色箱贴 DIM 代码（预包）', 'label', 'giii'),
     ('PCs per box (factory pack-out)', '每箱件数（工厂装箱）', 'label', 'giii'),
     ('Translate CPRS requirement text to Chinese (DeepSeek)', '将 CPRS 要求文字翻译为中文（DeepSeek）', 'label', 'giii'),
+    ('CPRS requirement resolution (verify before sending)', 'CPRS 要求解析结果（发送前请核对）', 'label', 'giii'),
 
     # MSG / TK EU sections accept bare fax PDFs in addition to .msg (v2.30.6)
     ('Upload .msg vendor fax emails — or the fax PDFs directly — to get started.',

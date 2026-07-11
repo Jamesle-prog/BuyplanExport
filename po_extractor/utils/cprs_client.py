@@ -99,15 +99,27 @@ class CprsClient:
         target = _norm(brand_name)
         if not target:
             return None
-        best = None
-        for c in self.list_clients():
-            names = [_norm(c.get("name", "")), _norm(c.get("brand", ""))]
-            for name in filter(None, names):
-                if name == target or target in name or name in target:
-                    return c.get("id")   # exact/containment hit wins
-                if best is None and (set(target.split()) & set(name.split())):
-                    best = c.get("id")
-        return best
+        # Rank candidates instead of returning the first containment hit —
+        # "DKNY" alone matches BOTH "DKNY Sportswear" and "DKNY Suits", and
+        # list order from the API is arbitrary. Exact full-name match wins;
+        # otherwise the containment hit with the FEWEST extra tokens (so bare
+        # "DKNY" prefers "DKNY Sportswear" only if nothing shorter exists —
+        # ties keep API order but are at least deterministic per ranking).
+        scored: list[tuple[int, int, str]] = []
+        for i, c in enumerate(self.list_clients()):
+            cid = c.get("id")
+            name = _norm(c.get("name", ""))
+            brand = _norm(c.get("brand", ""))
+            if target in (name, brand):
+                score = 0 if target == name else 1
+            elif name and (target in name or name in target):
+                score = 2 + abs(len(name.split()) - len(target.split()))
+            elif set(target.split()) & set(name.split() + brand.split()):
+                score = 10
+            else:
+                continue
+            scored.append((score, i, cid))
+        return min(scored)[2] if scored else None
 
     def list_warehouses(self, client_id: str) -> list[dict]:
         key = ("wh", client_id)
@@ -147,12 +159,16 @@ class CprsClient:
     def resolve_warehouse(self, ship_to: str, client_id: str) -> str | None:
         if not (ship_to and ship_to.strip()):
             return None
-        data = self._get("/warehouse-lookup/resolve",
-                         {"ship_to": ship_to, "client_id": client_id})
-        if isinstance(data, dict):
-            return (data.get("warehouse_code") or data.get("warehouseCode")
-                    or data.get("code"))
-        return None
+        key = ("whres", client_id, ship_to.strip())
+        if key not in self._cache:
+            data = self._get("/warehouse-lookup/resolve",
+                             {"ship_to": ship_to, "client_id": client_id})
+            code = None
+            if isinstance(data, dict):
+                code = (data.get("warehouse_code") or data.get("warehouseCode")
+                        or data.get("code"))
+            self._cache[key] = code
+        return self._cache[key]
 
     def warehouse_flags(self, client_id: str, warehouse_code: str) -> dict:
         """Return {'rfid': bool|None, 'msrp': bool|None} for a warehouse code,
@@ -168,9 +184,18 @@ class CprsClient:
     # ── evaluation (cached per order key) ────────────────────────────────────
 
     def evaluate(self, order: dict) -> list[dict]:
-        """POST /evaluate; return the list of per-requirement results (or [])."""
-        key = ("eval", tuple(sorted(
-            (k, str(v)) for k, v in order.items() if not isinstance(v, dict))))
+        """POST /evaluate; return the list of per-requirement results (or []).
+
+        The cache key includes nested dicts (contextFields!) — leaving them
+        out returned the stale no-context result after the operator supplied
+        a runtime value like dim_code.
+        """
+        def _freeze(v):
+            if isinstance(v, dict):
+                return tuple(sorted((k, _freeze(x)) for k, x in v.items()))
+            return str(v)
+
+        key = ("eval", tuple(sorted((k, _freeze(v)) for k, v in order.items())))
         if key not in self._cache:
             data = self._post("/evaluate", order)
             results = data.get("results", []) if isinstance(data, dict) else []

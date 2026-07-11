@@ -57,14 +57,19 @@ def _show_reports_tab() -> None:
 
 def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame,
                         manual: dict | None = None, translate=None) -> bytes | None:
-    """Assemble and export the CPRS-integrated GIII buy plan for *selected* POs."""
+    """Assemble and export the CPRS-integrated GIII buy plan for *selected* POs.
+
+    Also stashes the requirement-resolution preview + warnings in session
+    state (``rpt_cprs_preview`` / ``rpt_cprs_warns``) so the operator can
+    verify what CPRS resolved before sending the file to the factory.
+    """
     from po_extractor.exporters import (
         assemble_buyplan_rows, export_giii_buyplan, BuyPlanHeader,
     )
     from po_extractor.ui_helpers.combined_summary import build_contract_maps
-    from po_extractor.utils.cprs_client import cprs_from_settings
+    from po_extractor.ui_helpers.giii_requirements import resolve_requirements
     from ui.fabric_mapping_view import _company_to_source
-    from ui.stores import get_app_settings_store
+    from ui.stores import get_cprs_client
 
     df_size = store.load_size_rows(selected)
     if df_size is None or df_size.empty:
@@ -106,9 +111,20 @@ def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame,
         primary = styles[0]
         fabric = _format_fabric(parts_by_style.get(primary, []))
 
-    cprs = cprs_from_settings(get_app_settings_store())
+    cprs = get_cprs_client()
     header = BuyPlanHeader(brand=brand, supplier=supplier, description=desc, fabric=fabric)
-    return export_giii_buyplan(header, rows, cprs=cprs, manual=manual, translate=translate)
+
+    reqs, warns = resolve_requirements(cprs, brand, rows, manual=manual,
+                                       translate=translate)
+    st.session_state["rpt_cprs_warns"] = warns
+    st.session_state["rpt_cprs_preview"] = [
+        {"PO": r.po_number, "Color": r.color_en,
+         "仓库": q.warehouse, "Account": q.account, "Channel": q.channel,
+         "红色箱贴": q.red_sticker, "预包比例": q.prepack_ratio,
+         "每箱件数": q.pcs_box, "MSRP": q.msrp, "RFID": q.rfid}
+        for r in rows for q in [reqs.get(id(r))] if q is not None
+    ]
+    return export_giii_buyplan(header, rows, requirements=reqs)
 
 
 def _format_fabric(parts: list) -> str:
@@ -365,6 +381,14 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         )
 
     if st.session_state.get("rpt_cprs_bp_bytes"):
+        for w in st.session_state.get("rpt_cprs_warns", []):
+            st.warning(f"🧭 {w}")
+        preview = st.session_state.get("rpt_cprs_preview")
+        if preview:
+            with st.expander("🧭 " + t("CPRS requirement resolution (verify before sending)"),
+                             expanded=bool(st.session_state.get("rpt_cprs_warns"))):
+                st.dataframe(pd.DataFrame(preview), use_container_width=True,
+                             hide_index=True)
         st.download_button(
             "⬇️ " + t("Download Buy Plan + Requirements (.xlsx)"),
             data=st.session_state["rpt_cprs_bp_bytes"],
