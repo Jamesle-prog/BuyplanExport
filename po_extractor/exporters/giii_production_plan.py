@@ -53,6 +53,7 @@ _FONT_SUBTITLE = Font(name="微软雅黑", bold=True, size=12)
 _FONT_BOLD     = Font(name="微软雅黑", bold=True, size=10)
 _FONT_NORMAL   = Font(name="微软雅黑", size=10)
 _FONT_HDR      = Font(name="微软雅黑", size=10)
+_FONT_FLAG     = Font(name="微软雅黑", bold=True, size=10, color="FFCC0000")
 
 # Standard size ordering for GIII (add / reorder as needed)
 _SIZE_ORDER = [
@@ -481,6 +482,7 @@ def _write_style_sheet(
 
     for _, po_row in style_df.iterrows():
         po_num    = po_row["po_number"]
+        brand     = _safe(po_row.get("division_name"))
         cpo       = _safe(po_row.get("cpo"))
         wh_code   = _safe(po_row.get("destination_code"))
         if not wh_code:
@@ -543,6 +545,7 @@ def _write_style_sheet(
                 "row":          current_row,
                 "po_start":     po_start_row,
                 "po_num":       po_num,
+                "brand":        brand,
                 "cpo":          cpo,
                 "wh_code":      wh_code,
                 "buyer":        buyer,
@@ -614,8 +617,10 @@ def _write_style_sheet(
         contract = (contract_by_po.get(_norm_key(str(po_num)))
                     or contract_by_style.get(_norm_key(style)) or "")
         # 红色箱贴纸 / 主箱唛 / MSRP / RFID / pack-out from CPRS resolution.
+        # No resolution (no brand on the PO / CPRS off) → cells stay EMPTY,
+        # never a claim like 无.
         req = _req_for(po_num)
-        red_txt  = (str(getattr(req, "red_sticker", "") or "") if req else "") or "无"
+        red_txt  = str(getattr(req, "red_sticker", "") or "") if req else ""
         mark_txt = str(getattr(req, "carton_mark", "") or "") if req else ""
         ratio    = str(getattr(req, "prepack_ratio", "") or "") if req else ""
         pcs_txt  = str(getattr(req, "pcs_box", "") or "") if req else ""
@@ -648,6 +653,11 @@ def _write_style_sheet(
         _merge_or_set(ws, r0, C_RFID,  r1, C_RFID,  value=rfid_txt,         font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_RED,   r1, C_RED,   value=red_txt,          font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_MARK,  r1, C_MARK,  value=mark_txt,         font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        # Flag brand-less POs in 备注 — their requirement cells are blank by design.
+        note_txt = "" if rep["brand"] else "⚠ 无品牌"
+        _merge_or_set(ws, r0, C_NOTE,  r1, C_NOTE,  value=note_txt,
+                      font=_FONT_FLAG if note_txt else _FONT_NORMAL,
+                      border=_BORDER, align=_CENTER)
         if req is not None:
             # Requirement artwork on top of (not instead of) the text values.
             _embed_img(ws, getattr(req, "red_img", None), C_RED, r0)
@@ -713,6 +723,8 @@ def _write_style_sheet(
         "sheet": sheet_title,
         "style": style,
         "desc": desc,
+        "brands": _uniq(r["brand"] for r in records),
+        "no_brand": any(not r["brand"] for r in records),
         "fabric": _fabric_line(fabric_parts[0]) if fabric_parts else fabric,
         "contracts": _uniq(sum_contracts),
         "pos": list(po_groups.keys()),
@@ -743,14 +755,14 @@ def _write_style_sheet(
 # ---------------------------------------------------------------------------
 
 _SUM_COLS = [
-    ("No.",         6), ("款号",   14), ("品名",   24), ("合同号", 14),
-    ("PO数",        7), ("PO号",   24), ("颜色(英文)", 18), ("颜色(中文)", 14),
-    ("尺码明细",   26), ("总数量", 10), ("离厂时间", 12), ("仓库代码", 10),
-    ("目的地",     24), ("买家",   14), ("包装方式", 16), ("衣架", 14),
-    ("是否预包",   10), ("每箱件数", 9), ("MSRP", 7), ("RFID", 7),
-    ("红色箱贴纸", 12), ("主箱唛", 16),
+    ("No.",         6), ("款号",   14), ("品牌",   12), ("品名",   24),
+    ("合同号",     14), ("PO数",    7), ("PO号",   24), ("颜色(英文)", 18),
+    ("颜色(中文)", 14), ("尺码明细", 26), ("总数量", 10), ("离厂时间", 12),
+    ("仓库代码",   10), ("目的地", 24), ("买家",   14), ("包装方式", 16),
+    ("衣架",       14), ("是否预包", 10), ("每箱件数", 9), ("MSRP", 7),
+    ("RFID",        7), ("红色箱贴纸", 12), ("主箱唛", 16),
 ]
-_SUM_TOTAL_COL = 10   # 总数量 position (for the TTL row)
+_SUM_TOTAL_COL = 11   # 总数量 position (for the TTL row)
 
 
 def _size_breakdown_text(summary: dict) -> str:
@@ -792,6 +804,13 @@ def _write_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
         if '"' not in s["sheet"] and '"' not in str(s["style"]):
             # click-through to the style's own buy-plan sheet
             style_cell.value = f'=HYPERLINK("#\'{s["sheet"]}\'!A1","{s["style"]}")'
+        # 品牌 — brand-less POs are flagged; nothing is guessed for them.
+        brand_txt = j(s["brands"])
+        if s.get("no_brand"):
+            brand_txt = (brand_txt + " ⚠ 无品牌").strip()
+        _cell(ws, r, 3, brand_txt,
+              font=_FONT_FLAG if s.get("no_brand") else _FONT_NORMAL,
+              border=_BORDER, align=_CENTER)
         row_vals = [
             s["desc"], j(s["contracts"]), len(s["pos"]), j(s["pos"]),
             j(s["colors"]), j(s["colors_cn"]),
@@ -801,9 +820,9 @@ def _write_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
             j(s["prepacks"]), j(s["pcs_cartons"]), j(s["msrps"]), j(s["rfids"]),
             j(s["reds"]), j(s["marks"]),
         ]
-        for i, v in enumerate(row_vals, start=3):
+        for i, v in enumerate(row_vals, start=4):
             _cell(ws, r, i, v, font=_FONT_NORMAL, border=_BORDER,
-                  align=_CENTER if i in (5, _SUM_TOTAL_COL, 17, 18, 19, 20) else _LEFT)
+                  align=_CENTER if i in (6, _SUM_TOTAL_COL, 18, 19, 20, 21) else _LEFT)
         r += 1
 
     _cell(ws, r, 1, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,

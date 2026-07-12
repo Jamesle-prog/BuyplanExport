@@ -123,36 +123,6 @@ def _warehouse_codes(cprs, client_id) -> set:
     return codes
 
 
-def _client_by_evidence(cprs, rows):
-    """Pick the CPRS client from order evidence when the PO carries no usable
-    brand (vendor faxes have no division): an account-catalog hit on the
-    buyer, a PO-suffix warehouse hit, or a ship-to resolution — mirroring the
-    KB's pickClientByEvidence. Returns (client_id, client_name); ambiguity
-    returns (None, '') so callers warn instead of guessing."""
-    scored = []
-    for c in getattr(cprs, "list_clients", lambda: [])() or []:
-        cid = c.get("id")
-        if not cid:
-            continue
-        codes = _warehouse_codes(cprs, cid)
-        wh_hit = any(_suffix_warehouse(getattr(r, "po_number", ""), codes)
-                     for r in rows[:8])
-        acct_hit = any(cprs.resolve_account(r.buyer, cid) for r in rows[:8]
-                       if str(getattr(r, "buyer", "") or "").strip())
-        ship_hit = any(cprs.resolve_warehouse(r.ship_to, cid) for r in rows[:3]
-                       if str(getattr(r, "ship_to", "") or "").strip())
-        score = (2 if acct_hit else 0) + (2 if wh_hit else 0) + (1 if ship_hit else 0)
-        if score:
-            scored.append((score, str(c.get("name", "")), cid))
-    if not scored:
-        return None, ""
-    scored.sort(reverse=True)
-    if len(scored) > 1 and scored[0][0] == scored[1][0]:
-        # Tie (e.g. DKNY Sportswear and KL both sell to Ross Perris) — name
-        # the candidates so the operator can pick the brand explicitly.
-        tied = [n for sc, n, _ in scored if sc == scored[0][0]]
-        return None, " / ".join(tied)
-    return scored[0][2], scored[0][1]
 
 
 def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
@@ -174,7 +144,7 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
 
     contexts: list[dict] = []
     eval_cache: dict[tuple, list] = {}
-    client_cache: dict[str, tuple] = {}   # brand -> (client_id|None, ambiguous?)
+    client_cache: dict[str, str | None] = {}
 
     for po in pos:
         m = po.metadata
@@ -183,28 +153,11 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
         # fallback, company last.
         brand = (m.division_name or m.division or m.customer or m.company or "").strip()
         if brand not in client_cache:
-            cid = cprs.resolve_client(brand) if brand else None
-            note = ""
-            if not cid:
-                # Vendor faxes carry no division — try order evidence.
-                from types import SimpleNamespace
-                row = SimpleNamespace(po_number=m.po_number or "",
-                                      buyer=(m.buyer or m.customer or ""),
-                                      ship_to=m.ship_to or "")
-                cid, note = _client_by_evidence(cprs, [row])
-                if cid:
-                    warnings.append(f"PO {po_no}: brand '{brand or '—'}' matched to "
-                                    f"CPRS client '{note}' from account/warehouse "
-                                    f"evidence.")
-                elif note:
-                    warnings.append(f"PO {po_no}: CPRS client ambiguous ({note}) — "
-                                    f"skipped in requirements document.")
-            client_cache[brand] = (cid, bool(note))
-        client_id, had_note = client_cache[brand]
+            client_cache[brand] = cprs.resolve_client(brand) if brand else None
+        client_id = client_cache[brand]
         if not client_id:
-            if not had_note:
-                warnings.append(f"PO {po_no}: brand '{brand or '—'}' not found in "
-                                f"CPRS — skipped in requirements document.")
+            warnings.append(f"PO {po_no}: brand '{brand or '—'}' not found in CPRS "
+                            f"— skipped in requirements document.")
             continue
 
         # Warehouse: the PO's destination code IS the DC code when present;
@@ -265,23 +218,13 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
         return {}, ["CPRS not configured — requirement columns left blank."]
 
     rows = list(rows)
-    client_id = cprs.resolve_client(brand) if brand else None
+    # No guessing: a PO without a brand keeps every brand-dependent cell
+    # blank; the buy plan flags it (the PO can't tell us whose rules apply).
+    if not brand:
+        return {}, ["POs without a brand — CPRS requirement columns left "
+                    "blank; they are flagged in the buy plan."]
+    client_id = cprs.resolve_client(brand)
     if not client_id:
-        # Vendor faxes carry no division/brand — fall back to order evidence
-        # (buyer account hit, PO-suffix warehouse hit, ship-to resolution).
-        client_id, cname = _client_by_evidence(cprs, rows)
-        if client_id:
-            warnings.append(
-                f"Brand '{brand or '—'}' not usable — matched CPRS client "
-                f"'{cname}' from account/warehouse evidence on the POs.")
-        elif cname:
-            return {}, [f"CPRS client is ambiguous for these POs ({cname} share "
-                        f"the account/destination) — pick the brand in the "
-                        f"buy-plan requirement inputs."]
-    if not client_id:
-        if not brand:
-            return {}, ["No brand on this buy plan and no CPRS client matched "
-                        "from PO evidence — requirement columns left blank."]
         return {}, [f"Brand '{brand}' not found in CPRS — requirement columns left blank."]
 
     wh_codes = _warehouse_codes(cprs, client_id)

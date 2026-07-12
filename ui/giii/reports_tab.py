@@ -94,15 +94,14 @@ def _resolve_po_requirements(selected: list[str], filt_df: pd.DataFrame,
     warnings in session state and returns {po_number: RowRequirements} —
     empty when CPRS is not configured (the buy plan still generates).
 
-    Vendor faxes carry no brand — when a group's brand string doesn't resolve
-    to a CPRS client, the operator's brand pick (rpt_cprs_brand) is used;
-    without one, the service falls back to account/warehouse evidence.
+    The brand is strictly the PO's own division — POs without one get NO
+    requirements (their brand-dependent cells stay blank and the buy plan
+    flags them); the system never infers a brand.
     """
     from po_extractor.ui_helpers.giii_requirements import resolve_requirements
     from ui.stores import get_cprs_client
 
     cprs = get_cprs_client()
-    override = str(st.session_state.get("rpt_cprs_brand", "") or "")
     df = filt_df[filt_df["po_number"].isin(selected)]
 
     def _s(rec: dict, *keys) -> str:
@@ -123,17 +122,13 @@ def _resolve_po_requirements(selected: list[str], filt_df: pd.DataFrame,
             buyer=_s(rec, "buyer", "customer"),
             is_prepack=("PPK" in pk or "PREPACK" in pk) if pk else None,
         )
-        brand = _s(rec, "division_name", "style_group", "company")
-        rows_by_brand.setdefault(brand, []).append(row)
+        rows_by_brand.setdefault(_s(rec, "division_name"), []).append(row)
 
     reqs_by_po: dict[str, object] = {}
     warns: list[str] = []
     preview: list[dict] = []
     for brand, rows in rows_by_brand.items():
-        use_brand = brand
-        if override and not (brand and cprs and cprs.resolve_client(brand)):
-            use_brand = override
-        res, w = resolve_requirements(cprs, use_brand, rows,
+        res, w = resolve_requirements(cprs, brand, rows,
                                       manual=manual, translate=translate)
         warns.extend(w)
         for r in rows:
@@ -217,27 +212,6 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             "pre-pack DIM code below. Requirement wording from CPRS is in English; "
             "enable translation to render it in Chinese on the buy plan."
         ))
-        # Vendor fax POs carry no brand — let the operator name the CPRS
-        # client when evidence is ambiguous (e.g. DKNY and KL both sell to
-        # Ross Perris).
-        _clients: list[str] = []
-        try:
-            from ui.stores import get_cprs_client
-            _cprs = get_cprs_client()
-            if _cprs:
-                _clients = sorted(str(c.get("name", "")) for c in
-                                  (_cprs.list_clients() or []) if c.get("name"))
-        except Exception:
-            _clients = []
-        if _clients:
-            st.selectbox(
-                t("Brand for POs without one (vendor faxes)"),
-                options=[""] + _clients, key="rpt_cprs_brand",
-                format_func=lambda v: v if v else t("Auto (detect from PO)"),
-                help=t("Fax POs don't name the brand. When automatic detection "
-                       "is ambiguous, requirements are skipped unless you pick "
-                       "the CPRS client here."),
-            )
         mc1, mc2 = st.columns(2)
         with mc1:
             st.text_input(t("Red sticker DIM code (pre-pack)"), key="rpt_dim_code",

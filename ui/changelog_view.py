@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.46.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "fix", "text": "**No brand guessing.** A PO without a brand (division) on it is now flagged **⚠ 无品牌** in the buy plan — red marker in the style sheet's 备注 and in the Summary's new 品牌 column — and every brand-dependent cell (红色箱贴纸, 主箱唛, 是否预包 ratio, 每箱件数, MSRP, RFID, CPRS warehouse fill) stays **empty**. The v2.44 evidence-based client matching and the brand picker are removed; the old 红色箱贴纸 default of 无 is gone too — an unresolved requirement renders blank, never as a claim"},
+        ],
+    },
+    {
         "version": "2.45.0",
         "date": "2026-07-12",
         "entries": [

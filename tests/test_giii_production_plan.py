@@ -161,10 +161,32 @@ def test_bad_image_bytes_do_not_break_export():
     assert "MY" in _all_values(ws)
 
 
-def test_no_requirements_defaults_red_sticker_to_wu():
-    store = _Store(_pos_df(), _sizes_df())
+def test_no_requirements_leaves_brand_dependent_cells_empty():
+    """No CPRS resolution → 红色箱贴纸/主箱唛 stay EMPTY (never a claim like
+    无), and brand-less POs are flagged ⚠ 无品牌 in 备注."""
+    store = _Store(_pos_df(), _sizes_df())        # no division_name → no brand
     ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {}))
-    assert "无" in _all_values(ws)
+    vals = [str(v) for v in _all_values(ws)]
+    assert not any(v in ("无", "无需") for v in vals)
+    assert any(v == "⚠ 无品牌" for v in vals)
+
+
+def test_branded_pos_are_not_flagged():
+    store = _Store(_pos_df(division_name=["DW", "DW"]), _sizes_df())
+    data = generate_giii_production_plan(["PO1", "PO2"], store, {})
+    ws = _sheet(data)
+    assert not any(str(v) == "⚠ 无品牌" for v in _all_values(ws))
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    sm = wb["Summary 汇总"]
+    assert sm.cell(2, 3).value == "品牌"
+    assert sm.cell(3, 3).value == "DW"
+
+
+def test_brandless_pos_flagged_in_summary():
+    store = _Store(_pos_df(), _sizes_df())
+    wb = openpyxl.load_workbook(io.BytesIO(
+        generate_giii_production_plan(["PO1", "PO2"], store, {})))
+    assert "⚠ 无品牌" in str(wb["Summary 汇总"].cell(3, 3).value)
 
 
 # ── style-sheet 目的地 / 包装方式 / 离厂时间 ──────────────────────────────────
@@ -273,13 +295,13 @@ def test_summary_sheet_first_with_one_row_per_style_and_ttl():
     # row 3 = ST1 (hyperlink formula to its sheet), row 4 = ST2, row 5 = TTL
     assert ws.cell(3, 1).value == 1
     assert "ST1" in str(ws.cell(3, 2).value) and "HYPERLINK" in str(ws.cell(3, 2).value)
-    assert ws.cell(3, 10).value == 300         # ST1 total (总数量)
-    assert "PO1" in str(ws.cell(3, 6).value)
-    assert "JET BLACK" in str(ws.cell(3, 7).value)
+    assert ws.cell(3, 11).value == 300         # ST1 total (总数量)
+    assert "PO1" in str(ws.cell(3, 7).value)
+    assert "JET BLACK" in str(ws.cell(3, 8).value)
     assert ws.cell(4, 1).value == 2
-    assert ws.cell(4, 10).value == 50          # ST2 total
+    assert ws.cell(4, 11).value == 50          # ST2 total
     assert ws.cell(5, 1).value == "TTL"
-    assert ws.cell(5, 10).value == 350         # grand total
+    assert ws.cell(5, 11).value == 350         # grand total
 
 
 def test_summary_has_size_breakdown_packing_destination():

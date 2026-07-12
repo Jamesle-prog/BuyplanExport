@@ -80,8 +80,10 @@ def test_unmatched_buyer_warns_not_silently_blank():
 def test_no_cprs_and_no_brand_warn():
     _, w1 = resolve_requirements(None, "DKNY", [_row()])
     assert any("not configured" in w for w in w1)
-    _, w2 = resolve_requirements(_Cprs(), "", [_row()])
-    assert any("No brand" in w for w in w2)
+    # No guessing: a missing brand means NO requirements + a clear warning.
+    reqs, w2 = resolve_requirements(_Cprs(), "", [_row()])
+    assert reqs == {}
+    assert any("without a brand" in w for w in w2)
 
 
 def test_warehouse_from_po_suffix_when_no_code_or_ship_to():
@@ -98,43 +100,17 @@ def test_warehouse_from_po_suffix_when_no_code_or_ship_to():
     assert cprs.wh_calls == 0                     # no ship-to lookups needed
 
 
-class _CprsEvidence(_Cprs):
-    """No brand resolves; only client a1 matches the buyer/ship-to evidence."""
-    def resolve_client(self, brand): return None
-    def list_clients(self):
-        return [{"id": "a1", "name": "DKNY Sportswear"},
-                {"id": "c3", "name": "Karl Lagerfeld Suits"}]
-    def list_warehouses(self, cid):
-        return super().list_warehouses(cid) if cid == "a1" else []
-    def resolve_account(self, buyer, cid):
-        return super().resolve_account(buyer, cid) if cid == "a1" else None
-    def resolve_warehouse(self, ship_to, cid):
-        return "DW" if (cid == "a1" and ship_to) else None
-
-
-def test_evidence_fallback_picks_client_for_brandless_fax_pos():
-    rows = [_row(po_number="CSKHHN015R", warehouse_code="",
-                 buyer="ROSS STORES", ship_to="ROSS STORES PERRIS CA",
-                 is_prepack=True)]
-    reqs, warns = resolve_requirements(_CprsEvidence(), "6106.20.2010", rows)
-    assert any("evidence" in w for w in warns)
-    q = reqs[id(rows[0])]
-    assert q.warehouse == "DW"                    # ship-to ZIP match (Ross POE)
-    assert q.account == "ROSS"
-    assert q.channel == "OFF_PRICE"
-
-
-def test_evidence_ambiguity_warns_instead_of_guessing():
-    class _Ambiguous(_CprsEvidence):
-        def resolve_account(self, buyer, cid):
-            return "ROSS"                          # every client matches
-        def list_warehouses(self, cid): return []
-        def resolve_warehouse(self, ship_to, cid): return None
-    reqs, warns = resolve_requirements(_Ambiguous(), "", [_row(buyer="ROSS")])
+def test_unknown_brand_never_guessed():
+    """A brand string that doesn't resolve must NOT fall back to inference —
+    requirements stay empty and the warning says why."""
+    class _NoClient(_Cprs):
+        def resolve_client(self, brand): return None
+    reqs, warns = resolve_requirements(
+        _NoClient(), "6106.20.2010",
+        [_row(po_number="CSKHHN015R", warehouse_code="",
+              buyer="ROSS STORES", ship_to="ROSS STORES PERRIS CA")])
     assert reqs == {}
-    assert any("ambiguous" in w for w in warns)
-    # the tied candidates are named so the operator knows what to pick
-    assert any("DKNY Sportswear" in w and "Karl Lagerfeld" in w for w in warns)
+    assert any("not found in CPRS" in w for w in warns)
 
 
 def test_per_po_dim_codes_override_global():
