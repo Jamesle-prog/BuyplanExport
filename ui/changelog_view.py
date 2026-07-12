@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.41.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "feat", "text": "**Summary 汇总 sheet in the buy plan** — the 生产计划单 workbook now opens with a summary table: one row per style's buy plan (款号 links to its sheet) with 品名, 合同号, PO count + numbers, colours, sizes, 总数量, 离厂时间, 仓库代码, 买家 and the CPRS 红色箱贴纸/主箱唛 values, plus a grand-total TTL row"},
+        ],
+    },
+    {
         "version": "2.40.0",
         "date": "2026-07-12",
         "entries": [

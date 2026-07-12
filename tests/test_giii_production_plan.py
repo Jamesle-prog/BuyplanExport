@@ -189,6 +189,50 @@ def test_nan_metadata_never_renders_as_nan():
         assert "nan" not in str(v).lower().split(), f"NaN leaked into cell: {v!r}"
 
 
+# ── Summary 汇总 sheet ────────────────────────────────────────────────────────
+
+def test_summary_sheet_first_with_one_row_per_style_and_ttl():
+    df_pos = _pos_df(style=["ST1", "ST2"])
+    sizes = pd.DataFrame({
+        "PO Number": ["PO1", "PO1", "PO2"],
+        "Style": ["ST1", "ST1", "ST2"],
+        "Color": ["JET BLACK", "JET BLACK", "PINE"],
+        "Size": ["S", "M", "S"],
+        "Units": [100, 200, 50],
+    })
+    store = _Store(df_pos, sizes)
+    wb = openpyxl.load_workbook(io.BytesIO(
+        generate_giii_production_plan(["PO1", "PO2"], store, {})))
+
+    assert wb.sheetnames[0] == "Summary 汇总"
+    assert "ST1" in wb.sheetnames and "ST2" in wb.sheetnames
+
+    ws = wb["Summary 汇总"]
+    assert ws.cell(2, 1).value == "款号"
+    # row 3 = ST1 (hyperlink formula to its sheet), row 4 = ST2, row 5 = TTL
+    assert "ST1" in str(ws.cell(3, 1).value) and "HYPERLINK" in str(ws.cell(3, 1).value)
+    assert ws.cell(3, 8).value == 300          # ST1 total
+    assert "PO1" in str(ws.cell(3, 5).value)
+    assert "JET BLACK" in str(ws.cell(3, 6).value)
+    assert ws.cell(4, 8).value == 50           # ST2 total
+    assert ws.cell(5, 1).value == "TTL"
+    assert ws.cell(5, 8).value == 350          # grand total
+
+
+def test_summary_carries_requirement_texts():
+    reqs = {"PO1": _Req(red_sticker="MY", carton_mark="见箱唛要求"),
+            "PO2": _Req(red_sticker="无需")}
+    store = _Store(_pos_df(), _sizes_df())
+    wb = openpyxl.load_workbook(io.BytesIO(
+        generate_giii_production_plan(["PO1", "PO2"], store, {},
+                                      requirements=reqs)))
+    ws = wb["Summary 汇总"]
+    vals = _all_values(ws)
+    assert any("MY" in str(v) for v in vals)
+    assert any("无需" in str(v) for v in vals)
+    assert any("见箱唛要求" in str(v) for v in vals)
+
+
 # ── export_buyplan zero-row filter ────────────────────────────────────────────
 
 def test_export_buyplan_drops_all_zero_color_rows(tmp_path):

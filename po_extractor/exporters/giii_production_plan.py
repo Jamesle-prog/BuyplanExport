@@ -238,21 +238,27 @@ def generate_giii_production_plan(
     except Exception:
         parts_by_style = {}
 
+    summaries: list[dict] = []
     for style in styles_order:
         style_pos = df_pos[df_pos["style"] == style]
         style_sizes = df_sizes[df_sizes["po_number"].isin(style_pos["po_number"])]
         if style_sizes.empty:
             continue
-        _write_style_sheet(
+        summary = _write_style_sheet(
             wb, str(style), style_pos, style_sizes, cn_color_lookup,
             fabric_parts=parts_by_style.get(str(style), []),
             color_lookup_en=color_lookup_en,
             contract_by_po=contract_by_po, contract_by_style=contract_by_style,
             requirements=requirements,
         )
+        if summary:
+            summaries.append(summary)
 
     if not wb.sheetnames:
         return b""
+
+    if summaries:
+        _write_summary_sheet(wb, summaries)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -274,8 +280,9 @@ def _write_style_sheet(
     contract_by_po: dict | None = None,
     contract_by_style: dict | None = None,
     requirements: dict | None = None,
-) -> None:
-    """Append one sheet for *style* to *wb*."""
+) -> dict | None:
+    """Append one sheet for *style* to *wb*; return the sheet's summary record
+    (one row of the workbook's Summary 汇总 table) or None when skipped."""
 
     # ── Layout constants ──────────────────────────────────────────────────────
     all_sizes = _sort_sizes(
@@ -550,6 +557,10 @@ def _write_style_sheet(
     for rec in records:
         po_groups.setdefault(rec["po_num"], []).append(rec)
 
+    sum_contracts: list[str] = []
+    sum_reds: list[str] = []
+    sum_marks: list[str] = []
+
     for po_num, grp in po_groups.items():
         r0, r1 = grp[0]["row"], grp[-1]["row"]
         rep    = grp[0]
@@ -560,6 +571,9 @@ def _write_style_sheet(
         req = _req_for(po_num)
         red_txt  = (str(getattr(req, "red_sticker", "") or "") if req else "") or "无"
         mark_txt = str(getattr(req, "carton_mark", "") or "") if req else ""
+        sum_contracts.append(contract)
+        sum_reds.append(red_txt)
+        sum_marks.append(mark_txt)
         _merge_or_set(ws, r0, C_CONTRACT, r1, C_CONTRACT, value=contract, font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_PO,    r1, C_PO,    value=rep["po_num"],   font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_CPO,   r1, C_CPO,   value=rep["cpo"],      font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
@@ -611,3 +625,84 @@ def _write_style_sheet(
     ws.page_margins.right  = 0.25
     ws.page_margins.top    = 0.5
     ws.page_margins.bottom = 0.5
+
+    def _uniq(vals) -> list[str]:
+        return [v for v in dict.fromkeys(str(x).strip() for x in vals) if v]
+
+    return {
+        "sheet": sheet_title,
+        "style": style,
+        "desc": desc,
+        "contracts": _uniq(sum_contracts),
+        "pos": list(po_groups.keys()),
+        "colors": _uniq(r["color_en"] for r in records),
+        "sizes": list(all_sizes),
+        "total": grand_total,
+        "ship_dates": _uniq(r["ship_date"] for r in records),
+        "warehouses": _uniq(r["wh_code"] for r in records),
+        "buyers": _uniq(r["buyer"] for r in records),
+        "reds": _uniq(sum_reds),
+        "marks": _uniq(sum_marks),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Summary 汇总 sheet (first sheet — one row per style's buy plan)
+# ---------------------------------------------------------------------------
+
+_SUM_COLS = [
+    ("款号",       14), ("品名",   26), ("合同号", 14), ("PO数", 7),
+    ("PO号",       26), ("颜色(英文)", 24), ("尺码", 16), ("总数量", 10),
+    ("离厂时间",   12), ("仓库代码", 10), ("买家", 14), ("红色箱贴纸", 12),
+    ("主箱唛",     16),
+]
+
+
+def _write_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
+    """Insert the Summary 汇总 sheet at the front: one row per style sheet,
+    with a hyperlink to it, joined PO/colour/date facts, and a TTL row."""
+    title = "Summary 汇总" if "Summary 汇总" not in wb.sheetnames else "汇总"
+    ws = wb.create_sheet(title=title, index=0)
+    n_cols = len(_SUM_COLS)
+
+    for i, (_, w) in enumerate(_SUM_COLS, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    _merge(ws, 1, 1, 1, n_cols,
+           f"生产计划汇总（Summary）  {datetime.date.today().strftime('%Y/%m/%d')}",
+           font=_FONT_SUBTITLE,
+           align=Alignment(horizontal="center", vertical="center"))
+    ws.row_dimensions[1].height = 24
+
+    for i, (label, _) in enumerate(_SUM_COLS, start=1):
+        _cell(ws, 2, i, label, font=_FONT_HDR, fill=_HDR_FILL,
+              border=_BORDER, align=_CENTER)
+    ws.row_dimensions[2].height = 20
+
+    link_font = Font(name="微软雅黑", size=10, color="FF0563C1", underline="single")
+    j = "、".join
+
+    r = 3
+    for s in summaries:
+        style_cell = _cell(ws, r, 1, s["style"], font=link_font,
+                           border=_BORDER, align=_CENTER)
+        if '"' not in s["sheet"] and '"' not in str(s["style"]):
+            # click-through to the style's own buy-plan sheet
+            style_cell.value = f'=HYPERLINK("#\'{s["sheet"]}\'!A1","{s["style"]}")'
+        row_vals = [
+            s["desc"], j(s["contracts"]), len(s["pos"]), j(s["pos"]),
+            j(s["colors"]), "/".join(s["sizes"]), s["total"],
+            j(s["ship_dates"]), j(s["warehouses"]), j(s["buyers"]),
+            j(s["reds"]), j(s["marks"]),
+        ]
+        for i, v in enumerate(row_vals, start=2):
+            _cell(ws, r, i, v, font=_FONT_NORMAL, border=_BORDER,
+                  align=_CENTER if i in (4, 8) else _LEFT)
+        r += 1
+
+    _cell(ws, r, 1, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,
+          border=_BORDER, align=_CENTER)
+    _cell(ws, r, 8, sum(s["total"] for s in summaries),
+          font=_FONT_BOLD, fill=_YELLOW_FILL, border=_BORDER, align=_CENTER)
+
+    ws.freeze_panes = "A3"
