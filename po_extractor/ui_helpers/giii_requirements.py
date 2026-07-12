@@ -103,6 +103,58 @@ def _image_bytes(cprs, res):
     return cprs.manual_image(img_id) if img_id else None
 
 
+def _suffix_warehouse(po_number, codes) -> str:
+    """DKNY-style PO numbers end in the DC code (DW867662UC → UC). Only trust
+    the suffix when it is one of the client's real warehouse codes — mirrors
+    the CPRS engine's warehouseFromSuffix."""
+    po = str(po_number or "").strip().upper()
+    if len(po) < 4:
+        return ""
+    suf = po[-2:]
+    return suf if suf in codes else ""
+
+
+def _warehouse_codes(cprs, client_id) -> set:
+    codes = set()
+    for w in getattr(cprs, "list_warehouses", lambda _cid: [])(client_id) or []:
+        c = str(w.get("warehouse_code") or w.get("code") or "").strip().upper()
+        if c:
+            codes.add(c)
+    return codes
+
+
+def _client_by_evidence(cprs, rows):
+    """Pick the CPRS client from order evidence when the PO carries no usable
+    brand (vendor faxes have no division): an account-catalog hit on the
+    buyer, a PO-suffix warehouse hit, or a ship-to resolution — mirroring the
+    KB's pickClientByEvidence. Returns (client_id, client_name); ambiguity
+    returns (None, '') so callers warn instead of guessing."""
+    scored = []
+    for c in getattr(cprs, "list_clients", lambda: [])() or []:
+        cid = c.get("id")
+        if not cid:
+            continue
+        codes = _warehouse_codes(cprs, cid)
+        wh_hit = any(_suffix_warehouse(getattr(r, "po_number", ""), codes)
+                     for r in rows[:8])
+        acct_hit = any(cprs.resolve_account(r.buyer, cid) for r in rows[:8]
+                       if str(getattr(r, "buyer", "") or "").strip())
+        ship_hit = any(cprs.resolve_warehouse(r.ship_to, cid) for r in rows[:3]
+                       if str(getattr(r, "ship_to", "") or "").strip())
+        score = (2 if acct_hit else 0) + (2 if wh_hit else 0) + (1 if ship_hit else 0)
+        if score:
+            scored.append((score, str(c.get("name", "")), cid))
+    if not scored:
+        return None, ""
+    scored.sort(reverse=True)
+    if len(scored) > 1 and scored[0][0] == scored[1][0]:
+        # Tie (e.g. DKNY Sportswear and KL both sell to Ross Perris) — name
+        # the candidates so the operator can pick the brand explicitly.
+        tied = [n for sc, n, _ in scored if sc == scored[0][0]]
+        return None, " / ".join(tied)
+    return scored[0][2], scored[0][1]
+
+
 def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
     """Resolve the FULL requirement set for freshly-uploaded POs (the
     upload-time requirements document — all domains, not just the buy-plan
@@ -122,7 +174,7 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
 
     contexts: list[dict] = []
     eval_cache: dict[tuple, list] = {}
-    client_cache: dict[str, str | None] = {}
+    client_cache: dict[str, tuple] = {}   # brand -> (client_id|None, ambiguous?)
 
     for po in pos:
         m = po.metadata
@@ -131,16 +183,35 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
         # fallback, company last.
         brand = (m.division_name or m.division or m.customer or m.company or "").strip()
         if brand not in client_cache:
-            client_cache[brand] = cprs.resolve_client(brand) if brand else None
-        client_id = client_cache[brand]
+            cid = cprs.resolve_client(brand) if brand else None
+            note = ""
+            if not cid:
+                # Vendor faxes carry no division — try order evidence.
+                from types import SimpleNamespace
+                row = SimpleNamespace(po_number=m.po_number or "",
+                                      buyer=(m.buyer or m.customer or ""),
+                                      ship_to=m.ship_to or "")
+                cid, note = _client_by_evidence(cprs, [row])
+                if cid:
+                    warnings.append(f"PO {po_no}: brand '{brand or '—'}' matched to "
+                                    f"CPRS client '{note}' from account/warehouse "
+                                    f"evidence.")
+                elif note:
+                    warnings.append(f"PO {po_no}: CPRS client ambiguous ({note}) — "
+                                    f"skipped in requirements document.")
+            client_cache[brand] = (cid, bool(note))
+        client_id, had_note = client_cache[brand]
         if not client_id:
-            warnings.append(f"PO {po_no}: brand '{brand or '—'}' not found in CPRS "
-                            f"— skipped in requirements document.")
+            if not had_note:
+                warnings.append(f"PO {po_no}: brand '{brand or '—'}' not found in "
+                                f"CPRS — skipped in requirements document.")
             continue
 
         # Warehouse: the PO's destination code IS the DC code when present;
-        # otherwise resolve the ship-to address.
+        # else the PO-number suffix when it is a real DC code; else resolve
+        # the ship-to address.
         wh = (m.destination_code or "").strip() \
+            or _suffix_warehouse(m.po_number, _warehouse_codes(cprs, client_id)) \
             or (cprs.resolve_warehouse(m.ship_to or "", client_id) or "")
         if not wh:
             warnings.append(f"PO {po_no}: warehouse not resolved — "
@@ -192,12 +263,28 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
     warnings: list[str] = []
     if cprs is None:
         return {}, ["CPRS not configured — requirement columns left blank."]
-    if not brand:
-        return {}, ["No brand on this buy plan — CPRS lookup skipped."]
 
-    client_id = cprs.resolve_client(brand)
+    rows = list(rows)
+    client_id = cprs.resolve_client(brand) if brand else None
     if not client_id:
+        # Vendor faxes carry no division/brand — fall back to order evidence
+        # (buyer account hit, PO-suffix warehouse hit, ship-to resolution).
+        client_id, cname = _client_by_evidence(cprs, rows)
+        if client_id:
+            warnings.append(
+                f"Brand '{brand or '—'}' not usable — matched CPRS client "
+                f"'{cname}' from account/warehouse evidence on the POs.")
+        elif cname:
+            return {}, [f"CPRS client is ambiguous for these POs ({cname} share "
+                        f"the account/destination) — pick the brand in the "
+                        f"buy-plan requirement inputs."]
+    if not client_id:
+        if not brand:
+            return {}, ["No brand on this buy plan and no CPRS client matched "
+                        "from PO evidence — requirement columns left blank."]
         return {}, [f"Brand '{brand}' not found in CPRS — requirement columns left blank."]
+
+    wh_codes = _warehouse_codes(cprs, client_id)
 
     manual = manual or {}
     global_dim = str(manual.get("dim_code", "") or "").strip()
@@ -225,14 +312,19 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
 
     for r in rows:
         dim_code = dim_for(r)
-        ctx_key = (r.warehouse_code or r.ship_to or "", r.buyer or "",
+        # Resolve the warehouse BEFORE the dedup key — two POs with no stored
+        # code but different PO-number suffixes are different contexts.
+        wh = (r.warehouse_code
+              or _suffix_warehouse(r.po_number, wh_codes)
+              or ((cprs.resolve_warehouse(r.ship_to, client_id) or "")
+                  if str(r.ship_to or "").strip() else ""))
+        ctx_key = (wh or r.ship_to or "", r.buyer or "",
                    bool(r.is_prepack), dim_code)
         cached = ctx_cache.get(ctx_key)
         if cached is not None:
             out[id(r)] = cached
             continue
 
-        wh = r.warehouse_code or (cprs.resolve_warehouse(r.ship_to, client_id) or "")
         if not wh and (r.ship_to or "").strip():
             warnings.append(f"PO {r.po_number}: warehouse not resolved from ship-to "
                             f"'{r.ship_to[:40]}' — MSRP/RFID left blank.")

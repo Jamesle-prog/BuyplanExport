@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.44.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "fix", "text": "**仓库代码 was blank on most POs — now resolved three ways**: (1) the PO's own destination code when present; (2) the DKNY PO-number suffix (DW843120**DN** → DN), validated against the client's real CPRS warehouse catalog so non-codes like a fax PO's '…5R' are never trusted; (3) the ship-to address via CPRS ZIP matching (Ross Perris DC → **DW**, US POE)"},
+            {"type": "feat", "text": "**Brand detection for vendor-fax POs** — faxes carry no division, so the brand string used to fall back to an HTS code and CPRS was silently skipped. Requirements resolution now matches the CPRS client from order evidence (buyer account hit, PO-suffix warehouse hit, ship-to resolution). When the evidence is ambiguous (DKNY and KL both sell to Ross Perris) it names the tied candidates instead of guessing, and a new **brand picker** in the requirement inputs lets the operator decide"},
+        ],
+    },
+    {
         "version": "2.43.0",
         "date": "2026-07-12",
         "entries": [
