@@ -10,7 +10,7 @@ from ui.session_keys import SK
 from ui.shared import guard_multiselect_state
 from ui.stores import get_store
 from ui.giii._shared import _XLSX_MIME, live_label
-from ui.giii.extraction import _run_from_history, _create_buyplan_bytes
+from ui.giii.extraction import _run_from_history
 from ui.giii.results import (
     _show_downloads,
     _generate_color_plan_excel,
@@ -55,101 +55,94 @@ def _show_reports_tab() -> None:
 # Generate Outputs sub-tab
 # ---------------------------------------------------------------------------
 
-def _build_cprs_buyplan(selected: list[str], store, filt_df: pd.DataFrame):
-    """Assemble the buy-plan inputs for *selected* POs; return (header, rows)
-    or None when the selection has no size data. Resolution/export are
-    separate steps so requirements can be checked WITHOUT generating a file.
-    """
-    from po_extractor.exporters import assemble_buyplan_rows, BuyPlanHeader
+def _progress_maps(store, df_meta: pd.DataFrame):
+    """Contract maps + EN→CN colour lookup from the 大货进度表."""
     from po_extractor.ui_helpers.combined_summary import build_contract_maps
     from ui.fabric_mapping_view import _company_to_source
 
-    df_size = store.load_size_rows(selected)
-    if df_size is None or df_size.empty:
-        return None
-    df_meta = filt_df[filt_df["po_number"].isin(selected)].copy()
-
-    # Contract numbers AND Chinese colours both come from the 大货进度表.
     progress: list[dict] = []
     if "company" in df_meta.columns:
         for comp in df_meta["company"].dropna().unique():
             progress.extend(store.load_progress_records(_company_to_source(str(comp))))
     by_po, by_style = build_contract_maps(progress)
 
-    # 中文颜色 from 进度表: {EN colour (upper) -> CN colour}.
     color_lookup: dict[str, str] = {}
     for rec in progress:
         en = str(rec.get("color", "") or "").strip().upper()
         cn = rec.get("cn_color", "") or ""
         if en and cn:
             color_lookup.setdefault(en, cn)
-
-    rows = assemble_buyplan_rows(df_size, df_meta, contract_by_po=by_po,
-                                 contract_by_style=by_style, color_lookup=color_lookup)
-    if not rows:
-        return None
-
-    brand = ""
-    for c in ("division_name", "style_group", "company"):
-        if c in df_meta.columns and not df_meta[c].dropna().empty:
-            brand = str(df_meta[c].dropna().iloc[0]); break
-    supplier = str(df_meta["factory"].dropna().iloc[0]) if "factory" in df_meta.columns and not df_meta["factory"].dropna().empty else ""
-    desc = str(df_meta["style_description"].dropna().iloc[0]) if "style_description" in df_meta.columns and not df_meta["style_description"].dropna().empty else ""
-
-    # 面料信息 from 款式面料表格 (style-fabric mapping) for the primary style.
-    fabric = ""
-    styles = [r.style for r in rows if r.style]
-    if styles:
-        parts_by_style = store.load_fabric_parts_for_styles(list(dict.fromkeys(styles)))
-        primary = styles[0]
-        fabric = _format_fabric(parts_by_style.get(primary, []))
-
-    header = BuyPlanHeader(brand=brand, supplier=supplier, description=desc, fabric=fabric)
-    return header, rows
+    return by_po, by_style, color_lookup
 
 
-def _resolve_and_stash(header, rows, manual: dict | None, translate) -> dict:
-    """Resolve CPRS requirements, stash preview + warnings in session state,
-    and return the requirements dict (shared by check-only and generate)."""
+class _ReqRow:
+    """Per-PO adapter carrying the attributes resolve_requirements expects."""
+    __slots__ = ("po_number", "warehouse_code", "ship_to", "buyer", "is_prepack")
+
+    def __init__(self, po_number, warehouse_code, ship_to, buyer, is_prepack):
+        self.po_number = po_number
+        self.warehouse_code = warehouse_code
+        self.ship_to = ship_to
+        self.buyer = buyer
+        self.is_prepack = is_prepack
+
+
+def _resolve_po_requirements(selected: list[str], filt_df: pd.DataFrame,
+                             manual: dict | None, translate) -> dict:
+    """Resolve CPRS requirements once per PO (grouped by brand so multi-brand
+    selections resolve against the right CPRS client). Stashes the preview +
+    warnings in session state and returns {po_number: RowRequirements} —
+    empty when CPRS is not configured (the buy plan still generates)."""
     from po_extractor.ui_helpers.giii_requirements import resolve_requirements
     from ui.stores import get_cprs_client
 
-    reqs, warns = resolve_requirements(get_cprs_client(), header.brand, rows,
-                                       manual=manual, translate=translate)
-    st.session_state["rpt_cprs_warns"] = warns
-    st.session_state["rpt_cprs_preview"] = [
-        {"PO": r.po_number, "Color": r.color_en,
-         "仓库": q.warehouse, "Account": q.account, "Channel": q.channel,
-         "红色箱贴": q.red_sticker, "预包比例": q.prepack_ratio,
-         "每箱件数": q.pcs_box, "MSRP": q.msrp, "RFID": q.rfid}
-        for r in rows for q in [reqs.get(id(r))] if q is not None
-    ]
-    return reqs
+    cprs = get_cprs_client()
+    df = filt_df[filt_df["po_number"].isin(selected)]
 
-
-def _build_cprs_buyplan_bytes(selected: list[str], store, filt_df: pd.DataFrame,
-                              manual: dict | None = None, translate=None) -> bytes | None:
-    from po_extractor.exporters import export_giii_buyplan
-    assembled = _build_cprs_buyplan(selected, store, filt_df)
-    if not assembled:
-        return None
-    header, rows = assembled
-    reqs = _resolve_and_stash(header, rows, manual, translate)
-    return export_giii_buyplan(header, rows, requirements=reqs)
-
-
-def _format_fabric(parts: list) -> str:
-    """Render style-fabric-mapping parts into the 面料/FIBER header line, e.g.
-    'HB-XD6786 94%rayon 6%span 200gsm 有效170cm'. Uses the first (main) part."""
-    if not parts:
+    def _s(rec: dict, *keys) -> str:
+        for k in keys:
+            v = rec.get(k)
+            s = "" if v is None else str(v).strip()
+            if s and s.lower() not in ("nan", "none", "nat"):
+                return s
         return ""
-    p = parts[0]
-    bits = [getattr(p, "hhn_no", "") or "", getattr(p, "composition", "") or ""]
-    if getattr(p, "weight_gsm", 0):
-        bits.append(f"{p.weight_gsm}gsm")
-    if getattr(p, "width_cm", 0):
-        bits.append(f"有效{p.width_cm}cm")
-    return " ".join(b for b in bits if b).strip()
+
+    rows_by_brand: dict[str, list[_ReqRow]] = {}
+    for rec in df.to_dict("records"):
+        pk = _s(rec, "packaging").upper()
+        row = _ReqRow(
+            po_number=_s(rec, "po_number"),
+            warehouse_code=_s(rec, "destination_code"),
+            ship_to=_s(rec, "ship_to"),
+            buyer=_s(rec, "buyer", "customer"),
+            is_prepack=("PPK" in pk or "PREPACK" in pk) if pk else None,
+        )
+        brand = _s(rec, "division_name", "style_group", "company")
+        rows_by_brand.setdefault(brand, []).append(row)
+
+    reqs_by_po: dict[str, object] = {}
+    warns: list[str] = []
+    preview: list[dict] = []
+    for brand, rows in rows_by_brand.items():
+        res, w = resolve_requirements(cprs, brand, rows,
+                                      manual=manual, translate=translate)
+        warns.extend(w)
+        for r in rows:
+            q = res.get(id(r))
+            if q is None:
+                continue
+            reqs_by_po[r.po_number] = q
+            preview.append({
+                "PO": r.po_number, "品牌": brand,
+                "仓库": q.warehouse, "Account": q.account, "Channel": q.channel,
+                "红色箱贴": q.red_sticker, "主箱唛": q.carton_mark,
+                "预包比例": q.prepack_ratio, "每箱件数": q.pcs_box,
+                "MSRP": q.msrp, "RFID": q.rfid,
+            })
+
+    st.session_state["rpt_cprs_warns"] = list(dict.fromkeys(warns))
+    st.session_state["rpt_cprs_preview"] = preview
+    return reqs_by_po
 
 
 def _show_generate_section(df: pd.DataFrame, store) -> None:
@@ -328,16 +321,27 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             disabled=not selected,
             use_container_width=True,
             key="rpt_gen_bp_btn",
-            help=(
-                "Generate a GIII production plan (生产计划单) in the standard "
-                "factory buy plan format — one sheet per style, with size breakdown, "
-                "Chinese colours, and merged rows."
+            help=t(
+                "Generate the GIII production plan (生产计划单) — one sheet per "
+                "style with size breakdown, 面料 rows from the style-fabric "
+                "table, 合同号 and Chinese colours from the 大货进度表, and "
+                "红色箱贴纸 / 主箱唛 (text + artwork) resolved live from CPRS. "
+                "Without CPRS configured those cells fall back to blank/无."
             ),
         ):
             st.session_state.pop("rpt_bp_bytes", None)
-            with st.spinner(t("Building production plan…")):
+            with st.spinner(t("Building buy plan (resolving CPRS requirements)…")):
                 try:
-                    bp_bytes = generate_giii_production_plan(selected, store)
+                    reqs = _resolve_po_requirements(
+                        selected, filt_df, _cprs_manual_inputs(), _cprs_translator())
+                    df_meta = filt_df[filt_df["po_number"].isin(selected)]
+                    by_po, by_style, color_en = _progress_maps(store, df_meta)
+                    bp_bytes = generate_giii_production_plan(
+                        selected, store,
+                        color_lookup_en=color_en,
+                        contract_by_po=by_po, contract_by_style=by_style,
+                        requirements=reqs,
+                    )
                     if bp_bytes:
                         st.session_state["rpt_bp_bytes"] = bp_bytes
                     else:
@@ -347,32 +351,6 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
 
     with c6:
         if st.button(
-            "🧭 " + t("Buy Plan + Requirements (CPRS)"),
-            disabled=not selected,
-            use_container_width=True,
-            key="rpt_gen_cprs_bp_btn",
-            help=t(
-                "The full A–W GIII buy plan with client requirements resolved "
-                "live from the CPRS knowledge base — red-sticker code, carton "
-                "mark, prepack ratio, PCs/box, MSRP and RFID. Configure CPRS in "
-                "Admin → Settings; without it those columns are left blank."
-            ),
-        ):
-            st.session_state.pop("rpt_cprs_bp_bytes", None)
-            with st.spinner(t("Building buy plan (resolving CPRS requirements)…")):
-                try:
-                    out = _build_cprs_buyplan_bytes(
-                        selected, store, filt_df,
-                        _cprs_manual_inputs(), _cprs_translator())
-                    if out:
-                        st.session_state["rpt_cprs_bp_bytes"] = out
-                    else:
-                        st.warning(t("No size data found for the selected POs."))
-                except Exception as exc:
-                    st.error(t("Buy plan generation failed:") + f" {exc}")
-
-    with _c7:
-        if st.button(
             "🔍 " + t("Check requirements only"),
             disabled=not selected,
             use_container_width=True,
@@ -380,17 +358,12 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             help=t("Resolve CPRS requirements for the selected POs and show "
                    "the preview below — without generating a workbook."),
         ):
-            st.session_state.pop("rpt_cprs_bp_bytes", None)
             with st.spinner(t("Resolving CPRS requirements…")):
                 try:
-                    assembled = _build_cprs_buyplan(selected, store, filt_df)
-                    if assembled:
-                        _resolve_and_stash(assembled[0], assembled[1],
-                                           _cprs_manual_inputs(), _cprs_translator())
-                    else:
-                        st.warning(t("No size data found for the selected POs."))
+                    _resolve_po_requirements(
+                        selected, filt_df, _cprs_manual_inputs(), _cprs_translator())
                 except Exception as exc:
-                    st.error(t("Buy plan generation failed:") + f" {exc}")
+                    st.error(t("Requirements check failed:") + f" {exc}")
 
     # ── Download area ─────────────────────────────────────────────────────────
     if st.session_state.get("rpt_all_results"):
@@ -439,19 +412,10 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         preview = st.session_state.get("rpt_cprs_preview")
         if preview:
             with st.expander("🧭 " + t("CPRS requirement resolution (verify before sending)"),
-                             expanded=not st.session_state.get("rpt_cprs_bp_bytes")
+                             expanded=not st.session_state.get("rpt_bp_bytes")
                                       or bool(st.session_state.get("rpt_cprs_warns"))):
                 st.dataframe(pd.DataFrame(preview), use_container_width=True,
                              hide_index=True)
-
-    if st.session_state.get("rpt_cprs_bp_bytes"):
-        st.download_button(
-            "⬇️ " + t("Download Buy Plan + Requirements (.xlsx)"),
-            data=st.session_state["rpt_cprs_bp_bytes"],
-            file_name="GIII_Buy_Plan_CPRS.xlsx",
-            mime=_XLSX_MIME,
-            key="rpt_cprs_bp_dl",
-        )
 
 
 # ---------------------------------------------------------------------------

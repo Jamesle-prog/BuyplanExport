@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.40.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "feat", "text": "**GIII buy plan is now the 生产计划单 format, enriched** — the production-plan layout the factory actually uses (one sheet per style, only ordered colours, per-style size columns) now carries 面料 rows from the 款式面料表格 (main part + 面料_其他1/2/3), 合同号 and 中文颜色 from the 大货进度表, and 红色箱贴纸/主箱唛 text **and artwork** resolved live from CPRS (per PO, with warehouse fill-in when the PO has no destination code). The separate A–W 'Buy Plan + Requirements' button is retired — 📋 Create Buy Plan does it all; 🔍 Check requirements still previews without generating"},
+            {"type": "fix", "text": "**Buy-plan outputs showed many empty rows and lost plus sizes** — two causes fixed: (1) the upload-time by-style workbook fell back to the *Zalando* template (`default.xlsx`), whose fixed XS–XXL columns silently dropped 1X/2X/3X quantities and left Brand/中文颜色 blank — the template is removed, GIII reverts to the clean built-in layout; (2) unordered colourways (all-zero rows from the PO's full SKU matrix) are now filtered out, matching the 'filtered' in the file name"},
+            {"type": "fix", "text": "生产计划单: NaN metadata no longer renders as literal 'nan' in CPO#/仓库代码/备注 cells"},
+        ],
+    },
+    {
         "version": "2.39.1",
         "date": "2026-07-11",
         "entries": [

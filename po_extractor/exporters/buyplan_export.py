@@ -156,6 +156,12 @@ def export_buyplan(
             dropna=False,
         )
         pivot = pivot.loc[:, (pivot != 0).any(axis=0)]
+        # Drop colour rows with no ordered units — infor_nexus POs list every
+        # colourway of the style in the SKU matrix, so unordered colours came
+        # through as all-zero rows despite the "filtered" in this file's name.
+        pivot = pivot[(pivot != 0).any(axis=1)]
+        if pivot.empty:
+            continue
         known     = [s for s in size_order if s in pivot.columns]
         unknown   = [s for s in pivot.columns if s not in size_order]
         size_cols = known + unknown

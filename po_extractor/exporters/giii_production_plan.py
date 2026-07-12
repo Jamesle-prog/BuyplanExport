@@ -6,17 +6,26 @@ the format used in the GIII/HHP production plan template:
   Row 1  : Factory / manufacturer name (from seller field)
   Row 2  : 生产计划单（buy plan）
   Row 4  : 供应商名称 | 日期
-  Row 5  : 面料/FIBER | 更新日期
-  Row 6  : 品名/Description | 2ND更新日期
-  Row 8-9: Two-row merged header (合同号 款号 PO号 CPO# 仓库代码 买家
+  Row 5+ : 面料/FIBER (one row per 款式面料表格 part; extra parts as
+           面料_其他1/2/3) | 更新日期
+  Next   : 品名/Description | 2ND更新日期
+  Header : Two-row merged header (合同号 款号 PO号 CPO# 仓库代码 买家
             颜色英 颜色中 [sizes…] 总数量 离厂时间 红色箱贴纸 主箱唛 备注)
-  Row 10+: Data rows, one per (PO, color), with repeated-value columns merged
+  Data   : one row per (PO, color), with repeated-value columns merged
   Footer : 订单要求 TTL / 溢短装要求 / 包装 / 样衣 / 主箱唛
+
+Enrichment (all optional — the plan still generates without them):
+* 面料 rows from the 款式面料表格 (``store.load_fabric_parts_for_styles``).
+* 合同号 from the 大货进度表 contract maps.
+* 颜色(中文) from the 进度表 EN→CN lookup (falls back to the colour DB).
+* 红色箱贴纸 / 主箱唛 text and artwork from CPRS requirement resolution
+  (pass *requirements* = ``{po_number: RowRequirements}``).
 """
 from __future__ import annotations
 
 import datetime
 import io
+import math as _math
 
 import pandas as pd
 from openpyxl import Workbook
@@ -102,6 +111,54 @@ def _merge_or_set(ws, r1: int, c1: int, r2: int, c2: int, **kw):
         _merge(ws, r1, c1, r2, c2, **kw)
 
 
+def _safe(val) -> str:
+    """Return clean string; treat NaN / None / 'nan' / 'None' as empty."""
+    if val is None:
+        return ""
+    try:
+        if _math.isnan(float(val)):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    s = str(val).strip()
+    return "" if s.lower() in ("nan", "none", "nat") else s
+
+
+def _fabric_line(p) -> str:
+    """One 面料 row value from a 款式面料表格 part, e.g.
+    '大身：HHN-DB-YS240782 86%Polyester 14%Spandex 200gsm 有效170cm'."""
+    bits = [str(getattr(p, "hhn_no", "") or "").strip(),
+            str(getattr(p, "composition", "") or "").strip()]
+    if getattr(p, "weight_gsm", 0):
+        bits.append(f"{p.weight_gsm}gsm")
+    if getattr(p, "width_cm", 0):
+        bits.append(f"有效{p.width_cm}cm")
+    spec = " ".join(b for b in bits if b).strip()
+    body = str(getattr(p, "body_part", "") or "").strip()
+    if body and spec:
+        return f"{body}：{spec}"
+    return spec or body
+
+
+def _embed_img(ws, img_bytes, col: int, row_no: int) -> bool:
+    """Anchor CPRS requirement artwork (红色箱贴纸 / 主箱唛) into a cell.
+    Never fails the export — bad image bytes just leave the text value."""
+    if not img_bytes:
+        return False
+    try:
+        from openpyxl.drawing.image import Image as XLImage
+        img = XLImage(io.BytesIO(img_bytes))
+        scale = min(1.0, 76.0 / img.height if img.height else 1.0,
+                    76.0 / img.width if img.width else 1.0)
+        img.height, img.width = int(img.height * scale), int(img.width * scale)
+        ws.add_image(img, f"{get_column_letter(col)}{row_no}")
+        ws.row_dimensions[row_no].height = max(
+            ws.row_dimensions[row_no].height or 0, 60)
+        return True
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Main public API
 # ---------------------------------------------------------------------------
@@ -110,6 +167,11 @@ def generate_giii_production_plan(
     selected_pos: list[str],
     store,
     cn_color_lookup: dict | None = None,
+    *,
+    color_lookup_en: dict | None = None,
+    contract_by_po: dict | None = None,
+    contract_by_style: dict | None = None,
+    requirements: dict | None = None,
 ) -> bytes:
     """Return an .xlsx workbook (bytes) with one sheet per style.
 
@@ -122,6 +184,15 @@ def generate_giii_production_plan(
     cn_color_lookup:
         Optional mapping ``{(client, brand, norm_en_color): cn_color}``
         from the colour-translation DB.  Pass ``None`` to skip CN colour.
+    color_lookup_en:
+        Optional ``{EN colour (upper) → CN colour}`` from the 大货进度表 —
+        tried before the colour-translation DB (进度表 is the primary source).
+    contract_by_po / contract_by_style:
+        合同号 maps from the 大货进度表 (``build_contract_maps`` output).
+    requirements:
+        Optional ``{po_number: RowRequirements}`` from CPRS resolution —
+        fills 红色箱贴纸 / 主箱唛 (text + artwork) and the 仓库代码 when
+        the PO carries no destination code.
     """
     if not selected_pos:
         return b""
@@ -159,12 +230,26 @@ def generate_giii_production_plan(
 
     # Group selected POs by style — preserves multi-style buy plans
     styles_order = df_pos["style"].dropna().unique().tolist()
+
+    # 面料信息 from the 款式面料表格 (style-fabric mapping), one block per style.
+    try:
+        parts_by_style = store.load_fabric_parts_for_styles(
+            [str(s) for s in styles_order]) or {}
+    except Exception:
+        parts_by_style = {}
+
     for style in styles_order:
         style_pos = df_pos[df_pos["style"] == style]
         style_sizes = df_sizes[df_sizes["po_number"].isin(style_pos["po_number"])]
         if style_sizes.empty:
             continue
-        _write_style_sheet(wb, str(style), style_pos, style_sizes, cn_color_lookup)
+        _write_style_sheet(
+            wb, str(style), style_pos, style_sizes, cn_color_lookup,
+            fabric_parts=parts_by_style.get(str(style), []),
+            color_lookup_en=color_lookup_en,
+            contract_by_po=contract_by_po, contract_by_style=contract_by_style,
+            requirements=requirements,
+        )
 
     if not wb.sheetnames:
         return b""
@@ -184,6 +269,11 @@ def _write_style_sheet(
     style_df: pd.DataFrame,
     sizes_df: pd.DataFrame,
     cn_color_lookup: dict,
+    fabric_parts: list | None = None,
+    color_lookup_en: dict | None = None,
+    contract_by_po: dict | None = None,
+    contract_by_style: dict | None = None,
+    requirements: dict | None = None,
 ) -> None:
     """Append one sheet for *style* to *wb*."""
 
@@ -194,6 +284,21 @@ def _write_style_sheet(
     if not all_sizes:
         return
     n_sizes = len(all_sizes)
+
+    # Extra fabric rows shift everything below the 面料/FIBER row down.
+    fabric_parts = [p for p in (fabric_parts or [])
+                    if not getattr(p, "is_empty", lambda: False)()][:4]
+    fab_extra = max(0, len(fabric_parts) - 1)
+    R_SUPPLIER = 4
+    R_FIBER    = 5                      # first fabric row
+    R_DESC     = 6 + fab_extra
+    R_HDR1     = 8 + fab_extra
+    R_HDR2     = 9 + fab_extra
+
+    requirements = requirements or {}
+
+    def _req_for(po_num):
+        return requirements.get(str(po_num).strip())
 
     # Column index map
     C_CONTRACT  = 1          # A  合同号
@@ -235,20 +340,6 @@ def _write_style_sheet(
         ws.column_dimensions[get_column_letter(col_idx)].width = w
 
     # ── Representative row for header info ─────────────────────────────────────
-    import math as _math
-
-    def _safe(val) -> str:
-        """Return clean string; treat NaN / None / 'nan' / 'None' as empty."""
-        if val is None:
-            return ""
-        try:
-            if _math.isnan(float(val)):
-                return ""
-        except (TypeError, ValueError):
-            pass
-        s = str(val).strip()
-        return "" if s.lower() in ("nan", "none", "nat") else s
-
     rep       = style_df.iloc[0]
     seller    = _safe(rep.get("seller"))
     fabric    = _safe(rep.get("fabric"))
@@ -256,7 +347,10 @@ def _write_style_sheet(
     today_str = datetime.date.today().strftime("%Y/%m/%d")
 
     # ── Row heights ────────────────────────────────────────────────────────────
-    for r_h, height in [(1, 26), (2, 22), (4, 18), (5, 18), (6, 18), (8, 22), (9, 18)]:
+    fixed_heights = [(1, 26), (2, 22), (R_SUPPLIER, 18), (R_DESC, 18),
+                     (R_HDR1, 22), (R_HDR2, 18)]
+    fixed_heights += [(R_FIBER + i, 18) for i in range(max(1, len(fabric_parts)))]
+    for r_h, height in fixed_heights:
         ws.row_dimensions[r_h].height = height
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -277,31 +371,39 @@ def _write_style_sheet(
     # ─────────────────────────────────────────────────────────────────────────
     # Row 4 — 供应商名称 / 日期
     # ─────────────────────────────────────────────────────────────────────────
-    _cell(ws, 4, C_CONTRACT, "供应商名称：", font=_FONT_BOLD, align=_LEFT)
+    _cell(ws, R_SUPPLIER, C_CONTRACT, "供应商名称：", font=_FONT_BOLD, align=_LEFT)
     label_end = min(C_BUYER + 2, N_COLS - 3)
-    _merge_or_set(ws, 4, C_STYLE, 4, label_end, value=seller,
+    _merge_or_set(ws, R_SUPPLIER, C_STYLE, R_SUPPLIER, label_end, value=seller,
                   font=_FONT_NORMAL, align=_LEFT)
-    _cell(ws, 4, N_COLS - 2, "日期：",   font=_FONT_BOLD,   align=_LEFT)
-    _cell(ws, 4, N_COLS - 1, today_str,  font=_FONT_NORMAL, align=_LEFT)
+    _cell(ws, R_SUPPLIER, N_COLS - 2, "日期：",   font=_FONT_BOLD,   align=_LEFT)
+    _cell(ws, R_SUPPLIER, N_COLS - 1, today_str,  font=_FONT_NORMAL, align=_LEFT)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Row 5 — 面料/FIBER / 更新日期
+    # 面料 rows — one per 款式面料表格 part (fallback: the PO's fabric field)
     # ─────────────────────────────────────────────────────────────────────────
-    _cell(ws, 5, C_CONTRACT, "面料/FIBER:", font=_FONT_BOLD, align=_LEFT)
-    _merge_or_set(ws, 5, C_STYLE, 5, label_end, value=fabric,
-                  font=_FONT_NORMAL, align=_LEFT)
-    _cell(ws, 5, N_COLS - 2, "更新日期：", font=_FONT_BOLD, align=_LEFT)
+    if fabric_parts:
+        for i, part in enumerate(fabric_parts):
+            rr = R_FIBER + i
+            label = "面料/FIBER:" if i == 0 else f"面料_其他{i}:"
+            _cell(ws, rr, C_CONTRACT, label, font=_FONT_BOLD, align=_LEFT)
+            _merge_or_set(ws, rr, C_STYLE, rr, label_end, value=_fabric_line(part),
+                          font=_FONT_NORMAL, align=_LEFT)
+    else:
+        _cell(ws, R_FIBER, C_CONTRACT, "面料/FIBER:", font=_FONT_BOLD, align=_LEFT)
+        _merge_or_set(ws, R_FIBER, C_STYLE, R_FIBER, label_end, value=fabric,
+                      font=_FONT_NORMAL, align=_LEFT)
+    _cell(ws, R_FIBER, N_COLS - 2, "更新日期：", font=_FONT_BOLD, align=_LEFT)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Row 6 — 品名/Description / 2ND更新日期
+    # 品名/Description / 2ND更新日期
     # ─────────────────────────────────────────────────────────────────────────
-    _cell(ws, 6, C_CONTRACT, "品名/Description:", font=_FONT_BOLD, align=_LEFT)
-    _merge_or_set(ws, 6, C_PO, 6, label_end, value=desc,
+    _cell(ws, R_DESC, C_CONTRACT, "品名/Description:", font=_FONT_BOLD, align=_LEFT)
+    _merge_or_set(ws, R_DESC, C_PO, R_DESC, label_end, value=desc,
                   font=_FONT_NORMAL, align=_LEFT)
-    _cell(ws, 6, N_COLS - 2, "2ND更新日期：", font=_FONT_BOLD, align=_LEFT)
+    _cell(ws, R_DESC, N_COLS - 2, "2ND更新日期：", font=_FONT_BOLD, align=_LEFT)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Rows 8-9 — two-row header
+    # Two-row header
     # ─────────────────────────────────────────────────────────────────────────
     fixed_headers = [
         (C_CONTRACT, "合同号",     _HDR_FILL),
@@ -319,20 +421,20 @@ def _write_style_sheet(
         (C_NOTE,     "备注",       _HDR_FILL),
     ]
     for col_idx, label, fill in fixed_headers:
-        _merge(ws, 8, col_idx, 9, col_idx, label,
+        _merge(ws, R_HDR1, col_idx, R_HDR2, col_idx, label,
                font=_FONT_HDR, fill=fill, border=_BORDER, align=_CENTER)
 
-    # Size group header (row 8) + individual sizes (row 9)
-    _merge(ws, 8, C_SZ_START, 8, C_SZ_END, "尺码搭配",
+    # Size group header + individual sizes
+    _merge(ws, R_HDR1, C_SZ_START, R_HDR1, C_SZ_END, "尺码搭配",
            font=_FONT_HDR, fill=_HDR_FILL, border=_BORDER, align=_CENTER)
     for i, sz in enumerate(all_sizes):
-        _cell(ws, 9, C_SZ_START + i, sz,
+        _cell(ws, R_HDR2, C_SZ_START + i, sz,
               font=_FONT_HDR, fill=_HDR_FILL, border=_BORDER, align=_CENTER)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Data rows
     # ─────────────────────────────────────────────────────────────────────────
-    DATA_START = 10
+    DATA_START = R_HDR2 + 1
     current_row = DATA_START
     grand_total = 0
 
@@ -341,12 +443,15 @@ def _write_style_sheet(
 
     for _, po_row in style_df.iterrows():
         po_num    = po_row["po_number"]
-        cpo       = str(po_row.get("cpo")          or "").strip()
-        wh_code   = str(po_row.get("destination_code") or "").strip()
-        buyer     = str(po_row.get("customer")     or po_row.get("buyer") or "").strip()
-        ship_date = str(po_row.get("factory_ship_date") or po_row.get("xport_date") or "").strip()
-        packaging = str(po_row.get("packaging")    or "").strip()
-        hanger    = str(po_row.get("hanger")       or "").strip()
+        cpo       = _safe(po_row.get("cpo"))
+        wh_code   = _safe(po_row.get("destination_code"))
+        if not wh_code:
+            # CPRS resolved the warehouse from the ship-to address.
+            wh_code = str(getattr(_req_for(po_num), "warehouse", "") or "")
+        buyer     = _safe(po_row.get("customer")) or _safe(po_row.get("buyer"))
+        ship_date = _safe(po_row.get("factory_ship_date")) or _safe(po_row.get("xport_date"))
+        packaging = _safe(po_row.get("packaging"))
+        hanger    = _safe(po_row.get("hanger"))
         note      = " + ".join(filter(None, [packaging, hanger]))
 
         po_sizes = sizes_df[sizes_df["po_number"] == po_num].copy()
@@ -363,9 +468,12 @@ def _write_style_sheet(
             color_str = str(color_en or "").strip()
             cs = po_sizes[po_sizes["color"] == color_en]
 
-            # CN colour lookup — try (GIII, brand, norm), then (GIII, "", norm)
+            # 中文颜色 — the 大货进度表 lookup is the primary source,
+            # the colour-translation DB the fallback.
             color_cn = ""
-            if cn_color_lookup and color_str:
+            if color_lookup_en and color_str:
+                color_cn = str(color_lookup_en.get(color_str.upper(), "") or "")
+            if not color_cn and cn_color_lookup and color_str:
                 try:
                     from po_extractor.store.color_translation_store import _normalize_color_name
                     norm = _normalize_color_name(color_str)
@@ -431,7 +539,13 @@ def _write_style_sheet(
         for col in (C_CONTRACT, C_STYLE, C_PO, C_CPO, C_WH, C_BUYER, C_SHIP, C_RED, C_MARK):
             ws.cell(r, col).border = _BORDER
 
-    # ── PO-level merges (PO号 / CPO# / 仓库代码 / 买家 / 离厂时间) ────────────────
+    # ── PO-level merges (合同号 / PO号 / CPO# / 仓库代码 / 买家 / 离厂时间 /
+    #    红色箱贴纸 / 主箱唛) — requirement cells vary per PO, not per style ────
+    from ..lookups.progress_lookup import _norm_key
+
+    contract_by_po = contract_by_po or {}
+    contract_by_style = contract_by_style or {}
+
     po_groups: dict[str, list[dict]] = {}
     for rec in records:
         po_groups.setdefault(rec["po_num"], []).append(rec)
@@ -439,19 +553,30 @@ def _write_style_sheet(
     for po_num, grp in po_groups.items():
         r0, r1 = grp[0]["row"], grp[-1]["row"]
         rep    = grp[0]
+        # 合同号 from the 大货进度表 (by PO, falling back to by style).
+        contract = (contract_by_po.get(_norm_key(str(po_num)))
+                    or contract_by_style.get(_norm_key(style)) or "")
+        # 红色箱贴纸 / 主箱唛 from CPRS requirement resolution.
+        req = _req_for(po_num)
+        red_txt  = (str(getattr(req, "red_sticker", "") or "") if req else "") or "无"
+        mark_txt = str(getattr(req, "carton_mark", "") or "") if req else ""
+        _merge_or_set(ws, r0, C_CONTRACT, r1, C_CONTRACT, value=contract, font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_PO,    r1, C_PO,    value=rep["po_num"],   font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_CPO,   r1, C_CPO,   value=rep["cpo"],      font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_WH,    r1, C_WH,    value=rep["wh_code"],  font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_BUYER, r1, C_BUYER, value=rep["buyer"],    font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_SHIP,  r1, C_SHIP,  value=rep["ship_date"],font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_RED,   r1, C_RED,   value=red_txt,          font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_MARK,  r1, C_MARK,  value=mark_txt,         font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        if req is not None:
+            # Requirement artwork on top of (not instead of) the text values.
+            _embed_img(ws, getattr(req, "red_img", None), C_RED, r0)
+            _embed_img(ws, getattr(req, "mark_img", None), C_MARK, r0)
 
-    # ── Style-level merges (合同号 / 款号 / 红色箱贴纸 / 主箱唛) ─────────────────
+    # ── Style-level merge (款号) ────────────────────────────────────────────────
     if records:
-        r0, r1 = DATA_START, style_end_row
-        _merge_or_set(ws, r0, C_CONTRACT, r1, C_CONTRACT, value="",     font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
-        _merge_or_set(ws, r0, C_STYLE,    r1, C_STYLE,    value=style,  font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
-        _merge_or_set(ws, r0, C_RED,      r1, C_RED,      value="无",   font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
-        _merge_or_set(ws, r0, C_MARK,     r1, C_MARK,     value="",     font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, DATA_START, C_STYLE, style_end_row, C_STYLE,
+                      value=style, font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Footer rows

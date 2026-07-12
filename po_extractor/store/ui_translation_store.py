@@ -1167,6 +1167,11 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Resolving CPRS requirements…', '正在解析 CPRS 要求…', 'label', 'giii'),
     ('Default for every PO; override per PO below.', '所有订单的默认值；可在下方按订单覆盖。', 'label', 'giii'),
 
+    # Buy plan = enriched 生产计划单 (production-plan format + fabric + CPRS artwork)
+    ('Generate the GIII production plan (生产计划单) — one sheet per style with size breakdown, 面料 rows from the style-fabric table, 合同号 and Chinese colours from the 大货进度表, and 红色箱贴纸 / 主箱唛 (text + artwork) resolved live from CPRS. Without CPRS configured those cells fall back to blank/无.',
+     '生成 GIII 生产计划单 — 每个款号一个工作表，包含尺码明细、来自款式面料表格的面料行、来自大货进度表的合同号和中文颜色，以及通过 CPRS 实时解析的红色箱贴纸/主箱唛（文字+图片）。未配置 CPRS 时这些单元格留空/显示"无"。', 'label', 'giii'),
+    ('Requirements check failed:', '要求检查失败：', 'label', 'giii'),
+
     # Upload-time PO requirements document (CPRS)
     ('PO Requirements 要求文档 (.xlsx)', '订单要求文档 (.xlsx)', 'button', 'giii'),
     ('Client requirements per PO from the CPRS knowledge base — labels, hangtags, packaging, carton marking, testing',
