@@ -111,7 +111,7 @@ def test_no_fabric_parts_keeps_classic_layout():
 class _Req:
     def __init__(self, warehouse="", red_sticker="", carton_mark="",
                  red_img=None, mark_img=None, prepack_ratio="", pcs_box="",
-                 msrp="", rfid=""):
+                 msrp="", rfid="", carton_weight=""):
         self.warehouse = warehouse
         self.red_sticker = red_sticker
         self.carton_mark = carton_mark
@@ -121,6 +121,7 @@ class _Req:
         self.pcs_box = pcs_box
         self.msrp = msrp
         self.rfid = rfid
+        self.carton_weight = carton_weight
 
 
 def _png_bytes() -> bytes:
@@ -216,7 +217,7 @@ def test_style_sheet_has_destination_and_packing_columns():
     store = _Store(_pos_df(), _sizes_df())
     ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {}))
     hdr_row = 8    # no fabric parts → classic layout
-    headers = [ws.cell(hdr_row, c).value for c in range(1, 25)]
+    headers = [ws.cell(hdr_row, c).value for c in range(1, 30)]
     assert "目的地" in headers and "包装方式" in headers and "备注" in headers
     vals = [str(v) for v in _all_values(ws)]
     assert any("CARLISLE" in v for v in vals)     # ship-to in 目的地
@@ -272,18 +273,21 @@ def test_cn_color_from_progress_lookup():
 
 def test_style_sheet_packing_broken_into_columns():
     """包装方式 splits into 包装方式/衣架/是否预包/每箱件数/MSRP/RFID columns."""
-    reqs = {"PO1": _Req(prepack_ratio="1-2-2-1", pcs_box="36", msrp="Y", rfid="N")}
+    reqs = {"PO1": _Req(prepack_ratio="1-2-2-1", pcs_box="36", msrp="Y", rfid="N",
+                        carton_weight="40 lbs / 18 kg per carton")}
     store = _Store(_pos_df(), _sizes_df())
     ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {},
                                               requirements=reqs))
-    headers = [ws.cell(8, c).value for c in range(1, 26)]
-    for h in ("品牌", "包装方式", "衣架", "是否预包", "每箱件数", "MSRP", "RFID", "备注"):
+    headers = [ws.cell(8, c).value for c in range(1, 27)]
+    for h in ("品牌", "包装方式", "衣架", "是否预包", "每箱件数", "箱重限制",
+              "MSRP", "RFID", "备注"):
         assert h in headers, f"missing style-sheet column {h}"
     vals = [str(v) for v in _all_values(ws)]
     assert any(v == "PPK" for v in vals)                  # packing only
     assert any(v == "HANGER" for v in vals)               # hanger, ratio stripped
     assert any(v == "Y 1-2-2-1" for v in vals)            # prepack + ratio
     assert "36" in vals and "Y" in vals and "N" in vals   # pcs / MSRP / RFID
+    assert "40 lbs / 18 kg per carton" in vals            # 箱重限制
 
 
 def test_dest_country_from_address_markers():

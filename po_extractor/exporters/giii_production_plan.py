@@ -407,9 +407,10 @@ def _write_style_sheet(
     C_HANG      = C_SZ_END + 6   # 衣架
     C_PPK       = C_SZ_END + 7   # 是否预包 (+ ratio when known)
     C_PCS       = C_SZ_END + 8   # 每箱件数
-    C_MSRP      = C_SZ_END + 9
-    C_RFID      = C_SZ_END + 10
-    C_NOTE      = C_SZ_END + 11
+    C_WTL       = C_SZ_END + 9   # 箱重限制
+    C_MSRP      = C_SZ_END + 10
+    C_RFID      = C_SZ_END + 11
+    C_NOTE      = C_SZ_END + 12
     N_COLS      = C_NOTE
 
     # Safe sheet title (max 31 chars, illegal chars sanitised, unique) —
@@ -428,7 +429,8 @@ def _write_style_sheet(
         C_WH: 10, C_DEST: 24, C_CTRY: 10, C_BUYER: 14, C_COLOR_EN: 16,
         C_COLOR_CN: 14,
         C_QTY: 8, C_SHIP: 12, C_RED: 12, C_MARK: 16, C_PACK: 16,
-        C_HANG: 16, C_PPK: 12, C_PCS: 9, C_MSRP: 7, C_RFID: 7, C_NOTE: 12,
+        C_HANG: 16, C_PPK: 12, C_PCS: 9, C_WTL: 14, C_MSRP: 7, C_RFID: 7,
+        C_NOTE: 12,
     }
     for i in range(C_SZ_START, C_SZ_END + 1):
         widths[i] = 7
@@ -521,6 +523,7 @@ def _write_style_sheet(
         (C_HANG,     "衣架",       _HDR_FILL),
         (C_PPK,      "是否预包",   _HDR_FILL),
         (C_PCS,      "每箱件数",   _HDR_FILL),
+        (C_WTL,      "箱重限制",   _HDR_FILL),
         (C_MSRP,     "MSRP",       _HDR_FILL),
         (C_RFID,     "RFID",       _HDR_FILL),
         (C_NOTE,     "备注",       _HDR_FILL),
@@ -666,7 +669,7 @@ def _write_style_sheet(
         # (备注 stays empty — packing facts have their own columns).
         for col in (C_CONTRACT, C_STYLE, C_BRAND, C_PO, C_CPO, C_WH, C_DEST,
                     C_CTRY, C_BUYER, C_SHIP, C_RED, C_MARK, C_PACK, C_HANG,
-                    C_PPK, C_PCS, C_MSRP, C_RFID, C_NOTE):
+                    C_PPK, C_PCS, C_WTL, C_MSRP, C_RFID, C_NOTE):
             ws.cell(r, col).border = _BORDER
 
     # ── PO-level merges (合同号 / PO号 / CPO# / 仓库代码 / 买家 / 离厂时间 /
@@ -687,6 +690,7 @@ def _write_style_sheet(
     sum_hangers: list[str] = []
     sum_ppks: list[str] = []
     sum_pcs: list[str] = []
+    sum_wtl: list[str] = []
     sum_msrp: list[str] = []
     sum_rfid: list[str] = []
 
@@ -706,6 +710,7 @@ def _write_style_sheet(
         ratio    = rep["po_ratio"] or (str(getattr(req, "prepack_ratio", "") or "")
                                        if req else "")
         pcs_txt  = str(getattr(req, "pcs_box", "") or "") if req else ""
+        wtl_txt  = str(getattr(req, "carton_weight", "") or "") if req else ""
         msrp_txt = str(getattr(req, "msrp", "") or "") if req else ""
         rfid_txt = str(getattr(req, "rfid", "") or "") if req else ""
         if rep["is_prepack"] is None:
@@ -717,8 +722,8 @@ def _write_style_sheet(
         for lst, v in ((sum_contracts, contract), (sum_reds, red_txt),
                        (sum_marks, mark_txt), (sum_packs, rep["packaging"]),
                        (sum_hangers, rep["hanger"]), (sum_ppks, ppk_txt),
-                       (sum_pcs, pcs_txt), (sum_msrp, msrp_txt),
-                       (sum_rfid, rfid_txt)):
+                       (sum_pcs, pcs_txt), (sum_wtl, wtl_txt),
+                       (sum_msrp, msrp_txt), (sum_rfid, rfid_txt)):
             lst.append(v)
         _merge_or_set(ws, r0, C_CONTRACT, r1, C_CONTRACT, value=contract, font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         # 品牌 — read off the PO (division field / PO-number prefix); a PO
@@ -738,6 +743,7 @@ def _write_style_sheet(
         _merge_or_set(ws, r0, C_HANG,  r1, C_HANG,  value=rep["hanger"],   font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_PPK,   r1, C_PPK,   value=ppk_txt,          font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_PCS,   r1, C_PCS,   value=pcs_txt,          font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_WTL,   r1, C_WTL,   value=wtl_txt,          font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_MSRP,  r1, C_MSRP,  value=msrp_txt,         font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_RFID,  r1, C_RFID,  value=rfid_txt,         font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_RED,   r1, C_RED,   value=red_txt,          font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
@@ -846,6 +852,7 @@ def _write_style_sheet(
         "hangers": _uniq(sum_hangers),
         "prepacks": _uniq(sum_ppks),
         "pcs_cartons": _uniq(sum_pcs),
+        "weights": _uniq(sum_wtl),
         "msrps": _uniq(sum_msrp),
         "rfids": _uniq(sum_rfid),
         "buyers": _uniq(r["buyer"] for r in records),
@@ -864,7 +871,8 @@ _SUM_COLS = [
     ("颜色(中文)", 14), ("尺码明细", 26), ("总数量", 10), ("离厂时间", 12),
     ("仓库代码",   10), ("目的地", 24), ("目的地国家", 11), ("买家", 14),
     ("包装方式",   16), ("衣架",   14), ("是否预包", 10), ("每箱件数", 9),
-    ("MSRP",        7), ("RFID",    7), ("红色箱贴纸", 12), ("主箱唛", 16),
+    ("箱重限制",   14), ("MSRP", 7), ("RFID", 7), ("红色箱贴纸", 12),
+    ("主箱唛",     16),
 ]
 _SUM_TOTAL_COL = 11   # 总数量 position (for the TTL row)
 
@@ -921,12 +929,12 @@ def _write_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
             _size_breakdown_text(s), s["total"],
             j(s["ship_dates"]), j(s["warehouses"]), j(s["destinations"]),
             j(s["countries"]), j(s["buyers"]), j(s["packings"]), j(s["hangers"]),
-            j(s["prepacks"]), j(s["pcs_cartons"]), j(s["msrps"]), j(s["rfids"]),
-            j(s["reds"]), j(s["marks"]),
+            j(s["prepacks"]), j(s["pcs_cartons"]), j(s["weights"]),
+            j(s["msrps"]), j(s["rfids"]), j(s["reds"]), j(s["marks"]),
         ]
         for i, v in enumerate(row_vals, start=4):
             _cell(ws, r, i, v, font=_FONT_NORMAL, border=_BORDER,
-                  align=_CENTER if i in (6, _SUM_TOTAL_COL, 15, 19, 20, 21, 22) else _LEFT)
+                  align=_CENTER if i in (6, _SUM_TOTAL_COL, 15, 19, 20, 21, 22, 23) else _LEFT)
         r += 1
 
     _cell(ws, r, 1, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,

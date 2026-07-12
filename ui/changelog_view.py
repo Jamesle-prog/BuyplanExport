@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.53.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "feat", "text": "**箱重限制 column** (carton weight limit, per client) on the style sheets and Summary 汇总, next to 每箱件数 — read from the brand's CPRS carton_spec requirement (G-III corporate: `40 lbs / 18 kg per carton`; KL's own account spec: `40 lbs`). Marking fields like net/gross weight are not mistaken for limits; no stated limit → blank"},
+        ],
+    },
+    {
         "version": "2.52.0",
         "date": "2026-07-12",
         "entries": [

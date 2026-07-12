@@ -33,6 +33,7 @@ class RowRequirements:
     carton_mark: str = ""
     prepack_ratio: str = ""
     pcs_box: str = ""
+    carton_weight: str = ""    # 箱重限制 (e.g. "40 lbs / 18 kg per carton")
     msrp: str = ""
     rfid: str = ""
     red_img: bytes | None = field(default=None, repr=False)
@@ -134,6 +135,45 @@ def _pcs_from_results(results) -> str:
             got = _walk(res.get("resultJson") or {})
             if got:
                 return got
+    return ""
+
+
+# Carton weight-limit keys as CPRS states them per client: the corporate
+# carton_spec uses max_weight ("40 lbs / 18 kg per carton"), KL's own spec
+# uses max_weight_lbs (40). NOT net_weight/gross_weight — those are marking
+# fields, not limits.
+_WEIGHT_KEYS = {"max_weight": "", "weight_limit": "", "max_gross_weight": "",
+                "max_weight_lbs": " lbs", "max_weight_kg": " kg"}
+
+
+def _weight_from_results(results) -> str:
+    """箱重限制 stated by the winning carton/packaging requirements
+    (carton_spec first). '' when no requirement states a limit."""
+    def _walk(v):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                unit = _WEIGHT_KEYS.get(str(k).lower())
+                if unit is not None and str(x).strip():
+                    return f"{x}{unit}".strip()
+            for x in v.values():
+                got = _walk(x)
+                if got:
+                    return got
+        elif isinstance(v, (list, tuple)):
+            for x in v:
+                got = _walk(x)
+                if got:
+                    return got
+        return ""
+
+    ordered = sorted((r for r in results or []
+                      if r.get("status") == "confirmed"
+                      and r.get("domain") in ("carton", "packaging")),
+                     key=lambda r: r.get("subtype") != "carton_spec")
+    for res in ordered:
+        got = _walk(res.get("resultJson") or {})
+        if got:
+            return got
     return ""
 
 
@@ -437,6 +477,7 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
             carton_mark=cn(_result_text(mark)),
             prepack_ratio=ratio if r.is_prepack is not False else "",
             pcs_box=manual_pcs or pcs_box,
+            carton_weight=_weight_from_results(results),
             msrp=_yn(flags.get("msrp")), rfid=_yn(flags.get("rfid")),
             red_img=red_img, mark_img=_image_bytes(cprs, mark),
         )

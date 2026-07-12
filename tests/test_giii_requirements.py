@@ -43,6 +43,35 @@ def test_pcs_box_filled_from_evaluate_results():
     assert reqs2[id(rows2[0])].pcs_box == "6"
 
 
+def test_carton_weight_limit_from_carton_spec():
+    from po_extractor.ui_helpers.giii_requirements import _weight_from_results
+
+    corporate = [{"domain": "carton", "subtype": "carton_spec", "status": "confirmed",
+                  "resultJson": {"max_weight": "40 lbs / 18 kg per carton"}}]
+    kl = [{"domain": "carton", "subtype": "carton_spec", "status": "confirmed",
+           "resultJson": {"max_weight_lbs": 40}}]
+    # carton_marking's net/gross weight are MARKING fields, not limits
+    marking_only = [{"domain": "carton", "subtype": "carton_marking",
+                     "status": "confirmed",
+                     "resultJson": {"net_weight": "YES - printed on carton",
+                                    "gross_weight": "YES - printed"}}]
+    assert _weight_from_results(corporate) == "40 lbs / 18 kg per carton"
+    assert _weight_from_results(kl) == "40 lbs"
+    assert _weight_from_results(marking_only) == ""
+    assert _weight_from_results([]) == ""
+
+
+def test_carton_weight_reaches_row_requirements():
+    class _CprsW(_Cprs):
+        def evaluate(self, order):
+            return [{"domain": "carton", "subtype": "carton_spec",
+                     "status": "confirmed",
+                     "resultJson": {"max_weight": "40 lbs / 18 kg per carton"}}]
+    rows = [_row()]
+    reqs, _ = resolve_requirements(_CprsW(), "DKNY", rows)
+    assert reqs[id(rows[0])].carton_weight == "40 lbs / 18 kg per carton"
+
+
 def test_red_sticker_artwork_falls_back_to_sibling_subtype():
     """CK links the red-sticker picture under red_carton_sticker_sizes —
     when the main result has no image, sibling red_carton_sticker* results
