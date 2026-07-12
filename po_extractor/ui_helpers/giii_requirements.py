@@ -97,6 +97,46 @@ def _result_text(res) -> str:
     return "见要求" if rj.get("required") else ""
 
 
+# An explicit pack-out figure stated in requirement wording, e.g.
+# "6 pre-packs per box, 36 pcs/carton" (CK discounter manual).
+_PCS_RE = re.compile(r"(\d{1,3})\s*(?:pcs?|pieces?)\s*(?:/|per\s*)(?:carton|ctn|box)",
+                     re.IGNORECASE)
+_PCS_KEYS = ("pcs_per_carton", "pieces_per_carton", "units_per_carton", "pcs_carton")
+
+
+def _pcs_from_results(results) -> str:
+    """每箱件数 stated by the winning requirements themselves — structured
+    keys first, then explicit 'N pcs/carton' wording. Confirmed packaging/
+    hangtag/carton results only; nothing is inferred."""
+    def _walk(v):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                if str(k).lower() in _PCS_KEYS and str(x).strip().isdigit():
+                    return str(x).strip()
+            for x in v.values():
+                got = _walk(x)
+                if got:
+                    return got
+        elif isinstance(v, (list, tuple)):
+            for x in v:
+                got = _walk(x)
+                if got:
+                    return got
+        elif isinstance(v, str):
+            m = _PCS_RE.search(v)
+            if m:
+                return m.group(1)
+        return ""
+
+    for res in results or []:
+        if res.get("status") == "confirmed" and \
+           res.get("domain") in ("packaging", "hangtag", "carton"):
+            got = _walk(res.get("resultJson") or {})
+            if got:
+                return got
+    return ""
+
+
 def _image_bytes(cprs, res):
     """First linked artwork for a result. CPRS ≥1.6.5 attaches the winning
     requirement's manual artwork as ``images[]`` on every result; older
@@ -363,6 +403,7 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
             order["contextFields"] = {"dim_code": dim_code}
 
         carton = cprs.carton_results(order)
+        results = cprs.evaluate(order)   # cached — same call carton_results made
         flags = cprs.warehouse_flags(client_id, wh) if wh else {"rfid": None, "msrp": None}
         red = carton.get("red_carton_sticker")
         mark = carton.get("carton_marking") or carton.get("warehouse_diamond")
@@ -374,6 +415,10 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
             if not ratio:
                 warnings.append(f"PO {r.po_number}: no prepack ratio on file for "
                                 f"account '{account}'.")
+        if not pcs_box:
+            # 每箱件数 stated in the winning requirements' own wording
+            # (e.g. CK discounter: "6 pre-packs per box, 36 pcs/carton").
+            pcs_box = _pcs_from_results(results)
 
         req = RowRequirements(
             warehouse=wh, region=str(flags.get("region", "") or ""),
@@ -381,7 +426,7 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
             red_sticker=_red_sticker_text(r.is_prepack, red, dim_code),
             carton_mark=cn(_result_text(mark)),
             prepack_ratio=ratio if r.is_prepack is not False else "",
-            pcs_box=(manual_pcs or pcs_box) if r.is_prepack is not False else manual_pcs,
+            pcs_box=manual_pcs or pcs_box,
             msrp=_yn(flags.get("msrp")), rfid=_yn(flags.get("rfid")),
             red_img=_image_bytes(cprs, red), mark_img=_image_bytes(cprs, mark),
         )

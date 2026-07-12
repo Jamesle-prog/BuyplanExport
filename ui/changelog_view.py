@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.51.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "fix", "text": "**每箱件数 was blank** — two causes: (1) CPRS v1.6.5 search results went slim, dropping `structured_output` (where the per-account prepack ratios/pieces live) — it is now requested explicitly via `include=structured_output`; (2) brands like CK state the pack-out inside the requirement wording ('6 pre-packs per box, **36 pcs/carton**') rather than a structured ratio table — the resolver now reads explicit pcs/carton figures from the winning packaging/hangtag/carton requirements. Priority: manual input > per-account spec > requirement wording; still blank (never guessed) when no source states it"},
+        ],
+    },
+    {
         "version": "2.50.1",
         "date": "2026-07-12",
         "entries": [

@@ -231,9 +231,11 @@ class CprsClient:
         because the two tier-1 rules conflict without an account filter)."""
         key = ("ppr", client_id)
         if key not in self._cache:
+            # v1.6.5+ returns slim search items — structured_output (where the
+            # per-account ratios live) must be requested explicitly.
             data = self._get("/search/requirements",
                              {"clientId": client_id, "subtype": "pre_pack_ratio",
-                              "limit": 10})
+                              "limit": 10, "include": "structured_output"})
             items = data.get("data") or data.get("items") or data.get("results") \
                 if isinstance(data, dict) else (data if isinstance(data, list) else [])
             ratios: dict[str, dict] = {}

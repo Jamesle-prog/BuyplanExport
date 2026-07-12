@@ -7,6 +7,42 @@ from po_extractor.ui_helpers.giii_requirements import (
 )
 
 
+def test_pcs_per_carton_mined_from_requirement_wording():
+    """CK states the pack-out inside the hangtag requirement ('6 pre-packs
+    per box, 36 pcs/carton') — 每箱件数 reads it from the evaluate results."""
+    from po_extractor.ui_helpers.giii_requirements import _pcs_from_results
+
+    results = [
+        {"domain": "hangtag", "subtype": "main_hangtag", "status": "confirmed",
+         "resultJson": {"pre_pack": {"blouses_camis":
+             "Follow ratio on PO, 6 pre-packs per box, 36 pcs/carton"}}},
+    ]
+    assert _pcs_from_results(results) == "36"
+    # structured key wins; non-confirmed and other domains are ignored
+    assert _pcs_from_results([{"domain": "packaging", "status": "confirmed",
+                               "resultJson": {"pieces_per_carton": 24}}]) == "24"
+    assert _pcs_from_results([{"domain": "hangtag", "status": "pending_input",
+                               "resultJson": {"x": "36 pcs/carton"}}]) == ""
+    assert _pcs_from_results([{"domain": "label", "status": "confirmed",
+                               "resultJson": {"x": "36 pcs/carton"}}]) == ""
+    assert _pcs_from_results([]) == ""
+
+
+def test_pcs_box_filled_from_evaluate_results():
+    class _CprsPcs(_Cprs):
+        def evaluate(self, order):
+            return [{"domain": "hangtag", "status": "confirmed",
+                     "resultJson": {"pre_pack": "6 pre-packs per box, 36 pcs/carton"}}]
+    # MY MACY'S has no prepack_spec ratios in the mock → the mined figure fills
+    rows = [_row(buyer="MY MACY'S", is_prepack=True)]
+    reqs, _ = resolve_requirements(_CprsPcs(), "DKNY", rows)
+    assert reqs[id(rows[0])].pcs_box == "36"
+    # ROSS has a spec (pcs 6) — the spec wins over the mined wording
+    rows2 = [_row(buyer="ROSS", is_prepack=True)]
+    reqs2, _ = resolve_requirements(_CprsPcs(), "DKNY", rows2)
+    assert reqs2[id(rows2[0])].pcs_box == "6"
+
+
 def test_image_bytes_prefers_v165_images_array():
     """CPRS ≥1.6.5 attaches artwork as images[] on each result; the old
     resultJson.image_id shape must still work as the fallback."""
