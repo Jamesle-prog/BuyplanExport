@@ -339,8 +339,13 @@ def _write_style_sheet(
     C_SHIP      = C_SZ_END + 2
     C_RED       = C_SZ_END + 3
     C_MARK      = C_SZ_END + 4
-    C_PACK      = C_SZ_END + 5
-    C_NOTE      = C_SZ_END + 6
+    C_PACK      = C_SZ_END + 5   # 包装方式 (packing only)
+    C_HANG      = C_SZ_END + 6   # 衣架
+    C_PPK       = C_SZ_END + 7   # 是否预包 (+ ratio when known)
+    C_PCS       = C_SZ_END + 8   # 每箱件数
+    C_MSRP      = C_SZ_END + 9
+    C_RFID      = C_SZ_END + 10
+    C_NOTE      = C_SZ_END + 11
     N_COLS      = C_NOTE
 
     # Safe sheet title (max 31 chars, illegal chars sanitised, unique) —
@@ -357,7 +362,8 @@ def _write_style_sheet(
     widths = {
         C_CONTRACT: 14, C_STYLE: 12, C_PO: 16, C_CPO: 10,
         C_WH: 10, C_DEST: 24, C_BUYER: 14, C_COLOR_EN: 16, C_COLOR_CN: 14,
-        C_QTY: 8, C_SHIP: 12, C_RED: 12, C_MARK: 16, C_PACK: 20, C_NOTE: 14,
+        C_QTY: 8, C_SHIP: 12, C_RED: 12, C_MARK: 16, C_PACK: 16,
+        C_HANG: 16, C_PPK: 12, C_PCS: 9, C_MSRP: 7, C_RFID: 7, C_NOTE: 12,
     }
     for i in range(C_SZ_START, C_SZ_END + 1):
         widths[i] = 7
@@ -445,6 +451,11 @@ def _write_style_sheet(
         (C_RED,      "红色箱贴纸", _YELLOW_FILL),
         (C_MARK,     "主箱唛",     _YELLOW_FILL),
         (C_PACK,     "包装方式",   _HDR_FILL),
+        (C_HANG,     "衣架",       _HDR_FILL),
+        (C_PPK,      "是否预包",   _HDR_FILL),
+        (C_PCS,      "每箱件数",   _HDR_FILL),
+        (C_MSRP,     "MSRP",       _HDR_FILL),
+        (C_RFID,     "RFID",       _HDR_FILL),
         (C_NOTE,     "备注",       _HDR_FILL),
     ]
     for col_idx, label, fill in fixed_headers:
@@ -482,7 +493,8 @@ def _write_style_sheet(
         ship_to   = _safe(po_row.get("ship_to"))
         packaging = _safe(po_row.get("packaging"))
         hanger    = _safe(po_row.get("hanger"))
-        note      = " + ".join(filter(None, [packaging, hanger]))
+        pk_up     = packaging.upper()
+        is_prepack = ("PPK" in pk_up or "PREPACK" in pk_up) if packaging else None
 
         po_sizes = sizes_df[sizes_df["po_number"] == po_num].copy()
         if po_sizes.empty:
@@ -536,7 +548,9 @@ def _write_style_sheet(
                 "buyer":        buyer,
                 "ship_date":    ship_date,
                 "ship_to":      ship_to,
-                "note":         note,
+                "packaging":    packaging,
+                "hanger":       hanger,
+                "is_prepack":   is_prepack,
                 "color_en":     color_str,
                 "color_cn":     color_cn,
                 "size_qty":     size_qty,
@@ -566,9 +580,10 @@ def _write_style_sheet(
                   font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
 
         # Cells that will be covered by merges below still need border set
-        # (备注 stays empty — packing now has its own 包装方式 column).
+        # (备注 stays empty — packing facts have their own columns).
         for col in (C_CONTRACT, C_STYLE, C_PO, C_CPO, C_WH, C_DEST, C_BUYER,
-                    C_SHIP, C_RED, C_MARK, C_PACK, C_NOTE):
+                    C_SHIP, C_RED, C_MARK, C_PACK, C_HANG, C_PPK, C_PCS,
+                    C_MSRP, C_RFID, C_NOTE):
             ws.cell(r, col).border = _BORDER
 
     # ── PO-level merges (合同号 / PO号 / CPO# / 仓库代码 / 买家 / 离厂时间 /
@@ -585,6 +600,12 @@ def _write_style_sheet(
     sum_contracts: list[str] = []
     sum_reds: list[str] = []
     sum_marks: list[str] = []
+    sum_packs: list[str] = []
+    sum_hangers: list[str] = []
+    sum_ppks: list[str] = []
+    sum_pcs: list[str] = []
+    sum_msrp: list[str] = []
+    sum_rfid: list[str] = []
 
     for po_num, grp in po_groups.items():
         r0, r1 = grp[0]["row"], grp[-1]["row"]
@@ -592,13 +613,26 @@ def _write_style_sheet(
         # 合同号 from the 大货进度表 (by PO, falling back to by style).
         contract = (contract_by_po.get(_norm_key(str(po_num)))
                     or contract_by_style.get(_norm_key(style)) or "")
-        # 红色箱贴纸 / 主箱唛 from CPRS requirement resolution.
+        # 红色箱贴纸 / 主箱唛 / MSRP / RFID / pack-out from CPRS resolution.
         req = _req_for(po_num)
         red_txt  = (str(getattr(req, "red_sticker", "") or "") if req else "") or "无"
         mark_txt = str(getattr(req, "carton_mark", "") or "") if req else ""
-        sum_contracts.append(contract)
-        sum_reds.append(red_txt)
-        sum_marks.append(mark_txt)
+        ratio    = str(getattr(req, "prepack_ratio", "") or "") if req else ""
+        pcs_txt  = str(getattr(req, "pcs_box", "") or "") if req else ""
+        msrp_txt = str(getattr(req, "msrp", "") or "") if req else ""
+        rfid_txt = str(getattr(req, "rfid", "") or "") if req else ""
+        if rep["is_prepack"] is None:
+            ppk_txt = ""
+        elif rep["is_prepack"]:
+            ppk_txt = f"Y {ratio}".strip()
+        else:
+            ppk_txt = "N"
+        for lst, v in ((sum_contracts, contract), (sum_reds, red_txt),
+                       (sum_marks, mark_txt), (sum_packs, rep["packaging"]),
+                       (sum_hangers, rep["hanger"]), (sum_ppks, ppk_txt),
+                       (sum_pcs, pcs_txt), (sum_msrp, msrp_txt),
+                       (sum_rfid, rfid_txt)):
+            lst.append(v)
         _merge_or_set(ws, r0, C_CONTRACT, r1, C_CONTRACT, value=contract, font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_PO,    r1, C_PO,    value=rep["po_num"],   font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_CPO,   r1, C_CPO,   value=rep["cpo"],      font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
@@ -606,7 +640,12 @@ def _write_style_sheet(
         _merge_or_set(ws, r0, C_DEST,  r1, C_DEST,  value=rep["ship_to"],  font=_FONT_NORMAL, border=_BORDER, align=_LEFT)
         _merge_or_set(ws, r0, C_BUYER, r1, C_BUYER, value=rep["buyer"],    font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_SHIP,  r1, C_SHIP,  value=rep["ship_date"],font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
-        _merge_or_set(ws, r0, C_PACK,  r1, C_PACK,  value=rep["note"],     font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_PACK,  r1, C_PACK,  value=rep["packaging"],font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_HANG,  r1, C_HANG,  value=rep["hanger"],   font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_PPK,   r1, C_PPK,   value=ppk_txt,          font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_PCS,   r1, C_PCS,   value=pcs_txt,          font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_MSRP,  r1, C_MSRP,  value=msrp_txt,         font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_RFID,  r1, C_RFID,  value=rfid_txt,         font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_RED,   r1, C_RED,   value=red_txt,          font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_MARK,  r1, C_MARK,  value=mark_txt,         font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         if req is not None:
@@ -659,12 +698,16 @@ def _write_style_sheet(
     # Per-style and per-colour size aggregates for the summary sheets.
     size_totals: dict[str, int] = {}
     color_sizes: dict[str, dict[str, int]] = {}
+    color_cn_map: dict[str, str] = {}
     for rec in records:
-        acc = color_sizes.setdefault(rec["color_en"] or "—", {})
+        key = rec["color_en"] or "—"
+        acc = color_sizes.setdefault(key, {})
         for sz, q in rec["size_qty"].items():
             q = int(q or 0)
             acc[sz] = acc.get(sz, 0) + q
             size_totals[sz] = size_totals.get(sz, 0) + q
+        if rec["color_cn"] and not color_cn_map.get(key):
+            color_cn_map[key] = rec["color_cn"]
 
     return {
         "sheet": sheet_title,
@@ -674,6 +717,8 @@ def _write_style_sheet(
         "contracts": _uniq(sum_contracts),
         "pos": list(po_groups.keys()),
         "colors": _uniq(r["color_en"] for r in records),
+        "colors_cn": _uniq(r["color_cn"] for r in records),
+        "color_cn_map": color_cn_map,
         "sizes": list(all_sizes),
         "size_totals": size_totals,
         "color_sizes": color_sizes,
@@ -681,7 +726,12 @@ def _write_style_sheet(
         "ship_dates": _uniq(r["ship_date"] for r in records),
         "warehouses": _uniq(r["wh_code"] for r in records),
         "destinations": _uniq(r["ship_to"] for r in records),
-        "packings": _uniq(r["note"] for r in records),
+        "packings": _uniq(sum_packs),
+        "hangers": _uniq(sum_hangers),
+        "prepacks": _uniq(sum_ppks),
+        "pcs_cartons": _uniq(sum_pcs),
+        "msrps": _uniq(sum_msrp),
+        "rfids": _uniq(sum_rfid),
         "buyers": _uniq(r["buyer"] for r in records),
         "reds": _uniq(sum_reds),
         "marks": _uniq(sum_marks),
@@ -693,11 +743,14 @@ def _write_style_sheet(
 # ---------------------------------------------------------------------------
 
 _SUM_COLS = [
-    ("款号",       14), ("品名",   26), ("合同号", 14), ("PO数", 7),
-    ("PO号",       26), ("颜色(英文)", 22), ("尺码明细", 28), ("总数量", 10),
-    ("离厂时间",   12), ("仓库代码", 10), ("目的地", 26), ("买家", 14),
-    ("包装方式",   22), ("红色箱贴纸", 12), ("主箱唛", 16),
+    ("No.",         6), ("款号",   14), ("品名",   24), ("合同号", 14),
+    ("PO数",        7), ("PO号",   24), ("颜色(英文)", 18), ("颜色(中文)", 14),
+    ("尺码明细",   26), ("总数量", 10), ("离厂时间", 12), ("仓库代码", 10),
+    ("目的地",     24), ("买家",   14), ("包装方式", 16), ("衣架", 14),
+    ("是否预包",   10), ("每箱件数", 9), ("MSRP", 7), ("RFID", 7),
+    ("红色箱贴纸", 12), ("主箱唛", 16),
 ]
+_SUM_TOTAL_COL = 10   # 总数量 position (for the TTL row)
 
 
 def _size_breakdown_text(summary: dict) -> str:
@@ -732,26 +785,30 @@ def _write_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
     j = "、".join
 
     r = 3
-    for s in summaries:
-        style_cell = _cell(ws, r, 1, s["style"], font=link_font,
+    for no, s in enumerate(summaries, start=1):
+        _cell(ws, r, 1, no, font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        style_cell = _cell(ws, r, 2, s["style"], font=link_font,
                            border=_BORDER, align=_CENTER)
         if '"' not in s["sheet"] and '"' not in str(s["style"]):
             # click-through to the style's own buy-plan sheet
             style_cell.value = f'=HYPERLINK("#\'{s["sheet"]}\'!A1","{s["style"]}")'
         row_vals = [
             s["desc"], j(s["contracts"]), len(s["pos"]), j(s["pos"]),
-            j(s["colors"]), _size_breakdown_text(s), s["total"],
+            j(s["colors"]), j(s["colors_cn"]),
+            _size_breakdown_text(s), s["total"],
             j(s["ship_dates"]), j(s["warehouses"]), j(s["destinations"]),
-            j(s["buyers"]), j(s["packings"]), j(s["reds"]), j(s["marks"]),
+            j(s["buyers"]), j(s["packings"]), j(s["hangers"]),
+            j(s["prepacks"]), j(s["pcs_cartons"]), j(s["msrps"]), j(s["rfids"]),
+            j(s["reds"]), j(s["marks"]),
         ]
-        for i, v in enumerate(row_vals, start=2):
+        for i, v in enumerate(row_vals, start=3):
             _cell(ws, r, i, v, font=_FONT_NORMAL, border=_BORDER,
-                  align=_CENTER if i in (4, 8) else _LEFT)
+                  align=_CENTER if i in (5, _SUM_TOTAL_COL, 17, 18, 19, 20) else _LEFT)
         r += 1
 
     _cell(ws, r, 1, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,
           border=_BORDER, align=_CENTER)
-    _cell(ws, r, 8, sum(s["total"] for s in summaries),
+    _cell(ws, r, _SUM_TOTAL_COL, sum(s["total"] for s in summaries),
           font=_FONT_BOLD, fill=_YELLOW_FILL, border=_BORDER, align=_CENTER)
 
     ws.freeze_panes = "A3"
@@ -765,12 +822,13 @@ def _write_simple_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
 
     sizes = _sort_sizes(list({sz for s in summaries
                               for sz in s.get("size_totals", {})}))
-    C_STYLE, C_COLOR, C_FABRIC = 1, 2, 3
-    C_SZ0 = 4
+    C_NO, C_STYLE, C_COLOR, C_CN, C_FABRIC = 1, 2, 3, 4, 5
+    C_SZ0 = 6
     C_TOTAL = C_SZ0 + len(sizes)
     n_cols = C_TOTAL
 
-    widths = {C_STYLE: 14, C_COLOR: 22, C_FABRIC: 44, C_TOTAL: 10}
+    widths = {C_NO: 6, C_STYLE: 14, C_COLOR: 20, C_CN: 14, C_FABRIC: 44,
+              C_TOTAL: 10}
     for i in range(C_SZ0, C_SZ0 + len(sizes)):
         widths[i] = 8
     for i, w in widths.items():
@@ -781,7 +839,7 @@ def _write_simple_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
            align=Alignment(horizontal="center", vertical="center"))
     ws.row_dimensions[1].height = 24
 
-    headers = ["款号", "颜色", "面料"] + sizes + ["总数量"]
+    headers = ["No.", "款号", "颜色", "颜色(中文)", "面料"] + sizes + ["总数量"]
     for i, label in enumerate(headers, start=1):
         _cell(ws, 2, i, label, font=_FONT_HDR, fill=_HDR_FILL,
               border=_BORDER, align=_CENTER)
@@ -790,10 +848,13 @@ def _write_simple_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
     size_ttl: dict[str, int] = {sz: 0 for sz in sizes}
     grand = 0
     r = 3
-    for s in summaries:
+    for no, s in enumerate(summaries, start=1):
         r0 = r
+        cn_map = s.get("color_cn_map", {})
         for color, qty_by_size in s.get("color_sizes", {}).items():
             _cell(ws, r, C_COLOR, color, font=_FONT_NORMAL, border=_BORDER, align=_LEFT)
+            _cell(ws, r, C_CN, cn_map.get(color, ""), font=_FONT_NORMAL,
+                  border=_BORDER, align=_CENTER)
             row_total = 0
             for i, sz in enumerate(sizes):
                 q = int(qty_by_size.get(sz, 0) or 0)
@@ -805,13 +866,17 @@ def _write_simple_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
                   border=_BORDER, align=_CENTER)
             grand += row_total
             r += 1
-        # style + fabric merged over the style's colour rows
+        # No. + style + fabric merged over the style's colour rows
+        _merge_or_set(ws, r0, C_NO, r - 1, C_NO, value=no,
+                      font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_STYLE, r - 1, C_STYLE, value=s["style"],
                       font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_FABRIC, r - 1, C_FABRIC, value=s.get("fabric", ""),
                       font=_FONT_NORMAL, border=_BORDER, align=_LEFT)
 
-    _cell(ws, r, C_STYLE, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,
+    _cell(ws, r, C_NO, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,
+          border=_BORDER, align=_CENTER)
+    _cell(ws, r, C_STYLE, None, font=_FONT_BOLD, fill=_YELLOW_FILL,
           border=_BORDER, align=_CENTER)
     for i, sz in enumerate(sizes):
         _cell(ws, r, C_SZ0 + i, size_ttl[sz], font=_FONT_BOLD,

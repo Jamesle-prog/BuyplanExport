@@ -52,7 +52,7 @@ def _pos_df(**overrides):
         "xport_date": ["", "8/15/2026"],
         "ship_to": ["ROSS DC, CARLISLE PA", np.nan],
         "packaging": ["PPK", np.nan],
-        "hanger": [np.nan, np.nan],
+        "hanger": ["HANGER (1-2-2-1)", np.nan],
     }
     base.update(overrides)
     return pd.DataFrame(base)
@@ -110,12 +110,17 @@ def test_no_fabric_parts_keeps_classic_layout():
 
 class _Req:
     def __init__(self, warehouse="", red_sticker="", carton_mark="",
-                 red_img=None, mark_img=None):
+                 red_img=None, mark_img=None, prepack_ratio="", pcs_box="",
+                 msrp="", rfid=""):
         self.warehouse = warehouse
         self.red_sticker = red_sticker
         self.carton_mark = carton_mark
         self.red_img = red_img
         self.mark_img = mark_img
+        self.prepack_ratio = prepack_ratio
+        self.pcs_box = pcs_box
+        self.msrp = msrp
+        self.rfid = rfid
 
 
 def _png_bytes() -> bytes:
@@ -168,7 +173,7 @@ def test_style_sheet_has_destination_and_packing_columns():
     store = _Store(_pos_df(), _sizes_df())
     ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {}))
     hdr_row = 8    # no fabric parts → classic layout
-    headers = [ws.cell(hdr_row, c).value for c in range(1, 20)]
+    headers = [ws.cell(hdr_row, c).value for c in range(1, 25)]
     assert "目的地" in headers and "包装方式" in headers and "备注" in headers
     vals = [str(v) for v in _all_values(ws)]
     assert any("CARLISLE" in v for v in vals)     # ship-to in 目的地
@@ -211,10 +216,31 @@ def test_contract_from_progress_maps():
 
 def test_cn_color_from_progress_lookup():
     store = _Store(_pos_df(), _sizes_df())
-    ws = _sheet(generate_giii_production_plan(
+    data = generate_giii_production_plan(
         ["PO1", "PO2"], store, {},
-        color_lookup_en={"JET BLACK": "煤黑色"}))
-    assert "煤黑色" in _all_values(ws)
+        color_lookup_en={"JET BLACK": "煤黑色"})
+    assert "煤黑色" in _all_values(_sheet(data))
+    # CN colour reaches BOTH summary sheets too
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    assert "煤黑色" in [str(v) for v in _all_values(wb["Summary 汇总"])]
+    sp = wb["简明汇总"]
+    assert any(sp.cell(r, 4).value == "煤黑色" for r in range(3, sp.max_row + 1))
+
+
+def test_style_sheet_packing_broken_into_columns():
+    """包装方式 splits into 包装方式/衣架/是否预包/每箱件数/MSRP/RFID columns."""
+    reqs = {"PO1": _Req(prepack_ratio="1-2-2-1", pcs_box="36", msrp="Y", rfid="N")}
+    store = _Store(_pos_df(), _sizes_df())
+    ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {},
+                                              requirements=reqs))
+    headers = [ws.cell(8, c).value for c in range(1, 25)]
+    for h in ("包装方式", "衣架", "是否预包", "每箱件数", "MSRP", "RFID", "备注"):
+        assert h in headers, f"missing style-sheet column {h}"
+    vals = [str(v) for v in _all_values(ws)]
+    assert any(v == "PPK" for v in vals)                  # packing only
+    assert any("HANGER (1-2-2-1)" in v for v in vals)     # hanger own column
+    assert any(v == "Y 1-2-2-1" for v in vals)            # prepack + ratio
+    assert "36" in vals and "Y" in vals and "N" in vals   # pcs / MSRP / RFID
 
 
 def test_nan_metadata_never_renders_as_nan():
@@ -243,15 +269,17 @@ def test_summary_sheet_first_with_one_row_per_style_and_ttl():
     assert "ST1" in wb.sheetnames and "ST2" in wb.sheetnames
 
     ws = wb["Summary 汇总"]
-    assert ws.cell(2, 1).value == "款号"
+    assert ws.cell(2, 1).value == "No." and ws.cell(2, 2).value == "款号"
     # row 3 = ST1 (hyperlink formula to its sheet), row 4 = ST2, row 5 = TTL
-    assert "ST1" in str(ws.cell(3, 1).value) and "HYPERLINK" in str(ws.cell(3, 1).value)
-    assert ws.cell(3, 8).value == 300          # ST1 total
-    assert "PO1" in str(ws.cell(3, 5).value)
-    assert "JET BLACK" in str(ws.cell(3, 6).value)
-    assert ws.cell(4, 8).value == 50           # ST2 total
+    assert ws.cell(3, 1).value == 1
+    assert "ST1" in str(ws.cell(3, 2).value) and "HYPERLINK" in str(ws.cell(3, 2).value)
+    assert ws.cell(3, 10).value == 300         # ST1 total (总数量)
+    assert "PO1" in str(ws.cell(3, 6).value)
+    assert "JET BLACK" in str(ws.cell(3, 7).value)
+    assert ws.cell(4, 1).value == 2
+    assert ws.cell(4, 10).value == 50          # ST2 total
     assert ws.cell(5, 1).value == "TTL"
-    assert ws.cell(5, 8).value == 350          # grand total
+    assert ws.cell(5, 10).value == 350         # grand total
 
 
 def test_summary_has_size_breakdown_packing_destination():
@@ -259,11 +287,15 @@ def test_summary_has_size_breakdown_packing_destination():
     wb = openpyxl.load_workbook(io.BytesIO(
         generate_giii_production_plan(["PO1", "PO2"], store, {})))
     ws = wb["Summary 汇总"]
-    headers = [ws.cell(2, c).value for c in range(1, 16)]
-    assert "尺码明细" in headers and "包装方式" in headers and "目的地" in headers
+    headers = [ws.cell(2, c).value for c in range(1, 24)]
+    for h in ("尺码明细", "包装方式", "目的地", "衣架", "是否预包",
+              "每箱件数", "MSRP", "RFID", "颜色(中文)"):
+        assert h in headers, f"missing summary column {h}"
     vals = [str(v) for v in _all_values(ws)]
     assert any("S 150" in v and "M 200" in v for v in vals)   # size breakdown w/ qty
     assert any("PPK" in v for v in vals)                      # packing
+    assert any("HANGER (1-2-2-1)" in v for v in vals)         # hanger
+    assert any(v == "Y" for v in vals)                        # prepack flag
     assert any("CARLISLE" in v for v in vals)                 # destination
 
 
@@ -276,19 +308,20 @@ def test_simple_summary_sheet_style_color_fabric_sizes():
 
     assert wb.sheetnames[1] == "简明汇总"
     ws = wb["简明汇总"]
-    headers = [ws.cell(2, c).value for c in range(1, 7)]
-    assert headers == ["款号", "颜色", "面料", "S", "M", "总数量"]
+    headers = [ws.cell(2, c).value for c in range(1, 9)]
+    assert headers == ["No.", "款号", "颜色", "颜色(中文)", "面料", "S", "M", "总数量"]
     # row 3: JET BLACK  S=100 M=200 total=300; row 4: PINE S=50 total=50
-    assert ws.cell(3, 1).value == "ST1"
-    assert "HHN-DB-1" in ws.cell(3, 3).value
-    assert ws.cell(3, 2).value == "JET BLACK"
-    assert ws.cell(3, 4).value == 100 and ws.cell(3, 5).value == 200
-    assert ws.cell(3, 6).value == 300
-    assert ws.cell(4, 2).value == "PINE" and ws.cell(4, 6).value == 50
+    assert ws.cell(3, 1).value == 1
+    assert ws.cell(3, 2).value == "ST1"
+    assert "HHN-DB-1" in ws.cell(3, 5).value
+    assert ws.cell(3, 3).value == "JET BLACK"
+    assert ws.cell(3, 6).value == 100 and ws.cell(3, 7).value == 200
+    assert ws.cell(3, 8).value == 300
+    assert ws.cell(4, 3).value == "PINE" and ws.cell(4, 8).value == 50
     # TTL row: per-size sums + grand total
     assert ws.cell(5, 1).value == "TTL"
-    assert ws.cell(5, 4).value == 150 and ws.cell(5, 5).value == 200
-    assert ws.cell(5, 6).value == 350
+    assert ws.cell(5, 6).value == 150 and ws.cell(5, 7).value == 200
+    assert ws.cell(5, 8).value == 350
 
 
 def test_summary_carries_requirement_texts():

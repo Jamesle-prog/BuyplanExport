@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.45.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "feat", "text": "**No. column + 颜色(中文) in both summary sheets** — Summary 汇总 rows and 简明汇总 style blocks are numbered, and the Chinese colour name (进度表 first, colour DB fallback) appears next to the English colour"},
+            {"type": "feat", "text": "**包装方式 broken into individual columns** on the style sheets AND Summary 汇总: 包装方式 (packing only), 衣架 (hanger), 是否预包 (Y + prepack ratio when known / N), 每箱件数 (pcs per carton from CPRS or the manual input), MSRP and RFID (warehouse defaults from CPRS). 备注 stays empty for manual notes"},
+        ],
+    },
+    {
         "version": "2.44.0",
         "date": "2026-07-12",
         "entries": [
