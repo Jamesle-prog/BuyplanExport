@@ -204,6 +204,10 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
     warnings: list[str] = []
     if cprs is None:
         return [], ["CPRS not configured — no requirements document generated."]
+    lc = getattr(cprs, "list_clients", None)
+    if lc is not None and not (lc() or []):
+        return [], ["CPRS unreachable (or has no clients) — no requirements "
+                    "document generated. Check the CPRS server."]
 
     contexts: list[dict] = []
     eval_cache: dict[tuple, list] = {}
@@ -288,6 +292,13 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
     if not brand:
         return {}, ["POs without a brand — CPRS requirement columns left "
                     "blank; they are flagged in the buy plan."]
+    # Distinguish "CPRS is down" from "brand not found" — an unreachable
+    # server used to masquerade as a per-brand not-found warning.
+    lc = getattr(cprs, "list_clients", None)
+    if lc is not None and not (lc() or []):
+        return {}, ["CPRS unreachable (or has no clients) — requirement "
+                    "columns left blank. Check the CPRS server and "
+                    "Admin → Settings."]
     client_id = cprs.resolve_client(brand)
     if not client_id:
         return {}, [f"Brand '{brand}' not found in CPRS — requirement columns left blank."]

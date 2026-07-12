@@ -118,10 +118,18 @@ class CprsClient:
                 score = 0 if target == name else 1
             elif name and (target in name or name in target):
                 score = 2 + abs(len(name.split()) - len(target.split()))
-            elif set(target.split()) & set(name.split() + brand.split()):
-                score = 10
             else:
-                continue
+                # Token tier — count matches, treating vowel-dropped
+                # abbreviations as equal ("DKNY W/SPRTSWR" → SPORTSWEAR),
+                # so more-matching names win deterministically.
+                toks = [t for t in target.split() if len(t) > 1]
+                names = name.split() + brand.split()
+                hits = sum(1 for t in toks if any(
+                    t == n or (len(t) >= 4 and _devowel(t) == _devowel(n))
+                    for n in names))
+                if not hits:
+                    continue
+                score = 10 - min(hits, 5)
             scored.append((score, i, cid))
         return min(scored)[2] if scored else None
 
@@ -282,6 +290,12 @@ def cprs_from_settings(store) -> "CprsClient | None":
 def _norm(s) -> str:
     """Uppercase, collapse to alphanumerics+spaces for fuzzy matching."""
     return re.sub(r"\s+", " ", re.sub(r"[^A-Za-z0-9 ]", " ", str(s or "").upper())).strip()
+
+
+def _devowel(s: str) -> str:
+    """Vowel-dropped form for abbreviation matching (SPORTSWEAR → SPRTSWR)."""
+    s = str(s or "")
+    return (s[:1] + re.sub(r"[AEIOU]", "", s[1:])) if s else s
 
 
 def _as_bool(v):

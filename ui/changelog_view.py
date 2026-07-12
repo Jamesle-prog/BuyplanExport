@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.50.1",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "fix", "text": "**A dead CPRS server no longer masquerades as 'brand not found'** — when CPRS is unreachable the warning now says exactly that (one message, not one per brand). 'Not found in CPRS' only appears when the server answered and genuinely has no such client"},
+            {"type": "fix", "text": "Brand matching understands vowel-dropped division names — `DKNY W/SPRTSWR` now deterministically resolves to DKNY Sportswear (two-token abbreviation match beats DKNY Suits' single token, regardless of API list order)"},
+        ],
+    },
+    {
         "version": "2.50.0",
         "date": "2026-07-12",
         "entries": [

@@ -145,6 +145,18 @@ def test_resolve_client_matches_division_code(patched):
     assert CprsClient("http://h:3100", "k").resolve_client("DW") == "a1"
 
 
+def test_resolve_client_vowel_dropped_abbreviation(patched):
+    """PO divisions abbreviate by dropping vowels ('DKNY W/SPRTSWR') — the
+    two-token match must beat DKNY Suits' one-token match even when Suits
+    comes first in the API list."""
+    patched({"/clients": _Resp(200, [
+        {"id": "a11", "name": "DKNY Suits"},
+        {"id": "a1", "name": "DKNY Sportswear"},
+    ])})
+    c = CprsClient("http://h:3100", "k")
+    assert c.resolve_client("DKNY W/SPRTSWR") == "a1"
+
+
 def test_carton_results_grouped_by_subtype(patched):
     patched({"/evaluate": _Resp(200, {"results": [
         {"domain": "carton", "subtype": "red_carton_sticker", "status": "confirmed"},

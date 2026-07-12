@@ -132,6 +132,18 @@ def test_warehouse_from_po_suffix_when_no_code_or_ship_to():
     assert cprs.wh_calls == 0                     # no ship-to lookups needed
 
 
+def test_unreachable_cprs_says_so_not_brand_not_found():
+    """A dead CPRS server (empty client list) must NOT report every brand as
+    'not found' — the warning names the real cause."""
+    class _Down(_Cprs):
+        def list_clients(self): return []
+        def resolve_client(self, brand): return None
+    reqs, warns = resolve_requirements(_Down(), "Calvin Klein", [_row()])
+    assert reqs == {}
+    assert any("unreachable" in w for w in warns)
+    assert not any("not found" in w for w in warns)
+
+
 def test_unknown_brand_never_guessed():
     """A brand string that doesn't resolve must NOT fall back to inference —
     requirements stay empty and the warning says why."""
