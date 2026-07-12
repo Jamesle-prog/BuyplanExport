@@ -100,7 +100,7 @@ def _resolve_po_requirements(selected: list[str], filt_df: pd.DataFrame,
     blank and the buy plan flags them); nothing is inferred.
     """
     from po_extractor.ui_helpers.giii_requirements import (
-        brand_from_po, resolve_requirements,
+        brand_from_po, prepack_flag, resolve_requirements,
     )
     from ui.stores import get_cprs_client
 
@@ -117,13 +117,13 @@ def _resolve_po_requirements(selected: list[str], filt_df: pd.DataFrame,
 
     rows_by_brand: dict[str, list[_ReqRow]] = {}
     for rec in df.to_dict("records"):
-        pk = _s(rec, "packaging").upper()
         row = _ReqRow(
             po_number=_s(rec, "po_number"),
             warehouse_code=_s(rec, "destination_code"),
             ship_to=_s(rec, "ship_to"),
             buyer=_s(rec, "buyer", "customer"),
-            is_prepack=("PPK" in pk or "PREPACK" in pk) if pk else None,
+            # ratio-aware: "HANGER (1-2-2-1)" means prepack even without PPK
+            is_prepack=prepack_flag(_s(rec, "packaging"), _s(rec, "hanger")),
         )
         brand = _s(rec, "division_name") or brand_from_po(_s(rec, "po_number"))
         rows_by_brand.setdefault(brand, []).append(row)

@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.49.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "feat", "text": "**品牌 column on the style sheets** (after 款号, alongside 目的地) — the brand read off the PO; brand-less POs show the red ⚠ 无品牌 flag there (moved out of 备注)"},
+            {"type": "fix", "text": "**Prepack detection understands pack ratios** — a ratio printed in the PO's packing/hanger text (e.g. `FLAT PACK + HANGER (1-2-2-1)`) means the order IS prepack even without a PPK marker: 是否预包 now shows `Y 1-2-2-1` (PO ratio wins over CPRS's per-account ratio), 衣架 shows just `HANGER` with the ratio stripped, and the CPRS red-sticker check receives the correct prepack flag"},
+        ],
+    },
+    {
         "version": "2.48.0",
         "date": "2026-07-12",
         "entries": [

@@ -33,6 +33,9 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ._excel_helpers import clean_sheet_name
+from ..ui_helpers.giii_requirements import (
+    brand_from_po, pack_ratio, prepack_flag, strip_ratio,
+)
 
 # ---------------------------------------------------------------------------
 # Style constants
@@ -327,15 +330,16 @@ def _write_style_sheet(
     # Column index map
     C_CONTRACT  = 1          # A  合同号
     C_STYLE     = 2          # B  款号
-    C_PO        = 3          # C  PO号
-    C_CPO       = 4          # D  CPO#
-    C_WH        = 5          # E  仓库代码
-    C_DEST      = 6          # F  目的地
-    C_BUYER     = 7          # G  买家
-    C_COLOR_EN  = 8          # H  颜色(英文)
-    C_COLOR_CN  = 9          # I  颜色(中文)
-    C_SZ_START  = 10         # J  first size
-    C_SZ_END    = 9 + n_sizes
+    C_BRAND     = 3          # C  品牌
+    C_PO        = 4          # D  PO号
+    C_CPO       = 5          # E  CPO#
+    C_WH        = 6          # F  仓库代码
+    C_DEST      = 7          # G  目的地
+    C_BUYER     = 8          # H  买家
+    C_COLOR_EN  = 9          # I  颜色(英文)
+    C_COLOR_CN  = 10         # J  颜色(中文)
+    C_SZ_START  = 11         # K  first size
+    C_SZ_END    = 10 + n_sizes
     C_QTY       = C_SZ_END + 1
     C_SHIP      = C_SZ_END + 2
     C_RED       = C_SZ_END + 3
@@ -361,7 +365,7 @@ def _write_style_sheet(
 
     # ── Column widths ──────────────────────────────────────────────────────────
     widths = {
-        C_CONTRACT: 14, C_STYLE: 12, C_PO: 16, C_CPO: 10,
+        C_CONTRACT: 14, C_STYLE: 12, C_BRAND: 13, C_PO: 16, C_CPO: 10,
         C_WH: 10, C_DEST: 24, C_BUYER: 14, C_COLOR_EN: 16, C_COLOR_CN: 14,
         C_QTY: 8, C_SHIP: 12, C_RED: 12, C_MARK: 16, C_PACK: 16,
         C_HANG: 16, C_PPK: 12, C_PCS: 9, C_MSRP: 7, C_RFID: 7, C_NOTE: 12,
@@ -440,6 +444,7 @@ def _write_style_sheet(
     fixed_headers = [
         (C_CONTRACT, "合同号",     _HDR_FILL),
         (C_STYLE,    "款号",       _HDR_FILL),
+        (C_BRAND,    "品牌",       _HDR_FILL),
         (C_PO,       "PO号",       _HDR_FILL),
         (C_CPO,      "CPO#",       _HDR_FILL),
         (C_WH,       "仓库代码",   _YELLOW_FILL),
@@ -480,8 +485,6 @@ def _write_style_sheet(
     # Build a flat list of row records first so we know merge ranges
     records: list[dict] = []
 
-    from ..ui_helpers.giii_requirements import brand_from_po
-
     for _, po_row in style_df.iterrows():
         po_num    = po_row["po_number"]
         # Brand strictly off the PO: its division field, else the documented
@@ -499,8 +502,13 @@ def _write_style_sheet(
         ship_to   = _safe(po_row.get("ship_to"))
         packaging = _safe(po_row.get("packaging"))
         hanger    = _safe(po_row.get("hanger"))
-        pk_up     = packaging.upper()
-        is_prepack = ("PPK" in pk_up or "PREPACK" in pk_up) if packaging else None
+        # A pack ratio printed in the packing/hanger text (e.g. "HANGER
+        # (1-2-2-1)") IS the prepack ratio — it moves to 是否预包 and also
+        # means the order is prepack even without a PPK marker.
+        po_ratio   = pack_ratio(packaging, hanger)
+        is_prepack = prepack_flag(packaging, hanger)
+        packaging  = strip_ratio(packaging)
+        hanger     = strip_ratio(hanger)
 
         po_sizes = sizes_df[sizes_df["po_number"] == po_num].copy()
         if po_sizes.empty:
@@ -557,6 +565,7 @@ def _write_style_sheet(
                 "ship_to":      ship_to,
                 "packaging":    packaging,
                 "hanger":       hanger,
+                "po_ratio":     po_ratio,
                 "is_prepack":   is_prepack,
                 "color_en":     color_str,
                 "color_cn":     color_cn,
@@ -588,9 +597,9 @@ def _write_style_sheet(
 
         # Cells that will be covered by merges below still need border set
         # (备注 stays empty — packing facts have their own columns).
-        for col in (C_CONTRACT, C_STYLE, C_PO, C_CPO, C_WH, C_DEST, C_BUYER,
-                    C_SHIP, C_RED, C_MARK, C_PACK, C_HANG, C_PPK, C_PCS,
-                    C_MSRP, C_RFID, C_NOTE):
+        for col in (C_CONTRACT, C_STYLE, C_BRAND, C_PO, C_CPO, C_WH, C_DEST,
+                    C_BUYER, C_SHIP, C_RED, C_MARK, C_PACK, C_HANG, C_PPK,
+                    C_PCS, C_MSRP, C_RFID, C_NOTE):
             ws.cell(r, col).border = _BORDER
 
     # ── PO-level merges (合同号 / PO号 / CPO# / 仓库代码 / 买家 / 离厂时间 /
@@ -626,7 +635,9 @@ def _write_style_sheet(
         req = _req_for(po_num)
         red_txt  = str(getattr(req, "red_sticker", "") or "") if req else ""
         mark_txt = str(getattr(req, "carton_mark", "") or "") if req else ""
-        ratio    = str(getattr(req, "prepack_ratio", "") or "") if req else ""
+        # Ratio printed on the PO wins; CPRS's per-account ratio is fallback.
+        ratio    = rep["po_ratio"] or (str(getattr(req, "prepack_ratio", "") or "")
+                                       if req else "")
         pcs_txt  = str(getattr(req, "pcs_box", "") or "") if req else ""
         msrp_txt = str(getattr(req, "msrp", "") or "") if req else ""
         rfid_txt = str(getattr(req, "rfid", "") or "") if req else ""
@@ -643,6 +654,12 @@ def _write_style_sheet(
                        (sum_rfid, rfid_txt)):
             lst.append(v)
         _merge_or_set(ws, r0, C_CONTRACT, r1, C_CONTRACT, value=contract, font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        # 品牌 — read off the PO (division field / PO-number prefix); a PO
+        # without one is flagged here, never guessed.
+        _merge_or_set(ws, r0, C_BRAND, r1, C_BRAND,
+                      value=rep["brand"] or "⚠ 无品牌",
+                      font=_FONT_NORMAL if rep["brand"] else _FONT_FLAG,
+                      border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_PO,    r1, C_PO,    value=rep["po_num"],   font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_CPO,   r1, C_CPO,   value=rep["cpo"],      font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_WH,    r1, C_WH,    value=rep["wh_code"],  font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
@@ -657,11 +674,6 @@ def _write_style_sheet(
         _merge_or_set(ws, r0, C_RFID,  r1, C_RFID,  value=rfid_txt,         font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_RED,   r1, C_RED,   value=red_txt,          font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_MARK,  r1, C_MARK,  value=mark_txt,         font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
-        # Flag brand-less POs in 备注 — their requirement cells are blank by design.
-        note_txt = "" if rep["brand"] else "⚠ 无品牌"
-        _merge_or_set(ws, r0, C_NOTE,  r1, C_NOTE,  value=note_txt,
-                      font=_FONT_FLAG if note_txt else _FONT_NORMAL,
-                      border=_BORDER, align=_CENTER)
         if req is not None:
             # Requirement artwork on top of (not instead of) the text values.
             _embed_img(ws, getattr(req, "red_img", None), C_RED, r0)

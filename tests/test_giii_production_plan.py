@@ -269,14 +269,40 @@ def test_style_sheet_packing_broken_into_columns():
     store = _Store(_pos_df(), _sizes_df())
     ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {},
                                               requirements=reqs))
-    headers = [ws.cell(8, c).value for c in range(1, 25)]
-    for h in ("包装方式", "衣架", "是否预包", "每箱件数", "MSRP", "RFID", "备注"):
+    headers = [ws.cell(8, c).value for c in range(1, 26)]
+    for h in ("品牌", "包装方式", "衣架", "是否预包", "每箱件数", "MSRP", "RFID", "备注"):
         assert h in headers, f"missing style-sheet column {h}"
     vals = [str(v) for v in _all_values(ws)]
     assert any(v == "PPK" for v in vals)                  # packing only
-    assert any("HANGER (1-2-2-1)" in v for v in vals)     # hanger own column
+    assert any(v == "HANGER" for v in vals)               # hanger, ratio stripped
     assert any(v == "Y 1-2-2-1" for v in vals)            # prepack + ratio
     assert "36" in vals and "Y" in vals and "N" in vals   # pcs / MSRP / RFID
+
+
+def test_ratio_in_packing_text_means_prepack_without_ppk_marker():
+    """Ross fax POs print 'FLAT PACK + HANGER (1-2-2-1)' with no PPK marker —
+    the ratio itself means prepack, and it moves out of 衣架 into 是否预包."""
+    df = _pos_df(packaging=["FLAT PACK", "FLAT PACK"],
+                 hanger=["HANGER (1-2-2-1)", "HANGER (2-2-2)"])
+    store = _Store(df, _sizes_df())
+    ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {}))
+    vals = [str(v) for v in _all_values(ws)]
+    assert any(v == "Y 1-2-2-1" for v in vals)
+    assert any(v == "Y 2-2-2" for v in vals)
+    assert any(v == "HANGER" for v in vals)
+    assert not any("(1-2-2-1)" in v for v in vals)
+
+
+def test_style_sheet_brand_column_with_flag():
+    df = _pos_df(po_number=["CSKHHN015R", "PO2"])
+    sizes = _sizes_df().assign(**{"PO Number": ["CSKHHN015R", "CSKHHN015R", "PO2"]})
+    store = _Store(df, sizes)
+    ws = _sheet(generate_giii_production_plan(["CSKHHN015R", "PO2"], store, {}))
+    headers = [ws.cell(8, c).value for c in range(1, 6)]
+    assert headers[:4] == ["合同号", "款号", "品牌", "PO号"]
+    vals = [str(v) for v in _all_values(ws)]
+    assert "Calvin Klein" in vals          # decoded from the CS prefix
+    assert "⚠ 无品牌" in vals              # PO2 has no brand → flagged in 品牌
 
 
 def test_nan_metadata_never_renders_as_nan():
@@ -330,8 +356,8 @@ def test_summary_has_size_breakdown_packing_destination():
     vals = [str(v) for v in _all_values(ws)]
     assert any("S 150" in v and "M 200" in v for v in vals)   # size breakdown w/ qty
     assert any("PPK" in v for v in vals)                      # packing
-    assert any("HANGER (1-2-2-1)" in v for v in vals)         # hanger
-    assert any(v == "Y" for v in vals)                        # prepack flag
+    assert any(v == "HANGER" for v in vals)                   # hanger (ratio stripped)
+    assert any(v == "Y 1-2-2-1" for v in vals)                # prepack + PO ratio
     assert any("CARLISLE" in v for v in vals)                 # destination
 
 

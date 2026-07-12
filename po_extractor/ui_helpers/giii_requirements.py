@@ -19,6 +19,7 @@ Design points (vs. the first-pass integration that lived in the exporter):
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 
@@ -107,6 +108,37 @@ def _image_bytes(cprs, res):
         rj = res.get("resultJson", {}) or {}
         img_id = rj.get("image_id") or rj.get("imageId")
     return cprs.manual_image(img_id) if img_id else None
+
+
+# A parenthesised pack ratio inside the PO's packing/hanger text, e.g.
+# "FLAT PACK + HANGER (1-2-2-1)" — three or more dash-joined counts. Its
+# presence means the order is PREPACK even without an explicit PPK marker.
+_RATIO_RE = re.compile(r"\(\s*(\d{1,2}(?:\s*-\s*\d{1,2}){2,})\s*\)")
+
+
+def pack_ratio(*texts) -> str:
+    """Extract the prepack ratio from packing/hanger text ('' if none)."""
+    for t in texts:
+        m = _RATIO_RE.search(str(t or ""))
+        if m:
+            return re.sub(r"\s+", "", m.group(1))
+    return ""
+
+
+def strip_ratio(text) -> str:
+    """Remove the parenthesised ratio from a packing/hanger cell value."""
+    return _RATIO_RE.sub("", str(text or "")).strip(" ,;+-·") if text else ""
+
+
+def prepack_flag(packaging, hanger="") -> bool | None:
+    """Is the order prepack, judged from the PO's own packing/hanger text?
+    None when the PO carries no packing info at all."""
+    packaging = str(packaging or "")
+    hanger = str(hanger or "")
+    if not (packaging.strip() or hanger.strip()):
+        return None
+    up = packaging.upper()
+    return "PPK" in up or "PREPACK" in up or bool(pack_ratio(packaging, hanger))
 
 
 # GIII PO numbers START with the division code — a brand marker printed on
