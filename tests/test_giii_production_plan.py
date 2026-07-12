@@ -162,6 +162,40 @@ def test_no_requirements_defaults_red_sticker_to_wu():
     assert "无" in _all_values(ws)
 
 
+# ── style-sheet 目的地 / 包装方式 / 离厂时间 ──────────────────────────────────
+
+def test_style_sheet_has_destination_and_packing_columns():
+    store = _Store(_pos_df(), _sizes_df())
+    ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {}))
+    hdr_row = 8    # no fabric parts → classic layout
+    headers = [ws.cell(hdr_row, c).value for c in range(1, 20)]
+    assert "目的地" in headers and "包装方式" in headers and "备注" in headers
+    vals = [str(v) for v in _all_values(ws)]
+    assert any("CARLISLE" in v for v in vals)     # ship-to in 目的地
+    assert any(v == "PPK" for v in vals)          # packaging in 包装方式
+
+
+def test_ex_factory_date_is_etd_minus_10_days():
+    store = _Store(_pos_df(), _sizes_df())
+    data = generate_giii_production_plan(["PO1", "PO2"], store, {})
+    ws = _sheet(data)
+    vals = [str(v) for v in _all_values(ws)]
+    # PO1 ETD 7/30/2026 → 07/20/2026; PO2 ETD 8/15/2026 → 08/05/2026
+    assert any("07/20/2026" in v for v in vals)
+    assert any("08/05/2026" in v for v in vals)
+    assert not any("7/30/2026" in v for v in vals)
+    # summary inherits the adjusted date
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    svals = [str(v) for v in _all_values(wb["Summary 汇总"])]
+    assert any("07/20/2026" in v for v in svals)
+
+
+def test_unparseable_etd_passes_through():
+    store = _Store(_pos_df(factory_ship_date=["TBD", np.nan]), _sizes_df())
+    ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {}))
+    assert any(str(v) == "TBD" for v in _all_values(ws))
+
+
 # ── 合同号 / CN colours / NaN cleanup ─────────────────────────────────────────
 
 def test_contract_from_progress_maps():

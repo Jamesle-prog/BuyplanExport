@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.43.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "feat", "text": "**Style sheets gain 目的地 and 包装方式 columns** — the ship-to destination (after 仓库代码) and the packing method (packing + hanger, moved out of 备注 into its own column; 备注 stays for manual notes). Both merge per PO like the other PO-level cells"},
+            {"type": "fix", "text": "**离厂时间 is now ETD − 10 days** — the PO's ship date is the vessel ETD; the goods must leave the factory ~10 days earlier. Applies to the style sheets and both summary sheets; unparseable dates (e.g. 'TBD') pass through unchanged"},
+        ],
+    },
+    {
         "version": "2.42.0",
         "date": "2026-07-12",
         "entries": [

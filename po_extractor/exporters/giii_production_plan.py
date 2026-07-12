@@ -124,6 +124,21 @@ def _safe(val) -> str:
     return "" if s.lower() in ("nan", "none", "nat") else s
 
 
+def _ex_factory_date(etd: str) -> str:
+    """离厂时间 = ETD − 10 days. The PO's ship date is the vessel ETD; goods
+    must leave the factory ~10 days earlier. Unparseable dates pass through
+    unchanged rather than corrupting the cell."""
+    if not etd:
+        return ""
+    try:
+        dt = pd.to_datetime(etd, errors="coerce")
+        if pd.isna(dt):
+            return etd
+        return (dt - pd.Timedelta(days=10)).strftime("%m/%d/%Y")
+    except Exception:
+        return etd
+
+
 def _fabric_line(p) -> str:
     """One 面料 row value from a 款式面料表格 part, e.g.
     '大身：HHN-DB-YS240782 86%Polyester 14%Spandex 200gsm 有效170cm'."""
@@ -314,16 +329,18 @@ def _write_style_sheet(
     C_PO        = 3          # C  PO号
     C_CPO       = 4          # D  CPO#
     C_WH        = 5          # E  仓库代码
-    C_BUYER     = 6          # F  买家
-    C_COLOR_EN  = 7          # G  颜色(英文)
-    C_COLOR_CN  = 8          # H  颜色(中文)
-    C_SZ_START  = 9          # I  first size
-    C_SZ_END    = 8 + n_sizes
+    C_DEST      = 6          # F  目的地
+    C_BUYER     = 7          # G  买家
+    C_COLOR_EN  = 8          # H  颜色(英文)
+    C_COLOR_CN  = 9          # I  颜色(中文)
+    C_SZ_START  = 10         # J  first size
+    C_SZ_END    = 9 + n_sizes
     C_QTY       = C_SZ_END + 1
     C_SHIP      = C_SZ_END + 2
     C_RED       = C_SZ_END + 3
     C_MARK      = C_SZ_END + 4
-    C_NOTE      = C_SZ_END + 5
+    C_PACK      = C_SZ_END + 5
+    C_NOTE      = C_SZ_END + 6
     N_COLS      = C_NOTE
 
     # Safe sheet title (max 31 chars, illegal chars sanitised, unique) —
@@ -339,8 +356,8 @@ def _write_style_sheet(
     # ── Column widths ──────────────────────────────────────────────────────────
     widths = {
         C_CONTRACT: 14, C_STYLE: 12, C_PO: 16, C_CPO: 10,
-        C_WH: 10, C_BUYER: 14, C_COLOR_EN: 16, C_COLOR_CN: 14,
-        C_QTY: 8, C_SHIP: 12, C_RED: 12, C_MARK: 16, C_NOTE: 16,
+        C_WH: 10, C_DEST: 24, C_BUYER: 14, C_COLOR_EN: 16, C_COLOR_CN: 14,
+        C_QTY: 8, C_SHIP: 12, C_RED: 12, C_MARK: 16, C_PACK: 20, C_NOTE: 14,
     }
     for i in range(C_SZ_START, C_SZ_END + 1):
         widths[i] = 7
@@ -419,6 +436,7 @@ def _write_style_sheet(
         (C_PO,       "PO号",       _HDR_FILL),
         (C_CPO,      "CPO#",       _HDR_FILL),
         (C_WH,       "仓库代码",   _YELLOW_FILL),
+        (C_DEST,     "目的地",     _HDR_FILL),
         (C_BUYER,    "买家",       _HDR_FILL),
         (C_COLOR_EN, "颜色(英文)", _HDR_FILL),
         (C_COLOR_CN, "颜色(中文)", _HDR_FILL),
@@ -426,6 +444,7 @@ def _write_style_sheet(
         (C_SHIP,     "离厂时间",   _HDR_FILL),
         (C_RED,      "红色箱贴纸", _YELLOW_FILL),
         (C_MARK,     "主箱唛",     _YELLOW_FILL),
+        (C_PACK,     "包装方式",   _HDR_FILL),
         (C_NOTE,     "备注",       _HDR_FILL),
     ]
     for col_idx, label, fill in fixed_headers:
@@ -457,7 +476,9 @@ def _write_style_sheet(
             # CPRS resolved the warehouse from the ship-to address.
             wh_code = str(getattr(_req_for(po_num), "warehouse", "") or "")
         buyer     = _safe(po_row.get("customer")) or _safe(po_row.get("buyer"))
-        ship_date = _safe(po_row.get("factory_ship_date")) or _safe(po_row.get("xport_date"))
+        # The stored date is the ETD — 离厂时间 shows ETD − 10 days.
+        ship_date = _ex_factory_date(
+            _safe(po_row.get("factory_ship_date")) or _safe(po_row.get("xport_date")))
         ship_to   = _safe(po_row.get("ship_to"))
         packaging = _safe(po_row.get("packaging"))
         hanger    = _safe(po_row.get("hanger"))
@@ -538,7 +559,6 @@ def _write_style_sheet(
         _cell(ws, r, C_COLOR_EN, rec["color_en"],  font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _cell(ws, r, C_COLOR_CN, rec["color_cn"],  font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _cell(ws, r, C_QTY,      rec["total_qty"], font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
-        _cell(ws, r, C_NOTE,     rec["note"],       font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
 
         for j, sz in enumerate(all_sizes):
             qty = rec["size_qty"].get(sz)
@@ -546,7 +566,9 @@ def _write_style_sheet(
                   font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
 
         # Cells that will be covered by merges below still need border set
-        for col in (C_CONTRACT, C_STYLE, C_PO, C_CPO, C_WH, C_BUYER, C_SHIP, C_RED, C_MARK):
+        # (备注 stays empty — packing now has its own 包装方式 column).
+        for col in (C_CONTRACT, C_STYLE, C_PO, C_CPO, C_WH, C_DEST, C_BUYER,
+                    C_SHIP, C_RED, C_MARK, C_PACK, C_NOTE):
             ws.cell(r, col).border = _BORDER
 
     # ── PO-level merges (合同号 / PO号 / CPO# / 仓库代码 / 买家 / 离厂时间 /
@@ -581,8 +603,10 @@ def _write_style_sheet(
         _merge_or_set(ws, r0, C_PO,    r1, C_PO,    value=rep["po_num"],   font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_CPO,   r1, C_CPO,   value=rep["cpo"],      font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_WH,    r1, C_WH,    value=rep["wh_code"],  font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_DEST,  r1, C_DEST,  value=rep["ship_to"],  font=_FONT_NORMAL, border=_BORDER, align=_LEFT)
         _merge_or_set(ws, r0, C_BUYER, r1, C_BUYER, value=rep["buyer"],    font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_SHIP,  r1, C_SHIP,  value=rep["ship_date"],font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_PACK,  r1, C_PACK,  value=rep["note"],     font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_RED,   r1, C_RED,   value=red_txt,          font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_MARK,  r1, C_MARK,  value=mark_txt,         font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         if req is not None:
