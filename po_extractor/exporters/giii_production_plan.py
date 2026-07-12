@@ -216,7 +216,8 @@ def _fabric_line(p) -> str:
     return spec or body
 
 
-def _embed_img(ws, img_bytes, col: int, row_no: int) -> bool:
+def _embed_img(ws, img_bytes, col: int, row_no: int,
+               max_h: int = 76, max_w: int = 76) -> bool:
     """Anchor CPRS requirement artwork (红色箱贴纸 / 主箱唛) into a cell.
     Never fails the export — bad image bytes just leave the text value."""
     if not img_bytes:
@@ -224,12 +225,12 @@ def _embed_img(ws, img_bytes, col: int, row_no: int) -> bool:
     try:
         from openpyxl.drawing.image import Image as XLImage
         img = XLImage(io.BytesIO(img_bytes))
-        scale = min(1.0, 76.0 / img.height if img.height else 1.0,
-                    76.0 / img.width if img.width else 1.0)
+        scale = min(1.0, max_h / img.height if img.height else 1.0,
+                    max_w / img.width if img.width else 1.0)
         img.height, img.width = int(img.height * scale), int(img.width * scale)
         ws.add_image(img, f"{get_column_letter(col)}{row_no}")
         ws.row_dimensions[row_no].height = max(
-            ws.row_dimensions[row_no].height or 0, 60)
+            ws.row_dimensions[row_no].height or 0, img.height * 0.75 + 6)
         return True
     except Exception:
         return False
@@ -772,6 +773,25 @@ def _write_style_sheet(
         _merge(ws, fr, 1, fr, N_COLS, text, font=_FONT_NORMAL, align=_LEFT)
         ws.row_dimensions[fr].height = 16
         fr += 1
+
+    # ── 图示 — full-size 红色箱贴纸 / 主箱唛 artwork from CPRS ─────────────────
+    # The in-cell thumbnails above are reminders; the readable pictures go
+    # here (deduped — POs sharing artwork are listed on one label).
+    for kind, attr in (("红色箱贴纸图示", "red_img"), ("主箱唛图示", "mark_img")):
+        by_img: dict[bytes, list[str]] = {}
+        for po_num in po_groups:
+            req = _req_for(po_num)
+            img = getattr(req, attr, None) if req else None
+            if img:
+                by_img.setdefault(img, []).append(str(po_num))
+        for img, po_list in by_img.items():
+            pos_txt = "、".join(po_list[:4]) + ("…" if len(po_list) > 4 else "")
+            _merge(ws, fr, 1, fr, N_COLS, f"{kind}（{pos_txt}）：",
+                   font=_FONT_BOLD, align=_LEFT)
+            ws.row_dimensions[fr].height = 16
+            fr += 1
+            if _embed_img(ws, img, 2, fr, max_h=240, max_w=560):
+                fr += 1
 
     # ── Print settings ─────────────────────────────────────────────────────────
     ws.print_area = f"A1:{get_column_letter(N_COLS)}{fr - 1}"

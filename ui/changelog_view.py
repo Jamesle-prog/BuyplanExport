@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.52.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "feat", "text": "**Full-size 图示 blocks on every style sheet** — below the footer, each sheet now shows the readable 红色箱贴纸图示 and 主箱唛图示 artwork (up to ~240px tall) with a label listing the POs it applies to; identical artwork shared by several POs appears once. The small in-cell thumbnails stay as reminders"},
+            {"type": "fix", "text": "CK's red-sticker artwork now resolves — it is linked under the sibling `red_carton_sticker_sizes` subtype; the resolver falls back across `red_carton_sticker*` subtypes when the main result carries no image"},
+        ],
+    },
+    {
         "version": "2.51.0",
         "date": "2026-07-12",
         "entries": [

@@ -408,6 +408,16 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
         red = carton.get("red_carton_sticker")
         mark = carton.get("carton_marking") or carton.get("warehouse_diamond")
 
+        # Red-sticker artwork can be linked under a sibling subtype
+        # (e.g. CK's red_carton_sticker_sizes) — fall back across them.
+        red_img = _image_bytes(cprs, red)
+        if red_img is None:
+            for sub, res in carton.items():
+                if sub.startswith("red_carton_sticker"):
+                    red_img = _image_bytes(cprs, res)
+                    if red_img:
+                        break
+
         ratio, pcs_box = "", ""
         if r.is_prepack and account and hasattr(cprs, "prepack_spec"):
             spec = cprs.prepack_spec(client_id, account)
@@ -428,7 +438,7 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
             prepack_ratio=ratio if r.is_prepack is not False else "",
             pcs_box=manual_pcs or pcs_box,
             msrp=_yn(flags.get("msrp")), rfid=_yn(flags.get("rfid")),
-            red_img=_image_bytes(cprs, red), mark_img=_image_bytes(cprs, mark),
+            red_img=red_img, mark_img=_image_bytes(cprs, mark),
         )
         ctx_cache[ctx_key] = req
         out[id(r)] = req

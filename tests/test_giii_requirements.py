@@ -43,6 +43,25 @@ def test_pcs_box_filled_from_evaluate_results():
     assert reqs2[id(rows2[0])].pcs_box == "6"
 
 
+def test_red_sticker_artwork_falls_back_to_sibling_subtype():
+    """CK links the red-sticker picture under red_carton_sticker_sizes —
+    when the main result has no image, sibling red_carton_sticker* results
+    supply it."""
+    class _CprsArt(_Cprs):
+        def carton_results(self, order):
+            self.evaluate_calls += 1
+            return {"red_carton_sticker": {"status": "confirmed", "resultJson": {}},
+                    "red_carton_sticker_sizes": {"status": "confirmed",
+                        "images": [{"id": "IMG_RED"}], "resultJson": {}},
+                    "carton_marking": {"status": "confirmed",
+                                       "resultJson": {"value": "CTN#"}}}
+        def manual_image(self, image_id):
+            return f"bytes:{image_id}".encode()
+    rows = [_row(is_prepack=True)]
+    reqs, _ = resolve_requirements(_CprsArt(), "DKNY", rows, manual={"dim_code": "MY"})
+    assert reqs[id(rows[0])].red_img == b"bytes:IMG_RED"
+
+
 def test_image_bytes_prefers_v165_images_array():
     """CPRS ≥1.6.5 attaches artwork as images[] on each result; the old
     resultJson.image_id shape must still work as the fallback."""

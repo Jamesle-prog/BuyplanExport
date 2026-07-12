@@ -143,14 +143,21 @@ def test_requirements_fill_red_sticker_and_carton_mark():
     assert "DN" in vals
 
 
-def test_requirement_artwork_embeds_without_error():
-    reqs = {"PO1": _Req(red_sticker="MY", red_img=_png_bytes(),
-                        mark_img=_png_bytes())}
+def test_requirement_artwork_embeds_thumbnails_and_full_size_block():
+    png = _png_bytes()
+    reqs = {"PO1": _Req(red_sticker="MY", red_img=png, mark_img=_png_bytes()),
+            "PO2": _Req(red_sticker="MY", red_img=png)}   # same red artwork
     store = _Store(_pos_df(), _sizes_df())
     data = generate_giii_production_plan(["PO1", "PO2"], store, {},
                                          requirements=reqs)
     ws = _sheet(data)
-    assert len(ws._images) == 2
+    # thumbnails: PO1 red+mark, PO2 red = 3; full-size: red (deduped) + mark = 2
+    assert len(ws._images) == 5
+    vals = [str(v) for v in _all_values(ws)]
+    # deduped label lists both POs sharing the artwork
+    assert any(v.startswith("红色箱贴纸图示") and "PO1" in v and "PO2" in v
+               for v in vals)
+    assert any(v.startswith("主箱唛图示") and "PO1" in v for v in vals)
 
 
 def test_bad_image_bytes_do_not_break_export():
