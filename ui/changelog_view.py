@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.48.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "feat", "text": "**Adopt the CPRS v1.6.5 contract** — every evaluate result now carries linked manual artwork as `images[]`; the buy plan reads that (falling back to the old `resultJson.image_id`), so 红色箱贴纸/主箱唛 pictures embed whenever the knowledge base has artwork for the winning requirement. The stricter-400 / auth-header / health behaviours of 1.6.5 were verified compatible with our client"},
+        ],
+    },
+    {
         "version": "2.47.0",
         "date": "2026-07-12",
         "entries": [

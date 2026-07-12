@@ -7,6 +7,26 @@ from po_extractor.ui_helpers.giii_requirements import (
 )
 
 
+def test_image_bytes_prefers_v165_images_array():
+    """CPRS ≥1.6.5 attaches artwork as images[] on each result; the old
+    resultJson.image_id shape must still work as the fallback."""
+    from po_extractor.ui_helpers.giii_requirements import _image_bytes
+
+    class _C:
+        def manual_image(self, image_id):
+            return f"bytes:{image_id}".encode()
+
+    new_shape = {"status": "confirmed",
+                 "images": [{"id": "IMG_NEW", "caption": "red sticker",
+                             "url": "/api/v1/manual-images/IMG_NEW/file"}],
+                 "resultJson": {"image_id": "IMG_OLD"}}
+    old_shape = {"status": "confirmed", "resultJson": {"image_id": "IMG_OLD"}}
+    assert _image_bytes(_C(), new_shape) == b"bytes:IMG_NEW"
+    assert _image_bytes(_C(), old_shape) == b"bytes:IMG_OLD"
+    assert _image_bytes(_C(), {"status": "confirmed", "resultJson": {}}) is None
+    assert _image_bytes(_C(), None) is None
+
+
 def test_brand_from_po_prefix_decode():
     """Documented GIII division prefixes decode; anything else stays ''."""
     assert brand_from_po("CSKHHN015R") == "Calvin Klein"

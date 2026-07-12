@@ -96,10 +96,16 @@ def _result_text(res) -> str:
 
 
 def _image_bytes(cprs, res):
+    """First linked artwork for a result. CPRS ≥1.6.5 attaches the winning
+    requirement's manual artwork as ``images[]`` on every result; older
+    responses carried a single ``image_id`` inside resultJson — both work."""
     if not res:
         return None
-    rj = res.get("resultJson", {}) or {}
-    img_id = rj.get("image_id") or rj.get("imageId")
+    imgs = res.get("images") or []
+    img_id = imgs[0].get("id") if imgs and isinstance(imgs[0], dict) else None
+    if not img_id:
+        rj = res.get("resultJson", {}) or {}
+        img_id = rj.get("image_id") or rj.get("imageId")
     return cprs.manual_image(img_id) if img_id else None
 
 
