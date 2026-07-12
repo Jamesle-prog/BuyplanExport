@@ -258,7 +258,8 @@ def generate_giii_production_plan(
         return b""
 
     if summaries:
-        _write_summary_sheet(wb, summaries)
+        _write_summary_sheet(wb, summaries)      # index 0
+        _write_simple_summary_sheet(wb, summaries)   # index 1
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -457,6 +458,7 @@ def _write_style_sheet(
             wh_code = str(getattr(_req_for(po_num), "warehouse", "") or "")
         buyer     = _safe(po_row.get("customer")) or _safe(po_row.get("buyer"))
         ship_date = _safe(po_row.get("factory_ship_date")) or _safe(po_row.get("xport_date"))
+        ship_to   = _safe(po_row.get("ship_to"))
         packaging = _safe(po_row.get("packaging"))
         hanger    = _safe(po_row.get("hanger"))
         note      = " + ".join(filter(None, [packaging, hanger]))
@@ -512,6 +514,7 @@ def _write_style_sheet(
                 "wh_code":      wh_code,
                 "buyer":        buyer,
                 "ship_date":    ship_date,
+                "ship_to":      ship_to,
                 "note":         note,
                 "color_en":     color_str,
                 "color_cn":     color_cn,
@@ -629,17 +632,32 @@ def _write_style_sheet(
     def _uniq(vals) -> list[str]:
         return [v for v in dict.fromkeys(str(x).strip() for x in vals) if v]
 
+    # Per-style and per-colour size aggregates for the summary sheets.
+    size_totals: dict[str, int] = {}
+    color_sizes: dict[str, dict[str, int]] = {}
+    for rec in records:
+        acc = color_sizes.setdefault(rec["color_en"] or "—", {})
+        for sz, q in rec["size_qty"].items():
+            q = int(q or 0)
+            acc[sz] = acc.get(sz, 0) + q
+            size_totals[sz] = size_totals.get(sz, 0) + q
+
     return {
         "sheet": sheet_title,
         "style": style,
         "desc": desc,
+        "fabric": _fabric_line(fabric_parts[0]) if fabric_parts else fabric,
         "contracts": _uniq(sum_contracts),
         "pos": list(po_groups.keys()),
         "colors": _uniq(r["color_en"] for r in records),
         "sizes": list(all_sizes),
+        "size_totals": size_totals,
+        "color_sizes": color_sizes,
         "total": grand_total,
         "ship_dates": _uniq(r["ship_date"] for r in records),
         "warehouses": _uniq(r["wh_code"] for r in records),
+        "destinations": _uniq(r["ship_to"] for r in records),
+        "packings": _uniq(r["note"] for r in records),
         "buyers": _uniq(r["buyer"] for r in records),
         "reds": _uniq(sum_reds),
         "marks": _uniq(sum_marks),
@@ -652,10 +670,17 @@ def _write_style_sheet(
 
 _SUM_COLS = [
     ("款号",       14), ("品名",   26), ("合同号", 14), ("PO数", 7),
-    ("PO号",       26), ("颜色(英文)", 24), ("尺码", 16), ("总数量", 10),
-    ("离厂时间",   12), ("仓库代码", 10), ("买家", 14), ("红色箱贴纸", 12),
-    ("主箱唛",     16),
+    ("PO号",       26), ("颜色(英文)", 22), ("尺码明细", 28), ("总数量", 10),
+    ("离厂时间",   12), ("仓库代码", 10), ("目的地", 26), ("买家", 14),
+    ("包装方式",   22), ("红色箱贴纸", 12), ("主箱唛", 16),
 ]
+
+
+def _size_breakdown_text(summary: dict) -> str:
+    """'S 1400 / M 2800 / L 2800 / XL 1400' in the style's size order."""
+    st = summary.get("size_totals", {})
+    return " / ".join(f"{sz} {st[sz]}" for sz in summary.get("sizes", [])
+                      if st.get(sz))
 
 
 def _write_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
@@ -691,9 +716,9 @@ def _write_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
             style_cell.value = f'=HYPERLINK("#\'{s["sheet"]}\'!A1","{s["style"]}")'
         row_vals = [
             s["desc"], j(s["contracts"]), len(s["pos"]), j(s["pos"]),
-            j(s["colors"]), "/".join(s["sizes"]), s["total"],
-            j(s["ship_dates"]), j(s["warehouses"]), j(s["buyers"]),
-            j(s["reds"]), j(s["marks"]),
+            j(s["colors"]), _size_breakdown_text(s), s["total"],
+            j(s["ship_dates"]), j(s["warehouses"]), j(s["destinations"]),
+            j(s["buyers"]), j(s["packings"]), j(s["reds"]), j(s["marks"]),
         ]
         for i, v in enumerate(row_vals, start=2):
             _cell(ws, r, i, v, font=_FONT_NORMAL, border=_BORDER,
@@ -704,5 +729,70 @@ def _write_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
           border=_BORDER, align=_CENTER)
     _cell(ws, r, 8, sum(s["total"] for s in summaries),
           font=_FONT_BOLD, fill=_YELLOW_FILL, border=_BORDER, align=_CENTER)
+
+    ws.freeze_panes = "A3"
+
+
+def _write_simple_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
+    """简明汇总 — one row per (style, colour): 款号 / 颜色 / 面料 / dynamic
+    per-size quantity columns / 总数量, with per-size TTL row."""
+    title = "简明汇总" if "简明汇总" not in wb.sheetnames else "简明汇总2"
+    ws = wb.create_sheet(title=title, index=1)
+
+    sizes = _sort_sizes(list({sz for s in summaries
+                              for sz in s.get("size_totals", {})}))
+    C_STYLE, C_COLOR, C_FABRIC = 1, 2, 3
+    C_SZ0 = 4
+    C_TOTAL = C_SZ0 + len(sizes)
+    n_cols = C_TOTAL
+
+    widths = {C_STYLE: 14, C_COLOR: 22, C_FABRIC: 44, C_TOTAL: 10}
+    for i in range(C_SZ0, C_SZ0 + len(sizes)):
+        widths[i] = 8
+    for i, w in widths.items():
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    _merge(ws, 1, 1, 1, n_cols, "简明汇总（款号 / 颜色 / 面料 / 尺码 / 数量）",
+           font=_FONT_SUBTITLE,
+           align=Alignment(horizontal="center", vertical="center"))
+    ws.row_dimensions[1].height = 24
+
+    headers = ["款号", "颜色", "面料"] + sizes + ["总数量"]
+    for i, label in enumerate(headers, start=1):
+        _cell(ws, 2, i, label, font=_FONT_HDR, fill=_HDR_FILL,
+              border=_BORDER, align=_CENTER)
+    ws.row_dimensions[2].height = 20
+
+    size_ttl: dict[str, int] = {sz: 0 for sz in sizes}
+    grand = 0
+    r = 3
+    for s in summaries:
+        r0 = r
+        for color, qty_by_size in s.get("color_sizes", {}).items():
+            _cell(ws, r, C_COLOR, color, font=_FONT_NORMAL, border=_BORDER, align=_LEFT)
+            row_total = 0
+            for i, sz in enumerate(sizes):
+                q = int(qty_by_size.get(sz, 0) or 0)
+                _cell(ws, r, C_SZ0 + i, q if q else None,
+                      font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+                row_total += q
+                size_ttl[sz] += q
+            _cell(ws, r, C_TOTAL, row_total, font=_FONT_NORMAL,
+                  border=_BORDER, align=_CENTER)
+            grand += row_total
+            r += 1
+        # style + fabric merged over the style's colour rows
+        _merge_or_set(ws, r0, C_STYLE, r - 1, C_STYLE, value=s["style"],
+                      font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_FABRIC, r - 1, C_FABRIC, value=s.get("fabric", ""),
+                      font=_FONT_NORMAL, border=_BORDER, align=_LEFT)
+
+    _cell(ws, r, C_STYLE, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,
+          border=_BORDER, align=_CENTER)
+    for i, sz in enumerate(sizes):
+        _cell(ws, r, C_SZ0 + i, size_ttl[sz], font=_FONT_BOLD,
+              fill=_YELLOW_FILL, border=_BORDER, align=_CENTER)
+    _cell(ws, r, C_TOTAL, grand, font=_FONT_BOLD, fill=_YELLOW_FILL,
+          border=_BORDER, align=_CENTER)
 
     ws.freeze_panes = "A3"

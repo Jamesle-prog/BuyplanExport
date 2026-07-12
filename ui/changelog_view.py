@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.42.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "feat", "text": "**Summary 汇总 now shows the size breakdown with quantities** (尺码明细, e.g. `S 1400 / M 2800 / L 2800 / XL 1400`), plus **包装方式** (packing + hanger from the PO) and **目的地** (ship-to destination) columns"},
+            {"type": "feat", "text": "**简明汇总 sheet** — a second, simplified summary: one row per (款号, 颜色) with the 面料 line from the 款式面料表格, dynamic per-size quantity columns, 总数量, and a per-size TTL row. Style and fabric cells merge across each style's colour rows"},
+        ],
+    },
+    {
         "version": "2.41.0",
         "date": "2026-07-12",
         "entries": [

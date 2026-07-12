@@ -50,6 +50,7 @@ def _pos_df(**overrides):
         "buyer": ["", ""],
         "factory_ship_date": ["7/30/2026", np.nan],
         "xport_date": ["", "8/15/2026"],
+        "ship_to": ["ROSS DC, CARLISLE PA", np.nan],
         "packaging": ["PPK", np.nan],
         "hanger": [np.nan, np.nan],
     }
@@ -217,6 +218,43 @@ def test_summary_sheet_first_with_one_row_per_style_and_ttl():
     assert ws.cell(4, 8).value == 50           # ST2 total
     assert ws.cell(5, 1).value == "TTL"
     assert ws.cell(5, 8).value == 350          # grand total
+
+
+def test_summary_has_size_breakdown_packing_destination():
+    store = _Store(_pos_df(), _sizes_df())
+    wb = openpyxl.load_workbook(io.BytesIO(
+        generate_giii_production_plan(["PO1", "PO2"], store, {})))
+    ws = wb["Summary 汇总"]
+    headers = [ws.cell(2, c).value for c in range(1, 16)]
+    assert "尺码明细" in headers and "包装方式" in headers and "目的地" in headers
+    vals = [str(v) for v in _all_values(ws)]
+    assert any("S 150" in v and "M 200" in v for v in vals)   # size breakdown w/ qty
+    assert any("PPK" in v for v in vals)                      # packing
+    assert any("CARLISLE" in v for v in vals)                 # destination
+
+
+def test_simple_summary_sheet_style_color_fabric_sizes():
+    parts = [FabricPart(seq=1, body_part="大身", hhn_no="HHN-DB-1",
+                        composition="86%Polyester 14%Spandex")]
+    store = _Store(_pos_df(), _sizes_df(), {"ST1": parts})
+    wb = openpyxl.load_workbook(io.BytesIO(
+        generate_giii_production_plan(["PO1", "PO2"], store, {})))
+
+    assert wb.sheetnames[1] == "简明汇总"
+    ws = wb["简明汇总"]
+    headers = [ws.cell(2, c).value for c in range(1, 7)]
+    assert headers == ["款号", "颜色", "面料", "S", "M", "总数量"]
+    # row 3: JET BLACK  S=100 M=200 total=300; row 4: PINE S=50 total=50
+    assert ws.cell(3, 1).value == "ST1"
+    assert "HHN-DB-1" in ws.cell(3, 3).value
+    assert ws.cell(3, 2).value == "JET BLACK"
+    assert ws.cell(3, 4).value == 100 and ws.cell(3, 5).value == 200
+    assert ws.cell(3, 6).value == 300
+    assert ws.cell(4, 2).value == "PINE" and ws.cell(4, 6).value == 50
+    # TTL row: per-size sums + grand total
+    assert ws.cell(5, 1).value == "TTL"
+    assert ws.cell(5, 4).value == 150 and ws.cell(5, 5).value == 200
+    assert ws.cell(5, 6).value == 350
 
 
 def test_summary_carries_requirement_texts():
