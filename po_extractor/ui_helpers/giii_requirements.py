@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 @dataclass
 class RowRequirements:
     warehouse: str = ""
+    region: str = ""           # destination country/region (US/EU/…) from the DC
     channel: str = "WHOLESALE"
     account: str = ""
     red_sticker: str = ""
@@ -364,7 +365,8 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
                                 f"account '{account}'.")
 
         req = RowRequirements(
-            warehouse=wh, channel=order["channel"], account=account or "",
+            warehouse=wh, region=str(flags.get("region", "") or ""),
+            channel=order["channel"], account=account or "",
             red_sticker=_red_sticker_text(r.is_prepack, red, dim_code),
             carton_mark=cn(_result_text(mark)),
             prepack_ratio=ratio if r.is_prepack is not False else "",

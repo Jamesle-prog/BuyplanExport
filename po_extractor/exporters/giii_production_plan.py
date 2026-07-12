@@ -26,6 +26,7 @@ from __future__ import annotations
 import datetime
 import io
 import math as _math
+import re
 
 import pandas as pd
 from openpyxl import Workbook
@@ -126,6 +127,45 @@ def _safe(val) -> str:
         pass
     s = str(val).strip()
     return "" if s.lower() in ("nan", "none", "nat") else s
+
+
+_US_STATES = frozenset(
+    "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS "
+    "MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV "
+    "WI WY DC PR".split())
+_EU_NAMES = ("NETHERLANDS", "GERMANY", "FRANCE", "ITALY", "SPAIN", "POLAND",
+             "BELGIUM", "AUSTRIA", "IRELAND", "PORTUGAL", "CZECH", "SWEDEN",
+             "DENMARK", "FINLAND", "GREECE", "HUNGARY", "ROMANIA", "SLOVAKIA",
+             "SLOVENIA", "CROATIA", "BULGARIA", "LUXEMBOURG", "ESTONIA",
+             "LATVIA", "LITHUANIA")
+# 2-letter EU codes that can't be confused with US states / compass points /
+# common words (so no DE=Delaware, no SE=southeast, no AT/IT/ES/FR words).
+_EU_CODES = frozenset("NL PL BE PT CZ SK SI HR BG LU EE LV LT DK HU RO GR".split())
+
+
+def _dest_country(ship_to: str) -> str:
+    """目的地国家 from the ship-to text — only unambiguous markers, else ''."""
+    txt = str(ship_to or "").upper()
+    if not txt.strip():
+        return ""
+    toks = re.sub(r"[^A-Z0-9]+", " ", txt).split()
+    tokset = set(toks)
+    if "USA" in tokset or "UNITED STATES" in txt:
+        return "US"
+    if "CANADA" in tokset:
+        return "CA"
+    if "AUSTRALIA" in tokset:
+        return "AU"
+    if "UNITED KINGDOM" in txt or "ENGLAND" in txt or {"UK", "GB"} & tokset:
+        return "UK"
+    if any(n in txt for n in _EU_NAMES) or (tokset & _EU_CODES):
+        return "EU"
+    # US state + ZIP (e.g. "PERRIS,CA 92571"), or a trailing state code.
+    if re.search(r"\b[A-Z]{2}\s*,?\s+\d{5}(?:-\d{4})?\b", txt):
+        return "US"
+    if any(t in _US_STATES for t in toks[-2:]):
+        return "US"
+    return ""
 
 
 def _dest_address(ship_to: str, buyer: str) -> str:
@@ -352,11 +392,12 @@ def _write_style_sheet(
     C_CPO       = 5          # E  CPO#
     C_WH        = 6          # F  仓库代码
     C_DEST      = 7          # G  目的地
-    C_BUYER     = 8          # H  买家
-    C_COLOR_EN  = 9          # I  颜色(英文)
-    C_COLOR_CN  = 10         # J  颜色(中文)
-    C_SZ_START  = 11         # K  first size
-    C_SZ_END    = 10 + n_sizes
+    C_CTRY      = 8          # H  目的地国家
+    C_BUYER     = 9          # I  买家
+    C_COLOR_EN  = 10         # J  颜色(英文)
+    C_COLOR_CN  = 11         # K  颜色(中文)
+    C_SZ_START  = 12         # L  first size
+    C_SZ_END    = 11 + n_sizes
     C_QTY       = C_SZ_END + 1
     C_SHIP      = C_SZ_END + 2
     C_RED       = C_SZ_END + 3
@@ -383,7 +424,8 @@ def _write_style_sheet(
     # ── Column widths ──────────────────────────────────────────────────────────
     widths = {
         C_CONTRACT: 14, C_STYLE: 12, C_BRAND: 13, C_PO: 16, C_CPO: 10,
-        C_WH: 10, C_DEST: 24, C_BUYER: 14, C_COLOR_EN: 16, C_COLOR_CN: 14,
+        C_WH: 10, C_DEST: 24, C_CTRY: 10, C_BUYER: 14, C_COLOR_EN: 16,
+        C_COLOR_CN: 14,
         C_QTY: 8, C_SHIP: 12, C_RED: 12, C_MARK: 16, C_PACK: 16,
         C_HANG: 16, C_PPK: 12, C_PCS: 9, C_MSRP: 7, C_RFID: 7, C_NOTE: 12,
     }
@@ -466,6 +508,7 @@ def _write_style_sheet(
         (C_CPO,      "CPO#",       _HDR_FILL),
         (C_WH,       "仓库代码",   _YELLOW_FILL),
         (C_DEST,     "目的地",     _HDR_FILL),
+        (C_CTRY,     "目的地国家", _HDR_FILL),
         (C_BUYER,    "买家",       _HDR_FILL),
         (C_COLOR_EN, "颜色(英文)", _HDR_FILL),
         (C_COLOR_CN, "颜色(中文)", _HDR_FILL),
@@ -516,7 +559,12 @@ def _write_style_sheet(
         # The stored date is the ETD — 离厂时间 shows ETD − 10 days.
         ship_date = _ex_factory_date(
             _safe(po_row.get("factory_ship_date")) or _safe(po_row.get("xport_date")))
-        ship_to   = _dest_address(_safe(po_row.get("ship_to")), buyer)
+        ship_raw  = _safe(po_row.get("ship_to"))
+        ship_to   = _dest_address(ship_raw, buyer)
+        # 目的地国家 — the CPRS warehouse region when resolved, else parsed
+        # from unambiguous markers in the address itself.
+        country   = str(getattr(_req_for(po_num), "region", "") or "") \
+            or _dest_country(ship_raw)
         packaging = _safe(po_row.get("packaging"))
         hanger    = _safe(po_row.get("hanger"))
         # A pack ratio printed in the packing/hanger text (e.g. "HANGER
@@ -580,6 +628,7 @@ def _write_style_sheet(
                 "buyer":        buyer,
                 "ship_date":    ship_date,
                 "ship_to":      ship_to,
+                "country":      country,
                 "packaging":    packaging,
                 "hanger":       hanger,
                 "po_ratio":     po_ratio,
@@ -615,8 +664,8 @@ def _write_style_sheet(
         # Cells that will be covered by merges below still need border set
         # (备注 stays empty — packing facts have their own columns).
         for col in (C_CONTRACT, C_STYLE, C_BRAND, C_PO, C_CPO, C_WH, C_DEST,
-                    C_BUYER, C_SHIP, C_RED, C_MARK, C_PACK, C_HANG, C_PPK,
-                    C_PCS, C_MSRP, C_RFID, C_NOTE):
+                    C_CTRY, C_BUYER, C_SHIP, C_RED, C_MARK, C_PACK, C_HANG,
+                    C_PPK, C_PCS, C_MSRP, C_RFID, C_NOTE):
             ws.cell(r, col).border = _BORDER
 
     # ── PO-level merges (合同号 / PO号 / CPO# / 仓库代码 / 买家 / 离厂时间 /
@@ -681,6 +730,7 @@ def _write_style_sheet(
         _merge_or_set(ws, r0, C_CPO,   r1, C_CPO,   value=rep["cpo"],      font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_WH,    r1, C_WH,    value=rep["wh_code"],  font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_DEST,  r1, C_DEST,  value=rep["ship_to"],  font=_FONT_NORMAL, border=_BORDER, align=_LEFT)
+        _merge_or_set(ws, r0, C_CTRY,  r1, C_CTRY,  value=rep["country"],  font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_BUYER, r1, C_BUYER, value=rep["buyer"],    font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_SHIP,  r1, C_SHIP,  value=rep["ship_date"],font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_PACK,  r1, C_PACK,  value=rep["packaging"],font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
@@ -771,6 +821,7 @@ def _write_style_sheet(
         "ship_dates": _uniq(r["ship_date"] for r in records),
         "warehouses": _uniq(r["wh_code"] for r in records),
         "destinations": _uniq(r["ship_to"] for r in records),
+        "countries": _uniq(r["country"] for r in records),
         "packings": _uniq(sum_packs),
         "hangers": _uniq(sum_hangers),
         "prepacks": _uniq(sum_ppks),
@@ -791,9 +842,9 @@ _SUM_COLS = [
     ("No.",         6), ("款号",   14), ("品牌",   12), ("品名",   24),
     ("合同号",     14), ("PO数",    7), ("PO号",   24), ("颜色(英文)", 18),
     ("颜色(中文)", 14), ("尺码明细", 26), ("总数量", 10), ("离厂时间", 12),
-    ("仓库代码",   10), ("目的地", 24), ("买家",   14), ("包装方式", 16),
-    ("衣架",       14), ("是否预包", 10), ("每箱件数", 9), ("MSRP", 7),
-    ("RFID",        7), ("红色箱贴纸", 12), ("主箱唛", 16),
+    ("仓库代码",   10), ("目的地", 24), ("目的地国家", 11), ("买家", 14),
+    ("包装方式",   16), ("衣架",   14), ("是否预包", 10), ("每箱件数", 9),
+    ("MSRP",        7), ("RFID",    7), ("红色箱贴纸", 12), ("主箱唛", 16),
 ]
 _SUM_TOTAL_COL = 11   # 总数量 position (for the TTL row)
 
@@ -849,13 +900,13 @@ def _write_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
             j(s["colors"]), j(s["colors_cn"]),
             _size_breakdown_text(s), s["total"],
             j(s["ship_dates"]), j(s["warehouses"]), j(s["destinations"]),
-            j(s["buyers"]), j(s["packings"]), j(s["hangers"]),
+            j(s["countries"]), j(s["buyers"]), j(s["packings"]), j(s["hangers"]),
             j(s["prepacks"]), j(s["pcs_cartons"]), j(s["msrps"]), j(s["rfids"]),
             j(s["reds"]), j(s["marks"]),
         ]
         for i, v in enumerate(row_vals, start=4):
             _cell(ws, r, i, v, font=_FONT_NORMAL, border=_BORDER,
-                  align=_CENTER if i in (6, _SUM_TOTAL_COL, 18, 19, 20, 21) else _LEFT)
+                  align=_CENTER if i in (6, _SUM_TOTAL_COL, 15, 19, 20, 21, 22) else _LEFT)
         r += 1
 
     _cell(ws, r, 1, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,

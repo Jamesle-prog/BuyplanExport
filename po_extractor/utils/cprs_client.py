@@ -175,15 +175,17 @@ class CprsClient:
         return self._cache[key]
 
     def warehouse_flags(self, client_id: str, warehouse_code: str) -> dict:
-        """Return {'rfid': bool|None, 'msrp': bool|None} for a warehouse code,
-        from the brand's warehouse defaults (drives cols V/W)."""
+        """Return {'rfid': bool|None, 'msrp': bool|None, 'region': str} for a
+        warehouse code, from the brand's warehouse defaults (cols V/W + the
+        destination country/region)."""
         wc = _norm(warehouse_code)
         for w in self.list_warehouses(client_id):
             code = w.get("warehouse_code") or w.get("code") or w.get("warehouseCode")
             if _norm(code or "") == wc:
                 return {"rfid": _as_bool(w.get("rfid_default", w.get("rfid"))),
-                        "msrp": _as_bool(w.get("msrp_required_default", w.get("msrp")))}
-        return {"rfid": None, "msrp": None}
+                        "msrp": _as_bool(w.get("msrp_required_default", w.get("msrp"))),
+                        "region": str(w.get("region") or "").strip().upper()}
+        return {"rfid": None, "msrp": None, "region": ""}
 
     # ── evaluation (cached per order key) ────────────────────────────────────
 

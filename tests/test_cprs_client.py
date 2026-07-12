@@ -108,15 +108,17 @@ def test_resolve_account_matches_catalog(patched):
 
 
 def test_warehouse_flags_real_field_names(patched):
-    # Real API: warehouse_code / rfid_default / msrp_required_default.
+    # Real API: warehouse_code / rfid_default / msrp_required_default / region.
     patched({"/clients/a1/warehouses": _Resp(200, [
-        {"warehouse_code": "UC", "rfid_default": True, "msrp_required_default": True},
-        {"warehouse_code": "DN", "rfid_default": False, "msrp_required_default": False},
+        {"warehouse_code": "UC", "rfid_default": True,
+         "msrp_required_default": True, "region": "US"},
+        {"warehouse_code": "DN", "rfid_default": False,
+         "msrp_required_default": False, "region": "EU"},
     ])})
     c = CprsClient("http://h:3100", "k")
-    assert c.warehouse_flags("a1", "UC") == {"rfid": True, "msrp": True}
-    assert c.warehouse_flags("a1", "DN") == {"rfid": False, "msrp": False}
-    assert c.warehouse_flags("a1", "ZZ") == {"rfid": None, "msrp": None}
+    assert c.warehouse_flags("a1", "UC") == {"rfid": True, "msrp": True, "region": "US"}
+    assert c.warehouse_flags("a1", "DN") == {"rfid": False, "msrp": False, "region": "EU"}
+    assert c.warehouse_flags("a1", "ZZ") == {"rfid": None, "msrp": None, "region": ""}
 
 
 def test_resolve_client_matches_brand_field(patched):

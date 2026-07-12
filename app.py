@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.49.1"
+APP_VERSION = "2.50.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

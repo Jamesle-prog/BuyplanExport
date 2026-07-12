@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.50.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "feat", "text": "**目的地国家 column** (US/EU/UK/CA/AU) on the style sheets and Summary 汇总, next to 目的地 — from the CPRS warehouse's region when requirements are resolved, else parsed from unambiguous markers in the ship-to address (US state+ZIP, country names, safe country codes); no marker → blank, never guessed"},
+        ],
+    },
+    {
         "version": "2.49.1",
         "date": "2026-07-12",
         "entries": [

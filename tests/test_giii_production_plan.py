@@ -279,6 +279,34 @@ def test_style_sheet_packing_broken_into_columns():
     assert "36" in vals and "Y" in vals and "N" in vals   # pcs / MSRP / RFID
 
 
+def test_dest_country_from_address_markers():
+    from po_extractor.exporters.giii_production_plan import _dest_country
+    assert _dest_country("ROSS STORES / 3404 INDIAN AVE / PERRIS,CA 92571") == "US"
+    assert _dest_country("ROSS DC, CARLISLE PA") == "US"
+    assert _dest_country("NEWTON 4-5, ALMELO NL 7609RR") == "EU"
+    assert _dest_country("G-III c/o BLECKMANN, NETHERLANDS") == "EU"
+    assert _dest_country("TJX AUSTRALIA PROCESSING CENTRE") == "AU"
+    assert _dest_country("TORONTO, ONTARIO, CANADA") == "CA"
+    assert _dest_country("BTB DIRECT SHIPMENT") == ""   # no marker → honest blank
+    assert _dest_country("") == ""
+
+
+def test_style_sheet_and_summary_have_dest_country():
+    store = _Store(_pos_df(), _sizes_df())
+    data = generate_giii_production_plan(["PO1", "PO2"], store, {})
+    ws = _sheet(data)
+    headers = [ws.cell(8, c).value for c in range(1, 28)]
+    assert "目的地国家" in headers
+    vals = [str(v) for v in _all_values(ws)]
+    assert "US" in vals                        # from "ROSS DC, CARLISLE PA"
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    sm = wb["Summary 汇总"]
+    sm_headers = [sm.cell(2, c).value for c in range(1, 25)]
+    assert "目的地国家" in sm_headers
+    ci = sm_headers.index("目的地国家") + 1
+    assert sm.cell(3, ci).value == "US"
+
+
 def test_destination_strips_duplicated_buyer_name():
     """'ROSS STORES / 3404 INDIAN AVE / PERRIS,CA' → 目的地 shows only the
     address; the consignee name lives in the 买家 column."""
