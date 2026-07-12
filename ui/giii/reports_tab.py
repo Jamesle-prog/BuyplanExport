@@ -94,11 +94,14 @@ def _resolve_po_requirements(selected: list[str], filt_df: pd.DataFrame,
     warnings in session state and returns {po_number: RowRequirements} —
     empty when CPRS is not configured (the buy plan still generates).
 
-    The brand is strictly the PO's own division — POs without one get NO
-    requirements (their brand-dependent cells stay blank and the buy plan
-    flags them); the system never infers a brand.
+    The brand comes from the PO itself — its division field, else the PO
+    number's documented division prefix (CS/LS/DW). POs whose brand can't be
+    read off the PO get NO requirements (their brand-dependent cells stay
+    blank and the buy plan flags them); nothing is inferred.
     """
-    from po_extractor.ui_helpers.giii_requirements import resolve_requirements
+    from po_extractor.ui_helpers.giii_requirements import (
+        brand_from_po, resolve_requirements,
+    )
     from ui.stores import get_cprs_client
 
     cprs = get_cprs_client()
@@ -122,7 +125,8 @@ def _resolve_po_requirements(selected: list[str], filt_df: pd.DataFrame,
             buyer=_s(rec, "buyer", "customer"),
             is_prepack=("PPK" in pk or "PREPACK" in pk) if pk else None,
         )
-        rows_by_brand.setdefault(_s(rec, "division_name"), []).append(row)
+        brand = _s(rec, "division_name") or brand_from_po(_s(rec, "po_number"))
+        rows_by_brand.setdefault(brand, []).append(row)
 
     reqs_by_po: dict[str, object] = {}
     warns: list[str] = []

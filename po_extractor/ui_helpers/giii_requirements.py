@@ -103,6 +103,30 @@ def _image_bytes(cprs, res):
     return cprs.manual_image(img_id) if img_id else None
 
 
+# GIII PO numbers START with the division code — a brand marker printed on
+# the PO itself, so decoding it is not guessing. Only prefixes documented in
+# the CPRS knowledge base are mapped; anything else stays brand-less and
+# flagged (e.g. DU… pending confirmation):
+#   CSKHHN… = the CK HOL26 Ross vendor faxes (KB open-questions #11/#12/#18)
+#   LSKHHN… = KL Ross Perris POE ("KL warehouse code PE. Confirmed from PO
+#             LSKHHN series." — KB warehouse-lookup seed)
+#   DW…     = DKNY Sportswear (division code DW; DWHHN000DN — KB #13)
+PO_PREFIX_BRANDS = {
+    "DW": "DKNY Sportswear",
+    "CS": "Calvin Klein",
+    "LS": "Karl Lagerfeld",
+}
+
+
+def brand_from_po(po_number) -> str:
+    """Derive the brand from the PO number's leading division code, using
+    only the documented prefix map. Returns '' when the prefix is unknown."""
+    po = str(po_number or "").strip().upper()
+    if len(po) < 6 or not po[:2].isalpha():
+        return ""
+    return PO_PREFIX_BRANDS.get(po[:2], "")
+
+
 def _suffix_warehouse(po_number, codes) -> str:
     """DKNY-style PO numbers end in the DC code (DW867662UC → UC). Only trust
     the suffix when it is one of the client's real warehouse codes — mirrors
@@ -151,7 +175,9 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
         po_no = m.po_number or "?"
         # Brand: division carries it for GIII PDFs (e.g. "DKNY"), customer as
         # fallback, company last.
-        brand = (m.division_name or m.division or m.customer or m.company or "").strip()
+        brand = (m.division_name or m.division or "").strip() \
+            or brand_from_po(m.po_number) \
+            or (m.customer or m.company or "").strip()
         if brand not in client_cache:
             client_cache[brand] = cprs.resolve_client(brand) if brand else None
         client_id = client_cache[brand]

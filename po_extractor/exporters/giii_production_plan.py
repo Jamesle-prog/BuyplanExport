@@ -480,9 +480,13 @@ def _write_style_sheet(
     # Build a flat list of row records first so we know merge ranges
     records: list[dict] = []
 
+    from ..ui_helpers.giii_requirements import brand_from_po
+
     for _, po_row in style_df.iterrows():
         po_num    = po_row["po_number"]
-        brand     = _safe(po_row.get("division_name"))
+        # Brand strictly off the PO: its division field, else the documented
+        # PO-number division prefix (CS/LS/DW). Unknown → flagged, not guessed.
+        brand     = _safe(po_row.get("division_name")) or brand_from_po(po_num)
         cpo       = _safe(po_row.get("cpo"))
         wh_code   = _safe(po_row.get("destination_code"))
         if not wh_code:

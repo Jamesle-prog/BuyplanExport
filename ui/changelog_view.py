@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.47.0",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "feat", "text": "**Brand decoded from the PO number's division prefix** — GIII PO numbers start with the division code, which is on the PO itself (not a guess). Documented prefixes from the CPRS knowledge base are mapped: **CS** → Calvin Klein (the CSKHHN HOL26 Ross faxes), **LS** → Karl Lagerfeld (LSKHHN Perris POE series), **DW** → DKNY Sportswear. Used by the buy plan (品牌 column + CPRS resolution) and the upload-time requirements document when the PO has no division field. Undocumented prefixes (e.g. DU…) still flag ⚠ 无品牌 rather than guessing"},
+        ],
+    },
+    {
         "version": "2.46.0",
         "date": "2026-07-12",
         "entries": [

@@ -182,6 +182,20 @@ def test_branded_pos_are_not_flagged():
     assert sm.cell(3, 3).value == "DW"
 
 
+def test_brand_derived_from_po_prefix_when_division_missing():
+    """CSKHHN… POs carry the CK division code in the PO number itself —
+    decoded (documented prefix), so no flag and the 品牌 column fills."""
+    df = _pos_df(po_number=["CSKHHN015R", "CSKHHN016R"])
+    sizes = _sizes_df().assign(**{"PO Number": ["CSKHHN015R", "CSKHHN015R",
+                                                "CSKHHN016R"]})
+    store = _Store(df, sizes)
+    data = generate_giii_production_plan(["CSKHHN015R", "CSKHHN016R"], store, {})
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    assert wb["Summary 汇总"].cell(3, 3).value == "Calvin Klein"
+    vals = [str(v) for v in _all_values(wb["ST1"])]
+    assert not any(v == "⚠ 无品牌" for v in vals)
+
+
 def test_brandless_pos_flagged_in_summary():
     store = _Store(_pos_df(), _sizes_df())
     wb = openpyxl.load_workbook(io.BytesIO(

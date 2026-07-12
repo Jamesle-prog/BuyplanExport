@@ -3,8 +3,20 @@ from __future__ import annotations
 
 from po_extractor.exporters.giii_buyplan_export import BuyPlanRow
 from po_extractor.ui_helpers.giii_requirements import (
-    RowRequirements, _channel_for, resolve_requirements,
+    RowRequirements, _channel_for, brand_from_po, resolve_requirements,
 )
+
+
+def test_brand_from_po_prefix_decode():
+    """Documented GIII division prefixes decode; anything else stays ''."""
+    assert brand_from_po("CSKHHN015R") == "Calvin Klein"
+    assert brand_from_po("LSKHHN008R") == "Karl Lagerfeld"
+    assert brand_from_po("DW843124UC") == "DKNY Sportswear"
+    assert brand_from_po("dwhhn000dn") == "DKNY Sportswear"   # case-insensitive
+    assert brand_from_po("DUKHHA057R") == ""    # DU not documented → no guess
+    assert brand_from_po("12345678") == ""      # digits → not a division code
+    assert brand_from_po("PO1") == ""            # too short
+    assert brand_from_po("") == ""
 
 
 class _Cprs:
