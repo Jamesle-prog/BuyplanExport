@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.49.1",
+        "date": "2026-07-12",
+        "entries": [
+            {"type": "fix", "text": "目的地 no longer repeats the buyer — ship-to text leads with the consignee name (`ROSS STORES / 3404 INDIAN AVE / …`), which duplicated the 买家 column; when the first segment matches the buyer it is stripped, leaving just the address"},
+        ],
+    },
+    {
         "version": "2.49.0",
         "date": "2026-07-12",
         "entries": [

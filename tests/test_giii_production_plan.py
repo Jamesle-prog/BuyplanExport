@@ -279,6 +279,19 @@ def test_style_sheet_packing_broken_into_columns():
     assert "36" in vals and "Y" in vals and "N" in vals   # pcs / MSRP / RFID
 
 
+def test_destination_strips_duplicated_buyer_name():
+    """'ROSS STORES / 3404 INDIAN AVE / PERRIS,CA' → 目的地 shows only the
+    address; the consignee name lives in the 买家 column."""
+    df = _pos_df(ship_to=["ROSS STORES / 3404 INDIAN AVE / DISTRIBUTION "
+                          "CENTER / PERRIS,CA 92571", np.nan])
+    store = _Store(df, _sizes_df())
+    ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {}))
+    vals = [str(v) for v in _all_values(ws)]
+    assert any(v.startswith("3404 INDIAN AVE") for v in vals)
+    assert not any("ROSS STORES / 3404" in v for v in vals)
+    assert "ROSS STORES" in vals           # 买家 column keeps the buyer
+
+
 def test_ratio_in_packing_text_means_prepack_without_ppk_marker():
     """Ross fax POs print 'FLAT PACK + HANGER (1-2-2-1)' with no PPK marker —
     the ratio itself means prepack, and it moves out of 衣架 into 是否预包."""

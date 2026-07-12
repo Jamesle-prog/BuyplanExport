@@ -128,6 +128,23 @@ def _safe(val) -> str:
     return "" if s.lower() in ("nan", "none", "nat") else s
 
 
+def _dest_address(ship_to: str, buyer: str) -> str:
+    """目的地 shows the ADDRESS. Ship-to text usually leads with the consignee
+    name ('ROSS STORES / 3404 INDIAN AVE / …'), which duplicates the 买家
+    column — strip that first segment when it matches the buyer."""
+    s = str(ship_to or "").strip()
+    b = str(buyer or "").strip()
+    if not s or not b or "/" not in s:
+        return s
+    def _key(x: str) -> str:
+        return "".join(ch for ch in x.upper() if ch.isalnum())
+    parts = [p.strip() for p in s.split("/")]
+    first, bn = _key(parts[0]), _key(b)
+    if first and bn and (first == bn or first in bn or bn in first):
+        return " / ".join(p for p in parts[1:] if p)
+    return s
+
+
 def _ex_factory_date(etd: str) -> str:
     """离厂时间 = ETD − 10 days. The PO's ship date is the vessel ETD; goods
     must leave the factory ~10 days earlier. Unparseable dates pass through
@@ -499,7 +516,7 @@ def _write_style_sheet(
         # The stored date is the ETD — 离厂时间 shows ETD − 10 days.
         ship_date = _ex_factory_date(
             _safe(po_row.get("factory_ship_date")) or _safe(po_row.get("xport_date")))
-        ship_to   = _safe(po_row.get("ship_to"))
+        ship_to   = _dest_address(_safe(po_row.get("ship_to")), buyer)
         packaging = _safe(po_row.get("packaging"))
         hanger    = _safe(po_row.get("hanger"))
         # A pack ratio printed in the packing/hanger text (e.g. "HANGER
