@@ -129,6 +129,21 @@ def _safe(val) -> str:
     return "" if s.lower() in ("nan", "none", "nat") else s
 
 
+def _fmt_msrp(val) -> str:
+    """PO MSRP is stored as a bare number ('59.00'); show it as a price ('$59.00').
+    A value already carrying a currency mark or non-numeric text passes through."""
+    s = _safe(val)
+    if not s:
+        return ""
+    if s[0] in "$€£¥":
+        return s
+    try:
+        float(s.replace(",", ""))
+    except ValueError:
+        return s
+    return f"${s}"
+
+
 _US_STATES = frozenset(
     "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS "
     "MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV "
@@ -596,6 +611,9 @@ def _write_style_sheet(
             or _dest_country(ship_raw)
         packaging = _safe(po_row.get("packaging"))
         hanger    = _safe(po_row.get("hanger"))
+        # Actual MSRP printed on the PO (KL POs carry it) — this is the real
+        # retail price, shown in the MSRP column ahead of CPRS's Y/N flag.
+        po_msrp   = _fmt_msrp(po_row.get("msrp"))
         # A pack ratio printed in the packing/hanger text (e.g. "HANGER
         # (1-2-2-1)") IS the prepack ratio — it moves to 是否预包 and also
         # means the order is prepack even without a PPK marker.
@@ -666,6 +684,7 @@ def _write_style_sheet(
                 "color_cn":     color_cn,
                 "size_qty":     size_qty,
                 "total_qty":    total_qty,
+                "po_msrp":      po_msrp,
             })
             current_row += 1
 
@@ -731,7 +750,9 @@ def _write_style_sheet(
                                        if req else "")
         pcs_txt  = str(getattr(req, "pcs_box", "") or "") if req else ""
         wtl_txt  = str(getattr(req, "carton_weight", "") or "") if req else ""
-        msrp_txt = str(getattr(req, "msrp", "") or "") if req else ""
+        # The PO's actual MSRP value wins; CPRS's Y/N "MSRP required" flag is
+        # only the fallback for POs that don't print a price.
+        msrp_txt = rep["po_msrp"] or (str(getattr(req, "msrp", "") or "") if req else "")
         rfid_txt = str(getattr(req, "rfid", "") or "") if req else ""
         if rep["is_prepack"] is None:
             ppk_txt = ""

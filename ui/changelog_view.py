@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.64.2",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "fix", "text": "The **MSRP** column in the GIII buy plan (both the style sheets and the Summary 汇总) now shows the actual retail price printed on the PO (e.g. `$59.00`) whenever the PO carries one — previously it only showed CPRS's `Y`/`N` \"MSRP required\" warehouse flag. POs without a price still fall back to that flag; no value is ever guessed"},
+        ],
+    },
+    {
         "version": "2.64.1",
         "date": "2026-07-13",
         "entries": [

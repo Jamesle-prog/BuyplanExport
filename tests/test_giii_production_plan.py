@@ -290,6 +290,36 @@ def test_style_sheet_packing_broken_into_columns():
     assert "40 lbs / 18 kg per carton" in vals            # 箱重限制
 
 
+def test_msrp_column_shows_actual_price_over_flag():
+    """A PO that prints an MSRP shows the price ($59.00) in the MSRP column;
+    CPRS's Y/N 'MSRP required' flag is only the fallback for POs without one."""
+    df = _pos_df(msrp=["59.00", np.nan])
+    reqs = {"PO1": _Req(msrp="N"), "PO2": _Req(msrp="Y")}
+    store = _Store(df, _sizes_df())
+    data = generate_giii_production_plan(["PO1", "PO2"], store, {},
+                                         requirements=reqs)
+    ws = _sheet(data)
+    headers = [ws.cell(8, c).value for c in range(1, 30)]
+    mi = headers.index("MSRP") + 1
+    col = [ws.cell(r, mi).value for r in range(9, ws.max_row + 1)]
+    col = [str(v) for v in col if v is not None]
+    assert "$59.00" in col     # PO1 price wins over its 'N' flag
+    assert "Y" in col          # PO2 has no price → falls back to the flag
+    assert "N" not in col      # PO1's flag was overridden, not shown
+    # the actual price reaches the Summary 汇总 too (joined per style with 、)
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    assert any("$59.00" in str(v) for v in _all_values(wb["Summary 汇总"]))
+
+
+def test_fmt_msrp_formats_only_bare_numbers():
+    from po_extractor.exporters.giii_production_plan import _fmt_msrp
+    assert _fmt_msrp("59.00") == "$59.00"
+    assert _fmt_msrp("59") == "$59"
+    assert _fmt_msrp("$59.00") == "$59.00"     # already a price — unchanged
+    assert _fmt_msrp("N") == "N"               # Y/N flag passes through
+    assert _fmt_msrp("") == "" and _fmt_msrp(None) == "" and _fmt_msrp(np.nan) == ""
+
+
 def test_dest_country_from_address_markers():
     from po_extractor.exporters.giii_production_plan import _dest_country
     assert _dest_country("ROSS STORES / 3404 INDIAN AVE / PERRIS,CA 92571") == "US"
