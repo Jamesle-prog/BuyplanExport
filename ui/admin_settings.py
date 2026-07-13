@@ -26,6 +26,16 @@ from po_extractor.utils.deepseek_client import chat_kwargs as _chat_kwargs
 
 _SETTING_COLOR_SOURCE = KEY_DEFAULT_COLOR_SOURCE
 
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _live_deepseek_models(_key_fp: str) -> list[str]:
+    """DeepSeek model ids from the live API, cached 30 min. Keyed on a
+    fingerprint of the key (so a key change refetches) but reads the real key
+    from the store — the raw key never enters the cache signature."""
+    from po_extractor.parsers.deepseek_parser import list_models
+    key = get_app_settings_store().get(KEY_DEEPSEEK_API_KEY, "")
+    return list_models(key)
+
 _COLOR_SOURCE_OPTIONS: dict[str, str] = {
     COLOR_SOURCE_DB:       "🗄 Internal Database (Colors tab)",
     COLOR_SOURCE_PROGRESS: "📂 大货进度表 (HHN Contract No. file)",
@@ -186,12 +196,25 @@ def _show_deepseek_settings(store) -> None:
             disabled=(chosen_method == "regex"),
         )
     with col_model:
+        # Model list is pulled live from the DeepSeek API (cached) so new
+        # models (e.g. deepseek-v4-pro/flash) appear automatically, with a
+        # static fallback and the currently-saved value always included.
+        import hashlib as _hl
+        from po_extractor.parsers.deepseek_parser import FALLBACK_MODELS
+        _key_fp = _hl.md5((new_key or "").encode()).hexdigest()[:10] if new_key else ""
+        live = _live_deepseek_models(_key_fp) if (chosen_method == "deepseek" and new_key) else []
+        model_options = list(dict.fromkeys(
+            [m for m in live] + FALLBACK_MODELS
+            + ([current_model] if current_model else [])
+        ))
         new_model = st.selectbox(
             t("Model"),
-            ["deepseek-chat", "deepseek-reasoner"],
-            index=0 if current_model == "deepseek-chat" else 1,
+            model_options,
+            index=model_options.index(current_model) if current_model in model_options else 0,
             key="admin_deepseek_model",
             disabled=(chosen_method == "regex"),
+            help=t("Fetched live from the DeepSeek API; falls back to a built-in list "
+                   "if the API is unreachable."),
         )
 
     st.divider()

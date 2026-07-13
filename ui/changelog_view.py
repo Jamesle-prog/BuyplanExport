@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.58.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "**Admin → AI Extraction model list is now live** — pulled from the DeepSeek `/models` API (cached 30 min) instead of a hardcoded pair, so newly released models appear automatically. The new **deepseek-v4-pro** and **deepseek-v4-flash** now show up (verified live); the currently-saved model and a static fallback are always included, and the dropdown no longer breaks if the saved model isn't `chat`/`reasoner`. The v4 models are correctly treated as chat-style (they accept the sampling params, verified against the API)"},
+        ],
+    },
+    {
         "version": "2.57.0",
         "date": "2026-07-13",
         "entries": [

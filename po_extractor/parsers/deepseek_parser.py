@@ -18,6 +18,29 @@ from ..config import FORMAT_INFOR_NEXUS, FORMAT_LEGACY
 from ..models import POData, POMetadata, SizeRow
 from ..utils.deepseek_client import chat_kwargs
 
+# Fallback model list when the live /models endpoint can't be reached — the
+# authoritative list is fetched from the API (see list_models). Newest first.
+FALLBACK_MODELS = ["deepseek-v4-pro", "deepseek-v4-flash",
+                   "deepseek-chat", "deepseek-reasoner"]
+
+
+def list_models(api_key: str, timeout: float = 6.0) -> list[str]:
+    """Return the DeepSeek model ids the API currently offers, newest-looking
+    first; empty list on any failure so callers fall back to a static set.
+    Read-only — safe to call from the admin settings page."""
+    if not api_key:
+        return []
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com",
+                        timeout=timeout)
+        ids = [m.id for m in client.models.list().data if getattr(m, "id", "")]
+        # newest tends to sort last alphabetically (v4 > chat); keep API order
+        # but surface it as-is — the caller merges with the fallback set.
+        return ids
+    except Exception:
+        return []
+
 PARSER_VERSION = "ds-1.0"
 
 _SYSTEM_PROMPT = """\
