@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.63.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "fix", "text": "**Server crash (\"Connection error\") when processing many files** — PDFium (the PDF text engine) is not thread-safe, and the parallel-extraction feature (v2.57) read PDFs across a thread pool, which could segfault the whole Streamlit process (a native crash, no Python traceback → the browser's \"Is Streamlit still running?\" popup). All PDFium reads now run under one process-wide lock; extraction is sub-millisecond so this costs nothing, and the slow per-file AI calls still run concurrently. Stress-tested with hundreds of concurrent reads"},
+        ],
+    },
+    {
         "version": "2.63.0",
         "date": "2026-07-13",
         "entries": [
