@@ -34,6 +34,9 @@ _STATUS_BG = {
     "conflict": _RED,
 }
 
+_STATUS_RANK = {"confirmed": 0, "pending_input": 1, "conflict": 2,
+                "missing_mandatory_context": 3, "not_applicable": 4}
+
 # resultJson keys most likely to carry the human-readable spec, in order.
 _TEXT_KEYS = ("current_wording", "standard", "description", "prompt",
               "applies_to", "reference", "change_summary")
@@ -59,6 +62,54 @@ def _sheet_name(base: str, used: set[str]) -> str:
         i += 1
     used.add(candidate)
     return candidate
+
+
+def _thumb(raw: bytes, max_h: int = 70):
+    """Scale image bytes to a thumbnail; return (PNG BytesIO, w, h) or None on
+    bad bytes (a broken image must never fail the document)."""
+    try:
+        from PIL import Image as PImage
+        im = PImage.open(io.BytesIO(raw))
+        im.load()
+        if im.mode not in ("RGB", "RGBA"):
+            im = im.convert("RGB")
+        w, h = im.size
+        if h > max_h:
+            w = max(1, int(w * max_h / h))
+            h = max_h
+            im = im.resize((w, h))
+        out = io.BytesIO()
+        im.save(out, format="PNG")
+        out.seek(0)
+        return out, w, h
+    except Exception:
+        return None
+
+
+def _embed_thumbs(ws, row: int, col: int, images) -> None:
+    """Embed each image side-by-side starting at (row, col); size the row to
+    fit and widen the columns used. No-op when there are no images."""
+    if not images:
+        return
+    from openpyxl.drawing.image import Image as XLImage
+    from openpyxl.utils import get_column_letter
+    x, max_h = col, 0
+    for raw in images:
+        t = _thumb(raw)
+        if not t:
+            continue
+        buf, w, h = t
+        img = XLImage(buf)
+        img.width, img.height = w, h
+        letter = get_column_letter(x)
+        ws.add_image(img, f"{letter}{row}")
+        cur = ws.column_dimensions[letter].width or 0
+        ws.column_dimensions[letter].width = max(cur, w / 7.0 + 2)
+        x += 1
+        max_h = max(max_h, h)
+    if max_h:
+        cur = ws.row_dimensions[row].height or 15
+        ws.row_dimensions[row].height = max(cur, max_h * 0.78)
 
 
 def export_giii_requirements(contexts: list[dict],
@@ -124,8 +175,13 @@ def export_giii_requirements(contexts: list[dict],
             ws.merge_cells(start_row=wr + i, start_column=1,
                            end_row=wr + i, end_column=len(headers))
 
+    # ── By-style comparison sheet ────────────────────────────────────────────
+    # Combines identical requirements (one row, "全部 All") and breaks out the
+    # ones that differ per style, so you see at a glance where styles diverge.
+    _write_by_style_sheet(wb, contexts, cell)
+
     # ── One sheet per PO context ─────────────────────────────────────────────
-    used: set[str] = {ws.title}
+    used: set[str] = {ws.title, "款号对比 By Style"}
     for ctx in contexts:
         s = wb.create_sheet(_sheet_name(ctx["po_number"], used))
         cell(s, 1, 1, f"PO {ctx['po_number']} · {ctx['style']} · {ctx['brand']} · "
@@ -134,10 +190,10 @@ def export_giii_requirements(contexts: list[dict],
         s.merge_cells(start_row=1, start_column=1, end_row=1, end_column=5)
 
         hdrs = ["Domain 类别", "Item 项目", "Status 状态", "Requirement 要求",
-                "Source 来源"]
+                "Source 来源", "图示 Image"]
         for c, h in enumerate(hdrs, 1):
             cell(s, 2, c, h, bold=True, bg=_NAVY, white=True, center=True)
-        for c, w in zip(range(1, 6), (14, 22, 20, 70, 34)):
+        for c, w in zip(range(1, 7), (14, 22, 20, 70, 34, 16)):
             s.column_dimensions[chr(64 + c)].width = w
 
         # applicable first, N/A last; stable by domain within each group
@@ -154,9 +210,68 @@ def export_giii_requirements(contexts: list[dict],
                  bg=_STATUS_BG.get(status), center=True)
             cell(s, r, 4, _req_text(res))
             cell(s, r, 5, str(rj.get("source", "")))
+            cell(s, r, 6, "")                       # image cell (border); art below
+            _embed_thumbs(s, r, 6, res.get("_images"))
             r += 1
         s.freeze_panes = "A3"
 
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def _write_by_style_sheet(wb, contexts: list[dict], cell) -> None:
+    """Second tab: requirements pivoted by style. Identical requirements across
+    every style collapse to ONE row ("全部 All"); requirements that differ show
+    one row per distinct value with the styles that carry it, highlighted."""
+    from collections import OrderedDict
+
+    styles_order: list[str] = []
+    for ctx in contexts:
+        st = ctx.get("style") or "—"
+        if st not in styles_order:
+            styles_order.append(st)
+    all_styles = set(styles_order)
+    n = len(all_styles)
+
+    # (domain, subtype) -> {(status, value): set(styles)}
+    groups: "OrderedDict[tuple, OrderedDict]" = OrderedDict()
+    for ctx in contexts:
+        st = ctx.get("style") or "—"
+        for res in ctx.get("results", []):
+            key = (res.get("domain", ""), res.get("subtype", ""))
+            vk = (res.get("status", ""), _req_text(res))
+            groups.setdefault(key, OrderedDict()).setdefault(vk, set()).add(st)
+
+    s = wb.create_sheet("款号对比 By Style", 1)
+    cell(s, 1, 1, f"款号对比 By-Style Requirements · {n} 款 styles: "
+                  + "、".join(styles_order), bold=True, bg=_NAVY, white=True)
+    s.merge_cells(start_row=1, start_column=1, end_row=1, end_column=5)
+    for c, h in enumerate(["类别 Domain", "项目 Item", "状态 Status",
+                           "要求 Requirement", "适用款号 Styles"], 1):
+        cell(s, 2, c, h, bold=True, bg=_NAVY, white=True, center=True)
+    for c, w in zip(range(1, 6), (14, 24, 20, 64, 30)):
+        s.column_dimensions[chr(64 + c)].width = w
+
+    def _gkey(k):
+        # groups that are N/A for every style sink to the bottom
+        na_only = all(status == "not_applicable" for status, _ in groups[k])
+        return (na_only, k[0], k[1])
+
+    r = 3
+    for key in sorted(groups, key=_gkey):
+        domain, subtype = key
+        items = sorted(groups[key].items(),
+                       key=lambda kv: (_STATUS_RANK.get(kv[0][0], 9), kv[0][1]))
+        for (status, value), styles in items:
+            common = styles == all_styles
+            styles_txt = f"全部 All ({n})" if common else "、".join(sorted(styles))
+            hl = None if common else _YELLOW      # highlight style-specific rows
+            cell(s, r, 1, domain)
+            cell(s, r, 2, subtype, bg=hl)
+            cell(s, r, 3, _STATUS_CN.get(status, status),
+                 bg=_STATUS_BG.get(status), center=True)
+            cell(s, r, 4, value, bg=hl)
+            cell(s, r, 5, styles_txt, bg=hl, center=common)
+            r += 1
+    s.freeze_panes = "A3"

@@ -251,6 +251,37 @@ def _image_bytes(cprs, res):
     return cprs.manual_image(img_id) if img_id else None
 
 
+def _all_image_bytes(cprs, res, cache: dict) -> list[bytes]:
+    """Every linked artwork for a result (the requirements document embeds them
+    all, not just the first). Fetches are deduped through *cache* keyed by image
+    id, so an image shared across POs is downloaded once. Best-effort — a client
+    without ``manual_image`` or a failed fetch yields fewer/no images, never an
+    error."""
+    fetch = getattr(cprs, "manual_image", None)
+    if fetch is None or not isinstance(res, dict):
+        return []
+    ids: list[str] = []
+    for im in (res.get("images") or []):
+        iid = im.get("id") if isinstance(im, dict) else (im if isinstance(im, str) else None)
+        if iid and iid not in ids:
+            ids.append(iid)
+    if not ids:
+        rj = res.get("resultJson") or {}
+        iid = rj.get("image_id") or rj.get("imageId")
+        if iid:
+            ids.append(iid)
+    out: list[bytes] = []
+    for iid in ids:
+        if iid not in cache:
+            try:
+                cache[iid] = fetch(iid)
+            except Exception:
+                cache[iid] = None
+        if cache[iid]:
+            out.append(cache[iid])
+    return out
+
+
 # A parenthesised pack ratio inside the PO's packing/hanger text, e.g.
 # "FLAT PACK + HANGER (1-2-2-1)" — three or more dash-joined counts. Its
 # presence means the order is PREPACK even without an explicit PPK marker.
@@ -352,6 +383,7 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
     contexts: list[dict] = []
     eval_cache: dict[tuple, list] = {}
     client_cache: dict[str, str | None] = {}
+    img_cache: dict[str, bytes | None] = {}   # image id → bytes (fetched once)
 
     for po in pos:
         m = po.metadata
@@ -404,6 +436,13 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
         if not results:
             warnings.append(f"PO {po_no}: CPRS returned no requirements "
                             f"(service unreachable or empty rule set).")
+
+        # Attach ALL linked artwork bytes to each result so the requirements
+        # document can embed every picture. Deduped and idempotent (results are
+        # shared across POs with the same order context).
+        for res in results or []:
+            if isinstance(res, dict) and "_images" not in res:
+                res["_images"] = _all_image_bytes(cprs, res, img_cache)
 
         contexts.append({
             "po_number": po_no, "style": m.style or "",

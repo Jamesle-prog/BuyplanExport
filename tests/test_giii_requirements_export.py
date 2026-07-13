@@ -113,12 +113,103 @@ def test_missing_mandatory_context_counts_as_pending():
 def test_export_duplicate_po_numbers_get_unique_sheets():
     data = export_giii_requirements([_ctx("PO1"), _ctx("PO1")])
     wb = openpyxl.load_workbook(io.BytesIO(data))
-    assert len(wb.sheetnames) == 3         # Summary + PO1 + PO1_2
-    assert "PO1_2" in wb.sheetnames
+    # Summary + 款号对比 + PO1 + PO1_2
+    assert wb.sheetnames == ["Summary 汇总", "款号对比 By Style", "PO1", "PO1_2"]
 
 
 def test_export_sanitizes_bad_sheet_names():
     ctx = _ctx("PO/1:*?")
     data = export_giii_requirements([ctx])
     wb = openpyxl.load_workbook(io.BytesIO(data))
-    assert len(wb.sheetnames) == 2         # no crash, name sanitized
+    assert len(wb.sheetnames) == 3         # Summary + 款号对比 + sanitized PO
+
+
+# ── by-style comparison sheet ─────────────────────────────────────────────────
+
+def _ctx_style(po, style, results):
+    return {"po_number": po, "style": style, "brand": "DKNY Sportswear",
+            "warehouse": "UC", "account": "MACYS", "channel": "WHOLESALE",
+            "results": results}
+
+
+def test_by_style_sheet_combines_shared_and_splits_differing():
+    shared = {"domain": "label", "subtype": "care_label", "status": "confirmed",
+              "resultJson": {"standard": "Care label per FTC"}}
+    reqA = {"domain": "carton", "subtype": "carton_mark", "status": "confirmed",
+            "resultJson": {"standard": "Mark ABC"}}
+    reqB = {"domain": "carton", "subtype": "carton_mark", "status": "confirmed",
+            "resultJson": {"standard": "Mark XYZ"}}
+    data = export_giii_requirements([
+        _ctx_style("PO1", "STYLE_A", [dict(shared), dict(reqA)]),
+        _ctx_style("PO2", "STYLE_B", [dict(shared), dict(reqB)]),
+    ])
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    assert wb.sheetnames[1] == "款号对比 By Style"
+    s = wb["款号对比 By Style"]
+    rows = [[c.value for c in row] for row in s.iter_rows(min_row=3)]
+    # care_label is identical across both styles → one row, "全部 All (2)"
+    care = [r for r in rows if r[1] == "care_label"]
+    assert len(care) == 1 and "全部 All (2)" in str(care[0][4])
+    # carton_mark differs → two rows, each scoped to its own style
+    marks = [r for r in rows if r[1] == "carton_mark"]
+    assert len(marks) == 2
+    style_cells = {str(r[4]) for r in marks}
+    assert style_cells == {"STYLE_A", "STYLE_B"}
+    assert any("Mark ABC" in str(r[3]) for r in marks)
+    assert any("Mark XYZ" in str(r[3]) for r in marks)
+
+
+# ── images ────────────────────────────────────────────────────────────────────
+
+def _png(color="red") -> bytes:
+    from PIL import Image
+    b = io.BytesIO()
+    Image.new("RGB", (30, 20), color).save(b, format="PNG")
+    return b.getvalue()
+
+
+def test_all_pictures_embedded_on_po_sheet():
+    res = {"domain": "carton", "subtype": "red_carton_sticker", "status": "confirmed",
+           "resultJson": {}, "_images": [_png("red"), _png("blue")]}
+    ctx = _ctx_style("PO1", "ST1", [res])
+    wb = openpyxl.load_workbook(io.BytesIO(export_giii_requirements([ctx])))
+    s = wb["PO1"]
+    assert s.cell(2, 6).value == "图示 Image"        # image column header
+    assert len(s._images) == 2                       # BOTH pictures embedded
+
+
+def test_bad_image_bytes_do_not_break_export():
+    res = {"domain": "carton", "subtype": "x", "status": "confirmed",
+           "resultJson": {}, "_images": [b"not-a-png"]}
+    wb = openpyxl.load_workbook(io.BytesIO(
+        export_giii_requirements([_ctx_style("PO1", "ST1", [res])])))
+    assert wb["PO1"]._images == []                   # skipped, no crash
+
+
+# ── resolver attaches all image bytes ─────────────────────────────────────────
+
+class _CprsImg(_Cprs):
+    def __init__(self):
+        super().__init__()
+        self.fetches = []
+
+    def evaluate(self, order):
+        self.eval_calls += 1
+        return [
+            {"domain": "carton", "subtype": "red_carton_sticker",
+             "status": "confirmed", "resultJson": {},
+             "images": [{"id": "img-1"}, {"id": "img-2"}]},
+        ]
+
+    def manual_image(self, image_id):
+        self.fetches.append(image_id)
+        return f"BYTES:{image_id}".encode()
+
+
+def test_resolver_attaches_all_image_bytes_deduped():
+    cprs = _CprsImg()
+    contexts, _ = resolve_po_requirements(cprs, [_po("PO1"), _po("PO2")])
+    imgs = contexts[0]["results"][0]["_images"]
+    assert imgs == [b"BYTES:img-1", b"BYTES:img-2"]   # ALL images fetched
+    # two POs share one order context → each image fetched once, not per-PO
+    assert sorted(cprs.fetches) == ["img-1", "img-2"]

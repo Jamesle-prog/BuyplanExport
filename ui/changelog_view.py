@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.69.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "The **PO requirements document** now embeds **every linked picture** (all CPRS artwork per requirement, not just the first) in an 图示 Image column on each PO sheet, and gains a new **款号对比 By Style** summary tab: requirements identical across all styles collapse to one row (\"全部 All\"), while requirements that differ are broken out per style and highlighted — so divergences jump out at a glance"},
+        ],
+    },
+    {
         "version": "2.68.0",
         "date": "2026-07-13",
         "entries": [
