@@ -5,6 +5,7 @@ import streamlit as st
 
 from auth.users import get_user_companies, is_admin
 from ui.session_keys import SK
+from ui.shared import guard_multiselect_state
 from ui.stores import get_store
 from ui.giii._shared import _XLSX_MIME, live_label
 from ui.giii.results import _show_master_po_table
@@ -91,11 +92,15 @@ def _show_history(exc_df=None):
     # ── Delete ────────────────────────────────────────────────────────────────
     st.markdown("**Delete POs from history**")
     po_options = df["po_number"].tolist()
+    # Guard: after a delete the reran multiselect would hold PO numbers no
+    # longer in options — StreamlitAPIException on 1.57, silent wipe on 1.58.
+    guard_multiselect_state("del_pos", po_options)
     to_delete = st.multiselect("Select POs to delete:", po_options,
                                placeholder="Select POs to remove…",
                                key="del_pos")
     if st.button("🗑 Delete selected", disabled=not to_delete):
         n = store.delete_pos(to_delete)
+        st.session_state.pop("del_pos", None)   # drop stale selection pre-rerun
         st.success(f"Deleted {n} PO(s).")
         st.rerun()
 

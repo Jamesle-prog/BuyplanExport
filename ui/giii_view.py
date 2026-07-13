@@ -354,7 +354,12 @@ def show_smart_upload_tab():
     # it stays.
     history_label = t("Contract History") + (f"  🔴 {_exc_count}" if _exc_count else "")
 
-    _missing_df    = _compute_giii_missing_df()
+    # Scope to the user's companies (admin → all); an unassigned non-admin
+    # gets an empty frame, never every company's POs.
+    if _user_cos or is_admin(st.session_state.username):
+        _missing_df = _compute_giii_missing_df(companies=_user_cos or None)
+    else:
+        _missing_df = pd.DataFrame()
     _missing_count = len(_missing_df)
     _mf = t("Missing Fields")
     missing_label  = (f"{_mf}  {_missing_count}" if _missing_count else _mf)

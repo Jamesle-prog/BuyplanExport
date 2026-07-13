@@ -6,7 +6,12 @@ SIZE_ORDER = [
     '0X', '1X', '2X', '3X', '4X',
 ]
 SIZE_INFO = '|'.join(SIZE_ORDER)
-SIZE_PATTERN = rf'({SIZE_INFO})'
+# Standalone size token: word-bounded and longest-alternative-first so a bare
+# "S"/"M"/"L" cannot match a substring inside other text (the "L" in "/LT") and
+# "P2XL" wins over "P2X". FULL_PATTERN keeps SIZE_INFO — it is already delimited
+# by surrounding whitespace + a units/UPC lookahead.
+_SIZE_LONGEST_FIRST = '|'.join(sorted(SIZE_ORDER, key=len, reverse=True))
+SIZE_PATTERN = rf'\b({_SIZE_LONGEST_FIRST})\b'
 
 # Legacy G-III patterns
 PO_NUMBER_PATTERN = r'PO NUMBER\s+(\w+)'

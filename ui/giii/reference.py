@@ -298,9 +298,14 @@ def _run_giii_mapping_import(mapping_file, dry_run: bool = False,
     st.session_state[f"{source}_mapping_result"] = result
 
 
-def _compute_giii_missing_df() -> "pd.DataFrame":
-    """Return stored GIII POs that are missing factory or export date."""
-    df = get_store().list_pos()
+def _compute_giii_missing_df(companies: "list[str] | None" = None) -> "pd.DataFrame":
+    """Return stored GIII POs that are missing factory or export date.
+
+    *companies* scopes the query to the caller's assigned companies (same
+    contract as every other GIII tab); None = unrestricted (admin). Without
+    this the tab leaked — and let a non-admin edit — every company's POs.
+    """
+    df = get_store().list_pos(companies=companies)
     if df.empty:
         return pd.DataFrame()
     mask = (

@@ -86,16 +86,23 @@ def _v(cell_value) -> str:
     return str(cell_value).strip()
 
 
+def _clean_num(v) -> str:
+    """Strip thousands separators and currency/space noise from a numeric
+    string so text-formatted cells ('1,225', '$3.45') coerce instead of
+    silently becoming 0 and dropping the line."""
+    return str(v).replace(",", "").replace("$", "").replace("\xa0", "").strip()
+
+
 def _int(v) -> int:
     try:
-        return int(float(str(v))) if v not in (None, "") else 0
+        return int(float(_clean_num(v))) if v not in (None, "") else 0
     except (ValueError, TypeError):
         return 0
 
 
 def _float(v) -> float:
     try:
-        return float(str(v)) if v not in (None, "") else 0.0
+        return float(_clean_num(v)) if v not in (None, "") else 0.0
     except (ValueError, TypeError):
         return 0.0
 

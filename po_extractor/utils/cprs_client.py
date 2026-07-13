@@ -92,6 +92,8 @@ class CprsClient:
     def list_clients(self) -> list[dict]:
         if "clients" not in self._cache:
             data = self._get("/clients", {"active": "true"})
+            if data is None:
+                return []      # transient failure — retry next call, don't poison
             self._cache["clients"] = data if isinstance(data, list) else []
         return self._cache["clients"]
 
@@ -137,6 +139,8 @@ class CprsClient:
         key = ("wh", client_id)
         if key not in self._cache:
             data = self._get(f"/clients/{client_id}/warehouses")
+            if data is None:
+                return []      # transient failure — don't cache the miss
             self._cache[key] = data if isinstance(data, list) else []
         return self._cache[key]
 
@@ -144,6 +148,8 @@ class CprsClient:
         key = ("acct", client_id)
         if key not in self._cache:
             data = self._get(f"/clients/{client_id}/accounts")
+            if data is None:
+                return []      # transient failure — don't cache the miss
             self._cache[key] = data if isinstance(data, list) else []
         return self._cache[key]
 
@@ -212,6 +218,8 @@ class CprsClient:
         key = ("eval", tuple(sorted((k, _freeze(v)) for k, v in order.items())))
         if key not in self._cache:
             data = self._post("/evaluate", order)
+            if data is None:
+                return []      # transient failure — don't cache the empty miss
             results = data.get("results", []) if isinstance(data, dict) else []
             self._cache[key] = results if isinstance(results, list) else []
         return self._cache[key]

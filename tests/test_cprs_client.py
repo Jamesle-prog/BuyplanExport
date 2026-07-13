@@ -186,6 +186,27 @@ def test_get_failure_returns_empty_not_raise(patched):
     assert CprsClient("http://h:3100", "k").list_clients() == []
 
 
+def test_failed_fetch_is_not_cached_poison(patched):
+    """A transient failure must NOT be cached as [] forever — the next call
+    (after the server recovers) has to retry, or requirement resolution stays
+    blank until the process restarts."""
+    fake = patched({"/clients": _Resp(500, {})})
+    c = CprsClient("http://h:3100", "k")
+    assert c.list_clients() == []              # down → empty, not cached
+    # server recovers: same client, next call succeeds
+    fake.routes["/clients"] = _Resp(200, [{"id": "a1", "name": "DKNY"}])
+    assert c.list_clients() == [{"id": "a1", "name": "DKNY"}]
+
+
+def test_successful_empty_is_cached(patched):
+    """A genuine empty (200 []) is cached — only failures retry."""
+    fake = patched({"/clients": _Resp(200, [])})
+    c = CprsClient("http://h:3100", "k")
+    assert c.list_clients() == []
+    fake.routes["/clients"] = _Resp(200, [{"id": "x"}])
+    assert c.list_clients() == []              # cached empty, no refetch
+
+
 def test_manual_image_bytes(patched):
     patched({"/manual-images/ID_1/file": _Resp(200, content=b"\x89PNG...")})
     assert CprsClient("http://h:3100", "k").manual_image("ID_1") == b"\x89PNG..."

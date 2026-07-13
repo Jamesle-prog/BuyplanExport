@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.54.2"
+APP_VERSION = "2.55.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -342,8 +342,15 @@ def show_main():
                 (SK.GIII_MASTER_DL_FNAME, None),
             ]:
                 st.session_state[k] = v
-            # Clear bare-string keys not in SK enum
-            st.session_state.pop("_se_bp_prog_fp", None)
+            # Clear bare-string result/download keys not in the SK enum, so
+            # the next user on this browser session never sees the previous
+            # user's generated outputs (Reports tab + fax smart-extract).
+            for _raw in ("_se_bp_prog_fp",
+                         "rpt_all_results", "rpt_cp_bytes", "rpt_ps_bytes",
+                         "rpt_kl_bytes", "rpt_bp_bytes", "rpt_cprs_bp_bytes",
+                         "rpt_cprs_preview", "rpt_cprs_warns",
+                         "smart_results", "excel_results"):
+                st.session_state.pop(_raw, None)
             st.rerun()
 
         st.divider()

@@ -25,6 +25,7 @@ from ui.shared import (
     build_image_cache_for_ids,
     load_style_photo_pair,
     persisted_download,
+    guard_multiselect_state,
 )
 from ui.stores import get_store, get_sky_east_store, get_color_translation_store, get_fabric_master_store, IMAGES_DIR_DEFAULT
 from ui.sky_east._shared import (
@@ -354,6 +355,9 @@ def _se_hist_wash_label_download(store, pc_options: list[str],
         else:
             wl_col1, wl_col2 = st.columns([3, 1])
             with wl_col1:
+                # Guard against options changing under a live selection (a
+                # fabric-mapping re-import) — stale values crash 1.57 / wipe 1.58.
+                guard_multiselect_state("se_wl_pcs", pc_options)
                 sel_wl_pcs = st.multiselect(
                     t("Select PC No.(s) for wash label:"),
                     pc_options,
@@ -386,6 +390,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str],
         else:
             wl_col1, wl_col2 = st.columns([3, 1])
             with wl_col1:
+                guard_multiselect_state("se_wl_styles", mapped_styles)
                 sel_wl_styles = st.multiselect(
                     t("Select Style(s) for wash label:"),
                     mapped_styles,

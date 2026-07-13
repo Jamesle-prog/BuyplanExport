@@ -1171,6 +1171,8 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Generate the GIII production plan (生产计划单) — one sheet per style with size breakdown, 面料 rows from the style-fabric table, 合同号 and Chinese colours from the 大货进度表, and 红色箱贴纸 / 主箱唛 (text + artwork) resolved live from CPRS. Without CPRS configured those cells fall back to blank/无.',
      '生成 GIII 生产计划单 — 每个款号一个工作表，包含尺码明细、来自款式面料表格的面料行、来自大货进度表的合同号和中文颜色，以及通过 CPRS 实时解析的红色箱贴纸/主箱唛（文字+图片）。未配置 CPRS 时这些单元格留空/显示"无"。', 'label', 'giii'),
     ('Requirements check failed:', '要求检查失败：', 'label', 'giii'),
+    ('Chinese-colour enrichment was skipped (colour DB unavailable) — 中文颜色/主标颜色 may be blank.',
+     '中文颜色补充已跳过（颜色数据库不可用）— 中文颜色/主标颜色可能为空。', 'label', 'giii'),
 
     # Upload-time PO requirements document (CPRS)
     ('PO Requirements 要求文档 (.xlsx)', '订单要求文档 (.xlsx)', 'button', 'giii'),

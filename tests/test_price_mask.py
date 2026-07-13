@@ -80,6 +80,21 @@ def test_excel_leaves_text_cells_in_price_columns(tmp_path):
     assert rows[1][1] == "***"      # numeric price masked
 
 
+def test_excel_masks_formula_cells_in_price_columns(tmp_path):
+    """A formula in a price column recalculates on open, leaking the price —
+    it must be masked, not left as the (string) formula text."""
+    p = tmp_path / "f.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Style", "Qty", "Unit Price", "Line Total"])
+    ws.append(["ST1", 100, 4.17, "=B2*C2"])   # formula in a price column
+    wb.save(p)
+    out = mask_prices_excel(str(p), str(tmp_path))
+    rows = _read_masked(out)
+    assert rows[1][2] == "***"        # numeric price masked
+    assert rows[1][3] == "***"        # formula masked, not "=B2*C2"
+
+
 def test_excel_no_price_columns_is_noop(tmp_path):
     src = _build_xlsx(tmp_path, [["Style", "Color", "Qty"], ["ST1", "BLACK", 100]])
     out = mask_prices_excel(src, str(tmp_path))

@@ -10,6 +10,20 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.55.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "security", "text": "**GIII → Missing Fields tab was unscoped** — it listed (and let a non-admin edit) every company's POs, unlike every sibling tab. Now scoped to the user's assigned companies; an unassigned non-admin sees nothing"},
+            {"type": "security", "text": "Sign-out now also clears the Reports-tab result/download keys and fax smart-extract results (raw-string session keys the old sweep missed), so the next user on a shared browser can't see the previous user's generated buy plans / summaries"},
+            {"type": "security", "text": "Price-masking now redacts **formula** cells in price columns — a `=Dn*En` formula previously survived masking and Excel recalculated the price on open, leaking it from a file believed redacted"},
+            {"type": "fix", "text": "**CPRS client no longer poisons its cache on a transient failure** — a network blip or server restart during a Generate used to cache an empty client/warehouse/account/evaluate result for the whole process lifetime, so every later generation reported 'CPRS unreachable' until restart. Failed fetches now retry; only genuine results are cached"},
+            {"type": "fix", "text": "Legacy-GIII fallback size capture is word-bounded and longest-match-first — a bare `S`/`M`/`L` can no longer match a substring inside other text (the `L` in `/LT`) and `P2XL` wins over `P2X`"},
+            {"type": "fix", "text": "Sky East number cells formatted as text (`1,225`, `$3.45`) now coerce instead of silently becoming 0 (which dropped the whole line as zero-qty); DeepSeek quantities returned as strings coerce too"},
+            {"type": "fix", "text": "DeepSeek fallback parser: prompt cap raised 12k→60k with a warning when a long PO is still truncated, and output token limit raised — long multi-item POs no longer silently lose their tail size rows"},
+            {"type": "fix", "text": "Stale-value guards added to the GIII delete-POs and Sky East wash-label multiselects (deletes / mapping re-imports no longer crash or silently wipe the selection); HHP/Zalando Chinese-colour enrichment now warns instead of silently shipping blank 中文颜色 when the colour DB is unavailable"},
+        ],
+    },
+    {
         "version": "2.54.2",
         "date": "2026-07-13",
         "entries": [

@@ -52,14 +52,22 @@ Rules:
 def _call_deepseek(text: str, api_key: str, model: str = "deepseek-chat") -> dict:
     """Call DeepSeek API and return the parsed JSON dict."""
     from openai import OpenAI
+    # Cap the prompt but warn when we actually truncate — a long multi-item PO
+    # silently losing its tail size rows is worse than a slower/refused call.
+    _CAP = 60000
+    if len(text) > _CAP:
+        import warnings
+        warnings.warn(
+            f"[deepseek_parser] PO text {len(text)} chars exceeds {_CAP}-char cap; "
+            f"size rows beyond the cap may be missing.")
     client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
     response = client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user",   "content": text[:12000]},  # cap tokens
+            {"role": "user",   "content": text[:_CAP]},
         ],
-        max_tokens=2048,
+        max_tokens=8192,
         response_format={"type": "json_object"},
         **chat_kwargs(model),
     )
@@ -118,6 +126,12 @@ def _to_po_data(d: dict, file_path: str, source_format: str) -> POData:
         upc  = _safe_str(row.get("upc")) or ""
         qty  = row.get("quantity")
         if size and size != "-":
+            # Models sometimes return quantities as strings ("2,500", "2500.0")
+            # despite the prompt — coerce robustly so the row isn't dropped.
+            try:
+                units = int(float(str(qty).replace(",", "").strip())) if qty not in (None, "") else 0
+            except (ValueError, TypeError):
+                units = 0
             try:
                 size_rows.append(SizeRow(
                     po_number=po_number,
@@ -127,7 +141,7 @@ def _to_po_data(d: dict, file_path: str, source_format: str) -> POData:
                     # every export with a wrong-but-plausible value.
                     color=_safe_str(row.get("color")) or "",
                     size=size,
-                    units=int(qty) if qty is not None else 0,
+                    units=units,
                     upc=upc,
                 ))
             except (ValueError, TypeError):

@@ -13,6 +13,7 @@ from po_extractor.parsers.client_excel_multi import combine_excel_files, repeat_
 from po_extractor.ui_helpers.color_enrichment import enrich_hhp_colors
 from po_extractor.utils.price_mask import mask_prices_excel_batch
 from auth.companies import get_company
+from ui.i18n import t
 from ui.stores import get_store, get_color_translation_store
 from ui.giii._shared import mask_ai_creds as _mask_ai_creds
 from ui.giii.extraction import _save_fabric_parts_from_df
@@ -114,8 +115,13 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
         cn_lkp      = ct_store.build_lookup_dict()
         enriched_df = enrich_hhp_colors(result.df, company,
                                         label_lkp, cn_code_lkp, cn_lkp)
-    except Exception:
+    except Exception as _exc:
+        # Don't silently ship a buy plan with blank 中文颜色 — tell the user
+        # the colour enrichment was skipped so a green "Done" isn't misread.
         enriched_df = result.df
+        st.warning(t("Chinese-colour enrichment was skipped (colour DB "
+                     "unavailable) — 中文颜色/主标颜色 may be blank.")
+                   + f" — {_exc}")
 
     bp  = export_hhp_buyplan(enriched_df, out_dir, photo_map=photo_map)
     tps = export_hhp_template_p(result.df, out_dir)
@@ -260,8 +266,11 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
             _cn_lkp      = _ct_store.build_lookup_dict()
             _enriched_df = enrich_hhp_colors(result.df, COMPANY_GIII,
                                              _label_lkp, _cn_code_lkp, _cn_lkp)
-        except Exception:
+        except Exception as _exc:
             _enriched_df = result.df
+            st.warning(t("Chinese-colour enrichment was skipped (colour DB "
+                         "unavailable) — 中文颜色/主标颜色 may be blank.")
+                       + f" — {_exc}")
 
         # Enrich 合同号 from the production-progress lookup (大货进度表)
         # Uses (PO, style, color_name) PRIMARY + color_code fallback

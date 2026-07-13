@@ -247,7 +247,12 @@ def mask_prices_excel(xlsx_path: str, output_dir: str,
                 cell = ws.cell(row=r, column=c)
                 if cell.value is None:
                     continue
-                if isinstance(cell.value, (int, float)):
+                if cell.data_type == "f":
+                    # A price formula (=Dn*En, cross-sheet ref, …) would parse
+                    # as a string and survive — but Excel recalculates it on
+                    # open, leaking the price from a file believed redacted.
+                    cell.value = "***"
+                elif isinstance(cell.value, (int, float)):
                     cell.value = "***"
                 else:
                     # String value in a price column: parse as a number after
