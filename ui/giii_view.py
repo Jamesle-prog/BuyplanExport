@@ -231,8 +231,13 @@ def _show_giii_upload_section():
     _method   = _settings.get(KEY_EXTRACTION_METHOD, "regex")
     _api_key  = _settings.get(KEY_DEEPSEEK_API_KEY, "")
     _ds_model = _settings.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
-    _use_ai   = (_method == "deepseek")
-    if _use_ai and _api_key:
+    _use_ai   = (_method in ("deepseek", "auto"))
+    if _method == "auto" and _api_key:
+        st.caption("⚡ " + t(
+            "Auto extraction is ON — the instant built-in parser runs first, "
+            "and only low-confidence or unparsed files fall back to AI."
+        ) + f" `{_ds_model}`")
+    elif _method == "deepseek" and _api_key:
         st.caption("🤖 " + t(
             "AI extraction (DeepSeek) is ON — configured by your admin in "
             "Admin → Settings."
@@ -295,9 +300,12 @@ def _show_giii_upload_section():
                      use_container_width=True, key="smart_run"):
             st.session_state.smart_results = None
             st.session_state.smart_log = []
+            # No key → force regex regardless of the configured method, so a
+            # deepseek/auto setting without a key still processes files.
+            _eff_method = _method if (_method in ("deepseek", "auto") and _api_key) else "regex"
             _run_smart_processing(
                 detections, saved_paths, mask_prices,
-                use_ai=(_use_ai and bool(_api_key)),
+                method=_eff_method,
                 deepseek_api_key=_api_key, deepseek_model=_ds_model,
             )
     finally:

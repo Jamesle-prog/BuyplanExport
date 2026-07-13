@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.59.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "**New ⚡ Auto extraction mode** (Admin → AI Extraction, third option) — runs the instant built-in regex parser first and only falls back to the (slower) AI for files that come back **low-confidence, unparsed, or that the parser can't read**. Best of both: clean PDFs stay near-instant, messy/novel layouts still get AI. The AI fallbacks in a batch run concurrently (like the DeepSeek-every-file mode), and each file is tagged 🤖/✅ in the log by whether AI was actually used. Needs the API key; without one it transparently behaves as regex"},
+        ],
+    },
+    {
         "version": "2.58.0",
         "date": "2026-07-13",
         "entries": [

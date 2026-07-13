@@ -16,6 +16,36 @@ from po_extractor.exporters import (
     export_csvs, export_po_summary,
 )
 from po_extractor.parsers import parse_pdf, parse_pdf_ai
+
+
+def _regex_low_confidence(po) -> bool:
+    """True when the fast regex parse didn't come back clean, so Auto mode
+    should retry with AI. Mirrors the parsers' own 'valid' criterion."""
+    m = po.metadata
+    return (not po.size_rows) \
+        or (getattr(m, "validation_status", "") != "valid") \
+        or ((getattr(m, "parse_confidence", 0) or 0) < 70)
+
+
+def _parse_pdf_by_method(path: str, method: str, api_key: str, model: str):
+    """Return (POData, used_ai). ``method``:
+    * ``regex``    — built-in parser only.
+    * ``deepseek`` — AI for every file (regex fallback on API error).
+    * ``auto``     — regex first; AI only when the regex parse is
+                     low-confidence, unparsed, or raises (needs a key)."""
+    if method == "deepseek" and api_key:
+        return parse_pdf_ai(path, api_key=api_key, model=model), True
+    if method == "auto":
+        try:
+            po = parse_pdf(path)
+        except Exception:
+            if api_key:
+                return parse_pdf_ai(path, api_key=api_key, model=model), True
+            raise
+        if api_key and _regex_low_confidence(po):
+            return parse_pdf_ai(path, api_key=api_key, model=model), True
+        return po, False
+    return parse_pdf(path), False
 from po_extractor.ui_helpers import (
     format_save_results as _format_save_results,
     se_items_to_buyplan_dfs as _se_items_to_buyplan_dfs_impl,
@@ -411,7 +441,7 @@ def _validate_giii_pos(pos: list, log: list[str], company: str = "") -> None:
 
 def _process_pdf_group(company: str, paths: list[str], out_dir: str,
                        mask_prices: bool, log: list,
-                       use_ai: bool = False,
+                       method: str = "regex",
                        deepseek_api_key: str = "",
                        deepseek_model: str = "deepseek-chat") -> dict | None:
     # De-dup by content hash first (preserving order), so identical files
@@ -433,22 +463,18 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
     def _parse_one(item):
         path, name, h = item
         try:
-            if use_ai and deepseek_api_key:
-                po = parse_pdf_ai(path, api_key=deepseek_api_key, model=deepseek_model)
-                tag = "🤖"
-            else:
-                po = parse_pdf(path)
-                tag = "✅"
-            return (name, h, po, tag, None)
+            po, used_ai = _parse_pdf_by_method(
+                path, method, deepseek_api_key, deepseek_model)
+            return (name, h, po, "🤖" if used_ai else "✅", None)
         except Exception as exc:
             return (name, h, None, None, exc)
 
     # AI parsing is a slow (~30-60s) network call per file — run the batch
-    # concurrently so N files take ~one call's time, not N×. The regex path
-    # is sub-second, so only parallelize when actually calling the API.
-    # ex.map preserves input order; no shared state is mutated in the workers
-    # (store writes + logging happen below, on the main thread).
-    if use_ai and deepseek_api_key and len(todo) > 1:
+    # concurrently so N files take ~one call's time, not N×. Both deepseek
+    # and auto (whose slow AI fallback fires per low-confidence file) benefit;
+    # ex.map preserves input order, and no shared state is mutated in the
+    # workers (store writes + logging happen below, on the main thread).
+    if method in ("deepseek", "auto") and deepseek_api_key and len(todo) > 1:
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=min(6, len(todo))) as _ex:
             parsed = list(_ex.map(_parse_one, todo))
@@ -532,7 +558,7 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
 
 def _run_smart_processing(detections, saved_paths: dict[str, str],
                           mask_prices: bool,
-                          use_ai: bool = False,
+                          method: str = "regex",
                           deepseek_api_key: str = "",
                           deepseek_model: str = "deepseek-chat"):
     from ui.shared import (
@@ -582,7 +608,7 @@ def _run_smart_processing(detections, saved_paths: dict[str, str],
             elif is_pdf and company != "Unknown":
                 grp_out = _process_pdf_group(
                     company, paths, out_dir, mask_prices, log,
-                    use_ai=use_ai, deepseek_api_key=deepseek_api_key,
+                    method=method, deepseek_api_key=deepseek_api_key,
                     deepseek_model=deepseek_model,
                 )
             else:

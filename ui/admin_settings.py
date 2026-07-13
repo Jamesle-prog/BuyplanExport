@@ -175,14 +175,21 @@ def _show_deepseek_settings(store) -> None:
     current_key    = store.get(KEY_DEEPSEEK_API_KEY, "")
     current_model  = store.get(KEY_DEEPSEEK_MODEL, "deepseek-chat")
 
-    method_options = {"regex": "🔍 Regex (built-in, no API)", "deepseek": "🤖 DeepSeek AI"}
+    method_options = {
+        "regex":    "🔍 Regex (built-in, no API)",
+        "deepseek": "🤖 DeepSeek AI (every file)",
+        "auto":     "⚡ Auto — Regex first, AI only when low-confidence",
+    }
+    _method_keys = list(method_options.keys())
     chosen_method  = st.radio(
         t("Default extraction method"),
-        list(method_options.keys()),
-        index=0 if current_method == "regex" else 1,
+        _method_keys,
+        index=_method_keys.index(current_method) if current_method in _method_keys else 0,
         format_func=lambda k: t(method_options[k]),
         key="admin_extraction_method",
-        help=t("Users can also switch per-session on the GIII upload tab."),
+        help=t("Auto is fastest for clean PDFs — it runs the instant built-in "
+               "parser and only calls the (slower) AI for files that come back "
+               "low-confidence or unparsed. Needs the API key below."),
     )
 
     col_key, col_model = st.columns([3, 1])

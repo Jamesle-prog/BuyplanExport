@@ -21,7 +21,7 @@ from .base_store import BaseSQLiteStore
 
 KEY_DEFAULT_COLOR_SOURCE = "default_color_source"
 KEY_DEEPSEEK_API_KEY     = "deepseek_api_key"
-KEY_EXTRACTION_METHOD    = "extraction_method"   # "regex" | "deepseek"
+KEY_EXTRACTION_METHOD    = "extraction_method"   # "regex" | "deepseek" | "auto"
 KEY_DEEPSEEK_MODEL       = "deepseek_model"
 KEY_COLOR_AI_ENHANCE     = "color_ai_enhance_mode"   # "local" | "local_ai_enhance"
 KEY_MASK_USE_AI          = "mask_use_ai"         # "true" | "false" — AI-assist price masking
