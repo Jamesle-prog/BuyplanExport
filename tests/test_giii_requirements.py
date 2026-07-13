@@ -51,18 +51,26 @@ def test_carton_weight_limit_explicit_bounds():
                   "resultJson": {"max_weight": "40 lbs / 18 kg per carton"}}]
     kl = [{"domain": "carton", "subtype": "carton_spec", "status": "confirmed",
            "resultJson": {"max_weight_lbs": 40}}]
+    # Numeric values always show the equivalent in the other unit; the
+    # corporate free-text already carries both units and passes through.
     assert _weight_from_results(corporate) == "上限 40 lbs / 18 kg per carton"
-    assert _weight_from_results(kl) == "上限 40 lbs"
+    assert _weight_from_results(kl) == "上限 40 lbs (18.1 kg)"
+
+    # kg-stated limits get the lbs equivalent (KL TJX Australia)
+    au = [{"domain": "carton", "subtype": "carton_spec", "status": "confirmed",
+           "resultJson": {"max_carton_weight_kg": 22.68}}]
+    assert _weight_from_results(au) == "上限 22.68 kg (50 lbs)"
 
     # A stated range ("weight_lbs": "5-40") makes BOTH bounds explicit
     ck_range = [{"domain": "carton", "subtype": "carton_marking",
                  "status": "confirmed",
                  "resultJson": {"carton": {"weight_lbs": "5-40"}}}]
-    assert _weight_from_results(ck_range) == "下限 5 lbs / 上限 40 lbs"
+    assert _weight_from_results(ck_range) == "下限 5 lbs (2.3 kg) / 上限 40 lbs (18.1 kg)"
 
     # Corporate max + brand range combine: range supplies the missing lower
     combined = corporate + ck_range
-    assert _weight_from_results(combined) == "下限 5 lbs / 上限 40 lbs / 18 kg per carton"
+    assert _weight_from_results(combined) == \
+        "下限 5 lbs (2.3 kg) / 上限 40 lbs / 18 kg per carton"
 
     # carton_marking's net/gross weight are MARKING fields, not limits;
     # pallet_spec maxes are pallet limits, not carton limits

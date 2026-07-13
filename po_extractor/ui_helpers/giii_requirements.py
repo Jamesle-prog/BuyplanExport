@@ -145,14 +145,37 @@ def _pcs_from_results(results) -> str:
 # keys. NOT net/gross weight (marking fields), NOT ECT/burst (board
 # strength), NOT pallet_spec (pallet, not carton).
 _WMAX = {"max_weight": "", "weight_limit": "", "max_gross_weight": "",
-         "max_weight_lbs": " lbs", "max_weight_lb": " lbs",
-         "max_weight_kg": " kg", "max_carton_weight_lbs": " lbs",
-         "max_carton_weight_lb": " lbs", "max_carton_weight_kg": " kg"}
-_WMIN = {"min_weight": "", "min_weight_lbs": " lbs", "min_weight_lb": " lbs",
-         "min_weight_kg": " kg", "min_carton_weight_lbs": " lbs"}
-_WRANGE = {"weight_lbs": " lbs", "weight_lb": " lbs", "weight_kg": " kg",
-           "carton_weight_lbs": " lbs"}
+         "max_weight_lbs": "lbs", "max_weight_lb": "lbs",
+         "max_weight_kg": "kg", "max_carton_weight_lbs": "lbs",
+         "max_carton_weight_lb": "lbs", "max_carton_weight_kg": "kg"}
+_WMIN = {"min_weight": "", "min_weight_lbs": "lbs", "min_weight_lb": "lbs",
+         "min_weight_kg": "kg", "min_carton_weight_lbs": "lbs"}
+_WRANGE = {"weight_lbs": "lbs", "weight_lb": "lbs", "weight_kg": "kg",
+           "carton_weight_lbs": "lbs"}
 _WRANGE_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*$")
+_KG_PER_LB = 0.45359237
+
+
+def _wnum(x: float) -> str:
+    r = round(x, 1)
+    return str(int(r)) if r == int(r) else str(r)
+
+
+def _fmt_weight(raw, unit: str) -> str:
+    """Render a weight with its equivalent in the other unit, e.g. 40 lbs →
+    '40 lbs (18.1 kg)'. Non-numeric text (e.g. the corporate '40 lbs / 18 kg
+    per carton', which already carries both units) passes through as-is."""
+    s = str(raw).strip()
+    try:
+        v = float(s)
+    except ValueError:
+        return f"{s} {unit}".strip() if unit else s
+    # The stated value renders verbatim; only the CONVERTED figure is rounded.
+    if unit == "lbs":
+        return f"{s} lbs ({_wnum(v * _KG_PER_LB)} kg)"
+    if unit == "kg":
+        return f"{s} kg ({_wnum(v / _KG_PER_LB)} lbs)"
+    return s
 
 
 def _weight_from_results(results) -> str:
@@ -173,12 +196,12 @@ def _weight_from_results(results) -> str:
                 if kl in _WRANGE:
                     m = _WRANGE_RE.match(sx)
                     if m:
-                        lo = lo or f"{m.group(1)}{_WRANGE[kl]}".strip()
-                        hi = hi or f"{m.group(2)}{_WRANGE[kl]}".strip()
+                        lo = lo or _fmt_weight(m.group(1), _WRANGE[kl])
+                        hi = hi or _fmt_weight(m.group(2), _WRANGE[kl])
                 elif kl in _WMAX:
-                    hi = hi or f"{sx}{_WMAX[kl]}".strip()
+                    hi = hi or _fmt_weight(sx, _WMAX[kl])
                 elif kl in _WMIN:
-                    lo = lo or f"{sx}{_WMIN[kl]}".strip()
+                    lo = lo or _fmt_weight(sx, _WMIN[kl])
             for x in v.values():
                 if lo and hi:
                     return

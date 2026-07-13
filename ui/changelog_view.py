@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.54.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "箱重限制 always shows the equivalent in the other unit — lbs values get kg and vice versa (`上限 40 lbs (18.1 kg)`, `下限 5 lbs (2.3 kg)`, TJX Australia `上限 22.68 kg (50 lbs)`). The KB's stated figure renders verbatim; only the converted figure is rounded"},
+        ],
+    },
+    {
         "version": "2.54.0",
         "date": "2026-07-13",
         "entries": [
