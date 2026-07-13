@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.66.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "**UPC 汇总** now prints **two lines per PO/colour** — a 数量 line with each size's units and a UPC line with that size's barcode directly beneath it — so units and UPC line up under the same size column. A 项目 label marks each line; leading columns (款号/PO号/颜色…) and 总数量 merge across the pair"},
+        ],
+    },
+    {
         "version": "2.66.0",
         "date": "2026-07-13",
         "entries": [

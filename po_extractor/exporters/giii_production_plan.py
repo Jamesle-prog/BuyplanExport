@@ -1108,11 +1108,11 @@ def _write_simple_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# UPC 汇总 sheet (third sheet — one row per PO / colour, UPC under each size)
+# UPC 汇总 sheet (third sheet — two lines per PO/colour: 数量 then UPC per size)
 # ---------------------------------------------------------------------------
 
-# Fixed leading columns; the size columns (each holding that size's UPC) and a
-# trailing 总数量 are appended dynamically from the styles actually present.
+# Leading columns merged across each PO/colour's two-line block; then a 项目
+# column (数量 / UPC), the per-size columns, and a trailing 总数量.
 _UPC_LEAD = [
     ("No.", 6), ("款号", 14), ("品牌", 12), ("合同号", 14), ("PO号", 16),
     ("颜色(英文)", 18), ("颜色(中文)", 14),
@@ -1120,17 +1120,18 @@ _UPC_LEAD = [
 
 
 def _write_upc_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
-    """UPC 汇总 — one row per (PO, colour) across ALL sizes, with the UPC
-    printed under each size column (blank where the PO carries none — never
-    fabricated), plus a per-row 总数量 and a TTL row.  UPCs stay text so long
-    barcodes never render in scientific notation."""
+    """UPC 汇总 — two lines per (PO, colour): a 数量 line with each size's units
+    and a UPC line with that size's barcode directly beneath.  Leading columns
+    are merged across the pair; a per-block 总数量 and a TTL row close it out.
+    UPCs stay text so long barcodes never render in scientific notation; a size
+    the PO doesn't carry stays blank (never fabricated)."""
     all_rows = [row for s in summaries for row in s.get("upc_rows", [])]
     if not all_rows:
         return
 
     sizes = _sort_sizes(list({r["size"] for r in all_rows}))
 
-    # One matrix row per (style, PO, colour); size → UPC, plus a unit total.
+    # One block per (style, PO, colour): per-size units + per-size UPC.
     groups: dict[tuple, dict] = {}
     for row in all_rows:
         key = (row["style"], row["po"], row["color_en"])
@@ -1140,31 +1141,35 @@ def _write_upc_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
                 "style": row["style"], "brand": row["brand"],
                 "contract": row["contract"], "po": row["po"],
                 "color_en": row["color_en"], "color_cn": row["color_cn"],
-                "upc": {}, "total": 0,
+                "units": {}, "upc": {}, "total": 0,
             }
+        units = int(row.get("units", 0) or 0)
+        g["units"][row["size"]] = g["units"].get(row["size"], 0) + units
         if row["upc"] and not g["upc"].get(row["size"]):
             g["upc"][row["size"]] = row["upc"]
-        g["total"] += int(row.get("units", 0) or 0)
+        g["total"] += units
 
     title = "UPC 汇总" if "UPC 汇总" not in wb.sheetnames else "UPC汇总2"
     ws = wb.create_sheet(title=title, index=2)
 
-    C_SZ0 = len(_UPC_LEAD) + 1                 # first size column
-    C_TOTAL = C_SZ0 + len(sizes)               # 总数量 column
+    C_ITEM = len(_UPC_LEAD) + 1                # 项目 (数量 / UPC)
+    C_SZ0 = C_ITEM + 1                         # first size column
+    C_TOTAL = C_SZ0 + len(sizes)              # 总数量 column
     n_cols = C_TOTAL
 
     for i, (_, w) in enumerate(_UPC_LEAD, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
+    ws.column_dimensions[get_column_letter(C_ITEM)].width = 8
     for i in range(C_SZ0, C_SZ0 + len(sizes)):
         ws.column_dimensions[get_column_letter(i)].width = 15   # fits a UPC
     ws.column_dimensions[get_column_letter(C_TOTAL)].width = 10
 
-    _merge(ws, 1, 1, 1, n_cols, "UPC 汇总（每个尺码下对应 UPC）",
+    _merge(ws, 1, 1, 1, n_cols, "UPC 汇总（每个尺码：上行数量 / 下行 UPC）",
            font=_FONT_SUBTITLE,
            align=Alignment(horizontal="center", vertical="center"))
     ws.row_dimensions[1].height = 24
 
-    headers = [label for label, _ in _UPC_LEAD] + sizes + ["总数量"]
+    headers = [label for label, _ in _UPC_LEAD] + ["项目"] + sizes + ["总数量"]
     for i, label in enumerate(headers, start=1):
         _cell(ws, 2, i, label, font=_FONT_HDR, fill=_HDR_FILL,
               border=_BORDER, align=_CENTER)
@@ -1174,20 +1179,27 @@ def _write_upc_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
     grand = 0
     for no, g in enumerate(groups.values(), start=1):
         grand += g["total"]
+        ra, rb = r, r + 1                     # 数量 line, UPC line
         lead = [no, g["style"], g["brand"], g["contract"], g["po"],
                 g["color_en"], g["color_cn"]]
         for i, v in enumerate(lead, start=1):
-            _cell(ws, r, i, v, font=_FONT_NORMAL, border=_BORDER,
-                  align=_CENTER if i == 1 else _LEFT)
+            _merge_or_set(ws, ra, i, rb, i, value=v, font=_FONT_NORMAL,
+                          border=_BORDER, align=_CENTER if i == 1 else _LEFT)
+        _cell(ws, ra, C_ITEM, "数量", font=_FONT_BOLD, border=_BORDER, align=_CENTER)
+        _cell(ws, rb, C_ITEM, "UPC",  font=_FONT_BOLD, border=_BORDER, align=_CENTER)
         for k, sz in enumerate(sizes):
+            units = g["units"].get(sz, 0)
+            _cell(ws, ra, C_SZ0 + k, units or None, font=_FONT_NORMAL,
+                  border=_BORDER, align=_CENTER)
             upc = g["upc"].get(sz, "")
-            cell = _cell(ws, r, C_SZ0 + k, upc or None, font=_FONT_NORMAL,
+            cell = _cell(ws, rb, C_SZ0 + k, upc or None, font=_FONT_NORMAL,
                          border=_BORDER, align=_CENTER)
             if upc:                            # keep long barcodes as text
                 cell.number_format = "@"
-        _cell(ws, r, C_TOTAL, g["total"], font=_FONT_NORMAL,
-              border=_BORDER, align=_CENTER)
-        r += 1
+        # 总数量 merged across the block's two rows.
+        _merge_or_set(ws, ra, C_TOTAL, rb, C_TOTAL, value=g["total"],
+                      font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        r += 2
 
     _cell(ws, r, 1, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,
           border=_BORDER, align=_CENTER)

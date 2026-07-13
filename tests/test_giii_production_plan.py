@@ -88,10 +88,10 @@ def _upc_headers(ws):
 
 
 def _upc_ttl_row(ws):
-    r = 3
-    while ws.cell(r, 1).value not in (None, "TTL"):
-        r += 1
-    return r
+    for r in range(3, ws.max_row + 1):
+        if ws.cell(r, 1).value == "TTL":
+            return r
+    return ws.max_row
 
 
 def _all_values(ws):
@@ -546,7 +546,7 @@ def test_summary_carries_requirement_texts():
 
 # ── UPC 汇总 sheet ─────────────────────────────────────────────────────────────
 
-def test_upc_summary_one_row_per_po_colour_with_upc_under_each_size():
+def test_upc_summary_two_lines_units_then_upc_under_each_size():
     store = _Store(_pos_df(), _sizes_df_upc())
     data = generate_giii_production_plan(["PO1", "PO2"], store, {})
     wb = openpyxl.load_workbook(io.BytesIO(data))
@@ -556,24 +556,30 @@ def test_upc_summary_one_row_per_po_colour_with_upc_under_each_size():
     headers = _upc_headers(ws)
     assert headers[:7] == ["No.", "款号", "品牌", "合同号", "PO号",
                            "颜色(英文)", "颜色(中文)"]
+    assert "项目" in headers                       # 数量 / UPC line label
     assert "S" in headers and "M" in headers      # sizes are their own columns
     assert headers[-1] == "总数量"
+    ii = headers.index("项目") + 1
     si, mi = headers.index("S") + 1, headers.index("M") + 1
     ti = headers.index("总数量") + 1
 
-    # row 3 = PO1 JET BLACK: one row across all sizes, UPC under each size
+    # PO1 JET BLACK block: row 3 = 数量, row 4 = UPC (two lines, aligned by size)
     assert ws.cell(3, 5).value == "PO1" and ws.cell(3, 6).value == "JET BLACK"
-    assert ws.cell(3, si).value == "700948471565"
-    assert ws.cell(3, mi).value == "700948471534"
-    assert isinstance(ws.cell(3, si).value, str)   # kept as text, not a float
-    assert ws.cell(3, ti).value == 300             # 100 + 200
-    # row 4 = PO2 PINE: only S carries a UPC, M is blank
-    assert ws.cell(4, si).value == "700948471507"
-    assert not ws.cell(4, mi).value
-    assert ws.cell(4, ti).value == 50
-    # exactly two data rows then TTL (not one-per-size)
+    assert ws.cell(3, ii).value == "数量"
+    assert ws.cell(3, si).value == 100 and ws.cell(3, mi).value == 200
+    assert ws.cell(4, ii).value == "UPC"
+    assert ws.cell(4, si).value == "700948471565"
+    assert ws.cell(4, mi).value == "700948471534"
+    assert isinstance(ws.cell(4, si).value, str)   # UPC kept as text, not float
+    assert ws.cell(3, ti).value == 300             # 总数量 merged over the block
+
+    # PO2 PINE block: rows 5 (数量) / 6 (UPC); only S carries a UPC
+    assert ws.cell(5, ii).value == "数量" and ws.cell(5, si).value == 50
+    assert ws.cell(6, ii).value == "UPC" and ws.cell(6, si).value == "700948471507"
+    assert not ws.cell(6, mi).value                # M blank for PINE
+
     ttl_r = _upc_ttl_row(ws)
-    assert ttl_r == 5
+    assert ttl_r == 7                              # 2 blocks × 2 rows + header offset
     assert ws.cell(ttl_r, ti).value == 350
 
 
@@ -590,18 +596,26 @@ def test_upc_summary_carries_style_and_po_context():
 
 
 def test_upc_summary_blank_when_po_has_no_upc():
-    """No UPC captured for a size → the cell stays blank; never fabricated."""
+    """No UPC captured for a size → the UPC line stays blank; never fabricated.
+    The 数量 line still carries the units."""
     store = _Store(_pos_df(), _sizes_df())            # _sizes_df has no UPC column
     data = generate_giii_production_plan(["PO1", "PO2"], store, {})
     ws = openpyxl.load_workbook(io.BytesIO(data))["UPC 汇总"]
     headers = _upc_headers(ws)
+    ii = headers.index("项目") + 1
     ti = headers.index("总数量") + 1
     size_cols = [i for i, h in enumerate(headers, start=1) if h in ("S", "M")]
     ttl_r = _upc_ttl_row(ws)
-    assert ttl_r > 3                                  # rows still exist per PO/colour
+    assert ttl_r > 3
+    units_seen = False
     for r in range(3, ttl_r):
-        for c in size_cols:
-            assert not ws.cell(r, c).value            # every size/UPC cell blank
+        item = ws.cell(r, ii).value
+        if item == "UPC":
+            for c in size_cols:
+                assert not ws.cell(r, c).value        # every UPC cell blank
+        elif item == "数量":
+            units_seen = units_seen or any(ws.cell(r, c).value for c in size_cols)
+    assert units_seen                                 # 数量 lines still populated
     assert ws.cell(ttl_r, ti).value == 350            # quantities still total
 
 
