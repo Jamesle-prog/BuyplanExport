@@ -73,6 +73,7 @@ from po_extractor.ui_helpers import (
     se_items_to_buyplan_dfs as _se_items_to_buyplan_dfs_impl,
 )
 from po_extractor.utils.price_mask import mask_prices_batch
+from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import ProgressTracker, images_dir as _get_images_dir
 from ui.stores import get_store

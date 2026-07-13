@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.63.2",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "fix", "text": "**Crash when processing files** (`NameError: name 't' is not defined`) — the new progress bar used the translation helper `t()` but `extraction.py` didn't import it, so processing errored the moment the progress line rendered. Fixed the import; a new guard test fails if any module calls `t()` without importing it (same protection now covers both `SK` and `t`)"},
+        ],
+    },
+    {
         "version": "2.63.1",
         "date": "2026-07-13",
         "entries": [

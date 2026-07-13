@@ -62,3 +62,35 @@ def test_no_ui_module_uses_SK_without_importing_it():
         if not bound:
             offenders.append(os.path.relpath(path, _ROOT))
     assert not offenders, f"modules use SK.* without importing SK: {offenders}"
+
+
+def test_no_module_calls_t_without_binding_it():
+    """Same class as the SK guard, for the i18n `t()` helper — a `t(...)` call
+    in a module that never imports/binds `t` is a runtime NameError only hit
+    on that code path (it crashed the upload progress bar). Covers ui/ and
+    po_extractor/."""
+    import glob
+    offenders = []
+    for path in (glob.glob(os.path.join(_ROOT, "ui", "**", "*.py"), recursive=True)
+                 + glob.glob(os.path.join(_ROOT, "po_extractor", "**", "*.py"), recursive=True)):
+        with open(path, encoding="utf-8-sig") as fh:
+            tree = ast.parse(fh.read())
+        calls_t = any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                      and n.func.id == "t" for n in ast.walk(tree))
+        if not calls_t:
+            continue
+        bound = False
+        for n in ast.walk(tree):
+            if isinstance(n, ast.ImportFrom) and any((a.asname or a.name) == "t" for a in n.names):
+                bound = True
+            elif isinstance(n, ast.Assign) and any(
+                    isinstance(x, ast.Name) and x.id == "t" for x in n.targets):
+                bound = True
+            elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(
+                    a.arg == "t" for a in n.args.args + n.args.kwonlyargs):
+                bound = True
+            elif isinstance(n, ast.For) and isinstance(n.target, ast.Name) and n.target.id == "t":
+                bound = True
+        if not bound:
+            offenders.append(os.path.relpath(path, _ROOT))
+    assert not offenders, f"modules call t() without importing t: {offenders}"
