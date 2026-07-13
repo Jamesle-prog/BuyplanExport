@@ -32,6 +32,7 @@ from ui.shared import (
     show_processing_log as _show_processing_log,
 )
 from ui.i18n import t
+from ui.session_keys import SK
 from ui.stores import get_store, get_app_settings_store
 
 from ui.giii._shared import _XLSX_MIME, _CONF_BADGE, files_signature

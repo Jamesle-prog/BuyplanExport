@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.56.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "fix", "text": "**Crash on the GIII combined uploader** (`NameError: name 'SK' is not defined`) — `giii_view.py` referenced the session-key constants without importing `SK`, a latent bug since the upload-detection cache was added that only fired on that specific path. Added the import; a new structural test now fails if any UI module uses `SK.*` without importing it, so this class of missing-import can't recur"},
+        ],
+    },
+    {
         "version": "2.56.0",
         "date": "2026-07-13",
         "entries": [
