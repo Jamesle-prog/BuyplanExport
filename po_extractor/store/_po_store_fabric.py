@@ -278,6 +278,12 @@ class _FabricMixin:
                    FROM fabric_consumption ORDER BY style""").fetchall()
         return [dict(r) for r in rows]
 
+    def clear_fabric_consumption(self) -> int:
+        """Delete all consumption rows; return how many were removed."""
+        with self._conn() as conn:
+            cur = conn.execute("DELETE FROM fabric_consumption")
+            return cur.rowcount or 0
+
     def find_duplicate_fabric_combos(self, source: str | None = None) -> list[dict]:
         """Find styles with the same fabric combo stored twice under different combo_idx.
 

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.61.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "**Searchable consumption panel** in Reference Data → 🧵 Fabric Consumption / Marker — search stored 单耗/排版 data by 款号 (substring, case-insensitive), see a filtered/total count, download the shown rows, and clear all data. Replaces the old collapsed expander"},
+        ],
+    },
+    {
         "version": "2.61.0",
         "date": "2026-07-13",
         "entries": [

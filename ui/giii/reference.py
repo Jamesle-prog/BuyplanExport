@@ -271,12 +271,44 @@ def _show_giii_consumption_section(store):
         except Exception as exc:
             st.error(t("Import failed:") + f" {exc}")
 
-    if existing:
-        with st.expander(f"{t('Stored consumption')} ({len(existing)} {t('styles')})",
-                         expanded=False):
-            _hdr = {k: h for h, k in CONSUMPTION_COLUMNS}
-            st.dataframe(pd.DataFrame(existing).rename(columns=_hdr),
-                         use_container_width=True, hide_index=True)
+    # ── Searchable stored-consumption panel ───────────────────────────────────
+    st.markdown("##### 🔎 " + t("Stored consumption data"))
+    if not existing:
+        st.info(t("No consumption data yet — download the template above, fill it "
+                  "in, and upload."))
+        return
+
+    _hdr = {k: h for h, k in CONSUMPTION_COLUMNS}
+    df_cons = pd.DataFrame(existing).rename(columns=_hdr)
+
+    q = st.text_input(t("Search by 款号 / style"), key="cons_search",
+                      placeholder=t("Type part of a style number…")).strip()
+    view = df_cons
+    if q:
+        view = df_cons[df_cons["款号"].astype(str).str.contains(q, case=False, na=False)]
+
+    st.caption(f"**{len(view)}** / {len(df_cons)} {t('styles')}")
+    st.dataframe(view, use_container_width=True, hide_index=True)
+
+    st.download_button(
+        "⬇️ " + t("Download shown rows (.xlsx)"),
+        data=_consumption_view_bytes(view, _hdr),
+        file_name="fabric_consumption_view.xlsx",
+        mime=_XLSX_MIME, key="cons_view_dl",
+    )
+    if st.button("🗑 " + t("Clear all consumption data"), key="cons_clear"):
+        store.clear_fabric_consumption()
+        st.success(t("Consumption data cleared."))
+        st.rerun()
+
+
+def _consumption_view_bytes(df, hdr_map) -> bytes:
+    """The currently-filtered consumption table as .xlsx (Chinese headers)."""
+    import io as _io
+    buf = _io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        df.to_excel(xw, index=False, sheet_name="单耗排版")
+    return buf.getvalue()
 
 
 def _run_giii_mapping_import(mapping_file, dry_run: bool = False,

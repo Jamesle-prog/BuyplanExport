@@ -94,3 +94,8 @@ def test_store_save_load_roundtrip(tmp_path):
     store.save_fabric_consumption([{"style": "ST1", "cons_cm": 170}])
     assert store.load_fabric_consumption(["ST1"])["ST1"]["cons_cm"] == 170
     assert len(store.load_all_fabric_consumption()) == 1
+    # clear wipes the table
+    store.save_fabric_consumption([{"style": "ST2", "cons_cm": 1}])
+    assert len(store.load_all_fabric_consumption()) == 2
+    store.clear_fabric_consumption()
+    assert store.load_all_fabric_consumption() == []
