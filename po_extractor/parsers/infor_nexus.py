@@ -254,7 +254,22 @@ _LINE_HEADER_RE = re.compile(
 
 
 def _parse_size_grid(block: str) -> list[tuple]:
-    """Return [(size, upc, qty), ...] — same logic, works with \\r\\n via \\s*."""
+    """Return [(size, upc, qty), ...] from a size grid.
+
+    pypdfium2 linearises the grid two ways depending on the PDF's internal
+    reading order — column-major (Size:/UOM:/UPC:/Qty: headers together, then
+    one size's four values, repeat) or row-major (Size: then all sizes, UOM:
+    then all UOMs, UPC: then all UPCs, Qty: then all qtys). Try column-major
+    first, then fall back to row-major so the UPCs/qtys aren't silently
+    dropped for the row-major PDFs."""
+    results = _parse_size_grid_colmajor(block)
+    if not results:
+        results = _parse_size_grid_rowmajor(block)
+    return results
+
+
+def _parse_size_grid_colmajor(block: str) -> list[tuple]:
+    """Column-major: headers stacked, then stride-4 (or 5 with Ratio) values."""
     results = []
     for gm in re.finditer(
         r'Size:\s*\nUOM:\s*\nUPC:\s*\n(?:Ratio:\s*\n)?Qty:\s*\n'
@@ -278,6 +293,34 @@ def _parse_size_grid(block: str) -> list[tuple]:
                 except ValueError:
                     pass
             i += stride
+    return results
+
+
+def _parse_size_grid_rowmajor(block: str) -> list[tuple]:
+    """Row-major: 'Size:' then every size, 'UPC:' then every UPC, 'Qty:' then
+    every qty — matched by position. Used when the column-major parse finds
+    nothing (some PDFs linearise the table row-first)."""
+
+    def _section(name: str, stops: list[str]) -> list[str]:
+        stop_re = "|".join(stops)
+        m = re.search(rf'{name}:\s*\n(.*?)(?=\n(?:{stop_re})\b|$)',
+                      block, re.DOTALL)
+        if not m:
+            return []
+        return [l.strip() for l in m.group(1).splitlines() if l.strip()]
+
+    sizes = _section("Size", ["UOM:", "UPC:", "Ratio:", "Qty:"])
+    upcs  = _section("UPC",  ["Ratio:", "Qty:", "Size:"])
+    qtys  = _section("Qty",  ["Size:", "Total Qty", "Detail Instructions",
+                              "PO Summary"])
+    results = []
+    for i in range(min(len(sizes), len(upcs), len(qtys))):
+        size, upc, qty = sizes[i], upcs[i], qtys[i]
+        if size != '-' and re.fullmatch(r'\d{12,13}', upc):
+            try:
+                results.append((size, upc, int(qty.replace(',', ''))))
+            except ValueError:
+                pass
     return results
 
 

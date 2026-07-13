@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.63.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "fix", "text": "**Infor Nexus size grids that linearise row-first now keep their UPCs and quantities.** The parser only understood the column-major layout (Size/UOM/UPC/Qty headers, then each size's four values); PDFs whose table extracts row-major (Size: then all sizes, UPC: then all UPCs, Qty: then all qtys) had the entire grid — UPCs and quantities — dropped. A row-major fallback now parses those by matching each size to its UPC and qty by position; the column-major path is unchanged"},
+        ],
+    },
+    {
         "version": "2.62.1",
         "date": "2026-07-13",
         "entries": [
