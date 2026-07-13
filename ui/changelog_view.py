@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.59.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "The processing status now shows the **detected format** per group — e.g. `GIII: 19 file(s) — Infor Nexus PDF ×17 · Vendor Fax ×2` — in both the group summary and each 'Processing …' line, so you can see which parser each batch is using at a glance"},
+        ],
+    },
+    {
         "version": "2.59.0",
         "date": "2026-07-13",
         "entries": [

@@ -18,6 +18,28 @@ from po_extractor.exporters import (
 from po_extractor.parsers import parse_pdf, parse_pdf_ai
 
 
+# Friendly names for the detector's format ids, shown in the processing status.
+_FORMAT_LABELS = {
+    "infor_nexus":   "Infor Nexus PDF",
+    "legacy_giii":   "Legacy G-III PDF",
+    "vendor_fax":    "Vendor Fax",
+    "tk_eu":         "TK EU Fax",
+    "kl":            "KL Fax",
+    "excel_zalando": "Zalando Excel",
+    "sky_east":      "Sky East Excel",
+    "unknown":       "Unknown format",
+}
+
+
+def _fmt_breakdown(items) -> str:
+    """'Infor Nexus PDF ×17 · Vendor Fax ×2' — a per-format count for a group,
+    so the processing status shows WHICH formats are being handled."""
+    from collections import Counter
+    counts = Counter((getattr(d, "format_id", "") or "unknown") for d in items)
+    return " · ".join(f"{_FORMAT_LABELS.get(fmt, fmt)} ×{n}"
+                      for fmt, n in counts.most_common())
+
+
 def _regex_low_confidence(po) -> bool:
     """True when the fast regex parse didn't come back clean, so Auto mode
     should retry with AI. Mirrors the parsers' own 'valid' criterion."""
@@ -586,12 +608,14 @@ def _run_smart_processing(detections, saved_paths: dict[str, str],
         # ── Summary ──────────────────────────────────────────────────────────
         summary_lines = []
         for co, items in grouped.items():
-            summary_lines.append(f"**{co}**: {len(items)} file(s)")
+            summary_lines.append(
+                f"**{co}**: {len(items)} file(s) — {_fmt_breakdown(items)}")
         st.write("Detected groups: " + " | ".join(summary_lines))
 
         # ── Process each company group ────────────────────────────────────────
         for company, d_list in grouped.items():
-            st.write(f"\n--- Processing **{company}** ({len(d_list)} file(s)) ---")
+            st.write(f"\n--- Processing **{company}** "
+                     f"({len(d_list)} file(s) — {_fmt_breakdown(d_list)}) ---")
             paths = [saved_paths[d.filename] for d in d_list if d.filename in saved_paths]
             fmt_ids = {d.format_id for d in d_list}
 

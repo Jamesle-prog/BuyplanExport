@@ -14,6 +14,16 @@ def _po(confidence=100, status="valid", rows=1):
     return POData(metadata=meta, size_rows=size_rows)
 
 
+def test_format_breakdown_labels_and_counts():
+    import types
+    def _d(fmt):
+        o = types.SimpleNamespace(); o.format_id = fmt; return o
+    out = ext._fmt_breakdown([_d("infor_nexus")] * 17 + [_d("vendor_fax")] * 2)
+    assert out == "Infor Nexus PDF ×17 · Vendor Fax ×2"
+    # unknown / missing format ids collapse to a friendly label
+    assert ext._fmt_breakdown([_d("unknown"), _d(None)]) == "Unknown format ×2"
+
+
 def test_low_confidence_detection():
     assert not ext._regex_low_confidence(_po(100, "valid", 1))     # clean
     assert ext._regex_low_confidence(_po(100, "valid", 0))         # no rows
