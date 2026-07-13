@@ -452,6 +452,32 @@ def test_simple_summary_sheet_style_color_fabric_sizes():
     assert ws.cell(5, 8).value == 350
 
 
+def test_consumption_on_summary_not_style_sheet():
+    """单耗/排版 appear on Summary 汇总 (per style), not on the style sheet;
+    kg is derived from cm via the gross width (150+5)."""
+    store = _Store(_pos_df(), _sizes_df())
+    data = generate_giii_production_plan(
+        ["PO1", "PO2"], store, {},
+        consumption={"ST1": {"cons_kg": None, "cons_cm": 165, "util": 82,
+                             "marker_pcs": 24, "width_cm": 150, "gsm": 200}})
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+
+    sm = wb["Summary 汇总"]
+    hdr = [sm.cell(2, c).value for c in range(1, sm.max_column + 1)]
+    for h in ("单耗(kg)", "单耗(cm)", "排版利用率", "排版件数",
+              "排版有效门幅(cm)", "排版面料克重(g/m²)"):
+        assert h in hdr, f"summary missing consumption column {h}"
+    ci = {h: i + 1 for i, h in enumerate(hdr)}
+    assert sm.cell(3, ci["单耗(kg)"]).value == 0.5115   # 165*155*200/1e7
+    assert sm.cell(3, ci["单耗(cm)"]).value == 165
+    assert sm.cell(3, ci["排版面料克重(g/m²)"]).value == 200
+
+    # style sheet must NOT carry the consumption columns
+    ws = wb["ST1"]
+    style_vals = {str(c.value) for row in ws.iter_rows() for c in row if c.value}
+    assert "单耗(kg)" not in style_vals and "排版利用率" not in style_vals
+
+
 def test_summary_carries_requirement_texts():
     reqs = {"PO1": _Req(red_sticker="MY", carton_mark="见箱唛要求"),
             "PO2": _Req(red_sticker="无需")}

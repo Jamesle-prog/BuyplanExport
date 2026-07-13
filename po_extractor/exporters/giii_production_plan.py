@@ -436,14 +436,7 @@ def _write_style_sheet(
     C_MSRP      = C_SZ_END + 10
     C_RFID      = C_SZ_END + 11
     C_NOTE      = C_SZ_END + 12
-    # 单耗/排版 consumption columns (per-style, at the very end)
-    C_CONS_KG   = C_SZ_END + 13   # 单耗(kg)
-    C_CONS_CM   = C_SZ_END + 14   # 单耗(cm)
-    C_UTIL      = C_SZ_END + 15   # 排版利用率(%)
-    C_MK_PCS    = C_SZ_END + 16   # 排版件数
-    C_MK_WIDTH  = C_SZ_END + 17   # 排版有效门幅(cm)
-    C_MK_GSM    = C_SZ_END + 18   # 排版面料克重(g/m²)
-    N_COLS      = C_MK_GSM
+    N_COLS      = C_NOTE
 
     # Safe sheet title (max 31 chars, illegal chars sanitised, unique) —
     # a bare style[:31] crashed create_sheet on styles containing / \ * ? : [ ]
@@ -463,8 +456,6 @@ def _write_style_sheet(
         C_QTY: 8, C_SHIP: 12, C_RED: 12, C_MARK: 16, C_PACK: 16,
         C_HANG: 16, C_PPK: 12, C_PCS: 9, C_WTL: 14, C_MSRP: 7, C_RFID: 7,
         C_NOTE: 12,
-        C_CONS_KG: 10, C_CONS_CM: 10, C_UTIL: 10, C_MK_PCS: 9,
-        C_MK_WIDTH: 12, C_MK_GSM: 12,
     }
     for i in range(C_SZ_START, C_SZ_END + 1):
         widths[i] = 7
@@ -561,12 +552,6 @@ def _write_style_sheet(
         (C_MSRP,     "MSRP",       _HDR_FILL),
         (C_RFID,     "RFID",       _HDR_FILL),
         (C_NOTE,     "备注",       _HDR_FILL),
-        (C_CONS_KG,  "单耗(kg)",   _YELLOW_FILL),
-        (C_CONS_CM,  "单耗(cm)",   _YELLOW_FILL),
-        (C_UTIL,     "排版利用率", _YELLOW_FILL),
-        (C_MK_PCS,   "排版件数",   _YELLOW_FILL),
-        (C_MK_WIDTH, "排版有效门幅(cm)", _YELLOW_FILL),
-        (C_MK_GSM,   "排版面料克重(g/m²)", _YELLOW_FILL),
     ]
     for col_idx, label, fill in fixed_headers:
         _merge(ws, R_HDR1, col_idx, R_HDR2, col_idx, label,
@@ -704,8 +689,7 @@ def _write_style_sheet(
         # (备注 stays empty — packing facts have their own columns).
         for col in (C_CONTRACT, C_STYLE, C_BRAND, C_PO, C_CPO, C_WH, C_DEST,
                     C_CTRY, C_BUYER, C_SHIP, C_RED, C_MARK, C_PACK, C_HANG,
-                    C_PPK, C_PCS, C_WTL, C_MSRP, C_RFID, C_NOTE,
-                    C_CONS_KG, C_CONS_CM, C_UTIL, C_MK_PCS, C_MK_WIDTH, C_MK_GSM):
+                    C_PPK, C_PCS, C_WTL, C_MSRP, C_RFID, C_NOTE):
             ws.cell(r, col).border = _BORDER
 
     # ── PO-level merges (合同号 / PO号 / CPO# / 仓库代码 / 买家 / 离厂时间 /
@@ -789,30 +773,18 @@ def _write_style_sheet(
             _embed_img(ws, getattr(req, "red_img", None), C_RED, r0)
             _embed_img(ws, getattr(req, "mark_img", None), C_MARK, r0)
 
-    # ── Style-level merges (款号 + 单耗/排版) — one value per style ─────────────
+    # ── Style-level merge (款号) — one value per style ─────────────────────────
     if records:
         _merge_or_set(ws, DATA_START, C_STYLE, style_end_row, C_STYLE,
                       value=style, font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
 
-        # 单耗/排版: reconcile kg↔cm from the uploaded consumption table.
-        from ..ui_helpers.fabric_consumption import reconcile_consumption
-        cons = consumption or {}
-        kg, cm, _cons_warn = reconcile_consumption(
-            cons.get("cons_kg"), cons.get("cons_cm"),
-            cons.get("width_cm"), cons.get("gsm"))
-
-        def _cn(v):
-            return "" if v in (None, "") else v
-        for col, val in (
-            (C_CONS_KG,  _cn(kg)),
-            (C_CONS_CM,  _cn(cm)),
-            (C_UTIL,     _cn(cons.get("util"))),
-            (C_MK_PCS,   _cn(cons.get("marker_pcs"))),
-            (C_MK_WIDTH, _cn(cons.get("width_cm"))),
-            (C_MK_GSM,   _cn(cons.get("gsm"))),
-        ):
-            _merge_or_set(ws, DATA_START, col, style_end_row, col,
-                          value=val, font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+    # 单耗/排版: reconcile kg↔cm from the uploaded consumption table — the
+    # values are shown on the Summary 汇总 sheet (one row per style), not here.
+    from ..ui_helpers.fabric_consumption import reconcile_consumption
+    _cons = consumption or {}
+    _cons_kg, _cons_cm, _cons_warn = reconcile_consumption(
+        _cons.get("cons_kg"), _cons.get("cons_cm"),
+        _cons.get("width_cm"), _cons.get("gsm"))
 
     # ─────────────────────────────────────────────────────────────────────────
     # Footer rows
@@ -914,6 +886,10 @@ def _write_style_sheet(
         "buyers": _uniq(r["buyer"] for r in records),
         "reds": _uniq(sum_reds),
         "marks": _uniq(sum_marks),
+        # 单耗/排版 (per style) → Summary 汇总 columns
+        "cons_kg": _cons_kg, "cons_cm": _cons_cm,
+        "cons_util": _cons.get("util"), "cons_marker_pcs": _cons.get("marker_pcs"),
+        "cons_width": _cons.get("width_cm"), "cons_gsm": _cons.get("gsm"),
     }
 
 
@@ -929,6 +905,9 @@ _SUM_COLS = [
     ("包装方式",   16), ("衣架",   14), ("是否预包", 10), ("每箱件数", 9),
     ("箱重限制",   14), ("MSRP", 7), ("RFID", 7), ("红色箱贴纸", 12),
     ("主箱唛",     16),
+    # 单耗/排版 (per style)
+    ("单耗(kg)",   10), ("单耗(cm)", 10), ("排版利用率", 10), ("排版件数", 9),
+    ("排版有效门幅(cm)", 14), ("排版面料克重(g/m²)", 16),
 ]
 _SUM_TOTAL_COL = 11   # 总数量 position (for the TTL row)
 
@@ -981,6 +960,8 @@ def _write_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
         _cell(ws, r, 3, brand_txt,
               font=_FONT_FLAG if s.get("no_brand") else _FONT_NORMAL,
               border=_BORDER, align=_CENTER)
+        def _cn(v):
+            return "" if v in (None, "") else v
         row_vals = [
             s["desc"], j(s["contracts"]), len(s["pos"]), j(s["pos"]),
             j(s["colors"]), j(s["colors_cn"]),
@@ -989,10 +970,14 @@ def _write_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
             j(s["countries"]), j(s["buyers"]), j(s["packings"]), j(s["hangers"]),
             j(s["prepacks"]), j(s["pcs_cartons"]), j(s["weights"]),
             j(s["msrps"]), j(s["rfids"]), j(s["reds"]), j(s["marks"]),
+            _cn(s.get("cons_kg")), _cn(s.get("cons_cm")), _cn(s.get("cons_util")),
+            _cn(s.get("cons_marker_pcs")), _cn(s.get("cons_width")), _cn(s.get("cons_gsm")),
         ]
+        _center_cols = {6, _SUM_TOTAL_COL, 15, 19, 20, 21, 22, 23,
+                        26, 27, 28, 29, 30, 31}   # 单耗/排版 are numeric → centre
         for i, v in enumerate(row_vals, start=4):
             _cell(ws, r, i, v, font=_FONT_NORMAL, border=_BORDER,
-                  align=_CENTER if i in (6, _SUM_TOTAL_COL, 15, 19, 20, 21, 22, 23) else _LEFT)
+                  align=_CENTER if i in _center_cols else _LEFT)
         r += 1
 
     _cell(ws, r, 1, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,

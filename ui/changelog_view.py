@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.61.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "**单耗/排版 moved to the Summary 汇总 sheet** — the six fabric-consumption columns (单耗 kg/cm, 排版利用率, 排版件数, 排版有效门幅, 排版面料克重) now appear once per style on the summary (where there's exactly one row per style) instead of merged down every style sheet. Cleaner style sheets; same data, same kg↔cm reconciliation on the gross width"},
+        ],
+    },
+    {
         "version": "2.60.1",
         "date": "2026-07-13",
         "entries": [
