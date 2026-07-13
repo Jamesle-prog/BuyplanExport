@@ -376,7 +376,8 @@ def generate_giii_production_plan(
     if summaries:
         _write_summary_sheet(wb, summaries)          # index 0
         _write_simple_summary_sheet(wb, summaries)   # index 1
-        _write_upc_summary_sheet(wb, summaries)      # index 2
+        _write_upc_summary_sheet(wb, summaries)      # index 2  (pivot)
+        _write_upc_detail_sheet(wb, summaries)       # index 3  (per-size list)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -1208,4 +1209,60 @@ def _write_upc_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
     _cell(ws, r, C_TOTAL, grand, font=_FONT_BOLD, fill=_YELLOW_FILL,
           border=_BORDER, align=_CENTER)
 
+    ws.freeze_panes = "A3"
+
+
+# ---------------------------------------------------------------------------
+# UPC 明细 sheet (fourth sheet — one row per size: attached header + size/UPC/qty)
+# ---------------------------------------------------------------------------
+
+_UPC_DETAIL_COLS = [
+    ("No.", 6), ("款号", 14), ("品牌", 12), ("合同号", 14), ("PO号", 16),
+    ("颜色(英文)", 18), ("颜色(中文)", 14), ("尺码", 8), ("UPC", 18), ("数量", 8),
+]
+
+
+def _write_upc_detail_sheet(wb: Workbook, summaries: list[dict]) -> None:
+    """UPC 明细 — the flat per-size list: the identifying header columns
+    (款号 / 品牌 / 合同号 / PO号 / 颜色) attached to each row, then 尺码 / UPC /
+    数量, one row per (PO, colour, size), with a TTL. Complements the wide
+    UPC 汇总 pivot for anyone who wants a plain size→UPC→qty table."""
+    all_rows = [row for s in summaries for row in s.get("upc_rows", [])]
+    if not all_rows:
+        return
+
+    title = "UPC 明细" if "UPC 明细" not in wb.sheetnames else "UPC明细2"
+    ws = wb.create_sheet(title=title, index=3)
+    n = len(_UPC_DETAIL_COLS)
+    for i, (_, w) in enumerate(_UPC_DETAIL_COLS, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    _merge(ws, 1, 1, 1, n, "UPC 明细（每尺码一行：尺码 / UPC / 数量）",
+           font=_FONT_SUBTITLE,
+           align=Alignment(horizontal="center", vertical="center"))
+    ws.row_dimensions[1].height = 24
+    for i, (label, _) in enumerate(_UPC_DETAIL_COLS, start=1):
+        _cell(ws, 2, i, label, font=_FONT_HDR, fill=_HDR_FILL,
+              border=_BORDER, align=_CENTER)
+    ws.row_dimensions[2].height = 20
+
+    r, grand = 3, 0
+    for no, row in enumerate(all_rows, start=1):
+        units = int(row.get("units", 0) or 0)
+        grand += units
+        vals = [no, row["style"], row["brand"], row["contract"], row["po"],
+                row["color_en"], row["color_cn"], row["size"], row["upc"], units]
+        for i, v in enumerate(vals, start=1):
+            cell = _cell(ws, r, i, v, font=_FONT_NORMAL, border=_BORDER,
+                         align=_CENTER if i in (1, 8, 9, 10) else _LEFT)
+            if i == 9 and v:                    # UPC → text (no scientific notation)
+                cell.number_format = "@"
+        r += 1
+
+    _cell(ws, r, 1, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,
+          border=_BORDER, align=_CENTER)
+    for c in range(2, n):
+        _cell(ws, r, c, None, font=_FONT_BOLD, fill=_YELLOW_FILL, border=_BORDER)
+    _cell(ws, r, n, grand, font=_FONT_BOLD, fill=_YELLOW_FILL,
+          border=_BORDER, align=_CENTER)
     ws.freeze_panes = "A3"

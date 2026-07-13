@@ -583,6 +583,28 @@ def test_upc_summary_two_lines_units_then_upc_under_each_size():
     assert ws.cell(ttl_r, ti).value == 350
 
 
+def test_upc_detail_sheet_flat_per_size_list():
+    store = _Store(_pos_df(), _sizes_df_upc())
+    data = generate_giii_production_plan(["PO1", "PO2"], store, {})
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    # 4th sheet, after Summary 汇总 / 简明汇总 / UPC 汇总
+    assert wb.sheetnames[:4] == ["Summary 汇总", "简明汇总", "UPC 汇总", "UPC 明细"]
+    ws = wb["UPC 明细"]
+    headers = [ws.cell(2, c).value for c in range(1, ws.max_column + 1)]
+    assert headers == ["No.", "款号", "品牌", "合同号", "PO号",
+                       "颜色(英文)", "颜色(中文)", "尺码", "UPC", "数量"]
+    # one row per (PO, colour, size): PO1 JET BLACK S/M + PO2 PINE S = 3
+    rows = []
+    r = 3
+    while ws.cell(r, 1).value not in (None, "TTL"):
+        rows.append((ws.cell(r, 8).value, ws.cell(r, 9).value, ws.cell(r, 10).value))
+        r += 1
+    assert len(rows) == 3
+    assert ("S", "700948471565", 100) in rows       # size / UPC / units
+    assert isinstance(ws.cell(3, 9).value, str)      # UPC kept as text
+    assert ws.cell(r, 10).value == 350               # TTL sums units
+
+
 def test_upc_summary_carries_style_and_po_context():
     store = _Store(_pos_df(), _sizes_df_upc())
     data = generate_giii_production_plan(

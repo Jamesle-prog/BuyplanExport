@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.70.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "New **UPC 明细** tab in the buy plan (4th sheet, after UPC 汇总) — a flat per-size list with the identifying header columns (款号/品牌/合同号/PO号/颜色) attached to each row, then 尺码 / UPC / 数量, one row per size, plus a TTL. Complements the wide UPC 汇总 pivot"},
+        ],
+    },
+    {
         "version": "2.70.0",
         "date": "2026-07-13",
         "entries": [
