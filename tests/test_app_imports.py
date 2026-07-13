@@ -42,20 +42,23 @@ def test_no_ui_module_uses_SK_without_importing_it():
             continue  # the definition module itself
         with open(path, encoding="utf-8-sig") as fh:   # tolerate a BOM
             src = fh.read()
-        if "SK." not in src:
-            continue
         tree = ast.parse(src)
-        imports_sk = any(
+        # A REAL SK.attr access — an Attribute whose value is the name `SK`.
+        # (String checks false-positive on docs/changelog text containing "SK.".)
+        uses_sk = any(
+            isinstance(n, ast.Attribute)
+            and isinstance(n.value, ast.Name) and n.value.id == "SK"
+            for n in ast.walk(tree)
+        )
+        if not uses_sk:
+            continue
+        bound = any(
             (isinstance(n, ast.ImportFrom) and any(a.name == "SK" for a in n.names))
             or (isinstance(n, ast.Import) and any(a.name.endswith("SK") for a in n.names))
+            or (isinstance(n, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "SK" for t in n.targets))
             for n in ast.walk(tree)
         )
-        # also allow `SK` bound as a module-level name (e.g. alias assignment)
-        assigns_sk = any(
-            isinstance(n, ast.Assign)
-            and any(isinstance(t, ast.Name) and t.id == "SK" for t in n.targets)
-            for n in ast.walk(tree)
-        )
-        if not (imports_sk or assigns_sk):
+        if not bound:
             offenders.append(os.path.relpath(path, _ROOT))
     assert not offenders, f"modules use SK.* without importing SK: {offenders}"

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.57.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "perf", "text": "**Multi-file AI extraction now runs in parallel.** The combined GIII uploader parsed each PDF's DeepSeek call one after another — with the reasoner model at ~30–60s per file, a 7-file batch took several minutes. The independent per-file AI calls now run concurrently (up to 6 at once), collapsing the batch to roughly a single call's wall-time (~3.5× faster on a 7-file batch, more with the slower reasoner). PDF reading itself was never the bottleneck — text extraction is ~0.05s for 7 files; content de-dup, ordering, and per-file error handling are unchanged"},
+        ],
+    },
+    {
         "version": "2.56.1",
         "date": "2026-07-13",
         "entries": [

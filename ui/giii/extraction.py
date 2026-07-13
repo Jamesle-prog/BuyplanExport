@@ -414,8 +414,10 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
                        use_ai: bool = False,
                        deepseek_api_key: str = "",
                        deepseek_model: str = "deepseek-chat") -> dict | None:
+    # De-dup by content hash first (preserving order), so identical files
+    # aren't parsed — or AI-billed — twice.
     seen: set[str] = set()
-    pos = []
+    todo: list[tuple[str, str, str]] = []   # (path, name, hash)
     for path in paths:
         name = os.path.basename(path)
         with open(path, "rb") as fh:
@@ -424,6 +426,12 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
             log.append(f"♻️ {name} — duplicate skipped")
             continue
         seen.add(h)
+        todo.append((path, name, h))
+
+    username = st.session_state.get(SK.USERNAME, "")
+
+    def _parse_one(item):
+        path, name, h = item
         try:
             if use_ai and deepseek_api_key:
                 po = parse_pdf_ai(path, api_key=deepseek_api_key, model=deepseek_model)
@@ -431,18 +439,36 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
             else:
                 po = parse_pdf(path)
                 tag = "✅"
-            po.metadata.company = company
-            po.metadata.processed_by = st.session_state.get(SK.USERNAME, "")
-            po.metadata.source_file_hash = h
-            pos.append(po)
-            log.append(f'<span style="color:#198754">{tag} {name}</span> — {len(po.size_rows)} rows')
+            return (name, h, po, tag, None)
         except Exception as exc:
+            return (name, h, None, None, exc)
+
+    # AI parsing is a slow (~30-60s) network call per file — run the batch
+    # concurrently so N files take ~one call's time, not N×. The regex path
+    # is sub-second, so only parallelize when actually calling the API.
+    # ex.map preserves input order; no shared state is mutated in the workers
+    # (store writes + logging happen below, on the main thread).
+    if use_ai and deepseek_api_key and len(todo) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(6, len(todo))) as _ex:
+            parsed = list(_ex.map(_parse_one, todo))
+    else:
+        parsed = [_parse_one(t) for t in todo]
+
+    pos = []
+    for name, h, po, tag, exc in parsed:
+        if exc is not None:
             log.append(f'<span style="color:#dc3545">❌ {name}: {exc}</span>')
             get_store().save_exception(
                 po_number="", file_name=name, company=company,
-                reason=str(exc),
-                processed_by=st.session_state.get(SK.USERNAME, ""),
+                reason=str(exc), processed_by=username,
             )
+            continue
+        po.metadata.company = company
+        po.metadata.processed_by = username
+        po.metadata.source_file_hash = h
+        pos.append(po)
+        log.append(f'<span style="color:#198754">{tag} {name}</span> — {len(po.size_rows)} rows')
 
     if not pos:
         return None
