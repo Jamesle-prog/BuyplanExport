@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.62.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "**Live progress during file processing** — a progress bar plus a running line showing **completed/total files**, the **last file done**, **elapsed time**, and **ETA** (e.g. `⏳ 4/19 files — DW843124UC.pdf · elapsed 0:38 · ETA 2:41`). The parallel AI batch now reports each file as it finishes (via as_completed) while still returning results in the original order"},
+        ],
+    },
+    {
         "version": "2.61.1",
         "date": "2026-07-13",
         "entries": [

@@ -1036,6 +1036,11 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Download shown rows (.xlsx)', '下载所显示的行 (.xlsx)', 'button', 'giii'),
     ('Clear all consumption data', '清除所有单耗数据', 'button', 'giii'),
     ('Consumption data cleared.', '单耗数据已清除。', 'label', 'giii'),
+
+    # Live processing progress
+    ('files', '个文件', 'label', 'giii'),
+    ('elapsed', '已用', 'label', 'giii'),
+    ('ETA', '预计剩余', 'label', 'giii'),
     ('When (UTC)', '时间（UTC）', 'label', 'admin'),
     ('When enabled, PO PDFs are sent to the **DeepSeek API** for field extraction instead of (or alongside) the built-in regex parser.  Requires a DeepSeek API key from [platform.deepseek.com](https://platform.deepseek.com).', '启用后，订单 PDF 将发送至 **DeepSeek API** 进行字段提取，替代（或配合）内置的正则解析器。需要从 [platform.deepseek.com](https://platform.deepseek.com) 获取的 DeepSeek API 密钥。', 'label', 'admin'),
     ('Which company should the imported rows be filed under?', '导入的行应归入哪个公司？', 'label', 'admin'),

@@ -491,17 +491,57 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
         except Exception as exc:
             return (name, h, None, None, exc)
 
+    # ── Live progress (count · current file · elapsed · ETA) ──────────────────
+    import time as _time
+    total = len(todo)
+    _prog = st.progress(0.0) if total else None
+    _ptext = st.empty()
+    _t0 = _time.perf_counter()
+
+    def _fmt_dur(sec: float) -> str:
+        sec = max(0, int(sec))
+        return f"{sec // 60}:{sec % 60:02d}"
+
+    def _tick(done: int, last_name: str):
+        if not total:
+            return
+        el = _time.perf_counter() - _t0
+        eta = (el / done) * (total - done) if done else 0.0
+        if _prog:
+            _prog.progress(done / total)
+        _ptext.markdown(
+            f"⏳ **{done}/{total}** {t('files')} — `{last_name}`  ·  "
+            f"{t('elapsed')} {_fmt_dur(el)}  ·  {t('ETA')} {_fmt_dur(eta)}")
+
     # AI parsing is a slow (~30-60s) network call per file — run the batch
-    # concurrently so N files take ~one call's time, not N×. Both deepseek
-    # and auto (whose slow AI fallback fires per low-confidence file) benefit;
-    # ex.map preserves input order, and no shared state is mutated in the
-    # workers (store writes + logging happen below, on the main thread).
-    if method in ("deepseek", "auto") and deepseek_api_key and len(todo) > 1:
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=min(6, len(todo))) as _ex:
-            parsed = list(_ex.map(_parse_one, todo))
+    # concurrently so N files take ~one call's time, not N×. Both deepseek and
+    # auto (whose slow AI fallback fires per low-confidence file) benefit.
+    # as_completed lets us update progress as each file finishes; results are
+    # re-sorted to input order afterwards. Store writes + logging stay on the
+    # main thread (below).
+    parsed_by_name: dict[str, tuple] = {}
+    if method in ("deepseek", "auto") and deepseek_api_key and total > 1:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=min(6, total)) as _ex:
+            _futs = {_ex.submit(_parse_one, item): item for item in todo}
+            done = 0
+            for _fut in as_completed(_futs):
+                res = _fut.result()
+                parsed_by_name[res[0]] = res
+                done += 1
+                _tick(done, res[0])
+        parsed = [parsed_by_name[name] for _, name, _ in todo]
     else:
-        parsed = [_parse_one(t) for t in todo]
+        parsed = []
+        for done, item in enumerate(todo, start=1):
+            res = _parse_one(item)
+            parsed.append(res)
+            _tick(done, res[0])
+
+    if total:
+        _ptext.markdown(
+            f"✅ {total} {t('files')} — {t('elapsed')} "
+            f"{_fmt_dur(_time.perf_counter() - _t0)}")
 
     pos = []
     for name, h, po, tag, exc in parsed:
