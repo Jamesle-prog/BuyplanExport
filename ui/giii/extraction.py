@@ -500,8 +500,12 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
     _t0 = _time.perf_counter()
 
     def _fmt_dur(sec: float) -> str:
-        sec = max(0, int(sec))
-        return f"{sec // 60}:{sec % 60:02d}"
+        sec = max(0.0, sec)
+        if sec < 10:
+            return f"{sec:.1f}s"          # sub-second work reads as "0.2s", not "0:00"
+        if sec < 60:
+            return f"{int(sec)}s"
+        return f"{int(sec) // 60}:{int(sec) % 60:02d}"
 
     def _tick(done: int, last_name: str):
         if not total:
@@ -540,8 +544,18 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
             _tick(done, res[0])
 
     if total:
+        if _prog:
+            _prog.progress(1.0)
+        _ai_n = sum(1 for r in parsed if r[3] == "🤖")
+        _rx_n = sum(1 for r in parsed if r[3] == "✅")
+        _mix = []
+        if _rx_n:
+            _mix.append(f"{_rx_n} ✅ {t('by parser')}")
+        if _ai_n:
+            _mix.append(f"{_ai_n} 🤖 {t('by AI')}")
+        _breakdown = f" ({' · '.join(_mix)})" if _mix else ""
         _ptext.markdown(
-            f"✅ {total} {t('files')} — {t('elapsed')} "
+            f"✅ {total} {t('files')}{_breakdown} — {t('elapsed')} "
             f"{_fmt_dur(_time.perf_counter() - _t0)}")
 
     pos = []

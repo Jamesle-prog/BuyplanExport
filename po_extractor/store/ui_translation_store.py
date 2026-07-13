@@ -1041,6 +1041,8 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('files', '个文件', 'label', 'giii'),
     ('elapsed', '已用', 'label', 'giii'),
     ('ETA', '预计剩余', 'label', 'giii'),
+    ('by parser', '内置解析', 'label', 'giii'),
+    ('by AI', 'AI 提取', 'label', 'giii'),
 
     # UPC Check (PDA scanner) module
     ('UPC Check', 'UPC 核验', 'nav', 'giii'),

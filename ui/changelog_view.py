@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.64.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "fix", "text": "Processing status was confusing on fast runs — in **Auto** mode clean PDFs parse in a fraction of a second, so the bar filled instantly and showed `elapsed 0:00`, reading as if nothing happened. Elapsed time is now sub-second aware (`0.2s`) and the completion line shows the parser/AI split (e.g. `✅ 19 files (19 ✅ by parser) — elapsed 0.2s`), so a fast run clearly reads as done-and-fast. The bar still visibly advances on the slow AI path"},
+        ],
+    },
+    {
         "version": "2.64.0",
         "date": "2026-07-13",
         "entries": [
