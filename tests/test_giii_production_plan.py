@@ -83,13 +83,15 @@ def _sheet(data: bytes, name="ST1"):
     return openpyxl.load_workbook(io.BytesIO(data))[name]
 
 
-def _upc_data_rows(ws):
-    """UPC 汇总 data rows (tuples of size, upc, units) down to the TTL row."""
-    rows, r = [], 3
+def _upc_headers(ws):
+    return [ws.cell(2, c).value for c in range(1, ws.max_column + 1)]
+
+
+def _upc_ttl_row(ws):
+    r = 3
     while ws.cell(r, 1).value not in (None, "TTL"):
-        rows.append((ws.cell(r, 8).value, ws.cell(r, 9).value, ws.cell(r, 10).value))
         r += 1
-    return rows, r
+    return r
 
 
 def _all_values(ws):
@@ -544,28 +546,35 @@ def test_summary_carries_requirement_texts():
 
 # ── UPC 汇总 sheet ─────────────────────────────────────────────────────────────
 
-def test_upc_summary_sheet_lists_every_size_upc():
+def test_upc_summary_one_row_per_po_colour_with_upc_under_each_size():
     store = _Store(_pos_df(), _sizes_df_upc())
     data = generate_giii_production_plan(["PO1", "PO2"], store, {})
     wb = openpyxl.load_workbook(io.BytesIO(data))
 
     assert wb.sheetnames[2] == "UPC 汇总"        # after Summary 汇总 + 简明汇总
     ws = wb["UPC 汇总"]
-    headers = [ws.cell(2, c).value for c in range(1, 11)]
-    assert headers == ["No.", "款号", "品牌", "合同号", "PO号",
-                       "颜色(英文)", "颜色(中文)", "尺码", "UPC", "数量"]
+    headers = _upc_headers(ws)
+    assert headers[:7] == ["No.", "款号", "品牌", "合同号", "PO号",
+                           "颜色(英文)", "颜色(中文)"]
+    assert "S" in headers and "M" in headers      # sizes are their own columns
+    assert headers[-1] == "总数量"
+    si, mi = headers.index("S") + 1, headers.index("M") + 1
+    ti = headers.index("总数量") + 1
 
-    rows, ttl_r = _upc_data_rows(ws)
-    # one row per (PO, colour, size): JET BLACK S/M + PINE S = 3
-    assert len(rows) == 3
-    upcs = {u for _, u, _ in rows}
-    assert upcs == {"700948471565", "700948471534", "700948471507"}
-    assert dict((sz, q) for sz, _, q in rows if _ == "700948471565") == {"S": 100}
-    # UPCs kept as text so 12-digit barcodes never become floats
-    assert all(isinstance(u, str) for _, u, _ in rows)
-    # TTL sums all units
-    assert ws.cell(ttl_r, 1).value == "TTL"
-    assert ws.cell(ttl_r, 10).value == 350
+    # row 3 = PO1 JET BLACK: one row across all sizes, UPC under each size
+    assert ws.cell(3, 5).value == "PO1" and ws.cell(3, 6).value == "JET BLACK"
+    assert ws.cell(3, si).value == "700948471565"
+    assert ws.cell(3, mi).value == "700948471534"
+    assert isinstance(ws.cell(3, si).value, str)   # kept as text, not a float
+    assert ws.cell(3, ti).value == 300             # 100 + 200
+    # row 4 = PO2 PINE: only S carries a UPC, M is blank
+    assert ws.cell(4, si).value == "700948471507"
+    assert not ws.cell(4, mi).value
+    assert ws.cell(4, ti).value == 50
+    # exactly two data rows then TTL (not one-per-size)
+    ttl_r = _upc_ttl_row(ws)
+    assert ttl_r == 5
+    assert ws.cell(ttl_r, ti).value == 350
 
 
 def test_upc_summary_carries_style_and_po_context():
@@ -585,10 +594,15 @@ def test_upc_summary_blank_when_po_has_no_upc():
     store = _Store(_pos_df(), _sizes_df())            # _sizes_df has no UPC column
     data = generate_giii_production_plan(["PO1", "PO2"], store, {})
     ws = openpyxl.load_workbook(io.BytesIO(data))["UPC 汇总"]
-    rows, ttl_r = _upc_data_rows(ws)
-    assert rows                                       # rows still exist (per size)
-    assert all(not u for _, u, _ in rows)             # every UPC cell blank
-    assert ws.cell(ttl_r, 10).value == 350            # quantities still total
+    headers = _upc_headers(ws)
+    ti = headers.index("总数量") + 1
+    size_cols = [i for i, h in enumerate(headers, start=1) if h in ("S", "M")]
+    ttl_r = _upc_ttl_row(ws)
+    assert ttl_r > 3                                  # rows still exist per PO/colour
+    for r in range(3, ttl_r):
+        for c in size_cols:
+            assert not ws.cell(r, c).value            # every size/UPC cell blank
+    assert ws.cell(ttl_r, ti).value == 350            # quantities still total
 
 
 # ── export_buyplan zero-row filter ────────────────────────────────────────────

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.65.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "**UPC 汇总** sheet reshaped to one row per PO/colour with each **size as its own column** and that size's **UPC printed under it** — a compact size→UPC card instead of one row per size. Trailing 总数量 per row and a TTL remain; empty size cells mean the PO carried no UPC there (never fabricated)"},
+        ],
+    },
+    {
         "version": "2.65.0",
         "date": "2026-07-13",
         "entries": [

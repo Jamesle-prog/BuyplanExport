@@ -1108,61 +1108,92 @@ def _write_simple_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# UPC 汇总 sheet (third sheet — one row per PO / colour / size, with its UPC)
+# UPC 汇总 sheet (third sheet — one row per PO / colour, UPC under each size)
 # ---------------------------------------------------------------------------
 
-_UPC_COLS = [
+# Fixed leading columns; the size columns (each holding that size's UPC) and a
+# trailing 总数量 are appended dynamically from the styles actually present.
+_UPC_LEAD = [
     ("No.", 6), ("款号", 14), ("品牌", 12), ("合同号", 14), ("PO号", 16),
-    ("颜色(英文)", 18), ("颜色(中文)", 14), ("尺码", 8), ("UPC", 18), ("数量", 8),
+    ("颜色(英文)", 18), ("颜色(中文)", 14),
 ]
 
 
 def _write_upc_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
-    """UPC 汇总 — the size-level UPC list the buy plan otherwise aggregates
-    away: one row per (PO, colour, size) with its UPC and quantity, plus a
-    TTL row. UPCs missing from a PO are left blank (never fabricated)."""
+    """UPC 汇总 — one row per (PO, colour) across ALL sizes, with the UPC
+    printed under each size column (blank where the PO carries none — never
+    fabricated), plus a per-row 总数量 and a TTL row.  UPCs stay text so long
+    barcodes never render in scientific notation."""
     all_rows = [row for s in summaries for row in s.get("upc_rows", [])]
     if not all_rows:
         return
 
+    sizes = _sort_sizes(list({r["size"] for r in all_rows}))
+
+    # One matrix row per (style, PO, colour); size → UPC, plus a unit total.
+    groups: dict[tuple, dict] = {}
+    for row in all_rows:
+        key = (row["style"], row["po"], row["color_en"])
+        g = groups.get(key)
+        if g is None:
+            g = groups[key] = {
+                "style": row["style"], "brand": row["brand"],
+                "contract": row["contract"], "po": row["po"],
+                "color_en": row["color_en"], "color_cn": row["color_cn"],
+                "upc": {}, "total": 0,
+            }
+        if row["upc"] and not g["upc"].get(row["size"]):
+            g["upc"][row["size"]] = row["upc"]
+        g["total"] += int(row.get("units", 0) or 0)
+
     title = "UPC 汇总" if "UPC 汇总" not in wb.sheetnames else "UPC汇总2"
     ws = wb.create_sheet(title=title, index=2)
-    n_cols = len(_UPC_COLS)
 
-    for i, (_, w) in enumerate(_UPC_COLS, start=1):
+    C_SZ0 = len(_UPC_LEAD) + 1                 # first size column
+    C_TOTAL = C_SZ0 + len(sizes)               # 总数量 column
+    n_cols = C_TOTAL
+
+    for i, (_, w) in enumerate(_UPC_LEAD, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
+    for i in range(C_SZ0, C_SZ0 + len(sizes)):
+        ws.column_dimensions[get_column_letter(i)].width = 15   # fits a UPC
+    ws.column_dimensions[get_column_letter(C_TOTAL)].width = 10
 
-    _merge(ws, 1, 1, 1, n_cols, "UPC 汇总（款号 / 颜色 / 尺码 / UPC / 数量）",
+    _merge(ws, 1, 1, 1, n_cols, "UPC 汇总（每个尺码下对应 UPC）",
            font=_FONT_SUBTITLE,
            align=Alignment(horizontal="center", vertical="center"))
     ws.row_dimensions[1].height = 24
 
-    for i, (label, _) in enumerate(_UPC_COLS, start=1):
+    headers = [label for label, _ in _UPC_LEAD] + sizes + ["总数量"]
+    for i, label in enumerate(headers, start=1):
         _cell(ws, 2, i, label, font=_FONT_HDR, fill=_HDR_FILL,
               border=_BORDER, align=_CENTER)
     ws.row_dimensions[2].height = 20
 
-    # 数量 is the only left-aligned-averse column; UPC stays text so long
-    # barcodes never render in scientific notation.
     r = 3
     grand = 0
-    for no, row in enumerate(all_rows, start=1):
-        units = int(row.get("units", 0) or 0)
-        grand += units
-        vals = [no, row["style"], row["brand"], row["contract"], row["po"],
-                row["color_en"], row["color_cn"], row["size"], row["upc"], units]
-        for i, v in enumerate(vals, start=1):
-            cell = _cell(ws, r, i, v, font=_FONT_NORMAL, border=_BORDER,
-                         align=_CENTER if i in (1, 8, 9, 10) else _LEFT)
-            if i == 9 and v:               # UPC column → force text format
+    for no, g in enumerate(groups.values(), start=1):
+        grand += g["total"]
+        lead = [no, g["style"], g["brand"], g["contract"], g["po"],
+                g["color_en"], g["color_cn"]]
+        for i, v in enumerate(lead, start=1):
+            _cell(ws, r, i, v, font=_FONT_NORMAL, border=_BORDER,
+                  align=_CENTER if i == 1 else _LEFT)
+        for k, sz in enumerate(sizes):
+            upc = g["upc"].get(sz, "")
+            cell = _cell(ws, r, C_SZ0 + k, upc or None, font=_FONT_NORMAL,
+                         border=_BORDER, align=_CENTER)
+            if upc:                            # keep long barcodes as text
                 cell.number_format = "@"
+        _cell(ws, r, C_TOTAL, g["total"], font=_FONT_NORMAL,
+              border=_BORDER, align=_CENTER)
         r += 1
 
     _cell(ws, r, 1, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,
           border=_BORDER, align=_CENTER)
     for c in range(2, n_cols):
         _cell(ws, r, c, None, font=_FONT_BOLD, fill=_YELLOW_FILL, border=_BORDER)
-    _cell(ws, r, n_cols, grand, font=_FONT_BOLD, fill=_YELLOW_FILL,
+    _cell(ws, r, C_TOTAL, grand, font=_FONT_BOLD, fill=_YELLOW_FILL,
           border=_BORDER, align=_CENTER)
 
     ws.freeze_panes = "A3"
