@@ -1043,6 +1043,11 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('ETA', '预计剩余', 'label', 'giii'),
     ('by parser', '内置解析', 'label', 'giii'),
     ('by AI', 'AI 提取', 'label', 'giii'),
+    ('done in', '总耗时', 'label', 'giii'),
+    ('Saving records…', '正在保存记录…', 'label', 'giii'),
+    ('Building buy plan & summaries…', '正在生成采购计划与汇总…', 'label', 'giii'),
+    ('Masking prices…', '正在打码价格…', 'label', 'giii'),
+    ('Resolving requirements (CPRS)…', '正在解析客户要求（CPRS）…', 'label', 'giii'),
 
     # UPC Check (PDA scanner) module
     ('UPC Check', 'UPC 核验', 'nav', 'giii'),

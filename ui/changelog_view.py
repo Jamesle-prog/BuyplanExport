@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.69.2",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "fix", "text": "Processing progress now covers the **whole** pipeline, not just parsing. Clean files parse in <1s, but the bar then sat full with a spinning wheel through save → buy plan → summaries → price masking → CPRS requirements document — looking stuck. The bar now advances through each of those phases with a labelled % (e.g. `⚙ Resolving requirements (CPRS)… (80%)`), so you see what it's doing and which step is slow, and the final line shows total elapsed"},
+        ],
+    },
+    {
         "version": "2.69.1",
         "date": "2026-07-13",
         "entries": [

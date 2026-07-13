@@ -543,9 +543,8 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
             parsed.append(res)
             _tick(done, res[0])
 
+    _breakdown = ""
     if total:
-        if _prog:
-            _prog.progress(1.0)
         _ai_n = sum(1 for r in parsed if r[3] == "🤖")
         _rx_n = sum(1 for r in parsed if r[3] == "✅")
         _mix = []
@@ -554,9 +553,20 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
         if _ai_n:
             _mix.append(f"{_ai_n} 🤖 {t('by AI')}")
         _breakdown = f" ({' · '.join(_mix)})" if _mix else ""
+
+    # Parsing is often the fast part (clean Infor Nexus files parse in <1s); the
+    # slow tail is save → exports → price masking → CPRS requirements document.
+    # Drive the SAME bar through those phases so it never sits full with a
+    # spinning wheel looking stuck — and so a slow phase names itself.
+    def _phase(frac: float, label: str) -> None:
+        if _prog:
+            _prog.progress(min(1.0, frac))
         _ptext.markdown(
-            f"✅ {total} {t('files')}{_breakdown} — {t('elapsed')} "
-            f"{_fmt_dur(_time.perf_counter() - _t0)}")
+            f"⚙ **{label}** ({int(min(1.0, frac) * 100)}%)  ·  "
+            f"{t('elapsed')} {_fmt_dur(_time.perf_counter() - _t0)}")
+
+    if _prog:
+        _prog.progress(0.0)      # restart the bar for the build/export phase
 
     pos = []
     for name, h, po, tag, exc in parsed:
@@ -577,10 +587,12 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
         return None
 
     # ── Validate imported POs before saving ───────────────────────────────────
+    _phase(0.12, t("Saving records…"))
     _validate_giii_pos(pos, log, company)
 
     get_store().save_many_checked(pos)
 
+    _phase(0.32, t("Building buy plan & summaries…"))
     result  = export_csvs(pos, out_dir)
     result["df_size"] = _enrich_cn_color(result["df_size"], result["df_meta"])
     result["df_size"].to_csv(result["by_size_color"], index=False, encoding="utf-8-sig")
@@ -592,6 +604,7 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
 
     masked_paths = []
     if mask_prices:
+        _phase(0.6, t("Masking prices…"))
         _mask_errors: list[str] = []
         _ai_key, _ai_model = _mask_ai_creds()
         masked_paths = mask_prices_batch(paths, out_dir, errors=_mask_errors,
@@ -625,9 +638,19 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
         out["mask_failed"] = _mask_errors or ["no files could be masked"]
 
     # PO requirements document (CPRS) — pulled automatically at upload time.
+    # Often the slowest phase (a CPRS call per order context plus artwork
+    # fetches), so it gets its own visible step.
+    _phase(0.8, t("Resolving requirements (CPRS)…"))
     _req = _build_requirements_doc(pos)
     if _req:
         out["requirements_bytes"], out["requirements_warns"] = _req
+
+    if total:
+        if _prog:
+            _prog.progress(1.0)
+        _ptext.markdown(
+            f"✅ {total} {t('files')}{_breakdown} — {t('done in')} "
+            f"{_fmt_dur(_time.perf_counter() - _t0)}")
 
     out["pipeline"] = "pdf"
     return out
