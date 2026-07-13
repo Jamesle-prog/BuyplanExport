@@ -192,6 +192,7 @@
       body: JSON.stringify(body)
     }).then(function (r) {
       if (r.status === 401) { window.location = "/login"; throw new Error("auth"); }
+      if (!r.ok) { throw new Error("HTTP " + r.status); }
       return r.json();
     });
   }
@@ -202,6 +203,13 @@
     if (!upc || busy) { return; }
     busy = true; status.textContent = "查询中… / Looking up…";
     var done = function () { busy = false; status.textContent = "就绪 / Ready"; refocus(); };
+    var fail = function (e) {
+      if (String(e && e.message) === "auth") { return; }   // redirecting to login
+      showResult(false, upc + " — 错误 / error", null,
+        "未记录，请重试 / not recorded, retry (" + ((e && e.message) || e) + ")");
+      vibrate(false);
+      busy = false; status.textContent = "错误 / Error"; refocus();
+    };
 
     if (mode === "lookup") {
       post("/api/lookup", { upc: upc }).then(function (d) {
@@ -214,7 +222,7 @@
         } else { showResult(false, upc + " — 未找到 / not found", null); }
         addLog(upc, d.matched ? "✅" : "❌ 未找到");
         done();
-      }).catch(done);
+      }).catch(fail);
 
     } else if (mode === "verify") {
       var po = poPick.value;
@@ -229,7 +237,7 @@
         } else { showResult(false, upc + " — 未找到 / not found", null); }
         addLog(upc, d.ok ? "✅" : (d.matched ? "✗ " + d.other_pos.join(",") : "❌ 未找到"));
         done();
-      }).catch(done);
+      }).catch(fail);
 
     } else {  // count / 盘点
       var dir = dirBtn.dataset.dir;
@@ -240,7 +248,7 @@
           d.context, sign + "1" + (d.known ? "" : "  ⚠ 未在任何 PO / unknown UPC"));
         loadCounts();
         done();
-      }).catch(done);
+      }).catch(fail);
     }
   }
 

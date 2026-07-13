@@ -1,6 +1,13 @@
 """UPC lookup + stocktake (盘点) operations for the PDA scan module.
 
 Requires ``self._conn()`` from BaseSQLiteStore.
+
+Scope note: ``find_by_upc`` is company-scoped, but the stocktake count is keyed
+by UPC alone (``upc_stocktake.upc`` is the PK) and is therefore GLOBAL — not
+per-company. In a single-tenant deployment that's what you want (one physical
+count per barcode); a multi-company deployment would share counts. Both scan
+surfaces (the Streamlit UPC Check tab and the ``web_scan`` service) share this
+one table, which is how their counts stay in sync.
 """
 from __future__ import annotations
 
@@ -67,14 +74,18 @@ class _UpcMixin:
         size}. Non-zero only unless *include_zero*."""
         having = "" if include_zero else "WHERE t.qty != 0"
         with self._conn() as conn:
+            # Take po/style/color/size from ONE size row per UPC (the lowest
+            # rowid) so the context is internally consistent — a per-column
+            # MIN() could mix a style from one PO with a colour from another
+            # when a UPC appears on several POs.
             rows = conn.execute(f"""
                 SELECT t.upc, t.qty, t.updated_at,
                        s.po_number, s.style, s.color, s.size
                 FROM upc_stocktake t
                 LEFT JOIN (
-                    SELECT upc, MIN(po_number) po_number, MIN(style) style,
-                           MIN(color) color, MIN(size) size
-                    FROM po_size_rows GROUP BY upc
+                    SELECT upc, po_number, style, color, size
+                    FROM po_size_rows
+                    WHERE rowid IN (SELECT MIN(rowid) FROM po_size_rows GROUP BY upc)
                 ) s ON s.upc = t.upc
                 {having}
                 ORDER BY t.updated_at DESC

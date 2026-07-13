@@ -131,3 +131,27 @@ def test_pos_endpoint_lists_pos(client):
 def test_empty_upc_is_400(client):
     _login(client)
     assert client.post("/api/lookup", json={"upc": "  "}).status_code == 400
+
+
+def test_count_delta_zero_is_noop(store):
+    assert count(store, "700948471565", 1)["qty"] == 1
+    r = count(store, "700948471565", 0)            # explicit 0 → no change
+    assert r["qty"] == 1 and r["delta"] == 0
+
+
+def test_login_is_rate_limited(client):
+    webapp._LOGIN_FAILS.clear()
+    for _ in range(webapp._MAX_FAILS):
+        assert client.post("/login", data={"password": "wrong"},
+                           follow_redirects=False).status_code == 401
+    # further attempts are locked out, even with the CORRECT password
+    r = client.post("/login", data={"password": "secret"}, follow_redirects=False)
+    assert r.status_code == 429
+    webapp._LOGIN_FAILS.clear()
+
+
+def test_successful_login_clears_fail_counter(client):
+    webapp._LOGIN_FAILS.clear()
+    client.post("/login", data={"password": "wrong"}, follow_redirects=False)
+    client.post("/login", data={"password": "secret"}, follow_redirects=False)  # success
+    assert webapp._LOGIN_FAILS == {}

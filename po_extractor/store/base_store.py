@@ -54,4 +54,8 @@ class BaseSQLiteStore:
             if str(mode).lower() == "wal":
                 BaseSQLiteStore._wal_initialized.add(self.db_path)
         conn.execute("PRAGMA synchronous=NORMAL")
+        # Wait (up to 5s) for a competing writer instead of failing immediately
+        # with "database is locked" — matters when several PDAs write stocktake
+        # counts concurrently through the scan modules.
+        conn.execute("PRAGMA busy_timeout=5000")
         return conn

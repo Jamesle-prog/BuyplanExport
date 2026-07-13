@@ -21,6 +21,7 @@ from __future__ import annotations
 import hmac
 import os
 import secrets
+import time
 from pathlib import Path
 
 from starlette.applications import Starlette
@@ -58,6 +59,32 @@ def _companies() -> list[str] | None:
 
 def _authed(request: Request) -> bool:
     return hmac.compare_digest(request.cookies.get(_COOKIE, ""), _SESSION_TOKEN)
+
+
+# ── login throttle (per-IP, in-memory) ────────────────────────────────────────
+# The gate is a single shared password; without a throttle it is brute-forceable
+# by anyone on the LAN. Allow a burst, then lock the IP out for a window.
+_LOGIN_FAILS: dict[str, list[float]] = {}
+_MAX_FAILS = 8
+_WINDOW = 900.0        # 15 minutes
+
+
+def _recent_fails(ip: str) -> int:
+    now = time.monotonic()
+    fails = [ts for ts in _LOGIN_FAILS.get(ip, []) if now - ts < _WINDOW]
+    if fails:
+        _LOGIN_FAILS[ip] = fails
+    else:
+        _LOGIN_FAILS.pop(ip, None)
+    return len(fails)
+
+
+def _record_fail(ip: str) -> None:
+    _LOGIN_FAILS.setdefault(ip, []).append(time.monotonic())
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "?"
 
 
 # ── core logic (pure — takes a store, returns plain dicts) ─────────────────────
@@ -103,7 +130,10 @@ def verify(store, po: str, upc: str, companies=None) -> dict:
 
 def count(store, upc: str, delta: int, companies=None) -> dict:
     upc = str(upc or "").strip()
-    delta = 1 if int(delta) >= 0 else -1        # one physical unit per scan
+    d = int(delta)
+    # One physical unit per scan; an explicit 0 is a no-op (returns the current
+    # count) rather than being coerced to +1.
+    delta = 0 if d == 0 else (1 if d > 0 else -1)
     qty = store.adjust_stocktake(upc, delta) if upc else 0
     ctx = store.find_by_upc(upc, companies=companies) if upc else []
     return {"upc": upc, "qty": qty, "delta": delta,
@@ -139,12 +169,20 @@ async def login_page(request: Request) -> Response:
 
 
 async def login_submit(request: Request) -> Response:
+    ip = _client_ip(request)
+    if _recent_fails(ip) >= _MAX_FAILS:
+        return HTMLResponse(
+            _LOGIN_HTML.replace("<!--ERR-->",
+                                "尝试过多，请稍后再试 / Too many attempts — wait a few minutes"),
+            status_code=429)
     form = await request.form()
     if hmac.compare_digest(str(form.get("password", "")), _password()):
+        _LOGIN_FAILS.pop(ip, None)
         resp = RedirectResponse("/", status_code=302)
         resp.set_cookie(_COOKIE, _SESSION_TOKEN, httponly=True,
                         samesite="lax", max_age=12 * 3600)
         return resp
+    _record_fail(ip)
     return HTMLResponse(
         _LOGIN_HTML.replace("<!--ERR-->", "密码错误 / Wrong password"),
         status_code=401)

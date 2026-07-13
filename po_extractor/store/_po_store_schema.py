@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS po_exceptions (
 
 CREATE INDEX IF NOT EXISTS idx_pom_company    ON po_metadata(company);
 CREATE INDEX IF NOT EXISTS idx_psr_po_number  ON po_size_rows(po_number);
+CREATE INDEX IF NOT EXISTS idx_psr_upc         ON po_size_rows(upc);
 CREATE INDEX IF NOT EXISTS idx_pvh_po_number  ON po_version_history(po_number);
 CREATE INDEX IF NOT EXISTS idx_poe_status     ON po_exceptions(status);
 

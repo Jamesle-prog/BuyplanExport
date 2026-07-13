@@ -10,6 +10,17 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.69.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "perf", "text": "Added an index on `po_size_rows(upc)` — every PDA scan (UPC lookup / verify / stocktake) previously full-scanned the size-rows table; now it's an indexed lookup"},
+            {"type": "fix", "text": "SQLite `busy_timeout=5000` — concurrent stocktake writes from multiple PDAs now wait briefly instead of failing with \"database is locked\""},
+            {"type": "security", "text": "Web scanner login is now throttled per IP (8 failures / 15 min → HTTP 429) so the shared password can't be brute-forced on the LAN"},
+            {"type": "fix", "text": "Web scanner now shows a red error state when a scan fails (server/network error) instead of silently resetting — an operator always knows if a scan was recorded"},
+            {"type": "fix", "text": "Verify mode: size rows with no UPC no longer inflate the \"matched X/Y\" total or linger in \"not yet scanned\"; stocktake context now reads style/colour/size from one consistent PO row (no per-column mixing)"},
+        ],
+    },
+    {
         "version": "2.69.0",
         "date": "2026-07-13",
         "entries": [

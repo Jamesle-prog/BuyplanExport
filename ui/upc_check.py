@@ -39,6 +39,18 @@ def _xlsx(df: pd.DataFrame, sheet: str) -> bytes:
     return buf.getvalue()
 
 
+def _valid_upcs(series) -> set[str]:
+    """Non-blank UPC strings from a size-row column. Size rows with no UPC can't
+    be scanned, so they must not inflate the verify 'matched X/Y' denominator or
+    linger forever in 'not yet scanned'."""
+    out: set[str] = set()
+    for v in series:
+        s = str(v).strip()
+        if s and s.lower() not in ("none", "nan"):
+            out.add(s)
+    return out
+
+
 def _server_urls() -> list[str]:
     """LAN URL(s) a PDA browser can open to reach this app — the primary
     default-route IP first, then any other non-loopback IPv4s, each with the
@@ -161,7 +173,7 @@ def _mode_verify(store, user_cos):
         st.session_state["upc_vf_results"] = []
 
     expected = store.load_size_rows([po])
-    exp_upcs = set(expected["UPC"].astype(str)) if not expected.empty else set()
+    exp_upcs = _valid_upcs(expected["UPC"]) if not expected.empty else set()
 
     def _on_scan():
         upc = str(st.session_state.get("upc_vf_input", "")).strip()
@@ -171,7 +183,8 @@ def _mode_verify(store, user_cos):
         rows = store.find_by_upc(upc, companies=user_cos)
         here = next((r for r in rows if r["po_number"] == po), None)
         other = "、".join(sorted({r["po_number"] for r in rows if r["po_number"] != po}))
-        st.session_state.setdefault("upc_vf_results", []).insert(0, {
+        res = st.session_state.setdefault("upc_vf_results", [])
+        res.insert(0, {
             "ok": here is not None, "UPC": upc,
             "Size": here["size"] if here else "",
             "Color": here["color"] if here else "",
@@ -179,6 +192,7 @@ def _mode_verify(store, user_cos):
             "Note": "" if here else (t("belongs to ") + other if other
                                      else t("not in any PO")),
         })
+        del res[500:]        # cap the session tally so it can't grow unbounded
 
     st.text_input(t("Scan UPC to verify"), key="upc_vf_input", on_change=_on_scan,
                   placeholder=t("Scan each carton/piece UPC, then Enter"))
@@ -197,9 +211,12 @@ def _mode_verify(store, user_cos):
             + (f" — {last['Color']} / {last['Size']} × {last['Units']}"
                if last["ok"] else f" — {last['Note']}"))
 
-    # sizes/colours still unscanned on this PO
+    # sizes/colours still unscanned on this PO — only rows that carry a real
+    # UPC (blank-UPC rows can't be scanned, so they aren't "pending").
     if not expected.empty:
-        remaining = expected[~expected["UPC"].astype(str).isin(matched_upcs)]
+        upc_str = expected["UPC"].astype(str).str.strip()
+        scannable = upc_str.ne("") & ~upc_str.str.lower().isin(["none", "nan"])
+        remaining = expected[scannable & ~upc_str.isin(matched_upcs)]
         if not remaining.empty:
             with st.expander(f"⏳ {t('Not yet scanned')} ({len(remaining)})", expanded=False):
                 st.dataframe(remaining, use_container_width=True, hide_index=True)

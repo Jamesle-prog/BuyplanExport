@@ -37,7 +37,10 @@ the PDA browser, enter the shared password once, and scan.
 The scan box uses `inputmode="none"` and a document-level focus trap so a
 keyboard-wedge scanner's "type + Enter" always lands in the field. A shared
 session cookie (tied to a per-process token) gates every page and API call;
-restarting the server invalidates all sessions.
+restarting the server invalidates all sessions. Login is throttled per IP
+(8 failures / 15 min → HTTP 429) so the shared password can't be brute-forced
+on the LAN. A failed scan (server/network error) shows a red error state, so an
+operator always knows whether a scan was recorded.
 
 ## API (all POST JSON unless noted; all require the session cookie)
 

@@ -91,3 +91,41 @@ def test_stocktake_clear(store):
     assert store.load_stocktake()
     store.clear_stocktake()
     assert store.load_stocktake() == []
+
+
+# ── review fixes ──────────────────────────────────────────────────────────────
+
+def test_upc_index_exists(store):
+    with store._conn() as conn:
+        names = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index'").fetchall()}
+    assert "idx_psr_upc" in names          # hot-path lookup index
+
+
+def test_busy_timeout_is_set(store):
+    with store._conn() as conn:
+        assert conn.execute("PRAGMA busy_timeout").fetchone()[0] >= 5000
+
+
+def test_load_stocktake_context_is_internally_consistent(tmp_path):
+    """A UPC on two POs with different colours must show ONE row's style/colour/
+    size together, never a per-column mix."""
+    s = POStore(str(tmp_path / "t.db"))
+    a = POData(metadata=POMetadata(po_number="AAA", style="STA", company="GIII"),
+               size_rows=[SizeRow("AAA", "STA", "BLACK", "M", 5, "999")])
+    b = POData(metadata=POMetadata(po_number="BBB", style="STB", company="GIII"),
+               size_rows=[SizeRow("BBB", "STB", "WHITE", "L", 5, "999")])
+    s.save_many_checked([a, b])
+    s.adjust_stocktake("999", 3)
+    row = next(d for d in s.load_stocktake() if d["upc"] == "999")
+    # whichever PO won, its style/colour/size come from the SAME row
+    assert (row["po_number"], row["style"], row["color"], row["size"]) in (
+        ("AAA", "STA", "BLACK", "M"), ("BBB", "STB", "WHITE", "L"))
+
+
+def test_valid_upcs_drops_blanks_and_nulls():
+    import pandas as pd
+    from ui.upc_check import _valid_upcs
+    got = _valid_upcs(pd.Series(["700948471565", "", None, "nan", "None",
+                                 "700948471534"]))
+    assert got == {"700948471565", "700948471534"}
