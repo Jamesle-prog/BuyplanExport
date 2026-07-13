@@ -1017,6 +1017,17 @@ _SEED: list[tuple[str, str, str, str]] = [
      '自动模式对清晰的 PDF 最快 — 先运行即时的内置解析器，仅对置信度低或无法解析的文件调用（较慢的）AI。需要下方的 API 密钥。', 'label', 'admin'),
     ('Auto extraction is ON — the instant built-in parser runs first, and only low-confidence or unparsed files fall back to AI.',
      '自动提取已开启 — 先运行即时的内置解析器，仅置信度低或无法解析的文件回退到 AI。', 'label', 'giii'),
+
+    # Fabric consumption / marker (单耗/排版) template — Reference Data
+    ('Fabric Consumption / Marker (单耗 · 排版)', '面料单耗 / 排版（单耗 · 排版）', 'label', 'giii'),
+    ('Per-style 单耗 (fabric consumption) and 排版 (marker) data — appended as the last columns of the buy plan. Provide 单耗 in kg OR cm plus the effective width and fabric weight, and the other is calculated; give both and they\'re consistency-checked.',
+     '每款的单耗（面料消耗）和排版数据 — 追加为采购计划的末尾列。填写单耗（kg 或 cm 其一）以及有效门幅和面料克重，系统会计算另一个；两者都填则做一致性校验。', 'label', 'giii'),
+    ('Download template / current data (.xlsx)', '下载模板 / 当前数据 (.xlsx)', 'button', 'giii'),
+    ('Upload filled 单耗/排版 template (.xlsx)', '上传填好的 单耗/排版 模板 (.xlsx)', 'label', 'giii'),
+    ('Import 单耗/排版', '导入 单耗/排版', 'button', 'giii'),
+    ('No valid rows found — check the 款号 column.', '未找到有效行 — 请检查『款号』列。', 'label', 'giii'),
+    ('Stored consumption', '已存单耗', 'label', 'giii'),
+    ('styles', '款', 'label', 'giii'),
     ('When (UTC)', '时间（UTC）', 'label', 'admin'),
     ('When enabled, PO PDFs are sent to the **DeepSeek API** for field extraction instead of (or alongside) the built-in regex parser.  Requires a DeepSeek API key from [platform.deepseek.com](https://platform.deepseek.com).', '启用后，订单 PDF 将发送至 **DeepSeek API** 进行字段提取，替代（或配合）内置的正则解析器。需要从 [platform.deepseek.com](https://platform.deepseek.com) 获取的 DeepSeek API 密钥。', 'label', 'admin'),
     ('Which company should the imported rows be filed under?', '导入的行应归入哪个公司？', 'label', 'admin'),

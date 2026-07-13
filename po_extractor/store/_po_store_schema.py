@@ -120,6 +120,20 @@ CREATE INDEX IF NOT EXISTS idx_sfp_style ON style_fabric_parts(style);
 
 -- HHN fabric number → composition/weight/width cache (populated from 洗标 file)
 -- Used by all pipelines to enrich fabric codes without re-uploading the composition file.
+-- Fabric consumption / marker (单耗 / 排版) per style — operator-uploaded,
+-- read by the buy plan. kg/cm are reconciled on import (see
+-- ui_helpers/fabric_consumption.py).
+CREATE TABLE IF NOT EXISTS fabric_consumption (
+    style       TEXT PRIMARY KEY,
+    cons_kg     REAL,
+    cons_cm     REAL,
+    util        REAL,   -- 排版利用率 (%)
+    marker_pcs  REAL,   -- 排版件数
+    width_cm    REAL,   -- 排版有效门幅 (cm)
+    gsm         REAL,   -- 排版面料克重 (g/m²)
+    updated_at  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS fabric_hhn_cache (
     hhn_no      TEXT PRIMARY KEY,
     composition TEXT DEFAULT '',

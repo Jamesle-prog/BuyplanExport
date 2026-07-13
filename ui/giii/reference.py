@@ -9,6 +9,7 @@ from po_extractor.ui_helpers import (
     detect_fabric_mapping_columns as _detect_fabric_mapping_columns_impl,
     parse_fabric_mapping_rows as _parse_fabric_mapping_rows,
 )
+from ui.i18n import t
 from ui.session_keys import SK
 from ui.stores import get_store, get_fabric_master_store
 from ui.giii._shared import _BODY_PART_LIST, _XLSX_MIME
@@ -220,6 +221,62 @@ def _show_giii_reference_section():
                 store.delete_fabric_parts("giii")
                 st.success("GIII fabric parts cleared.")
                 st.rerun()
+
+    st.markdown("---")
+    _show_giii_consumption_section(store)
+
+
+def _show_giii_consumption_section(store):
+    """单耗/排版 (fabric consumption + marker) template download/upload — feeds
+    the trailing columns of the buy plan. kg↔cm reconciled on import."""
+    from po_extractor.ui_helpers.fabric_consumption import (
+        consumption_template_bytes, parse_consumption_upload, CONSUMPTION_COLUMNS,
+    )
+
+    st.markdown("#### 🧵 " + t("Fabric Consumption / Marker (单耗 · 排版)"))
+    st.caption(t(
+        "Per-style 单耗 (fabric consumption) and 排版 (marker) data — appended "
+        "as the last columns of the buy plan. Provide 单耗 in kg OR cm plus the "
+        "effective width and fabric weight, and the other is calculated; give "
+        "both and they're consistency-checked."
+    ))
+
+    existing = store.load_all_fabric_consumption()
+    col_dl, col_up = st.columns(2)
+    with col_dl:
+        st.download_button(
+            "⬇️ " + t("Download template / current data (.xlsx)"),
+            data=consumption_template_bytes(existing or None),
+            file_name="fabric_consumption_template.xlsx",
+            mime=_XLSX_MIME, use_container_width=True, key="cons_tpl_dl",
+        )
+    with col_up:
+        cons_file = st.file_uploader(
+            t("Upload filled 单耗/排版 template (.xlsx)"),
+            type=["xlsx"], key="cons_uploader",
+        )
+
+    if cons_file and st.button("▶ " + t("Import 单耗/排版"), type="primary",
+                               use_container_width=True, key="cons_import_btn"):
+        try:
+            records, warns = parse_consumption_upload(cons_file.getvalue())
+            for w in warns:
+                st.warning(f"⚠️ {w}")
+            if records:
+                n = store.save_fabric_consumption(records)
+                st.success(f"✅ {t('Imported')} {n} {t('style(s).')}")
+                st.rerun()
+            else:
+                st.error(t("No valid rows found — check the 款号 column."))
+        except Exception as exc:
+            st.error(t("Import failed:") + f" {exc}")
+
+    if existing:
+        with st.expander(f"{t('Stored consumption')} ({len(existing)} {t('styles')})",
+                         expanded=False):
+            _hdr = {k: h for h, k in CONSUMPTION_COLUMNS}
+            st.dataframe(pd.DataFrame(existing).rename(columns=_hdr),
+                         use_container_width=True, hide_index=True)
 
 
 def _run_giii_mapping_import(mapping_file, dry_run: bool = False,

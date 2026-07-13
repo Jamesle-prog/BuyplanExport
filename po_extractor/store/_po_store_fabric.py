@@ -223,6 +223,61 @@ class _FabricMixin:
             ).fetchall()
         return {r["style"] for r in rows}
 
+    # ------------------------------------------------------------------ #
+    # Fabric consumption / marker (单耗 / 排版) — operator-uploaded         #
+    # ------------------------------------------------------------------ #
+
+    _CONS_FIELDS = ("cons_kg", "cons_cm", "util", "marker_pcs", "width_cm", "gsm")
+
+    def save_fabric_consumption(self, records: list[dict]) -> int:
+        """Upsert consumption records (keyed by style). Each record is a dict
+        with a ``style`` plus any of the _CONS_FIELDS. Returns rows written."""
+        if not records:
+            return 0
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        n = 0
+        with self._conn() as conn:
+            for rec in records:
+                style = str(rec.get("style") or "").strip()
+                if not style:
+                    continue
+                vals = [rec.get(f) for f in self._CONS_FIELDS]
+                conn.execute(
+                    """INSERT INTO fabric_consumption
+                       (style, cons_kg, cons_cm, util, marker_pcs, width_cm, gsm, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?)
+                       ON CONFLICT(style) DO UPDATE SET
+                         cons_kg=excluded.cons_kg, cons_cm=excluded.cons_cm,
+                         util=excluded.util, marker_pcs=excluded.marker_pcs,
+                         width_cm=excluded.width_cm, gsm=excluded.gsm,
+                         updated_at=excluded.updated_at""",
+                    (style, *vals, now),
+                )
+                n += 1
+        return n
+
+    def load_fabric_consumption(self, styles: list[str]) -> dict:
+        """Return {style: {cons_kg, cons_cm, util, marker_pcs, width_cm, gsm}}
+        for the given styles (missing styles simply absent)."""
+        if not styles:
+            return {}
+        ph = ",".join("?" * len(styles))
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"""SELECT style, cons_kg, cons_cm, util, marker_pcs, width_cm, gsm
+                    FROM fabric_consumption WHERE style IN ({ph})""",
+                list(styles),
+            ).fetchall()
+        return {r["style"]: {f: r[f] for f in self._CONS_FIELDS} for r in rows}
+
+    def load_all_fabric_consumption(self) -> list[dict]:
+        """Every consumption record, for the download-current-data export."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT style, cons_kg, cons_cm, util, marker_pcs, width_cm, gsm
+                   FROM fabric_consumption ORDER BY style""").fetchall()
+        return [dict(r) for r in rows]
+
     def find_duplicate_fabric_combos(self, source: str | None = None) -> list[dict]:
         """Find styles with the same fabric combo stored twice under different combo_idx.
 

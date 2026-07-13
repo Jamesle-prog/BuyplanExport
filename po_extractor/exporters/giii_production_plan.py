@@ -262,6 +262,7 @@ def generate_giii_production_plan(
     contract_by_po: dict | None = None,
     contract_by_style: dict | None = None,
     requirements: dict | None = None,
+    consumption: dict | None = None,
 ) -> bytes:
     """Return an .xlsx workbook (bytes) with one sheet per style.
 
@@ -328,6 +329,15 @@ def generate_giii_production_plan(
     except Exception:
         parts_by_style = {}
 
+    # 单耗/排版 consumption per style (operator-uploaded table). Reconcile kg↔cm
+    # per style when the buy plan is built.
+    if consumption is None:
+        try:
+            consumption = store.load_fabric_consumption(
+                [str(s) for s in styles_order]) or {}
+        except Exception:
+            consumption = {}
+
     summaries: list[dict] = []
     for style in styles_order:
         style_pos = df_pos[df_pos["style"] == style]
@@ -340,6 +350,7 @@ def generate_giii_production_plan(
             color_lookup_en=color_lookup_en,
             contract_by_po=contract_by_po, contract_by_style=contract_by_style,
             requirements=requirements,
+            consumption=consumption.get(str(style)),
         )
         if summary:
             summaries.append(summary)
@@ -371,6 +382,7 @@ def _write_style_sheet(
     contract_by_po: dict | None = None,
     contract_by_style: dict | None = None,
     requirements: dict | None = None,
+    consumption: dict | None = None,
 ) -> dict | None:
     """Append one sheet for *style* to *wb*; return the sheet's summary record
     (one row of the workbook's Summary 汇总 table) or None when skipped."""
@@ -424,7 +436,14 @@ def _write_style_sheet(
     C_MSRP      = C_SZ_END + 10
     C_RFID      = C_SZ_END + 11
     C_NOTE      = C_SZ_END + 12
-    N_COLS      = C_NOTE
+    # 单耗/排版 consumption columns (per-style, at the very end)
+    C_CONS_KG   = C_SZ_END + 13   # 单耗(kg)
+    C_CONS_CM   = C_SZ_END + 14   # 单耗(cm)
+    C_UTIL      = C_SZ_END + 15   # 排版利用率(%)
+    C_MK_PCS    = C_SZ_END + 16   # 排版件数
+    C_MK_WIDTH  = C_SZ_END + 17   # 排版有效门幅(cm)
+    C_MK_GSM    = C_SZ_END + 18   # 排版面料克重(g/m²)
+    N_COLS      = C_MK_GSM
 
     # Safe sheet title (max 31 chars, illegal chars sanitised, unique) —
     # a bare style[:31] crashed create_sheet on styles containing / \ * ? : [ ]
@@ -444,6 +463,8 @@ def _write_style_sheet(
         C_QTY: 8, C_SHIP: 12, C_RED: 12, C_MARK: 16, C_PACK: 16,
         C_HANG: 16, C_PPK: 12, C_PCS: 9, C_WTL: 14, C_MSRP: 7, C_RFID: 7,
         C_NOTE: 12,
+        C_CONS_KG: 10, C_CONS_CM: 10, C_UTIL: 10, C_MK_PCS: 9,
+        C_MK_WIDTH: 12, C_MK_GSM: 12,
     }
     for i in range(C_SZ_START, C_SZ_END + 1):
         widths[i] = 7
@@ -540,6 +561,12 @@ def _write_style_sheet(
         (C_MSRP,     "MSRP",       _HDR_FILL),
         (C_RFID,     "RFID",       _HDR_FILL),
         (C_NOTE,     "备注",       _HDR_FILL),
+        (C_CONS_KG,  "单耗(kg)",   _YELLOW_FILL),
+        (C_CONS_CM,  "单耗(cm)",   _YELLOW_FILL),
+        (C_UTIL,     "排版利用率", _YELLOW_FILL),
+        (C_MK_PCS,   "排版件数",   _YELLOW_FILL),
+        (C_MK_WIDTH, "排版有效门幅(cm)", _YELLOW_FILL),
+        (C_MK_GSM,   "排版面料克重(g/m²)", _YELLOW_FILL),
     ]
     for col_idx, label, fill in fixed_headers:
         _merge(ws, R_HDR1, col_idx, R_HDR2, col_idx, label,
@@ -677,7 +704,8 @@ def _write_style_sheet(
         # (备注 stays empty — packing facts have their own columns).
         for col in (C_CONTRACT, C_STYLE, C_BRAND, C_PO, C_CPO, C_WH, C_DEST,
                     C_CTRY, C_BUYER, C_SHIP, C_RED, C_MARK, C_PACK, C_HANG,
-                    C_PPK, C_PCS, C_WTL, C_MSRP, C_RFID, C_NOTE):
+                    C_PPK, C_PCS, C_WTL, C_MSRP, C_RFID, C_NOTE,
+                    C_CONS_KG, C_CONS_CM, C_UTIL, C_MK_PCS, C_MK_WIDTH, C_MK_GSM):
             ws.cell(r, col).border = _BORDER
 
     # ── PO-level merges (合同号 / PO号 / CPO# / 仓库代码 / 买家 / 离厂时间 /
@@ -761,10 +789,30 @@ def _write_style_sheet(
             _embed_img(ws, getattr(req, "red_img", None), C_RED, r0)
             _embed_img(ws, getattr(req, "mark_img", None), C_MARK, r0)
 
-    # ── Style-level merge (款号) ────────────────────────────────────────────────
+    # ── Style-level merges (款号 + 单耗/排版) — one value per style ─────────────
     if records:
         _merge_or_set(ws, DATA_START, C_STYLE, style_end_row, C_STYLE,
                       value=style, font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+
+        # 单耗/排版: reconcile kg↔cm from the uploaded consumption table.
+        from ..ui_helpers.fabric_consumption import reconcile_consumption
+        cons = consumption or {}
+        kg, cm, _cons_warn = reconcile_consumption(
+            cons.get("cons_kg"), cons.get("cons_cm"),
+            cons.get("width_cm"), cons.get("gsm"))
+
+        def _cn(v):
+            return "" if v in (None, "") else v
+        for col, val in (
+            (C_CONS_KG,  _cn(kg)),
+            (C_CONS_CM,  _cn(cm)),
+            (C_UTIL,     _cn(cons.get("util"))),
+            (C_MK_PCS,   _cn(cons.get("marker_pcs"))),
+            (C_MK_WIDTH, _cn(cons.get("width_cm"))),
+            (C_MK_GSM,   _cn(cons.get("gsm"))),
+        ):
+            _merge_or_set(ws, DATA_START, col, style_end_row, col,
+                          value=val, font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Footer rows

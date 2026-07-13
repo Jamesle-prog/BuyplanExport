@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.60.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "**Fabric consumption / marker (单耗 · 排版) on the buy plan.** Six new columns at the end of each 生产计划单 style sheet: 单耗(kg), 单耗(cm), 排版利用率, 排版件数, 排版有效门幅(cm), 排版面料克重(g/m²). They come from a **new per-style consumption table** you populate via an Excel template — download a blank (or the current data) in **Reference Data → 🧵 Fabric Consumption / Marker**, fill it in, and upload. **单耗 kg and cm are interconvertible**: give either one plus the effective width and fabric weight and the other is calculated (`kg = cm × width × gsm ÷ 1e7`); give both and they're consistency-checked on import (a >5% mismatch is flagged, values kept). A one-time DB table is created automatically; the buy plan reads it per style"},
+        ],
+    },
+    {
         "version": "2.59.1",
         "date": "2026-07-13",
         "entries": [
