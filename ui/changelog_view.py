@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.68.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "New **full CPRS API client** (`po_extractor/cprs`) generated from the CPRS OpenAPI spec (v1.6.8) — all 98 endpoints grouped by tag (`api.evaluation.evaluate(...)`, `api.clients.get_warehouses(id)`, …) with a typed dataclass for every schema, api-key/Bearer auth, binary downloads, and explicit `CprsError` on failure. Regenerate via `scripts/gen_cprs_client.py`. The buy-plan's best-effort `CprsClient` is unchanged. See docs/CPRS_API_CLIENT.md"},
+        ],
+    },
+    {
         "version": "2.67.0",
         "date": "2026-07-13",
         "entries": [
