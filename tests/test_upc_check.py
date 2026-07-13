@@ -1,10 +1,24 @@
 """UPC check store methods — lookup by UPC + stocktake (盘点)."""
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from po_extractor.store.po_store import POStore
 from po_extractor.models.po_data import POData, POMetadata, SizeRow
+
+
+# ── PDA web address ───────────────────────────────────────────────────────────
+
+def test_server_urls_are_well_formed_lan_urls():
+    from ui.upc_check import _server_urls
+    urls = _server_urls()
+    # environment-dependent (may be empty offline), but each must be a valid
+    # http://<ipv4>:<port> the PDA browser can open
+    for u in urls:
+        assert re.match(r"^http://(\d{1,3}\.){3}\d{1,3}:\d+$", u), u
+    assert all(not u.startswith("http://127.") for u in urls)   # never loopback
 
 
 @pytest.fixture()

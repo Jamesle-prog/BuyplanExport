@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.66.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "The **📷 UPC Check** tab now shows the app's **PDA web address** (a 🌐 panel near the top): the server's LAN URL(s) — e.g. `http://192.168.0.153:8501` — so an operator can point the PDA scanner's browser straight at the app. The address is detected from the server's network interfaces and port; the PDA must be on the same LAN / Wi-Fi"},
+        ],
+    },
+    {
         "version": "2.65.1",
         "date": "2026-07-13",
         "entries": [

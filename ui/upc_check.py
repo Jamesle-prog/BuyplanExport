@@ -13,6 +13,7 @@ Three modes:
 from __future__ import annotations
 
 import io
+import socket
 
 import pandas as pd
 import streamlit as st
@@ -38,6 +39,49 @@ def _xlsx(df: pd.DataFrame, sheet: str) -> bytes:
     return buf.getvalue()
 
 
+def _server_urls() -> list[str]:
+    """LAN URL(s) a PDA browser can open to reach this app — the primary
+    default-route IP first, then any other non-loopback IPv4s, each with the
+    Streamlit server port."""
+    try:
+        port = st.get_option("server.port") or 8501
+    except Exception:
+        port = 8501
+
+    ips: list[str] = []
+    # Primary LAN IP via the default-route trick (no packets are actually sent).
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ips.append(s.getsockname()[0])
+        finally:
+            s.close()
+    except Exception:
+        pass
+    # Any other IPv4s bound to the hostname (multi-NIC machines).
+    try:
+        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+            if ip not in ips and not ip.startswith("127."):
+                ips.append(ip)
+    except Exception:
+        pass
+
+    return [f"http://{ip}:{port}" for ip in ips]
+
+
+def _render_pda_address() -> None:
+    """Show the LAN web address(es) an operator points the PDA browser at."""
+    urls = _server_urls()
+    with st.expander("🌐 " + t("PDA web address"), expanded=not urls):
+        if not urls:
+            st.warning("⚠ " + t("Address unavailable — check the server network settings."))
+            return
+        st.caption(t("Open this address in the PDA browser — the PDA must be on "
+                     "the same LAN / Wi-Fi as this server."))
+        st.code("\n".join(urls), language=None)
+
+
 def show_upc_check_tab() -> None:
     store = get_store()
     user_cos = get_user_companies(st.session_state.get(SK.USERNAME, "")) or None
@@ -45,6 +89,8 @@ def show_upc_check_tab() -> None:
     st.subheader("📷 " + t("UPC Check (PDA scanner)"))
     st.caption(t("Use a PDA/barcode scanner — it types the UPC and presses "
                  "Enter into the scan box. Keep the box focused between scans."))
+
+    _render_pda_address()
 
     mode = st.radio(
         t("Mode"),
