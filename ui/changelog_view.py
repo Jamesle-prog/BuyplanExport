@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.62.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "fix", "text": "**Price masking no longer redacts MSRP** (or SRP/RRP/retail) — those are public retail prices printed on the hangtag, not the confidential FOB/cost that masking protects. Retail columns are now an explicit exclusion that wins even when the header also contains a generic price word (e.g. 'Suggested Retail Price'); FOB, unit cost, wholesale, line total, and currency-symbol columns still mask as before"},
+        ],
+    },
+    {
         "version": "2.62.0",
         "date": "2026-07-13",
         "entries": [

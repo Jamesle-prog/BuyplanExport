@@ -61,22 +61,38 @@ def test_excel_masks_keyword_columns_and_keeps_others(tmp_path):
     # Style + Qty preserved (Qty has no price keyword)
     assert rows[1][0] == "ST1" and rows[1][1] == 100
     assert rows[2][0] == "ST2" and rows[2][1] == 50
-    # FOB Price (float), MSRP (currency string + float), Line Total ($ header) masked
+    # FOB Price + Line Total masked; MSRP is PUBLIC retail → kept
     for r in (1, 2):
-        assert rows[r][2] == "***"   # FOB Price
-        assert rows[r][3] == "***"   # MSRP  (was "$69.00" and 59.00)
-        assert rows[r][4] == "***"   # Line Total ($)
+        assert rows[r][2] == "***"   # FOB Price (confidential cost)
+        assert rows[r][4] == "***"   # Line Total ($) (confidential)
+    assert rows[1][3] == "$69.00" and rows[2][3] == 59.00   # MSRP not masked
 
 
-def test_excel_leaves_text_cells_in_price_columns(tmp_path):
-    # A "Retail" column matches a keyword but holds text — must stay.
+def test_excel_never_masks_retail_prices(tmp_path):
+    """MSRP / SRP / RRP / Suggested Retail are public — never masked, even when
+    the header also contains a generic price word."""
     src = _build_xlsx(tmp_path, [
-        ["Retail Partner", "Unit Price"],
-        ["Macy's",         12.50],
+        ["Style", "FOB", "MSRP", "SRP", "Suggested Retail Price", "Unit Cost"],
+        ["ST1",   4.17,  69.00,  75.00, 79.99,                    3.50],
     ])
     out = mask_prices_excel(src, str(tmp_path))
     rows = _read_masked(out)
-    assert rows[1][0] == "Macy's"   # text preserved despite "retail" keyword
+    assert rows[1][1] == "***"      # FOB masked
+    assert rows[1][5] == "***"      # Unit Cost masked
+    assert rows[1][2] == 69.00      # MSRP kept
+    assert rows[1][3] == 75.00      # SRP kept
+    assert rows[1][4] == 79.99      # "Suggested Retail Price" kept (despite "price")
+
+
+def test_excel_leaves_text_cells_in_price_columns(tmp_path):
+    # A text cell in a genuine price column ("Unit Price") stays; the number masks.
+    src = _build_xlsx(tmp_path, [
+        ["Vendor", "Unit Price"],
+        ["Macy's", 12.50],
+    ])
+    out = mask_prices_excel(src, str(tmp_path))
+    rows = _read_masked(out)
+    assert rows[1][0] == "Macy's"   # text preserved
     assert rows[1][1] == "***"      # numeric price masked
 
 

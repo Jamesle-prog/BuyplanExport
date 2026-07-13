@@ -24,17 +24,23 @@ import re
 #   matches: 4.17 · 69.00 · 1,234.00 · 12,345.67 · $4.17 · €1,000.00 · 45.00%? (no)
 _PRICE_RE = re.compile(r'^[$£€¥]?\d[\d,]*\.\d{2}$')
 
-# Header keywords that identify "price" columns in Excel sheets. Any column
-# whose header (first 25 rows) contains one of these has its NUMERIC cells
-# masked — text cells (names, headers) are left intact, so broad keywords are
-# safe. Covers the price/cost headers this system's own exports actually use
-# (FOB, MSRP, unit/extended cost, line total, …) plus currency-symbol headers
-# like "Line Total ($)".
+# Header keywords that identify CONFIDENTIAL "price" columns in Excel sheets.
+# Any column whose header (first 25 rows) contains one of these has its NUMERIC
+# cells masked — text cells (names, headers) are left intact, so broad keywords
+# are safe. Covers the cost/FOB headers this system's own exports use plus
+# currency-symbol headers like "Line Total ($)". Retail prices (MSRP/SRP/RRP)
+# are PUBLIC and handled by _RETAIL_EXCLUDE below — they are never masked.
 _PRICE_KEYWORDS = (
     "fob", "cost", "price", "usd", "amount", "total cost", "unit price",
-    "msrp", "srp", "rrp", "retail", "wholesale", "extended", "line total",
+    "wholesale", "extended", "line total",
     "$", "€", "£", "¥",
 )
+
+# Retail prices are PUBLIC (printed on the hangtag) — never confidential, so
+# they must not be masked even when the header also contains a generic price
+# word (e.g. "Suggested Retail Price" contains "price"). A column whose header
+# matches any of these is excluded from masking, overriding keyword/AI matches.
+_RETAIL_EXCLUDE = ("msrp", "srp", "rrp", "retail")
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +216,7 @@ def mask_prices_excel(xlsx_path: str, output_dir: str,
 
         # ── Detect price columns from first 25 rows ───────────────────────────
         price_cols: set[int] = set()
+        retail_cols: set[int] = set()   # public retail (MSRP/SRP/…) — never mask
         header_by_col: dict[int, str] = {}
         scan_rows = min(25, ws.max_row)
         for r in range(1, scan_rows + 1):
@@ -219,6 +226,8 @@ def mask_prices_excel(xlsx_path: str, output_dir: str,
                     continue
                 text = str(val)
                 val_lower = text.lower().replace("\n", " ")
+                if any(rk in val_lower for rk in _RETAIL_EXCLUDE):
+                    retail_cols.add(c)
                 if any(kw in val_lower for kw in price_keywords):
                     price_cols.add(c)
                 # Remember a header-ish string per column for the AI pass —
@@ -237,6 +246,9 @@ def mask_prices_excel(xlsx_path: str, output_dir: str,
                 for col, hdr in header_by_col.items():
                     if hdr in ai_headers:
                         price_cols.add(col)
+
+        # Retail-price columns are public — exclusion wins over any match above.
+        price_cols -= retail_cols
 
         if not price_cols:
             continue
