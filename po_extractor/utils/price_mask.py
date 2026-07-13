@@ -113,12 +113,26 @@ def detect_price_headers_ai(headers: list[str], api_key: str,
 # PDF masking
 # ---------------------------------------------------------------------------
 
+def _pdf_text(pdf_path: str) -> str:
+    """Full text of a PDF (kept separate so the AI-detection pass can run
+    without holding a PyMuPDF document open across threads)."""
+    import fitz
+    doc = fitz.open(pdf_path)
+    try:
+        return "\n".join(page.get_text() for page in doc)
+    finally:
+        doc.close()
+
+
 def mask_prices(pdf_path: str, output_dir: str,
-                api_key: str | None = None, model: str = "deepseek-chat") -> str:
+                api_key: str | None = None, model: str = "deepseek-chat",
+                ai_prices: set[str] | None = None) -> str:
     """Write a price-redacted copy of a PDF; return the output path.
 
     When *api_key* is given, DeepSeek-detected prices are unioned with the
-    pattern matches (AI augments, never replaces the regex).
+    pattern matches (AI augments, never replaces the regex). Pass *ai_prices* to
+    supply an already-computed AI price set (e.g. from a parallelised batch) and
+    skip the per-file model call.
     """
     import fitz  # PyMuPDF — loaded lazily so Excel-only callers don't need it
 
@@ -128,8 +142,8 @@ def mask_prices(pdf_path: str, output_dir: str,
 
     doc = fitz.open(pdf_path)
     try:
-        ai_norm: set[str] = set()
-        if api_key:
+        ai_norm: set[str] = set(ai_prices) if ai_prices is not None else set()
+        if api_key and ai_prices is None:
             full_text = "\n".join(page.get_text() for page in doc)
             ai_norm = detect_prices_ai(full_text, api_key, model)
 
@@ -150,17 +164,57 @@ def mask_prices(pdf_path: str, output_dir: str,
 def mask_prices_batch(pdf_paths: list[str], output_dir: str,
                       errors: list[str] | None = None,
                       api_key: str | None = None,
-                      model: str = "deepseek-chat") -> list[str]:
+                      model: str = "deepseek-chat",
+                      on_progress=None) -> list[str]:
     """Mask prices in a list of PDFs; return output paths.
 
     Failures are appended to *errors* (if given) so UI callers can surface
     them — a console print is invisible in Streamlit and the file is just
     missing from the result. *api_key* enables the AI assist (see mask_prices).
+
+    The AI price detection is a slow network call per file, so with several
+    files it runs CONCURRENTLY (the real bottleneck), while all PyMuPDF work
+    stays serial — fitz is not thread-safe. *on_progress(done, total)* is called
+    as detection completes so the UI can show live per-file progress.
     """
+    total = len(pdf_paths)
+
+    def _tick(done: int) -> None:
+        if on_progress:
+            try:
+                on_progress(done, total)
+            except Exception:
+                pass
+
+    # Concurrent AI detection (network-bound) → {path: price set}; fitz work
+    # below stays single-threaded.
+    ai_by_path: dict[str, set] = {}
+    if api_key and total > 1:
+        texts: dict[str, str] = {}
+        for path in pdf_paths:
+            try:
+                texts[path] = _pdf_text(path)
+            except Exception:
+                texts[path] = ""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        done = 0
+        with ThreadPoolExecutor(max_workers=min(6, total)) as ex:
+            futs = {ex.submit(detect_prices_ai, texts.get(p, ""), api_key, model): p
+                    for p in pdf_paths}
+            for fut in as_completed(futs):
+                p = futs[fut]
+                try:
+                    ai_by_path[p] = fut.result()
+                except Exception:
+                    ai_by_path[p] = set()
+                done += 1
+                _tick(done)
+
     results = []
-    for path in pdf_paths:
+    for i, path in enumerate(pdf_paths, 1):
         try:
-            out = mask_prices(path, output_dir, api_key=api_key, model=model)
+            out = mask_prices(path, output_dir, api_key=api_key, model=model,
+                              ai_prices=ai_by_path.get(path))
             results.append(out)
             print(f"masked: {out}")
         except Exception as e:
@@ -168,6 +222,8 @@ def mask_prices_batch(pdf_paths: list[str], output_dir: str,
             if errors is not None:
                 errors.append(msg)
             print(f"  mask FAILED: {msg}")
+        if not (api_key and total > 1):
+            _tick(i)     # serial path: report as each file is redacted
     return results
 
 

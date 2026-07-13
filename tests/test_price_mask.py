@@ -175,3 +175,42 @@ def test_ai_failure_falls_back_to_keywords(tmp_path, monkeypatch):
     out = mask_prices_excel(src, str(tmp_path), api_key="k")
     rows = _read_masked(out)
     assert rows[1][1] == "***"   # FOB still masked by keyword
+
+
+# ── batch: parallel AI detection + progress ───────────────────────────────────
+
+def test_mask_batch_runs_ai_concurrently_and_reports_progress(monkeypatch, tmp_path):
+    from po_extractor.utils import price_mask as pm
+    seen_text, mask_calls = [], []
+    monkeypatch.setattr(pm, "_pdf_text", lambda p: "text:" + p)
+
+    def _detect(text, key, model):
+        seen_text.append(text)
+        return {"9.99"}
+    monkeypatch.setattr(pm, "detect_prices_ai", _detect)
+
+    def _mask(path, out, api_key=None, model="", ai_prices=None):
+        mask_calls.append((path, ai_prices))
+        return path + ".masked"
+    monkeypatch.setattr(pm, "mask_prices", _mask)
+
+    prog = []
+    paths = [f"f{i}.pdf" for i in range(5)]
+    out = pm.mask_prices_batch(paths, str(tmp_path), api_key="k",
+                               on_progress=lambda d, t: prog.append((d, t)))
+
+    assert out == [f"{p}.masked" for p in paths]
+    assert sorted(seen_text) == sorted("text:" + p for p in paths)  # AI once per file
+    # the redaction pass gets the PRECOMPUTED set (never re-calls AI)
+    assert all(ai == {"9.99"} for _, ai in mask_calls)
+    assert prog[-1] == (5, 5)                       # progress reached total
+
+
+def test_mask_batch_serial_without_ai_still_reports_progress(monkeypatch, tmp_path):
+    from po_extractor.utils import price_mask as pm
+    monkeypatch.setattr(pm, "mask_prices",
+                        lambda p, o, api_key=None, model="", ai_prices=None: p + ".m")
+    prog = []
+    out = pm.mask_prices_batch(["a.pdf", "b.pdf"], str(tmp_path),
+                               on_progress=lambda d, t: prog.append((d, t)))
+    assert out == ["a.pdf.m", "b.pdf.m"] and prog[-1] == (2, 2)

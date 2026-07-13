@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.69.3",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "perf", "text": "AI price-masking is now **parallelised** — it was the slow phase on multi-file uploads because each PDF made its DeepSeek price-detection call one at a time. The AI calls now run concurrently (up to 6 at once, while the PyMuPDF redaction stays serial for thread-safety), and the progress bar shows live per-file masking progress (`⚙ Masking prices… 5/19`). Roughly N-files → ~ceil(N/6) call-rounds"},
+        ],
+    },
+    {
         "version": "2.69.2",
         "date": "2026-07-13",
         "entries": [

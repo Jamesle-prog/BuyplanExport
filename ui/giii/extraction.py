@@ -604,11 +604,18 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
 
     masked_paths = []
     if mask_prices:
-        _phase(0.6, t("Masking prices…"))
+        _phase(0.45, t("Masking prices…"))
         _mask_errors: list[str] = []
         _ai_key, _ai_model = _mask_ai_creds()
+
+        def _mask_prog(done: int, tot: int) -> None:
+            # masking occupies the 45–70% band of the overall bar
+            frac = 0.45 + 0.25 * (done / tot if tot else 1)
+            _phase(frac, f"{t('Masking prices…')} {done}/{tot}")
+
         masked_paths = mask_prices_batch(paths, out_dir, errors=_mask_errors,
-                                         api_key=_ai_key, model=_ai_model)
+                                         api_key=_ai_key, model=_ai_model,
+                                         on_progress=_mask_prog)
         for _me in _mask_errors:
             st.warning(f"Price-mask failed — {_me} (file NOT in masked output)")
 
