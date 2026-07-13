@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.65.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "New **UPC 汇总** sheet in the GIII buy plan (third tab, after Summary 汇总 and 简明汇总): the size-level UPC list the buy plan otherwise aggregates away — one row per PO / colour / size with 款号 / 品牌 / 合同号 / PO号 / 颜色 / 尺码 / **UPC** / 数量, plus a TTL. UPCs are kept as text so 12-digit barcodes never turn into scientific-notation numbers; a size with no UPC on the PO stays blank (never fabricated)"},
+        ],
+    },
+    {
         "version": "2.64.2",
         "date": "2026-07-13",
         "entries": [

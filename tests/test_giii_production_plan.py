@@ -68,8 +68,28 @@ def _sizes_df():
     })
 
 
+def _sizes_df_upc():
+    return pd.DataFrame({
+        "PO Number": ["PO1", "PO1", "PO2"],
+        "Style": ["ST1", "ST1", "ST1"],
+        "Color": ["JET BLACK", "JET BLACK", "PINE"],
+        "Size": ["S", "M", "S"],
+        "Units": [100, 200, 50],
+        "UPC": ["700948471565", "700948471534", "700948471507"],
+    })
+
+
 def _sheet(data: bytes, name="ST1"):
     return openpyxl.load_workbook(io.BytesIO(data))[name]
+
+
+def _upc_data_rows(ws):
+    """UPC 汇总 data rows (tuples of size, upc, units) down to the TTL row."""
+    rows, r = [], 3
+    while ws.cell(r, 1).value not in (None, "TTL"):
+        rows.append((ws.cell(r, 8).value, ws.cell(r, 9).value, ws.cell(r, 10).value))
+        r += 1
+    return rows, r
 
 
 def _all_values(ws):
@@ -520,6 +540,55 @@ def test_summary_carries_requirement_texts():
     assert any("MY" in str(v) for v in vals)
     assert any("无需" in str(v) for v in vals)
     assert any("见箱唛要求" in str(v) for v in vals)
+
+
+# ── UPC 汇总 sheet ─────────────────────────────────────────────────────────────
+
+def test_upc_summary_sheet_lists_every_size_upc():
+    store = _Store(_pos_df(), _sizes_df_upc())
+    data = generate_giii_production_plan(["PO1", "PO2"], store, {})
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+
+    assert wb.sheetnames[2] == "UPC 汇总"        # after Summary 汇总 + 简明汇总
+    ws = wb["UPC 汇总"]
+    headers = [ws.cell(2, c).value for c in range(1, 11)]
+    assert headers == ["No.", "款号", "品牌", "合同号", "PO号",
+                       "颜色(英文)", "颜色(中文)", "尺码", "UPC", "数量"]
+
+    rows, ttl_r = _upc_data_rows(ws)
+    # one row per (PO, colour, size): JET BLACK S/M + PINE S = 3
+    assert len(rows) == 3
+    upcs = {u for _, u, _ in rows}
+    assert upcs == {"700948471565", "700948471534", "700948471507"}
+    assert dict((sz, q) for sz, _, q in rows if _ == "700948471565") == {"S": 100}
+    # UPCs kept as text so 12-digit barcodes never become floats
+    assert all(isinstance(u, str) for _, u, _ in rows)
+    # TTL sums all units
+    assert ws.cell(ttl_r, 1).value == "TTL"
+    assert ws.cell(ttl_r, 10).value == 350
+
+
+def test_upc_summary_carries_style_and_po_context():
+    store = _Store(_pos_df(), _sizes_df_upc())
+    data = generate_giii_production_plan(
+        ["PO1", "PO2"], store, {},
+        contract_by_po={_norm_key("PO1"): "26302-ZA1"})
+    ws = openpyxl.load_workbook(io.BytesIO(data))["UPC 汇总"]
+    vals = [str(c.value) for row in ws.iter_rows() for c in row if c.value is not None]
+    assert "ST1" in vals and "PO1" in vals          # 款号 / PO号
+    assert "JET BLACK" in vals and "PINE" in vals    # colours
+    assert "26302-ZA1" in vals                       # 合同号 threaded through
+
+
+def test_upc_summary_blank_when_po_has_no_upc():
+    """No UPC captured for a size → the cell stays blank; never fabricated."""
+    store = _Store(_pos_df(), _sizes_df())            # _sizes_df has no UPC column
+    data = generate_giii_production_plan(["PO1", "PO2"], store, {})
+    ws = openpyxl.load_workbook(io.BytesIO(data))["UPC 汇总"]
+    rows, ttl_r = _upc_data_rows(ws)
+    assert rows                                       # rows still exist (per size)
+    assert all(not u for _, u, _ in rows)             # every UPC cell blank
+    assert ws.cell(ttl_r, 10).value == 350            # quantities still total
 
 
 # ── export_buyplan zero-row filter ────────────────────────────────────────────

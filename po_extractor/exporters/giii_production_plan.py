@@ -374,8 +374,9 @@ def generate_giii_production_plan(
         return b""
 
     if summaries:
-        _write_summary_sheet(wb, summaries)      # index 0
+        _write_summary_sheet(wb, summaries)          # index 0
         _write_simple_summary_sheet(wb, summaries)   # index 1
+        _write_upc_summary_sheet(wb, summaries)      # index 2
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -656,12 +657,16 @@ def _write_style_sheet(
                 except Exception:
                     pass
 
-            # Pivot size quantities
+            # Pivot size quantities; keep each size's UPC for the UPC 汇总 sheet.
             size_qty: dict[str, int] = {}
+            size_upc: dict[str, str] = {}
             for _, sr in cs.iterrows():
                 sz  = str(sr["size"]).strip()
                 qty = int(sr["units"]) if pd.notna(sr["units"]) else 0
                 size_qty[sz] = size_qty.get(sz, 0) + qty
+                u = _safe(sr.get("UPC"))
+                if u and not size_upc.get(sz):
+                    size_upc[sz] = u
             total_qty = sum(size_qty.values())
             grand_total += total_qty
 
@@ -683,6 +688,7 @@ def _write_style_sheet(
                 "color_en":     color_str,
                 "color_cn":     color_cn,
                 "size_qty":     size_qty,
+                "size_upc":     size_upc,
                 "total_qty":    total_qty,
                 "po_msrp":      po_msrp,
             })
@@ -732,6 +738,7 @@ def _write_style_sheet(
     sum_wtl: list[str] = []
     sum_msrp: list[str] = []
     sum_rfid: list[str] = []
+    contract_map: dict[str, str] = {}   # po_num → 合同号, for the UPC 汇总 sheet
 
     for po_num, grp in po_groups.items():
         r0, r1 = grp[0]["row"], grp[-1]["row"]
@@ -739,6 +746,7 @@ def _write_style_sheet(
         # 合同号 from the 大货进度表 (by PO, falling back to by style).
         contract = (contract_by_po.get(_norm_key(str(po_num)))
                     or contract_by_style.get(_norm_key(style)) or "")
+        contract_map[po_num] = contract
         # 红色箱贴纸 / 主箱唛 / MSRP / RFID / pack-out from CPRS resolution.
         # No resolution (no brand on the PO / CPRS off) → cells stay EMPTY,
         # never a claim like 无.
@@ -877,9 +885,26 @@ def _write_style_sheet(
         if rec["color_cn"] and not color_cn_map.get(key):
             color_cn_map[key] = rec["color_cn"]
 
+    # UPC-level rows for the UPC 汇总 sheet — one per (PO, colour, size).
+    upc_rows: list[dict] = []
+    for rec in records:
+        for sz in _sort_sizes(list(rec["size_qty"].keys())):
+            upc_rows.append({
+                "style":    style,
+                "brand":    rec["brand"],
+                "po":       rec["po_num"],
+                "contract": contract_map.get(rec["po_num"], ""),
+                "color_en": rec["color_en"],
+                "color_cn": rec["color_cn"],
+                "size":     sz,
+                "upc":      rec["size_upc"].get(sz, ""),
+                "units":    rec["size_qty"].get(sz, 0),
+            })
+
     return {
         "sheet": sheet_title,
         "style": style,
+        "upc_rows": upc_rows,
         "desc": desc,
         "brands": _uniq(r["brand"] for r in records),
         "no_brand": any(not r["brand"] for r in records),
@@ -1077,6 +1102,67 @@ def _write_simple_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
         _cell(ws, r, C_SZ0 + i, size_ttl[sz], font=_FONT_BOLD,
               fill=_YELLOW_FILL, border=_BORDER, align=_CENTER)
     _cell(ws, r, C_TOTAL, grand, font=_FONT_BOLD, fill=_YELLOW_FILL,
+          border=_BORDER, align=_CENTER)
+
+    ws.freeze_panes = "A3"
+
+
+# ---------------------------------------------------------------------------
+# UPC 汇总 sheet (third sheet — one row per PO / colour / size, with its UPC)
+# ---------------------------------------------------------------------------
+
+_UPC_COLS = [
+    ("No.", 6), ("款号", 14), ("品牌", 12), ("合同号", 14), ("PO号", 16),
+    ("颜色(英文)", 18), ("颜色(中文)", 14), ("尺码", 8), ("UPC", 18), ("数量", 8),
+]
+
+
+def _write_upc_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
+    """UPC 汇总 — the size-level UPC list the buy plan otherwise aggregates
+    away: one row per (PO, colour, size) with its UPC and quantity, plus a
+    TTL row. UPCs missing from a PO are left blank (never fabricated)."""
+    all_rows = [row for s in summaries for row in s.get("upc_rows", [])]
+    if not all_rows:
+        return
+
+    title = "UPC 汇总" if "UPC 汇总" not in wb.sheetnames else "UPC汇总2"
+    ws = wb.create_sheet(title=title, index=2)
+    n_cols = len(_UPC_COLS)
+
+    for i, (_, w) in enumerate(_UPC_COLS, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    _merge(ws, 1, 1, 1, n_cols, "UPC 汇总（款号 / 颜色 / 尺码 / UPC / 数量）",
+           font=_FONT_SUBTITLE,
+           align=Alignment(horizontal="center", vertical="center"))
+    ws.row_dimensions[1].height = 24
+
+    for i, (label, _) in enumerate(_UPC_COLS, start=1):
+        _cell(ws, 2, i, label, font=_FONT_HDR, fill=_HDR_FILL,
+              border=_BORDER, align=_CENTER)
+    ws.row_dimensions[2].height = 20
+
+    # 数量 is the only left-aligned-averse column; UPC stays text so long
+    # barcodes never render in scientific notation.
+    r = 3
+    grand = 0
+    for no, row in enumerate(all_rows, start=1):
+        units = int(row.get("units", 0) or 0)
+        grand += units
+        vals = [no, row["style"], row["brand"], row["contract"], row["po"],
+                row["color_en"], row["color_cn"], row["size"], row["upc"], units]
+        for i, v in enumerate(vals, start=1):
+            cell = _cell(ws, r, i, v, font=_FONT_NORMAL, border=_BORDER,
+                         align=_CENTER if i in (1, 8, 9, 10) else _LEFT)
+            if i == 9 and v:               # UPC column → force text format
+                cell.number_format = "@"
+        r += 1
+
+    _cell(ws, r, 1, "TTL", font=_FONT_BOLD, fill=_YELLOW_FILL,
+          border=_BORDER, align=_CENTER)
+    for c in range(2, n_cols):
+        _cell(ws, r, c, None, font=_FONT_BOLD, fill=_YELLOW_FILL, border=_BORDER)
+    _cell(ws, r, n_cols, grand, font=_FONT_BOLD, fill=_YELLOW_FILL,
           border=_BORDER, align=_CENTER)
 
     ws.freeze_panes = "A3"
