@@ -13,24 +13,25 @@ from po_extractor.ui_helpers.fabric_consumption import (
 
 # ── reconcile ─────────────────────────────────────────────────────────────────
 
-def test_derive_kg_from_cm():
+def test_derive_kg_from_cm_uses_gross_width():
+    # 毛门幅 = 有效门幅 150 + 5 = 155 → 165*155*200/1e7 = 0.5115
     kg, cm, warn = reconcile_consumption(None, 165, 150, 200)
-    assert kg == 0.495 and cm == 165 and warn == ""   # 165*150*200/1e7
+    assert kg == 0.5115 and cm == 165 and warn == ""
 
 
-def test_derive_cm_from_kg():
-    kg, cm, warn = reconcile_consumption(0.495, None, 150, 200)
-    assert kg == 0.495 and cm == 165.0 and warn == ""
+def test_derive_cm_from_kg_uses_gross_width():
+    kg, cm, warn = reconcile_consumption(0.5115, None, 150, 200)
+    assert kg == 0.5115 and cm == 165.0 and warn == ""
 
 
 def test_both_given_consistent_no_warning():
-    kg, cm, warn = reconcile_consumption(0.495, 165, 150, 200)
-    assert warn == "" and kg == 0.495 and cm == 165
+    kg, cm, warn = reconcile_consumption(0.5115, 165, 150, 200)
+    assert warn == "" and kg == 0.5115 and cm == 165
 
 
 def test_both_given_inconsistent_warns():
     kg, cm, warn = reconcile_consumption(0.90, 165, 150, 200)   # kg way off
-    assert "不一致" in warn
+    assert "不一致" in warn and "毛门幅" in warn
     assert kg == 0.90 and cm == 165          # values kept, not silently changed
 
 
@@ -65,7 +66,7 @@ def test_parse_upload_reconciles_and_keys_by_style():
     records, warns = parse_consumption_upload(buf.getvalue())
     assert len(records) == 1
     r = records[0]
-    assert r["style"] == "ST1" and r["cons_kg"] == 0.495 and r["cons_cm"] == 165
+    assert r["style"] == "ST1" and r["cons_kg"] == 0.5115 and r["cons_cm"] == 165
 
 
 def test_parse_upload_missing_style_column():

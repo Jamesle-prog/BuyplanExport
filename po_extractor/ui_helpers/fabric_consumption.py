@@ -6,20 +6,27 @@ per style and appends them as the trailing columns.
 
 kg ↔ cm derivation
 ------------------
-Consumption in **cm** is the length of fabric one garment uses at the marker's
-effective width; consumption in **kg** is its weight. They convert through the
-effective width (门幅, cm) and the fabric weight (克重, g/m²)::
+Consumption in **cm** is the length of fabric one garment uses on the marker;
+consumption in **kg** is its weight. Weight is billed on the **gross** width
+(毛门幅), which is the usable/effective marker width (排版有效门幅) plus the
+selvage — a fixed ``毛门幅 = 有效门幅 + 5cm``. So the conversion uses the gross
+width and the fabric weight (克重, g/m²)::
 
-    kg = cm × width_cm × gsm / 1e7          # area(m²) × gsm(g/m²) / 1000
-    cm = kg × 1e7 / (width_cm × gsm)
+    毛门幅 = 有效门幅 + 5
+    kg = cm × 毛门幅 × gsm / 1e7           # area(m²) × gsm(g/m²) / 1000
+    cm = kg × 1e7 / (毛门幅 × gsm)
 
 :func:`reconcile_consumption` (1) checks the two agree when both are given and
-(2) fills whichever is missing from the other — but only when width and gsm are
-present to convert; otherwise it leaves the gap and reports why.
+(2) fills whichever is missing from the other — but only when the effective
+width and gsm are present to convert; otherwise it leaves the gap and reports
+why.
 """
 from __future__ import annotations
 
 import io
+
+# 毛门幅 (gross, billed width) = 排版有效门幅 (effective marker width) + selvage.
+GROSS_WIDTH_MARGIN_CM = 5.0
 
 # Template column order (Chinese headers, matching the buy plan) → record key.
 CONSUMPTION_COLUMNS: list[tuple[str, str]] = [
@@ -69,17 +76,18 @@ def reconcile_consumption(cons_kg, cons_cm, width_cm, gsm, tol: float = _KG_TOL)
     convertible = bool(w and g and w > 0 and g > 0)
 
     if convertible:
+        gw = w + GROSS_WIDTH_MARGIN_CM   # 毛门幅 — weight is billed on the gross width
         if kg is not None and cm is not None:
-            derived = cm * w * g / 1e7
+            derived = cm * gw * g / 1e7
             if derived > 0 and abs(kg - derived) / derived > tol:
                 return kg, cm, (
-                    f"单耗不一致：提供 {_fmt(kg,4)}kg，按 {_fmt(cm,1)}cm×"
-                    f"{_fmt(w,1)}cm×{_fmt(g,1)}g/m² 应为 {_fmt(derived,4)}kg（相差>{int(tol*100)}%）")
+                    f"单耗不一致：提供 {_fmt(kg,4)}kg，按 {_fmt(cm,1)}cm×毛门幅"
+                    f"{_fmt(gw,1)}cm×{_fmt(g,1)}g/m² 应为 {_fmt(derived,4)}kg（相差>{int(tol*100)}%）")
             return kg, cm, ""
         if cm is not None and kg is None:
-            return round(cm * w * g / 1e7, 4), cm, ""
+            return round(cm * gw * g / 1e7, 4), cm, ""
         if kg is not None and cm is None:
-            return kg, round(kg * 1e7 / (w * g), 1), ""
+            return kg, round(kg * 1e7 / (gw * g), 1), ""
         return kg, cm, ""   # neither given
     # not convertible
     if (kg is None) != (cm is None):

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.60.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "fix", "text": "单耗 kg is now computed on the **gross width** — `毛门幅 = 排版有效门幅 + 5cm`, and `kg = cm × 毛门幅 × gsm ÷ 1e7` (weight is billed on the full roll width incl. selvage, not the usable marker width). e.g. cm 165 · 有效门幅 150 · 200g/m² → 毛门幅 155 → **0.5115 kg** (was 0.495). The kg↔cm consistency check uses the same gross width"},
+        ],
+    },
+    {
         "version": "2.60.0",
         "date": "2026-07-13",
         "entries": [
