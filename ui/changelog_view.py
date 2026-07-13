@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.54.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "**箱重限制 now states its bounds explicitly** — the KB carries BOTH bounds for some brands (CK/DKNY packing: `weight_lbs 5-40` → `下限 5 lbs / 上限 40 lbs`) and upper-only rules for others (KL/corporate → `上限 40 lbs`). Ranges render both bounds; upper-only rules render 上限 alone without claiming a lower bound the KB doesn't state; a brand range combines with the corporate max (missing bound filled). pallet_spec weights (2200 lb!) and board-strength values (ECT/burst) are explicitly excluded"},
+        ],
+    },
+    {
         "version": "2.53.0",
         "date": "2026-07-12",
         "entries": [

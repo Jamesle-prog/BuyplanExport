@@ -43,21 +43,37 @@ def test_pcs_box_filled_from_evaluate_results():
     assert reqs2[id(rows2[0])].pcs_box == "6"
 
 
-def test_carton_weight_limit_from_carton_spec():
+def test_carton_weight_limit_explicit_bounds():
     from po_extractor.ui_helpers.giii_requirements import _weight_from_results
 
+    # Upper-only rules render an explicit 上限 — and say nothing about a lower
     corporate = [{"domain": "carton", "subtype": "carton_spec", "status": "confirmed",
                   "resultJson": {"max_weight": "40 lbs / 18 kg per carton"}}]
     kl = [{"domain": "carton", "subtype": "carton_spec", "status": "confirmed",
            "resultJson": {"max_weight_lbs": 40}}]
-    # carton_marking's net/gross weight are MARKING fields, not limits
+    assert _weight_from_results(corporate) == "上限 40 lbs / 18 kg per carton"
+    assert _weight_from_results(kl) == "上限 40 lbs"
+
+    # A stated range ("weight_lbs": "5-40") makes BOTH bounds explicit
+    ck_range = [{"domain": "carton", "subtype": "carton_marking",
+                 "status": "confirmed",
+                 "resultJson": {"carton": {"weight_lbs": "5-40"}}}]
+    assert _weight_from_results(ck_range) == "下限 5 lbs / 上限 40 lbs"
+
+    # Corporate max + brand range combine: range supplies the missing lower
+    combined = corporate + ck_range
+    assert _weight_from_results(combined) == "下限 5 lbs / 上限 40 lbs / 18 kg per carton"
+
+    # carton_marking's net/gross weight are MARKING fields, not limits;
+    # pallet_spec maxes are pallet limits, not carton limits
     marking_only = [{"domain": "carton", "subtype": "carton_marking",
                      "status": "confirmed",
                      "resultJson": {"net_weight": "YES - printed on carton",
                                     "gross_weight": "YES - printed"}}]
-    assert _weight_from_results(corporate) == "40 lbs / 18 kg per carton"
-    assert _weight_from_results(kl) == "40 lbs"
+    pallet = [{"domain": "carton", "subtype": "pallet_spec", "status": "confirmed",
+               "resultJson": {"max_weight_lb": 2200}}]
     assert _weight_from_results(marking_only) == ""
+    assert _weight_from_results(pallet) == ""
     assert _weight_from_results([]) == ""
 
 
@@ -69,7 +85,7 @@ def test_carton_weight_reaches_row_requirements():
                      "resultJson": {"max_weight": "40 lbs / 18 kg per carton"}}]
     rows = [_row()]
     reqs, _ = resolve_requirements(_CprsW(), "DKNY", rows)
-    assert reqs[id(rows[0])].carton_weight == "40 lbs / 18 kg per carton"
+    assert reqs[id(rows[0])].carton_weight == "上限 40 lbs / 18 kg per carton"
 
 
 def test_red_sticker_artwork_falls_back_to_sibling_subtype():

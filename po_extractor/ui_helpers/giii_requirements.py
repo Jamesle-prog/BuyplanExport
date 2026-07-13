@@ -138,42 +138,72 @@ def _pcs_from_results(results) -> str:
     return ""
 
 
-# Carton weight-limit keys as CPRS states them per client: the corporate
-# carton_spec uses max_weight ("40 lbs / 18 kg per carton"), KL's own spec
-# uses max_weight_lbs (40). NOT net_weight/gross_weight — those are marking
-# fields, not limits.
-_WEIGHT_KEYS = {"max_weight": "", "weight_limit": "", "max_gross_weight": "",
-                "max_weight_lbs": " lbs", "max_weight_kg": " kg"}
+# Carton weight-limit keys as CPRS states them per client. Three shapes:
+# a RANGE ("weight_lbs": "5-40" — CK marking, DKNY VendorNet packing = BOTH
+# bounds), upper-only max_* keys (corporate max_weight "40 lbs / 18 kg per
+# carton", KL max_weight_lbs / TR098 max_carton_weight_*), and future min_*
+# keys. NOT net/gross weight (marking fields), NOT ECT/burst (board
+# strength), NOT pallet_spec (pallet, not carton).
+_WMAX = {"max_weight": "", "weight_limit": "", "max_gross_weight": "",
+         "max_weight_lbs": " lbs", "max_weight_lb": " lbs",
+         "max_weight_kg": " kg", "max_carton_weight_lbs": " lbs",
+         "max_carton_weight_lb": " lbs", "max_carton_weight_kg": " kg"}
+_WMIN = {"min_weight": "", "min_weight_lbs": " lbs", "min_weight_lb": " lbs",
+         "min_weight_kg": " kg", "min_carton_weight_lbs": " lbs"}
+_WRANGE = {"weight_lbs": " lbs", "weight_lb": " lbs", "weight_kg": " kg",
+           "carton_weight_lbs": " lbs"}
+_WRANGE_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*$")
 
 
 def _weight_from_results(results) -> str:
-    """箱重限制 stated by the winning carton/packaging requirements
-    (carton_spec first). '' when no requirement states a limit."""
+    """箱重限制 with EXPLICIT bounds, from the winning carton/packaging
+    requirements (carton_spec first, pallet_spec excluded). A stated range
+    renders both bounds (下限/上限); an upper-only rule renders 上限 alone —
+    no claim is made about a lower bound the KB doesn't state."""
+    lo, hi = "", ""
+
     def _walk(v):
+        nonlocal lo, hi
         if isinstance(v, dict):
             for k, x in v.items():
-                unit = _WEIGHT_KEYS.get(str(k).lower())
-                if unit is not None and str(x).strip():
-                    return f"{x}{unit}".strip()
+                kl = str(k).lower()
+                sx = str(x).strip()
+                if not sx:
+                    continue
+                if kl in _WRANGE:
+                    m = _WRANGE_RE.match(sx)
+                    if m:
+                        lo = lo or f"{m.group(1)}{_WRANGE[kl]}".strip()
+                        hi = hi or f"{m.group(2)}{_WRANGE[kl]}".strip()
+                elif kl in _WMAX:
+                    hi = hi or f"{sx}{_WMAX[kl]}".strip()
+                elif kl in _WMIN:
+                    lo = lo or f"{sx}{_WMIN[kl]}".strip()
             for x in v.values():
-                got = _walk(x)
-                if got:
-                    return got
+                if lo and hi:
+                    return
+                _walk(x)
         elif isinstance(v, (list, tuple)):
             for x in v:
-                got = _walk(x)
-                if got:
-                    return got
-        return ""
+                if lo and hi:
+                    return
+                _walk(x)
 
     ordered = sorted((r for r in results or []
                       if r.get("status") == "confirmed"
-                      and r.get("domain") in ("carton", "packaging")),
+                      and r.get("domain") in ("carton", "packaging")
+                      and r.get("subtype") != "pallet_spec"),
                      key=lambda r: r.get("subtype") != "carton_spec")
     for res in ordered:
-        got = _walk(res.get("resultJson") or {})
-        if got:
-            return got
+        _walk(res.get("resultJson") or {})
+        if lo and hi:
+            break
+    if lo and hi:
+        return f"下限 {lo} / 上限 {hi}"
+    if hi:
+        return f"上限 {hi}"
+    if lo:
+        return f"下限 {lo}"
     return ""
 
 
