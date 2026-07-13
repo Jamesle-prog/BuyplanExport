@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.64.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "**New 📷 UPC Check tab — a PDA barcode-scanner module** with three modes. **🔍 Lookup**: scan a UPC → shows its PO, style, colour, size, client, destination warehouse and units (all matching POs). **✓ Verify against PO**: pick a PO, scan each UPC → instant match / not-in-PO check with a matched-count and a list of sizes still unscanned. **🧮 Stocktake (盘点)**: scan to +1 / −1 a running physical count per UPC (persisted), with per-UPC context, running totals, Excel download and clear. Scans use the standard PDA flow (the scanner types the UPC + Enter; the box auto-clears for the next scan). Company-scoped like the rest of the app"},
+        ],
+    },
+    {
         "version": "2.63.2",
         "date": "2026-07-13",
         "entries": [

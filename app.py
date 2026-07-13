@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.63.2"
+APP_VERSION = "2.64.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -393,6 +393,7 @@ def show_main():
     _all_tabs = [
         ("giii",           f"📋 {t('GIII')}",           lambda: _show_smart_upload_tab()),
         ("sky_east",       f"🛍 {t('Sky East')}",       lambda: _show_sky_east_tab(restrict_to_buyplan=_buyplan_only)),
+        ("upc_check",      f"📷 {t('UPC Check')}",      lambda: _show_upc_check_tab()),
         ("fabric_db",      f"🧵 {t('Fabric DB')}",      lambda: _show_fabric_db_tab()),
         ("reference_data", f"📐 {t('Reference Data')}", lambda: _show_fabric_mapping_tab()),
         ("colors",         f"🎨 {t('Colors')}",         lambda: _show_color_translation_tab()),
@@ -548,6 +549,12 @@ def _show_smart_upload_tab() -> None:
 def _show_sky_east_tab(restrict_to_buyplan: bool = False) -> None:
     from ui.sky_east_view import show_sky_east_tab
     show_sky_east_tab(restrict_to_buyplan=restrict_to_buyplan)
+
+
+@st.fragment
+def _show_upc_check_tab() -> None:
+    from ui.upc_check import show_upc_check_tab
+    show_upc_check_tab()
 
 
 

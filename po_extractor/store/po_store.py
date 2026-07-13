@@ -19,10 +19,11 @@ from ._po_store_read import _ReadsMixin
 from ._po_store_exceptions import _ExceptionsMixin
 from ._po_store_fabric import _FabricMixin
 from ._po_store_progress import _ProgressMixin
+from ._po_store_upc import _UpcMixin
 
 
 class POStore(_WritesMixin, _ReadsMixin, _ExceptionsMixin, _FabricMixin,
-              _ProgressMixin, BaseSQLiteStore):
+              _ProgressMixin, _UpcMixin, BaseSQLiteStore):
     """Persistent SQLite store for PO history with conflict detection."""
 
     def __init__(self, db_path: str | Path):
