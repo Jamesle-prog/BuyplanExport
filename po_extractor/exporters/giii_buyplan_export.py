@@ -1,4 +1,10 @@
-"""GIII buy-plan exporter — the real GIII 生产计划单 (buy plan) format.
+"""GIII buy-plan exporter — the A–W bilingual reference layout.
+
+NOTE (v2.40+): no UI path uses this exporter any more — the buy plan the app
+generates is :mod:`giii_production_plan` (the 生产计划单 format the factory
+uses). This module is kept as the documented A–W reference implementation
+(docs/GIII_BuyPlan_Field_Mapping.md) with its tests; retire it if the A–W
+layout is never needed again.
 
 Generates the A–W bilingual layout of the canonical GIII buy plan (see
 docs/GIII_BuyPlan_Field_Mapping.md) from scratch, rather than filling a static

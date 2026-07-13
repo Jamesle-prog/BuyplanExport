@@ -9,7 +9,7 @@ from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import guard_multiselect_state
 from ui.stores import get_store
-from ui.giii._shared import _XLSX_MIME, live_label
+from ui.giii._shared import _XLSX_MIME
 from ui.giii.extraction import _run_from_history
 from ui.giii.results import (
     _show_downloads,

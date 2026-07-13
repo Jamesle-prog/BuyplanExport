@@ -141,6 +141,9 @@ _EU_NAMES = ("NETHERLANDS", "GERMANY", "FRANCE", "ITALY", "SPAIN", "POLAND",
 # 2-letter EU codes that can't be confused with US states / compass points /
 # common words (so no DE=Delaware, no SE=southeast, no AT/IT/ES/FR words).
 _EU_CODES = frozenset("NL PL BE PT CZ SK SI HR BG LU EE LV LT DK HU RO GR".split())
+# State codes that are also English words — matched only after a comma
+# ("…, IN"), never as a bare trailing token ("HOLD IN TRANSIT" is not Indiana).
+_US_STATES_WORDY = frozenset("IN OR ME HI OK LA DE".split())
 
 
 def _dest_country(ship_to: str) -> str:
@@ -163,7 +166,9 @@ def _dest_country(ship_to: str) -> str:
     # US state + ZIP (e.g. "PERRIS,CA 92571"), or a trailing state code.
     if re.search(r"\b[A-Z]{2}\s*,?\s+\d{5}(?:-\d{4})?\b", txt):
         return "US"
-    if any(t in _US_STATES for t in toks[-2:]):
+    if toks and toks[-1] in (_US_STATES - _US_STATES_WORDY):
+        return "US"
+    if re.search(r",\s*(" + "|".join(_US_STATES_WORDY) + r")\s*$", txt):
         return "US"
     return ""
 
@@ -180,7 +185,10 @@ def _dest_address(ship_to: str, buyer: str) -> str:
         return "".join(ch for ch in x.upper() if ch.isalnum())
     parts = [p.strip() for p in s.split("/")]
     first, bn = _key(parts[0]), _key(b)
-    if first and bn and (first == bn or first in bn or bn in first):
+    # Drop the segment only when it says nothing beyond the buyer name
+    # (equal, or an abbreviation of it). A segment with EXTRA info
+    # ("ROSS STORES DC#4") is kept — stripping it would lose the DC.
+    if first and bn and (first == bn or first in bn):
         return " / ".join(p for p in parts[1:] if p)
     return s
 
@@ -188,7 +196,12 @@ def _dest_address(ship_to: str, buyer: str) -> str:
 def _ex_factory_date(etd: str) -> str:
     """离厂时间 = ETD − 10 days. The PO's ship date is the vessel ETD; goods
     must leave the factory ~10 days earlier. Unparseable dates pass through
-    unchanged rather than corrupting the cell."""
+    unchanged rather than corrupting the cell.
+
+    ASSUMPTION (user-confirmed 2026-07): both factory_ship_date and
+    xport_date hold the ETD for every current GIII PO format. If a future
+    format stores a true ex-factory date, exempt that field here or the
+    date shifts −10 twice."""
     if not etd:
         return ""
     try:
@@ -644,11 +657,6 @@ def _write_style_sheet(
             })
             current_row += 1
 
-        # Tag PO end row on all records for this PO
-        for rec in records:
-            if rec["po_start"] == po_start_row and "po_end" not in rec:
-                rec["po_end"] = current_row - 1
-
     style_end_row = current_row - 1
 
     # ── Write cell values ──────────────────────────────────────────────────────
@@ -914,8 +922,10 @@ def _write_summary_sheet(wb: Workbook, summaries: list[dict]) -> None:
         style_cell = _cell(ws, r, 2, s["style"], font=link_font,
                            border=_BORDER, align=_CENTER)
         if '"' not in s["sheet"] and '"' not in str(s["style"]):
-            # click-through to the style's own buy-plan sheet
-            style_cell.value = f'=HYPERLINK("#\'{s["sheet"]}\'!A1","{s["style"]}")'
+            # click-through to the style's own buy-plan sheet; apostrophes
+            # in sheet names must be doubled inside the quoted reference
+            sheet_ref = s["sheet"].replace("'", "''")
+            style_cell.value = f'=HYPERLINK("#\'{sheet_ref}\'!A1","{s["style"]}")'
         # 品牌 — brand-less POs are flagged; nothing is guessed for them.
         brand_txt = j(s["brands"])
         if s.get("no_brand"):

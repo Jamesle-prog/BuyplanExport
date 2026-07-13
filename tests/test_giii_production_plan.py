@@ -300,6 +300,20 @@ def test_dest_country_from_address_markers():
     assert _dest_country("TORONTO, ONTARIO, CANADA") == "CA"
     assert _dest_country("BTB DIRECT SHIPMENT") == ""   # no marker → honest blank
     assert _dest_country("") == ""
+    # word-like state codes never match as bare words — only after a comma
+    assert _dest_country("GOODS ON HOLD IN TRANSIT") == ""
+    assert _dest_country("WAREHOUSE, INDIANAPOLIS, IN") == "US"
+
+
+def test_dest_address_keeps_segment_with_extra_info():
+    from po_extractor.exporters.giii_production_plan import _dest_address
+    # exact buyer name (or an abbreviation of it) → dropped
+    assert _dest_address("ROSS STORES / 3404 INDIAN AVE / PERRIS,CA",
+                         "ROSS STORES") == "3404 INDIAN AVE / PERRIS,CA"
+    assert _dest_address("ROSS / 3404 INDIAN AVE", "ROSS STORES") == "3404 INDIAN AVE"
+    # segment carrying MORE than the buyer name (the DC designation) → kept
+    assert _dest_address("ROSS STORES DC#4 / 123 MAIN RD", "ROSS STORES") == \
+        "ROSS STORES DC#4 / 123 MAIN RD"
 
 
 def test_style_sheet_and_summary_have_dest_country():

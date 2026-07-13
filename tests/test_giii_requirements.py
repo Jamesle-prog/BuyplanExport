@@ -18,6 +18,12 @@ def test_pcs_per_carton_mined_from_requirement_wording():
              "Follow ratio on PO, 6 pre-packs per box, 36 pcs/carton"}}},
     ]
     assert _pcs_from_results(results) == "36"
+    # category-mixed wording: EVERY distinct figure is surfaced, not just the
+    # first clause (blouses 36 vs jackets 12 — context can't tell which)
+    mixed = [{"domain": "hangtag", "status": "confirmed", "resultJson": {
+        "pre_pack": {"blouses_camis": "6 pre-packs per box, 36 pcs/carton",
+                     "jackets_pants_skirts": "2 pre-packs per box, 12 pcs/carton"}}}]
+    assert _pcs_from_results(mixed) == "36/12"
     # structured key wins; non-confirmed and other domains are ignored
     assert _pcs_from_results([{"domain": "packaging", "status": "confirmed",
                                "resultJson": {"pieces_per_carton": 24}}]) == "24"
@@ -83,6 +89,11 @@ def test_carton_weight_limit_explicit_bounds():
     assert _weight_from_results(marking_only) == ""
     assert _weight_from_results(pallet) == ""
     assert _weight_from_results([]) == ""
+
+    # a value that already carries its unit is not double-suffixed
+    from po_extractor.ui_helpers.giii_requirements import _fmt_weight
+    assert _fmt_weight("40 lbs", "lbs") == "40 lbs"
+    assert _fmt_weight("40-ish", "kg") == "40-ish kg"
 
 
 def test_carton_weight_reaches_row_requirements():

@@ -108,34 +108,39 @@ _PCS_KEYS = ("pcs_per_carton", "pieces_per_carton", "units_per_carton", "pcs_car
 def _pcs_from_results(results) -> str:
     """每箱件数 stated by the winning requirements themselves — structured
     keys first, then explicit 'N pcs/carton' wording. Confirmed packaging/
-    hangtag/carton results only; nothing is inferred."""
+    hangtag/carton results only; nothing is inferred.
+
+    A requirement may state DIFFERENT figures per garment category (CK:
+    blouses 36 pcs/carton, jackets 12) and the order context doesn't carry
+    the category — every distinct figure is returned ('36/12') rather than
+    silently picking whichever clause happens to come first."""
+    found: list[str] = []
+
+    def _add(v: str):
+        if v and v not in found and len(found) < 4:
+            found.append(v)
+
     def _walk(v):
         if isinstance(v, dict):
             for k, x in v.items():
                 if str(k).lower() in _PCS_KEYS and str(x).strip().isdigit():
-                    return str(x).strip()
+                    _add(str(x).strip())
             for x in v.values():
-                got = _walk(x)
-                if got:
-                    return got
+                _walk(x)
         elif isinstance(v, (list, tuple)):
             for x in v:
-                got = _walk(x)
-                if got:
-                    return got
+                _walk(x)
         elif isinstance(v, str):
-            m = _PCS_RE.search(v)
-            if m:
-                return m.group(1)
-        return ""
+            for m in _PCS_RE.finditer(v):
+                _add(m.group(1))
 
     for res in results or []:
         if res.get("status") == "confirmed" and \
            res.get("domain") in ("packaging", "hangtag", "carton"):
-            got = _walk(res.get("resultJson") or {})
-            if got:
-                return got
-    return ""
+            _walk(res.get("resultJson") or {})
+            if found:
+                break          # figures from ONE requirement, not mixed sources
+    return "/".join(found)
 
 
 # Carton weight-limit keys as CPRS states them per client. Three shapes:
@@ -169,7 +174,9 @@ def _fmt_weight(raw, unit: str) -> str:
     try:
         v = float(s)
     except ValueError:
-        return f"{s} {unit}".strip() if unit else s
+        # Value already carries its unit ("40 lbs" in a *_lbs key) — don't
+        # append it twice.
+        return s if (not unit or unit in s.lower()) else f"{s} {unit}"
     # The stated value renders verbatim; only the CONVERTED figure is rounded.
     if unit == "lbs":
         return f"{s} lbs ({_wnum(v * _KG_PER_LB)} kg)"

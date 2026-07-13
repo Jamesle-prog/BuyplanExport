@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.54.2",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "fix", "text": "Code-review fixes on the buy-plan rework: 目的地 keeps a ship-to segment that carries more than the buyer name (`ROSS STORES DC#4` no longer discarded); 目的地国家 no longer reads English words as US states (`…IN TRANSIT` ≠ Indiana — word-like codes match only after a comma); 每箱件数 surfaces every distinct figure when a requirement states different pack-outs per garment category (`36/12`) instead of silently picking the first; carton-weight values that already carry a unit aren't double-suffixed; Summary hyperlinks escape apostrophes in sheet names; removed dead O(n²) po_end loop and an unused import"},
+        ],
+    },
+    {
         "version": "2.54.1",
         "date": "2026-07-13",
         "entries": [
