@@ -71,6 +71,37 @@ class POStore(_WritesMixin, _ReadsMixin, _ExceptionsMixin, _FabricMixin,
                     CREATE INDEX IF NOT EXISTS idx_sfp_style
                         ON style_fabric_parts(style);
                 """)
+            # Migrate: add xfty_date to po_size_rows and widen its UNIQUE key
+            # so split-delivery lines (same SKU, different ex-factory date) are
+            # kept as distinct rows. SQLite can't alter a UNIQUE constraint in
+            # place, so recreate the table (existing rows get xfty_date='',
+            # which preserves the old key semantics for pre-migration data).
+            _psr_cols = {r[1] for r in conn.execute("PRAGMA table_info(po_size_rows)")}
+            if "xfty_date" not in _psr_cols:
+                conn.executescript("""
+                    CREATE TABLE po_size_rows_new (
+                        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                        po_number    TEXT NOT NULL,
+                        style        TEXT,
+                        color        TEXT,
+                        size         TEXT,
+                        units        INTEGER,
+                        upc          TEXT,
+                        xfty_date    TEXT DEFAULT '',
+                        extracted_at TEXT,
+                        UNIQUE(po_number, style, color, size, xfty_date)
+                    );
+                    INSERT INTO po_size_rows_new
+                           (id, po_number, style, color, size, units, upc,
+                            xfty_date, extracted_at)
+                    SELECT  id, po_number, style, color, size, units, upc,
+                            '',        extracted_at
+                    FROM po_size_rows;
+                    DROP TABLE po_size_rows;
+                    ALTER TABLE po_size_rows_new RENAME TO po_size_rows;
+                    CREATE INDEX IF NOT EXISTS idx_psr_po_number
+                        ON po_size_rows(po_number);
+                """)
             # Migrate: fabric mapping uploaded under 'zalando' (before Sky East was a
             # registered company) should live under 'sky_east'.
             # INSERT OR IGNORE preserves any existing sky_east record for the same

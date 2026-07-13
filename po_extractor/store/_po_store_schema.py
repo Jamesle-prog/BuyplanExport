@@ -55,8 +55,11 @@ CREATE TABLE IF NOT EXISTS po_size_rows (
     size         TEXT,
     units        INTEGER,
     upc          TEXT,
+    xfty_date    TEXT DEFAULT '',
     extracted_at TEXT,
-    UNIQUE(po_number, style, color, size)
+    -- xfty_date in the key keeps split-delivery lines (same SKU, different
+    -- ex-factory date) as distinct rows instead of overwriting each other.
+    UNIQUE(po_number, style, color, size, xfty_date)
 );
 
 -- Full version history: every superseded version is archived here

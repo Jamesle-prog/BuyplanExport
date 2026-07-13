@@ -87,6 +87,58 @@ class TestSaveManyCheckedRevisions:
 
 
 # ---------------------------------------------------------------------------
+# Split-delivery: same SKU, different ex-factory date → both rows kept
+# ---------------------------------------------------------------------------
+
+class TestSplitDeliveryKeepsBothRows:
+    def _po(self, rows):
+        meta = POMetadata(po_number="SD1", style="ST1", company="GIII")
+        return POData(metadata=meta, size_rows=rows)
+
+    def test_same_sku_different_xfty_kept_and_summed(self, store):
+        po = self._po([
+            SizeRow("SD1", "ST1", "BLACK", "M", 100, "U1", xfty_date="2026-08-01"),
+            SizeRow("SD1", "ST1", "BLACK", "M",  50, "U1", xfty_date="2026-09-01"),
+            SizeRow("SD1", "ST1", "BLACK", "S",  30, "U2", xfty_date="2026-08-01"),
+        ])
+        store.save_many_checked([po])
+        rows = store.load_size_rows(["SD1"])
+        assert len(rows) == 3                                  # both M shipments kept
+        assert int(rows[rows["Size"] == "M"]["Units"].sum()) == 150
+        tot = store.list_pos()
+        assert int(tot[tot["po_number"] == "SD1"]["total_units"].iloc[0]) == 180
+
+    def test_same_sku_same_xfty_still_collapses(self, store):
+        po = self._po([
+            SizeRow("SD1", "ST1", "RED", "L", 10, "U", xfty_date="2026-08-01"),
+            SizeRow("SD1", "ST1", "RED", "L", 99, "U", xfty_date="2026-08-01"),
+        ])
+        store.save_many_checked([po])
+        rows = store.load_size_rows(["SD1"])
+        assert len(rows) == 1 and int(rows["Units"].iloc[0]) == 99  # genuine dup, last wins
+
+    def test_migration_from_pre_xfty_schema_preserves_rows(self, tmp_path):
+        import sqlite3
+        db = tmp_path / "old.db"
+        conn = sqlite3.connect(str(db))
+        conn.executescript("""
+            CREATE TABLE po_size_rows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, po_number TEXT NOT NULL,
+                style TEXT, color TEXT, size TEXT, units INTEGER, upc TEXT,
+                extracted_at TEXT, UNIQUE(po_number, style, color, size));
+            INSERT INTO po_size_rows (po_number, style, color, size, units, upc, extracted_at)
+                VALUES ('OLD', 'S', 'C', 'M', 77, 'U', '2026-01-01');
+        """)
+        conn.commit(); conn.close()
+        store = POStore(str(db))                    # __init__ runs the migration
+        cols = {r[1] for r in sqlite3.connect(str(db))
+                .execute("PRAGMA table_info(po_size_rows)")}
+        assert "xfty_date" in cols
+        rows = store.load_size_rows(["OLD"])
+        assert len(rows) == 1 and int(rows["Units"].iloc[0]) == 77
+
+
+# ---------------------------------------------------------------------------
 # P1-fix-2: UPC included in content hash
 # ---------------------------------------------------------------------------
 

@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.56.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "fix", "text": "**Split-delivery lines are no longer collapsed** — the same style+colour+size shipped in two windows (different ex-factory dates) used to overwrite each other in storage, so only the last line's units survived and the PO total came up short. Size rows now carry the ex-factory date and it's part of the unique key, so both shipments are kept and the totals are correct. Same SKU with the *same* date is still treated as one row (a genuine duplicate). A one-time DB migration adds the column and preserves all existing rows"},
+            {"type": "fix", "text": "CPRS requirement lookups are unaffected by the split — resolution is per-PO order-context (which never included the ship date), so a split-delivery PO still makes a single CPRS evaluation and the buy plan sums the windows into the correct per-size total"},
+        ],
+    },
+    {
         "version": "2.55.0",
         "date": "2026-07-13",
         "entries": [

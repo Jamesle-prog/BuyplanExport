@@ -196,9 +196,10 @@ class _WritesMixin:
         )
         conn.executemany(
             """INSERT OR REPLACE INTO po_size_rows
-               (po_number, style, color, size, units, upc, extracted_at)
-               VALUES (?,?,?,?,?,?,?)""",
-            [(r.po_number, r.style, r.color, r.size, r.units, r.upc, extracted_at)
+               (po_number, style, color, size, units, upc, xfty_date, extracted_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            [(r.po_number, r.style, r.color, r.size, r.units, r.upc,
+              getattr(r, "xfty_date", "") or "", extracted_at)
              for r in po.size_rows],
         )
 

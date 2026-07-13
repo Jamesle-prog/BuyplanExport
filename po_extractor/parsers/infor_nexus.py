@@ -299,9 +299,13 @@ def _parse_line_block(block: str, po_number: str) -> list[SizeRow]:
         color_code = m.group(2)
 
     size_entries = _parse_size_grid(block)
+    # Per-line ex-factory date: the same SKU shipped in two windows lands in
+    # two blocks with different dates — carry it so the store keeps both rows
+    # instead of the second overwriting the first.
+    xfty = _extract_factory_ship_date([block]) or ""
     return [
         SizeRow(po_number=po_number, style=style, color=color_code,
-                size=size, units=qty, upc=upc)
+                size=size, units=qty, upc=upc, xfty_date=xfty)
         for size, upc, qty in size_entries
     ]
 

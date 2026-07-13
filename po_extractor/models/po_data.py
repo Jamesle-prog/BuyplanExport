@@ -4,13 +4,20 @@ from dataclasses import dataclass, field, asdict
 
 @dataclass
 class SizeRow:
-    """One row per PO / Style / Color / Size."""
+    """One row per PO / Style / Color / Size / ex-factory date.
+
+    ``xfty_date`` distinguishes split-delivery lines: the same SKU shipped in
+    two windows is two rows (different dates), not one that overwrites the
+    other. Empty when the source has no per-line date (then the SKU is unique
+    on the first four fields, as before).
+    """
     po_number: str
     style: str
     color: str
     size: str
     units: int
     upc: str
+    xfty_date: str = ""
 
 
 @dataclass
