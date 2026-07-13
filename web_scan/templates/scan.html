@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>UPC 扫描 / Warehouse Scanner</title>
+<style>
+  :root { color-scheme: light dark; --bg:#0f172a; --panel:#1e293b; --line:#334155;
+          --ink:#e2e8f0; --mut:#94a3b8; --blue:#2563eb; --grn:#16a34a; --red:#dc2626;
+          --amb:#d97706; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; height:100%; }
+  body { font-family:-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg);
+         color:var(--ink); display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:10px; padding:10px 14px;
+           background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; flex:1; }
+  header a { color:var(--mut); font-size:13px; text-decoration:none; }
+  .tabs { display:flex; gap:6px; padding:10px 12px 0; }
+  .tab { flex:1; text-align:center; padding:11px 6px; border-radius:10px 10px 0 0;
+         background:var(--panel); color:var(--mut); font-size:15px; font-weight:600;
+         border:1px solid var(--line); border-bottom:0; cursor:pointer; }
+  .tab.on { background:var(--blue); color:#fff; border-color:var(--blue); }
+  main { flex:1; overflow-y:auto; padding:12px; }
+  .ctl { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; align-items:center; }
+  select, .dirbtn { font-size:16px; padding:11px; border-radius:9px; border:1px solid var(--line);
+           background:var(--panel); color:var(--ink); }
+  select { flex:1; min-width:140px; }
+  .dirbtn { flex:1; text-align:center; font-weight:700; cursor:pointer; }
+  .dirbtn.add { background:var(--grn); border-color:var(--grn); color:#fff; }
+  .dirbtn.rem { background:var(--red); border-color:var(--red); color:#fff; }
+  #scan { width:100%; font-size:22px; letter-spacing:1px; text-align:center; padding:16px;
+          border-radius:12px; border:2px solid var(--blue); background:#0b1220; color:#f8fafc; }
+  .hint { color:var(--mut); font-size:12px; text-align:center; margin:6px 0 12px; }
+  .result { border-radius:12px; padding:16px; margin-bottom:12px; border:1px solid var(--line);
+            background:var(--panel); min-height:60px; }
+  .result.ok { border-color:var(--grn); background:rgba(22,163,74,.14); }
+  .result.bad { border-color:var(--red); background:rgba(220,38,38,.14); }
+  .result .big { font-size:20px; font-weight:700; margin-bottom:6px; word-break:break-all; }
+  .kv { display:flex; flex-wrap:wrap; gap:4px 14px; font-size:14px; color:var(--ink); }
+  .kv span b { color:var(--mut); font-weight:500; }
+  .counters { display:flex; gap:8px; margin-bottom:10px; }
+  .counter { flex:1; text-align:center; background:var(--panel); border:1px solid var(--line);
+             border-radius:10px; padding:8px 4px; }
+  .counter .n { font-size:20px; font-weight:700; }
+  .counter .l { font-size:11px; color:var(--mut); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); font-weight:600; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .rowbar { display:flex; justify-content:space-between; align-items:center; margin:6px 0; }
+  .clear { background:transparent; border:1px solid var(--red); color:#fca5a5; font-size:13px;
+           padding:7px 12px; border-radius:8px; cursor:pointer; }
+  .hidden { display:none; }
+  .muted { color:var(--mut); font-size:13px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>📷 UPC 扫描</h1>
+    <span id="status" class="muted">就绪 / Ready</span>
+    <a href="/logout">退出 / Logout</a>
+  </header>
+
+  <div class="tabs">
+    <div class="tab on" data-mode="lookup">🔍 查询</div>
+    <div class="tab" data-mode="verify">✓ 核对</div>
+    <div class="tab" data-mode="count">🧮 盘点</div>
+  </div>
+
+  <main>
+    <!-- verify controls -->
+    <div id="verifyCtl" class="ctl hidden">
+      <select id="poPick"><option value="">选择 PO / Select PO…</option></select>
+    </div>
+    <!-- count controls -->
+    <div id="countCtl" class="ctl hidden">
+      <div id="dirBtn" class="dirbtn add" data-dir="add">＋1 增加 / Add</div>
+    </div>
+
+    <input id="scan" inputmode="none" autocomplete="off" autocapitalize="off"
+           spellcheck="false" placeholder="扫描 UPC / Scan UPC…">
+    <div class="hint" id="hint">保持此框聚焦，扫描枪会自动录入 · Keep focused; the scanner types here</div>
+
+    <div class="counters" id="counters"></div>
+    <div class="result" id="result"><span class="muted">等待扫描… / Waiting for a scan…</span></div>
+
+    <!-- session log (lookup/verify) -->
+    <table id="logTable" class="hidden"><thead><tr>
+      <th>UPC</th><th id="logCol">结果 / Result</th></tr></thead><tbody id="logBody"></tbody></table>
+
+    <!-- stocktake table (count) -->
+    <div id="countPanel" class="hidden">
+      <div class="rowbar"><span class="muted">当前盘点 / Current counts</span>
+        <button class="clear" id="clearBtn">清空 / Clear all</button></div>
+      <table><thead><tr><th>UPC</th><th>款/色/码</th><th class="num">数量</th></tr></thead>
+        <tbody id="countBody"></tbody></table>
+    </div>
+  </main>
+
+<script>
+(function () {
+  "use strict";
+  var scan = document.getElementById("scan");
+  var result = document.getElementById("result");
+  var status = document.getElementById("status");
+  var counters = document.getElementById("counters");
+  var logTable = document.getElementById("logTable");
+  var logBody = document.getElementById("logBody");
+  var logCol = document.getElementById("logCol");
+  var countPanel = document.getElementById("countPanel");
+  var countBody = document.getElementById("countBody");
+  var verifyCtl = document.getElementById("verifyCtl");
+  var countCtl = document.getElementById("countCtl");
+  var poPick = document.getElementById("poPick");
+  var dirBtn = document.getElementById("dirBtn");
+  var hint = document.getElementById("hint");
+
+  var mode = "lookup";
+  var busy = false;                       // synchronous re-entry guard
+  var stats = { lookup:{t:0,m:0}, verify:{t:0,ok:0} };
+
+  function vibrate(ok) {
+    if (navigator.vibrate) { navigator.vibrate(ok ? 40 : [60,50,60]); }
+  }
+  function esc(s) { return (s == null ? "" : String(s))
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function refocus() { try { scan.focus(); } catch (e) {} }
+
+  // keep the wedge input focused whenever the operator taps a non-control
+  document.addEventListener("click", function (e) {
+    var t = e.target.tagName;
+    if (t !== "INPUT" && t !== "SELECT" && t !== "BUTTON" && !e.target.dataset.mode) {
+      refocus();
+    }
+  });
+
+  function setMode(m) {
+    mode = m;
+    var tabs = document.querySelectorAll(".tab");
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].className = "tab" + (tabs[i].dataset.mode === m ? " on" : "");
+    }
+    verifyCtl.className = "ctl" + (m === "verify" ? "" : " hidden");
+    countCtl.className = "ctl" + (m === "count" ? "" : " hidden");
+    logTable.className = (m === "count") ? "hidden" : "";
+    countPanel.className = (m === "count") ? "" : "hidden";
+    logBody.innerHTML = ""; result.className = "result";
+    result.innerHTML = '<span class="muted">等待扫描… / Waiting for a scan…</span>';
+    logCol.textContent = (m === "verify") ? "属于此 PO / In PO" : "结果 / Result";
+    renderCounters();
+    if (m === "count") { loadCounts(); }
+    refocus();
+  }
+
+  function renderCounters() {
+    var h = "";
+    if (mode === "lookup") {
+      h = cnt(stats.lookup.t, "扫描/Scans") + cnt(stats.lookup.m, "匹配/Matched")
+        + cnt(stats.lookup.t - stats.lookup.m, "未匹配/Missed");
+    } else if (mode === "verify") {
+      h = cnt(stats.verify.t, "扫描/Scans") + cnt(stats.verify.ok, "✓ 属于/In PO")
+        + cnt(stats.verify.t - stats.verify.ok, "✗ 不符/Wrong");
+    } else { counters.innerHTML = ""; return; }
+    counters.innerHTML = h;
+  }
+  function cnt(n, l) {
+    return '<div class="counter"><div class="n">' + n + '</div><div class="l">'
+      + l + "</div></div>";
+  }
+
+  function showResult(ok, bigText, row, extra) {
+    result.className = "result " + (ok ? "ok" : "bad");
+    var html = '<div class="big">' + (ok ? "✅ " : "❌ ") + esc(bigText) + "</div>";
+    if (row) {
+      html += '<div class="kv">'
+        + kv("PO", row.po_number) + kv("款号", row.style) + kv("颜色", row.color)
+        + kv("尺码", row.size) + kv("数量", row.units) + kv("仓库", row.warehouse)
+        + kv("目的地", row.destination) + kv("客户", row.buyer) + "</div>";
+    }
+    if (extra) { html += '<div class="muted" style="margin-top:8px">' + esc(extra) + "</div>"; }
+    result.innerHTML = html;
+  }
+  function kv(k, v) {
+    if (v == null || v === "") { return ""; }
+    return "<span><b>" + esc(k) + ":</b> " + esc(v) + "</span>";
+  }
+
+  function post(url, body) {
+    return fetch(url, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (r.status === 401) { window.location = "/login"; throw new Error("auth"); }
+      return r.json();
+    });
+  }
+
+  function submitScan() {
+    var upc = scan.value.trim();
+    scan.value = "";
+    if (!upc || busy) { return; }
+    busy = true; status.textContent = "查询中… / Looking up…";
+    var done = function () { busy = false; status.textContent = "就绪 / Ready"; refocus(); };
+
+    if (mode === "lookup") {
+      post("/api/lookup", { upc: upc }).then(function (d) {
+        stats.lookup.t++; if (d.matched) { stats.lookup.m++; }
+        renderCounters(); vibrate(d.matched);
+        if (d.matched) {
+          var first = d.rows[0];
+          showResult(true, upc, first,
+            d.count > 1 ? ("此 UPC 出现在 " + d.count + " 个 PO / on " + d.count + " POs") : "");
+        } else { showResult(false, upc + " — 未找到 / not found", null); }
+        addLog(upc, d.matched ? "✅" : "❌ 未找到");
+        done();
+      }).catch(done);
+
+    } else if (mode === "verify") {
+      var po = poPick.value;
+      if (!po) { status.textContent = "请先选择 PO / pick a PO"; busy = false; refocus(); return; }
+      post("/api/verify", { upc: upc, po: po }).then(function (d) {
+        stats.verify.t++; if (d.ok) { stats.verify.ok++; }
+        renderCounters(); vibrate(d.ok);
+        if (d.ok) { showResult(true, upc + " ✓ 属于 " + po, d.rows[0]); }
+        else if (d.matched) {
+          showResult(false, upc + " ✗ 不属于 " + po,
+            d.rows[0], "实际在 / actually on: " + d.other_pos.join(", "));
+        } else { showResult(false, upc + " — 未找到 / not found", null); }
+        addLog(upc, d.ok ? "✅" : (d.matched ? "✗ " + d.other_pos.join(",") : "❌ 未找到"));
+        done();
+      }).catch(done);
+
+    } else {  // count / 盘点
+      var dir = dirBtn.dataset.dir;
+      post("/api/count", { upc: upc, dir: dir }).then(function (d) {
+        vibrate(true);
+        var sign = d.delta >= 0 ? "＋" : "－";
+        showResult(true, upc + "  →  " + d.qty,
+          d.context, sign + "1" + (d.known ? "" : "  ⚠ 未在任何 PO / unknown UPC"));
+        loadCounts();
+        done();
+      }).catch(done);
+    }
+  }
+
+  function addLog(upc, res) {
+    logTable.className = "";
+    var tr = document.createElement("tr");
+    tr.innerHTML = "<td>" + esc(upc) + "</td><td>" + esc(res) + "</td>";
+    logBody.insertBefore(tr, logBody.firstChild);
+  }
+
+  function loadCounts() {
+    fetch("/api/stocktake").then(function (r) {
+      if (r.status === 401) { window.location = "/login"; throw new Error("auth"); }
+      return r.json();
+    }).then(function (d) {
+      var rows = d.rows || [];
+      var html = "";
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var ctx = [r.style, r.color, r.size].filter(Boolean).join(" / ");
+        html += "<tr><td>" + esc(r.upc) + "</td><td>" + esc(ctx || "—")
+             + '</td><td class="num">' + esc(r.qty) + "</td></tr>";
+      }
+      countBody.innerHTML = html || '<tr><td colspan="3" class="muted">暂无 / none</td></tr>';
+    }).catch(function () {});
+  }
+
+  // wiring
+  var tabEls = document.querySelectorAll(".tab");
+  for (var i = 0; i < tabEls.length; i++) {
+    tabEls[i].addEventListener("click", function () { setMode(this.dataset.mode); });
+  }
+  dirBtn.addEventListener("click", function () {
+    if (this.dataset.dir === "add") { this.dataset.dir = "rem"; this.className = "dirbtn rem";
+      this.textContent = "－1 减少 / Remove"; }
+    else { this.dataset.dir = "add"; this.className = "dirbtn add";
+      this.textContent = "＋1 增加 / Add"; }
+    refocus();
+  });
+  document.getElementById("clearBtn").addEventListener("click", function () {
+    if (!confirm("清空所有盘点计数? / Clear all stocktake counts?")) { return; }
+    post("/api/stocktake/clear", {}).then(loadCounts).catch(function () {});
+  });
+  scan.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); submitScan(); }
+  });
+  scan.addEventListener("blur", function () { setTimeout(refocus, 60); });
+
+  // populate PO picker
+  fetch("/api/pos").then(function (r) {
+    if (r.status === 401) { window.location = "/login"; throw new Error("auth"); }
+    return r.json();
+  }).then(function (d) {
+    var pos = d.pos || [];
+    for (var i = 0; i < pos.length; i++) {
+      var o = document.createElement("option");
+      o.value = pos[i]; o.textContent = pos[i]; poPick.appendChild(o);
+    }
+  }).catch(function () {});
+
+  setMode("lookup");
+})();
+</script>
+</body>
+</html>

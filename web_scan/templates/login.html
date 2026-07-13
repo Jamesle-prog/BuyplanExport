@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>UPC 扫描登录 / Scanner Login</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center;
+    justify-content: center; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #0f172a; color: #e2e8f0; padding: 20px;
+  }
+  .card {
+    width: 100%; max-width: 360px; background: #1e293b; border-radius: 14px;
+    padding: 28px 24px; box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 20px; color: #94a3b8; font-size: 13px; }
+  label { display: block; font-size: 13px; margin-bottom: 6px; color: #cbd5e1; }
+  input[type=password] {
+    width: 100%; font-size: 18px; padding: 14px; border-radius: 10px;
+    border: 1px solid #334155; background: #0f172a; color: #f1f5f9;
+  }
+  button {
+    width: 100%; margin-top: 16px; font-size: 17px; font-weight: 600;
+    padding: 14px; border: 0; border-radius: 10px; background: #2563eb;
+    color: #fff; cursor: pointer;
+  }
+  button:active { background: #1d4ed8; }
+  .err { margin-top: 14px; color: #fca5a5; font-size: 14px; min-height: 18px; text-align: center; }
+</style>
+</head>
+<body>
+  <form class="card" method="post" action="/login">
+    <h1>📷 UPC 扫描 / Scanner</h1>
+    <p class="sub">仓库 PDA 扫描 · Warehouse PDA scan</p>
+    <label for="pw">密码 / Password</label>
+    <input id="pw" name="password" type="password" autocomplete="current-password" autofocus>
+    <button type="submit">登录 / Sign in</button>
+    <div class="err"><!--ERR--></div>
+  </form>
+</body>
+</html>

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.67.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "New **web scanner** (`python -m web_scan`) — a lightweight browser scan page for warehouse PDAs, served on its own port (default 8502) by Starlette+uvicorn over the same database, separate from the Streamlit app so it's instant on a handheld (no reruns). Keyboard-wedge input with a focus trap; three modes (🔍 Lookup / ✓ Verify against PO / 🧮 Stocktake 盘点) mirroring the UPC Check tab; shared-password gate. See docs/WEB_SCANNER.md"},
+        ],
+    },
+    {
         "version": "2.66.1",
         "date": "2026-07-13",
         "entries": [
