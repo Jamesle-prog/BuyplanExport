@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.71.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "**PO requirements document rebuilt in the KL illustrated format** — five new sheets modelled on `KL_FALL26_Requirements_Illustrated.xlsx`: **PO Index** (PO · style · article · units · account · whs · destination · packing · MSRP · source file + total), **Requirements + Pictures** (per-domain spec · CPRS source · embedded manual pictures), **Requirement Matrix** (domain/subtype × destination-account grid of ✓ / ✓* / ⚡ / — / ctx), **Pre-pack** (per-PO prepack ratio + pcs/box), and **Actions & Confirm** (auto-listed conflicts / missing-context / warnings). The existing Summary 汇总, 款号对比 By Style and per-PO sheets are kept. Structure + pictures + matrix are auto-filled from CPRS; the sample's hand-written bilingual prose is not reproduced"},
+        ],
+    },
+    {
         "version": "2.70.1",
         "date": "2026-07-13",
         "entries": [

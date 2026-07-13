@@ -76,7 +76,8 @@ def test_export_summary_and_per_po_sheets():
     data = export_giii_requirements([_ctx("PO1"), _ctx("PO2")],
                                     warnings=["something to know"])
     wb = openpyxl.load_workbook(io.BytesIO(data))
-    assert wb.sheetnames[0] == "Summary 汇总"
+    assert wb.sheetnames[0] == "PO Index"          # KL layout leads with PO Index
+    assert "Summary 汇总" in wb.sheetnames
     assert "PO1" in wb.sheetnames and "PO2" in wb.sheetnames
 
     ws = wb["Summary 汇总"]
@@ -113,15 +114,75 @@ def test_missing_mandatory_context_counts_as_pending():
 def test_export_duplicate_po_numbers_get_unique_sheets():
     data = export_giii_requirements([_ctx("PO1"), _ctx("PO1")])
     wb = openpyxl.load_workbook(io.BytesIO(data))
-    # Summary + 款号对比 + PO1 + PO1_2
-    assert wb.sheetnames == ["Summary 汇总", "款号对比 By Style", "PO1", "PO1_2"]
+    assert "PO1" in wb.sheetnames and "PO1_2" in wb.sheetnames     # unique per-PO
 
 
 def test_export_sanitizes_bad_sheet_names():
     ctx = _ctx("PO/1:*?")
     data = export_giii_requirements([ctx])
     wb = openpyxl.load_workbook(io.BytesIO(data))
-    assert len(wb.sheetnames) == 3         # Summary + 款号对比 + sanitized PO
+    # no crash; the fixed KL-style sheets are present alongside the sanitized PO
+    assert "PO Index" in wb.sheetnames and "Requirement Matrix" in wb.sheetnames
+
+
+# ── KL-style illustrated sheets ───────────────────────────────────────────────
+
+def _ctx_kl(po, style, account, region, units, results):
+    return {"po_number": po, "style": style, "brand": "Karl Lagerfeld",
+            "warehouse": "NJ", "account": account, "channel": "WHOLESALE",
+            "units": units, "article": "KL-9727", "region": region,
+            "destination": "US — Dayton, NJ", "packing": "Flat pack", "msrp": "59",
+            "coo": "China", "source_file": f"{po}.pdf", "is_prepack": False,
+            "results": results}
+
+
+def test_full_kl_layout_sheet_order():
+    r = [{"domain": "label", "subtype": "main_label", "status": "confirmed",
+          "resultJson": {"standard": "Main label", "source": "KL Manual"}}]
+    data = export_giii_requirements([_ctx_kl("P1", "ST1", "", "US", 80, r)])
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    assert wb.sheetnames[:7] == [
+        "PO Index", "Summary 汇总", "款号对比 By Style", "Requirements + Pictures",
+        "Requirement Matrix", "Pre-pack", "Actions & Confirm"]
+
+
+def test_po_index_sheet_lists_pos_and_total():
+    r = [{"domain": "label", "subtype": "x", "status": "confirmed", "resultJson": {}}]
+    data = export_giii_requirements([
+        _ctx_kl("P1", "ST1", "", "US", 80, r),
+        _ctx_kl("P2", "ST1", "AMRG", "US", 3740, r)])
+    ws = openpyxl.load_workbook(io.BytesIO(data))["PO Index"]
+    hdr = [ws.cell(2, c).value for c in range(1, 11)]
+    assert hdr[:4] == ["PO Number", "款号 Style", "品名 Article", "数量 Units"]
+    vals = [str(c.value) for row in ws.iter_rows() for c in row if c.value is not None]
+    assert "P1" in vals and "P2" in vals and "3740" in vals
+    assert "TOTAL" in vals and "3820" in vals            # 80 + 3740
+
+
+def test_requirement_matrix_columns_by_destination():
+    common = {"domain": "label", "subtype": "main_label", "status": "confirmed",
+              "resultJson": {"standard": "Main label"}}
+    only_amrg = {"domain": "carton", "subtype": "red_sticker",
+                 "status": "confirmed", "resultJson": {}}
+    data = export_giii_requirements([
+        _ctx_kl("P1", "ST1", "", "US", 80, [dict(common)]),
+        _ctx_kl("P2", "ST1", "AMRG", "US", 100, [dict(common), dict(only_amrg)])])
+    ws = openpyxl.load_workbook(io.BytesIO(data))["Requirement Matrix"]
+    hdr = [ws.cell(2, c).value for c in range(1, ws.max_column + 1)]
+    assert hdr[0] == "Domain / Subtype" and "STOCK (US)" in hdr and "AMRG (US)" in hdr
+    rows = [[c.value for c in row] for row in ws.iter_rows(min_row=3)]
+    red = next(r for r in rows if r[0] == "carton/red_sticker")
+    si, ai = hdr.index("STOCK (US)"), hdr.index("AMRG (US)")
+    assert red[ai] == "✓" and red[si] == "—"       # only AMRG has the red sticker
+
+
+def test_actions_sheet_flags_conflicts():
+    r = [{"domain": "hangtag", "subtype": "main_hangtag", "status": "conflict",
+          "resultJson": {"standard": "two rules disagree"}}]
+    data = export_giii_requirements([_ctx_kl("P1", "ST1", "", "US", 80, r)])
+    ws = openpyxl.load_workbook(io.BytesIO(data))["Actions & Confirm"]
+    vals = [str(c.value) for row in ws.iter_rows() for c in row if c.value is not None]
+    assert any("Conflict" in v for v in vals) and "Confirm" in vals
 
 
 # ── by-style comparison sheet ─────────────────────────────────────────────────
@@ -144,7 +205,7 @@ def test_by_style_sheet_combines_shared_and_splits_differing():
         _ctx_style("PO2", "STYLE_B", [dict(shared), dict(reqB)]),
     ])
     wb = openpyxl.load_workbook(io.BytesIO(data))
-    assert wb.sheetnames[1] == "款号对比 By Style"
+    assert "款号对比 By Style" in wb.sheetnames
     s = wb["款号对比 By Style"]
     rows = [[c.value for c in row] for row in s.iter_rows(min_row=3)]
     # care_label is identical across both styles → one row, "全部 All (2)"

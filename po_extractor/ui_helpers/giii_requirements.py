@@ -444,10 +444,35 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
             if isinstance(res, dict) and "_images" not in res:
                 res["_images"] = _all_image_bytes(cprs, res, img_cache)
 
+        # Extra per-PO facts for the illustrated document's PO Index / Pre-pack.
+        units = sum(int(getattr(sr, "units", 0) or 0) for sr in (po.size_rows or []))
+        region = ""
+        if wh and hasattr(cprs, "warehouse_flags"):
+            try:
+                region = str((cprs.warehouse_flags(client_id, wh) or {}).get(
+                    "region", "") or "")
+            except Exception:
+                region = ""
+        packing = " · ".join(p for p in (
+            str(getattr(m, "packaging", "") or "").strip(),
+            str(getattr(m, "hanger", "") or "").strip()) if p)
+
         contexts.append({
             "po_number": po_no, "style": m.style or "",
             "brand": brand, "warehouse": wh, "account": account or "",
             "channel": order["channel"], "results": results,
+            # PO Index / Pre-pack enrichment
+            "units": units,
+            "article": (str(getattr(m, "style_description", "") or "").strip()
+                        or str(getattr(m, "fabric", "") or "").strip()),
+            "region": region,
+            "destination": str(getattr(m, "ship_to", "") or "").strip(),
+            "packing": packing,
+            "msrp": str(getattr(m, "msrp", "") or "").strip(),
+            "coo": str(getattr(m, "country_of_origin", "") or "").strip(),
+            "source_file": str(getattr(m, "file_name", "") or "").strip(),
+            "is_prepack": prepack_flag(getattr(m, "packaging", ""),
+                                       getattr(m, "hanger", "")),
         })
 
     return contexts, warnings

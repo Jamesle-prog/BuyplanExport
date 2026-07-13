@@ -86,7 +86,7 @@ def _thumb(raw: bytes, max_h: int = 70):
         return None
 
 
-def _embed_thumbs(ws, row: int, col: int, images) -> None:
+def _embed_thumbs(ws, row: int, col: int, images, thumb_h: int = 70) -> None:
     """Embed each image side-by-side starting at (row, col); size the row to
     fit and widen the columns used. No-op when there are no images."""
     if not images:
@@ -95,7 +95,7 @@ def _embed_thumbs(ws, row: int, col: int, images) -> None:
     from openpyxl.utils import get_column_letter
     x, max_h = col, 0
     for raw in images:
-        t = _thumb(raw)
+        t = _thumb(raw, max_h=thumb_h)
         if not t:
             continue
         buf, w, h = t
@@ -180,8 +180,18 @@ def export_giii_requirements(contexts: list[dict],
     # ones that differ per style, so you see at a glance where styles diverge.
     _write_by_style_sheet(wb, contexts, cell)
 
+    # ── KL-style illustrated sheets (PO Index leads; then the illustrated /
+    #    matrix / pre-pack / actions sheets) ───────────────────────────────────
+    _write_po_index_sheet(wb, contexts, cell, index=0)
+    _write_requirements_pictures_sheet(wb, contexts, cell, index=3)
+    _write_requirement_matrix_sheet(wb, contexts, cell, index=4)
+    _write_prepack_sheet(wb, contexts, cell, index=5)
+    _write_actions_sheet(wb, contexts, warnings, cell, index=6)
+
     # ── One sheet per PO context ─────────────────────────────────────────────
-    used: set[str] = {ws.title, "款号对比 By Style"}
+    used: set[str] = {"Summary 汇总", "款号对比 By Style", "PO Index",
+                      "Requirements + Pictures", "Requirement Matrix",
+                      "Pre-pack", "Actions & Confirm"}
     for ctx in contexts:
         s = wb.create_sheet(_sheet_name(ctx["po_number"], used))
         cell(s, 1, 1, f"PO {ctx['po_number']} · {ctx['style']} · {ctx['brand']} · "
@@ -274,4 +284,267 @@ def _write_by_style_sheet(wb, contexts: list[dict], cell) -> None:
             cell(s, r, 4, value, bg=hl)
             cell(s, r, 5, styles_txt, bg=hl, center=common)
             r += 1
+    s.freeze_panes = "A3"
+
+
+# ===========================================================================
+# KL-style illustrated sheets (PO Index · Requirements + Pictures ·
+# Requirement Matrix · Pre-pack · Actions & Confirm), auto-filled from CPRS.
+# ===========================================================================
+
+_DOMAIN_TITLE = {
+    "label": "🏷️ 标 (Labels)", "care_content": "🧵 成分/洗涤/COO (Care)",
+    "hangtag": "🎫 吊牌 (Hangtags)", "packaging": "👜 包装 (Packaging)",
+    "carton": "◆ 外箱 (Carton)", "hanger": "🪝 衣架 (Hanger)",
+    "testing": "🧪 测试 (Testing)", "shipping": "🚚 物流 (Shipping)",
+}
+
+_MATRIX_SYM = {"confirmed": "✓", "pending_input": "✓*", "conflict": "⚡",
+               "not_applicable": "—", "missing_mandatory_context": "ctx"}
+
+
+def _u(contexts, key):
+    """Ordered distinct non-empty string values of *key* across contexts."""
+    seen: list[str] = []
+    for c in contexts:
+        v = str(c.get(key, "") or "").strip()
+        if v and v not in seen:
+            seen.append(v)
+    return seen
+
+
+def _dest_label(ctx) -> str:
+    """Short account/destination label — the Requirement Matrix column key."""
+    acct = str(ctx.get("account", "") or "").strip()
+    region = str(ctx.get("region", "") or "").strip()
+    base = acct or "STOCK"
+    return f"{base} ({region})" if region else base
+
+
+def _prepack_of(results):
+    """(ratio, pcs_per_box) from the winning prepack/ratio requirement, if any."""
+    ratio, pcs = "", ""
+    for res in results or []:
+        sub = str(res.get("subtype", "")).lower()
+        if "prepack" in sub or "pre_pack" in sub or "ratio" in sub:
+            rj = res.get("resultJson") or {}
+            ratio = ratio or str(rj.get("ratio") or rj.get("alpha")
+                                 or rj.get("numeric") or "")
+            pcs = pcs or str(rj.get("pieces_per_bag") or rj.get("pcs_per_carton")
+                            or rj.get("units_per_pack") or "")
+    return ratio, pcs
+
+
+def _write_po_index_sheet(wb, contexts, cell, index=0):
+    s = wb.create_sheet("PO Index", index)
+    hdrs = ["PO Number", "款号 Style", "品名 Article", "数量 Units",
+            "客户 Account", "仓库 Whs", "目的地 Destination", "包装 Packing",
+            "MSRP", "Source File"]
+    n = len(hdrs)
+    for c, w in enumerate((16, 14, 20, 9, 22, 8, 26, 22, 10, 20), 1):
+        s.column_dimensions[chr(64 + c)].width = w
+    brand = "、".join(_u(contexts, "brand")) or "GIII"
+    cell(s, 1, 1, f"{brand} · PO Requirements — {len(contexts)} PO(s)",
+         bold=True, bg=_NAVY, white=True, center=True)
+    s.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n)
+    for c, h in enumerate(hdrs, 1):
+        cell(s, 2, c, h, bold=True, bg=_NAVY, white=True, center=True)
+    total, r = 0, 3
+    for ctx in contexts:
+        u = int(ctx.get("units", 0) or 0)
+        total += u
+        vals = [ctx.get("po_number", ""), ctx.get("style", ""),
+                ctx.get("article", ""), u, ctx.get("account", "") or "—",
+                ctx.get("warehouse", ""), ctx.get("destination", ""),
+                ctx.get("packing", ""), ctx.get("msrp", "") or "—",
+                ctx.get("source_file", "")]
+        for c, v in enumerate(vals, 1):
+            cell(s, r, c, v, center=(c in (4, 6, 9)))
+        r += 1
+    cell(s, r, 3, "TOTAL", bold=True, bg=_YELLOW, center=True)
+    cell(s, r, 4, total, bold=True, bg=_YELLOW, center=True)
+    cell(s, r, 5, f"{len(contexts)} POs", bold=True, bg=_YELLOW)
+    s.freeze_panes = "A3"
+
+
+def _write_requirements_pictures_sheet(wb, contexts, cell, index=3):
+    from collections import OrderedDict
+    n_groups = len({_dest_label(c) for c in contexts}) or 1
+    subs: "OrderedDict[tuple, dict]" = OrderedDict()
+    for ctx in contexts:
+        lbl = _dest_label(ctx)
+        for res in ctx.get("results", []):
+            if res.get("status") == "not_applicable":
+                continue
+            key = (res.get("domain", ""), res.get("subtype", ""))
+            e = subs.setdefault(key, {"text": "", "source": "",
+                                      "applies": set(), "images": [], "seen": set()})
+            e["applies"].add(lbl)
+            if not e["text"]:
+                e["text"] = _req_text(res)
+            if not e["source"]:
+                e["source"] = str((res.get("resultJson") or {}).get("source", ""))
+            for b in (res.get("_images") or []):
+                k = (len(b), b[:48])
+                if k not in e["seen"]:
+                    e["seen"].add(k)
+                    e["images"].append(b)
+
+    s = wb.create_sheet("Requirements + Pictures", index)
+    s.column_dimensions["A"].width = 4
+    for c in "BCDEFGHIJKLM":
+        s.column_dimensions[c].width = 15
+    cell(s, 1, 1, "PO Requirements — illustrated with the relevant CPRS pictures",
+         bold=True, bg=_NAVY, white=True)
+    s.merge_cells(start_row=1, start_column=1, end_row=1, end_column=13)
+    cell(s, 2, 1, "Each domain: requirement spec · CPRS source · linked manual "
+                  "picture(s). ⚠ Pictures illustrate only — verify against the "
+                  "manual + PO before production.", bg=_GREY)
+    s.merge_cells(start_row=2, start_column=1, end_row=2, end_column=13)
+
+    r = 4
+    for (dom, sub), e in subs.items():
+        title = _DOMAIN_TITLE.get(dom, dom)
+        cell(s, r, 1, f"{title}   ·   {dom}/{sub}", bold=True, bg=_NAVY, white=True)
+        s.merge_cells(start_row=r, start_column=1, end_row=r, end_column=13)
+        r += 1
+        applies = ("所有 PO / All" if len(e["applies"]) >= n_groups
+                   else "、".join(sorted(e["applies"])))
+        cell(s, r, 1, f"适用 / Applies to: {applies}", bg=_GREEN)
+        s.merge_cells(start_row=r, start_column=1, end_row=r, end_column=13)
+        r += 1
+        if e["text"]:
+            cell(s, r, 1, e["text"], wrap=True)
+            s.merge_cells(start_row=r, start_column=1, end_row=r, end_column=13)
+            r += 1
+        if e["source"]:
+            cell(s, r, 1, f"📄 来源 / Source: {e['source']}", bg=_GREY)
+            s.merge_cells(start_row=r, start_column=1, end_row=r, end_column=13)
+            r += 1
+        if e["images"]:
+            _embed_thumbs(s, r, 1, e["images"], thumb_h=120)
+            r += 7                       # leave room for the picture block
+        r += 1                           # gap before the next domain
+    s.freeze_panes = "A4"
+
+
+def _write_requirement_matrix_sheet(wb, contexts, cell, index=4):
+    from collections import OrderedDict
+    groups: "OrderedDict[str, list]" = OrderedDict()
+    for ctx in contexts:
+        groups.setdefault(_dest_label(ctx), ctx.get("results", []))
+    labels = list(groups.keys())
+
+    subs: "OrderedDict[tuple, dict]" = OrderedDict()
+    for results in groups.values():
+        for res in results:
+            key = (res.get("domain", ""), res.get("subtype", ""))
+            if key not in subs:
+                subs[key] = {"tier": res.get("appliedPriorityTier", ""),
+                             "title": _req_text(res)[:90]}
+
+    s = wb.create_sheet("Requirement Matrix", index)
+    ncol = 3 + len(labels)
+    cell(s, 1, 1, "Requirement Matrix — what applies to each destination (CPRS)",
+         bold=True, bg=_NAVY, white=True)
+    s.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncol)
+    hdr = ["Domain / Subtype", "Tier"] + labels + ["Requirement (winning)"]
+    for c, h in enumerate(hdr, 1):
+        cell(s, 2, c, h, bold=True, bg=_NAVY, white=True, center=(c > 1))
+    s.column_dimensions["A"].width = 30
+    s.column_dimensions["B"].width = 6
+    for i in range(len(labels)):
+        s.column_dimensions[chr(67 + i)].width = 13
+    s.column_dimensions[chr(67 + len(labels))].width = 58
+
+    r = 3
+    for (dom, sub), meta in subs.items():
+        cell(s, r, 1, f"{dom}/{sub}")
+        cell(s, r, 2, meta["tier"], center=True)
+        for i, lbl in enumerate(labels):
+            res = next((x for x in groups[lbl]
+                        if x.get("domain") == dom and x.get("subtype") == sub), None)
+            st_ = res.get("status") if res else None
+            bg = (_GREEN if st_ == "confirmed" else _RED if st_ == "conflict"
+                  else _YELLOW if st_ == "pending_input" else None)
+            cell(s, r, 3 + i, _MATRIX_SYM.get(st_, "—"), center=True, bg=bg)
+        cell(s, r, 3 + len(labels), meta["title"])
+        r += 1
+    cell(s, r + 1, 1, "✓ applies · ✓* needs a PO input · ⚡ conflict · "
+                      "— N/A or absent · ctx needs context.", bg=_GREY)
+    s.merge_cells(start_row=r + 1, start_column=1, end_row=r + 1, end_column=ncol)
+    s.freeze_panes = "C3"
+
+
+def _write_prepack_sheet(wb, contexts, cell, index=5):
+    s = wb.create_sheet("Pre-pack", index)
+    for c, w in zip("ABCDE", (16, 16, 14, 22, 14)):
+        s.column_dimensions[c].width = w
+    cell(s, 1, 1, "Pre-pack / Packs-per-box", bold=True, bg=_NAVY, white=True)
+    s.merge_cells(start_row=1, start_column=1, end_row=1, end_column=5)
+    cell(s, 2, 1, "PPK code on the PO = pack quantity. Ratio / pcs-per-carton "
+                  "from CPRS packaging/prepack + pre_pack_ratio.", bg=_GREY)
+    s.merge_cells(start_row=2, start_column=1, end_row=2, end_column=5)
+    for c, h in enumerate(["PO", "款号 Style", "预包 Prepack?", "比例 Ratio",
+                           "每箱件数 Pcs/box"], 1):
+        cell(s, 4, c, h, bold=True, bg=_NAVY, white=True, center=(c > 2))
+    r = 5
+    for ctx in contexts:
+        ratio, pcs = _prepack_of(ctx.get("results", []))
+        ip = ctx.get("is_prepack")
+        prepack = "Y" if (ip or ratio) else ("N" if ip is False else "—")
+        cell(s, r, 1, ctx.get("po_number", ""))
+        cell(s, r, 2, ctx.get("style", ""))
+        cell(s, r, 3, prepack, center=True, bg=_GREEN if prepack == "Y" else None)
+        cell(s, r, 4, ratio, center=True)
+        cell(s, r, 5, pcs, center=True)
+        r += 1
+    cell(s, r + 1, 1, "Source: CPRS packaging/prepack + pre_pack_ratio + PO "
+                      "\"Prepack QTY per Size\" pages.", bg=_GREY)
+    s.merge_cells(start_row=r + 1, start_column=1, end_row=r + 1, end_column=5)
+    s.freeze_panes = "A5"
+
+
+def _write_actions_sheet(wb, contexts, warnings, cell, index=6):
+    s = wb.create_sheet("Actions & Confirm", index)
+    for c, w in zip("ABCD", (5, 22, 74, 12)):
+        s.column_dimensions[c].width = w
+    cell(s, 1, 1, "Notes, Conflicts & Confirmations", bold=True, bg=_NAVY, white=True)
+    s.merge_cells(start_row=1, start_column=1, end_row=1, end_column=4)
+    for c, h in enumerate(["#", "项目 Item", "详情 Detail", "状态 Status"], 1):
+        cell(s, 2, c, h, bold=True, bg=_NAVY, white=True, center=(c in (1, 4)))
+    r = [3]
+    n = [1]
+
+    def _row(item, detail, status, bg):
+        cell(s, r[0], 1, n[0], center=True)
+        cell(s, r[0], 2, item)
+        cell(s, r[0], 3, detail)
+        cell(s, r[0], 4, status, center=True, bg=bg)
+        r[0] += 1
+        n[0] += 1
+
+    for ctx in contexts:
+        for res in ctx.get("results", []):
+            if res.get("status") == "conflict":
+                _row("Conflict 冲突",
+                     f"PO {ctx['po_number']} — {res.get('domain')}/{res.get('subtype')}: "
+                     f"{_req_text(res)[:120]}", "Confirm", _RED)
+    seen = set()
+    for ctx in contexts:
+        for res in ctx.get("results", []):
+            if res.get("status") == "missing_mandatory_context":
+                key = (res.get("domain"), res.get("subtype"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                _row("Needs context 缺少信息",
+                     f"{res.get('domain')}/{res.get('subtype')} — supply the "
+                     f"runtime input (e.g. DIM code) then re-resolve.",
+                     "Confirm", _YELLOW)
+    for w in (warnings or []):
+        _row("Note 提示", w, "Info", _GREY)
+    if n[0] == 1:
+        _row("OK", "No conflicts or missing-context items across the selected POs.",
+             "Info", _GREEN)
     s.freeze_panes = "A3"
