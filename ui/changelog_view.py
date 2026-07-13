@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.70.0",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "**The \"Buy Plan\" download is now the enriched 生产计划单** everywhere — the upload results, and Reports → Generate All Outputs — matching what the **Create Buy Plan (生产计划单)** button already produced (one sheet per style, 面料/artwork, Summary 汇总 · 简明汇总 · UPC 汇总 · 款号对比 By Style, CPRS requirement columns). The old \"Style × PO × Color\" grid is no longer a download; it's retained only as the Cross-Check totals source"},
+            {"type": "refactor", "text": "**One buy-plan code path** — both the upload auto-download and the Reports button now build through a single shared helper (`ui/giii/_buyplan.build_giii_production_plan`) that resolves CPRS requirements + 大货进度表 maps and calls the production-plan exporter. No more two divergent buy-plan implementations"},
+        ],
+    },
+    {
         "version": "2.69.3",
         "date": "2026-07-13",
         "entries": [

@@ -141,7 +141,7 @@ def _show_downloads(outputs: dict, key_prefix: str = "dl"):
     row1 = st.columns(3)
     with row1[0]:
         st.download_button(
-            label="📊 Buy Plan (.xlsx)",
+            label="📋 Buy Plan (生产计划单) (.xlsx)",
             data=outputs["buyplan_bytes"],
             file_name=outputs["buyplan_name"],
             mime=_XLSX_MIME,
@@ -149,7 +149,7 @@ def _show_downloads(outputs: dict, key_prefix: str = "dl"):
             type="primary",
             key=f"{key_prefix}_buyplan",
         )
-        st.caption("PO × Color × Size pivot per style, with 出厂日期")
+        st.caption("One sheet per style + 汇总 summaries + UPC + fabric/artwork")
 
     with row1[1]:
         st.download_button(
@@ -306,7 +306,8 @@ def _show_smart_downloads(outputs: dict):
         if pipeline == "pdf":
             cols = st.columns(3)
             for i, (label, key, cap) in enumerate([
-                ("📊 Buy Plan",    "buyplan",     "Style × PO × Color, size grid"),
+                ("📋 Buy Plan (生产计划单)", "buyplan",
+                 "One sheet per style + 汇总 summaries + UPC + fabric/artwork"),
                 ("🎨 Color Plan",  "color_plan",  "Color × Size per style"),
                 ("📋 PO Summary",  "po_summary",  "One row per Style+PO"),
             ]):

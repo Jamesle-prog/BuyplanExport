@@ -55,102 +55,21 @@ def _show_reports_tab() -> None:
 # Generate Outputs sub-tab
 # ---------------------------------------------------------------------------
 
-def _progress_maps(store, df_meta: pd.DataFrame):
-    """Contract maps + EN→CN colour lookup from the 大货进度表."""
-    from po_extractor.ui_helpers.combined_summary import build_contract_maps
-    from ui.fabric_mapping_view import _company_to_source
-
-    progress: list[dict] = []
-    if "company" in df_meta.columns:
-        for comp in df_meta["company"].dropna().unique():
-            progress.extend(store.load_progress_records(_company_to_source(str(comp))))
-    by_po, by_style = build_contract_maps(progress)
-
-    color_lookup: dict[str, str] = {}
-    for rec in progress:
-        en = str(rec.get("color", "") or "").strip().upper()
-        cn = rec.get("cn_color", "") or ""
-        if en and cn:
-            color_lookup.setdefault(en, cn)
-    return by_po, by_style, color_lookup
-
-
-class _ReqRow:
-    """Per-PO adapter carrying the attributes resolve_requirements expects."""
-    __slots__ = ("po_number", "warehouse_code", "ship_to", "buyer", "is_prepack")
-
-    def __init__(self, po_number, warehouse_code, ship_to, buyer, is_prepack):
-        self.po_number = po_number
-        self.warehouse_code = warehouse_code
-        self.ship_to = ship_to
-        self.buyer = buyer
-        self.is_prepack = is_prepack
-
-
 def _resolve_po_requirements(selected: list[str], filt_df: pd.DataFrame,
                              manual: dict | None, translate) -> dict:
-    """Resolve CPRS requirements once per PO (grouped by brand so multi-brand
-    selections resolve against the right CPRS client). Stashes the preview +
-    warnings in session state and returns {po_number: RowRequirements} —
-    empty when CPRS is not configured (the buy plan still generates).
-
-    The brand comes from the PO itself — its division field, else the PO
-    number's documented division prefix (CS/LS/DW). POs whose brand can't be
-    read off the PO get NO requirements (their brand-dependent cells stay
-    blank and the buy plan flags them); nothing is inferred.
+    """Resolve CPRS requirements for *selected* POs, stash the preview +
+    warnings for the panel below, and return ``{po_number: RowRequirements}``.
+    Thin wrapper over the shared builder's resolver (``ui.giii._buyplan``) so the
+    "Check requirements only" button and the buy-plan build share one resolver.
     """
-    from po_extractor.ui_helpers.giii_requirements import (
-        brand_from_po, prepack_flag, resolve_requirements,
-    )
+    from ui.giii._buyplan import resolve_reqs
     from ui.stores import get_cprs_client
 
-    cprs = get_cprs_client()
     df = filt_df[filt_df["po_number"].isin(selected)]
-
-    def _s(rec: dict, *keys) -> str:
-        for k in keys:
-            v = rec.get(k)
-            s = "" if v is None else str(v).strip()
-            if s and s.lower() not in ("nan", "none", "nat"):
-                return s
-        return ""
-
-    rows_by_brand: dict[str, list[_ReqRow]] = {}
-    for rec in df.to_dict("records"):
-        row = _ReqRow(
-            po_number=_s(rec, "po_number"),
-            warehouse_code=_s(rec, "destination_code"),
-            ship_to=_s(rec, "ship_to"),
-            buyer=_s(rec, "buyer", "customer"),
-            # ratio-aware: "HANGER (1-2-2-1)" means prepack even without PPK
-            is_prepack=prepack_flag(_s(rec, "packaging"), _s(rec, "hanger")),
-        )
-        brand = _s(rec, "division_name") or brand_from_po(_s(rec, "po_number"))
-        rows_by_brand.setdefault(brand, []).append(row)
-
-    reqs_by_po: dict[str, object] = {}
-    warns: list[str] = []
-    preview: list[dict] = []
-    for brand, rows in rows_by_brand.items():
-        res, w = resolve_requirements(cprs, brand, rows,
-                                      manual=manual, translate=translate)
-        warns.extend(w)
-        for r in rows:
-            q = res.get(id(r))
-            if q is None:
-                continue
-            reqs_by_po[r.po_number] = q
-            preview.append({
-                "PO": r.po_number, "品牌": brand,
-                "仓库": q.warehouse, "Account": q.account, "Channel": q.channel,
-                "红色箱贴": q.red_sticker, "主箱唛": q.carton_mark,
-                "预包比例": q.prepack_ratio, "每箱件数": q.pcs_box,
-                "MSRP": q.msrp, "RFID": q.rfid,
-            })
-
-    st.session_state["rpt_cprs_warns"] = list(dict.fromkeys(warns))
+    reqs, warns, preview = resolve_reqs(get_cprs_client(), df, manual, translate)
+    st.session_state["rpt_cprs_warns"] = warns
     st.session_state["rpt_cprs_preview"] = preview
-    return reqs_by_po
+    return reqs
 
 
 def _show_generate_section(df: pd.DataFrame, store) -> None:
@@ -340,16 +259,13 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             st.session_state.pop("rpt_bp_bytes", None)
             with st.spinner(t("Building buy plan (resolving CPRS requirements)…")):
                 try:
-                    reqs = _resolve_po_requirements(
-                        selected, filt_df, _cprs_manual_inputs(), _cprs_translator())
-                    df_meta = filt_df[filt_df["po_number"].isin(selected)]
-                    by_po, by_style, color_en = _progress_maps(store, df_meta)
-                    bp_bytes = generate_giii_production_plan(
-                        selected, store,
-                        color_lookup_en=color_en,
-                        contract_by_po=by_po, contract_by_style=by_style,
-                        requirements=reqs,
-                    )
+                    from ui.giii._buyplan import build_giii_production_plan
+                    from ui.stores import get_cprs_client
+                    bp_bytes, warns, preview = build_giii_production_plan(
+                        selected, store, cprs=get_cprs_client(),
+                        manual=_cprs_manual_inputs(), translate=_cprs_translator())
+                    st.session_state["rpt_cprs_warns"] = warns
+                    st.session_state["rpt_cprs_preview"] = preview
                     if bp_bytes:
                         st.session_state["rpt_bp_bytes"] = bp_bytes
                     else:

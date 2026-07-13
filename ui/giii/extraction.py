@@ -300,8 +300,9 @@ def _run_from_history(po_numbers: list[str], result_key: str = "history_results"
 
     import shutil as _shutil2
     out_dir = tempfile.mkdtemp()
+    _prod_bytes = None
     with st.status("Generating from history…", expanded=True) as status:
-        st.write("Building buy plan…")
+        # Legacy grid buy plan — cross-check totals source only.
         buyplan_path = export_buyplan(df_size, df_meta, out_dir,
                                        images_dir=_get_images_dir("giii_images_dir"))
         st.write("Building color plan…")
@@ -312,16 +313,34 @@ def _run_from_history(po_numbers: list[str], result_key: str = "history_results"
         cross_check_path = export_cross_check(
             df_size, buyplan_path, color_plan_path, po_summary_path, out_dir,
         )
+        # Buy Plan download = 生产计划单 (same shared builder as the upload flow
+        # and Reports → Create Buy Plan).
+        st.write("Building buy plan (生产计划单)…")
+        from ui.giii._buyplan import build_giii_production_plan
+        from ui.stores import get_cprs_client as _get_cprs_client
+        try:
+            _prod_bytes, _prod_warns, _ = build_giii_production_plan(
+                po_numbers, store, cprs=_get_cprs_client())
+        except Exception as _bp_exc:
+            _prod_bytes = None
+            st.warning(f"生产计划单 build failed — falling back to grid: {_bp_exc}")
         status.update(label="Done!", state="complete")
 
     outputs = {}
     for key, path in [
-        ("buyplan", buyplan_path), ("color_plan", color_plan_path),
+        ("color_plan", color_plan_path),
         ("po_summary", po_summary_path), ("cross_check", cross_check_path),
     ]:
         with open(path, "rb") as f:
             outputs[f"{key}_bytes"] = f.read()
         outputs[f"{key}_name"] = os.path.basename(path)
+    if _prod_bytes:
+        outputs["buyplan_bytes"] = _prod_bytes
+        outputs["buyplan_name"] = "GIII_Production_Plan.xlsx"
+    else:
+        with open(buyplan_path, "rb") as f:
+            outputs["buyplan_bytes"] = f.read()
+        outputs["buyplan_name"] = os.path.basename(buyplan_path)
 
     # Build a style+color summary (total units per PO/Style/Color)
     df_summary = (
@@ -596,11 +615,26 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
     result  = export_csvs(pos, out_dir)
     result["df_size"] = _enrich_cn_color(result["df_size"], result["df_meta"])
     result["df_size"].to_csv(result["by_size_color"], index=False, encoding="utf-8-sig")
+    # Legacy grid buy plan — kept ONLY as the cross-check totals source; the
+    # user-facing Buy Plan download is the 生产计划单 built below.
     bp      = export_buyplan(result["df_size"], result["df_meta"], out_dir,
                              images_dir=_get_images_dir("giii_images_dir"))
     cp      = export_color_plan(result["df_size"], out_dir)
     ps      = export_po_summary(result["df_size"], result["df_meta"], out_dir)
     cc      = export_cross_check(result["df_size"], bp, cp, ps, out_dir)
+
+    # Buy Plan download = the enriched 生产计划单 — the SAME builder as
+    # Reports → Create Buy Plan (one buy-plan code path).
+    from ui.giii._buyplan import build_giii_production_plan
+    from ui.stores import get_cprs_client as _get_cprs_client
+    _bp_selected = [p.metadata.po_number for p in pos if p.metadata.po_number]
+    try:
+        _prod_bytes, _prod_warns, _ = build_giii_production_plan(
+            _bp_selected, get_store(), cprs=_get_cprs_client())
+    except Exception as _bp_exc:      # never let the buy plan fail the upload
+        _prod_bytes = None
+        log.append(f'<span style="color:#dc3545">⚠ 生产计划单 build failed: '
+                   f'{_bp_exc}</span>')
 
     masked_paths = []
     if mask_prices:
@@ -620,10 +654,20 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
             st.warning(f"Price-mask failed — {_me} (file NOT in masked output)")
 
     out: dict = {}
-    for key, path in [("buyplan", bp), ("color_plan", cp), ("po_summary", ps), ("cross_check", cc)]:
+    for key, path in [("color_plan", cp), ("po_summary", ps), ("cross_check", cc)]:
         with open(path, "rb") as f:
             out[f"{key}_bytes"] = f.read()
         out[f"{key}_name"] = os.path.basename(path)
+
+    # Buy Plan = 生产计划单 bytes (fall back to the legacy grid only if the
+    # production build failed, so the download is never empty).
+    if _prod_bytes:
+        out["buyplan_bytes"] = _prod_bytes
+        out["buyplan_name"] = "GIII_Production_Plan.xlsx"
+    else:
+        with open(bp, "rb") as f:
+            out["buyplan_bytes"] = f.read()
+        out["buyplan_name"] = os.path.basename(bp)
 
     csv_buf = io.BytesIO()
     with zipfile.ZipFile(csv_buf, "w", zipfile.ZIP_DEFLATED) as zf:
