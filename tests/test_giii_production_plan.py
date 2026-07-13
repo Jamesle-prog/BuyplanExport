@@ -333,6 +333,73 @@ def test_msrp_column_shows_actual_price_over_flag():
     assert any("$59.00" in str(v) for v in _all_values(wb["Summary 汇总"]))
 
 
+def _col_idx(ws, name, hdr_row=8):
+    for c in range(1, 30):
+        if ws.cell(hdr_row, c).value == name:
+            return c
+    raise AssertionError(f"column {name!r} not found")
+
+
+def _data_cells(ws, col, start=9):
+    return [ws.cell(r, col) for r in range(start, ws.max_row + 1)]
+
+
+def test_empty_requirement_cells_get_explanatory_comments():
+    # branded POs but no CPRS resolution → requirement cells blank AND commented
+    store = _Store(_pos_df(division_name=["DW", "DW"]), _sizes_df())
+    ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {}))
+    ri = _col_idx(ws, "RFID")
+    commented = [ws.cell(r, ri) for r in range(9, ws.max_row + 1)
+                 if ws.cell(r, ri).comment is not None]
+    assert len(commented) == 2                    # one blank-cell note per PO
+    assert all(not c.value for c in commented)
+    assert all("CPRS" in c.comment.text for c in commented)
+
+
+def test_msrp_required_without_price_gets_comment():
+    reqs = {"PO1": _Req(msrp="Y"), "PO2": _Req(msrp="N")}
+    store = _Store(_pos_df(division_name=["DW", "DW"]), _sizes_df())
+    ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {},
+                                             requirements=reqs))
+    mi = _col_idx(ws, "MSRP")
+    y = [c for c in _data_cells(ws, mi) if c.value == "Y"]
+    assert y and y[0].comment is not None and "MSRP" in y[0].comment.text
+    n = [c for c in _data_cells(ws, mi) if c.value == "N"]
+    assert n and n[0].comment is None                       # N = not required → no note
+
+
+def test_actual_msrp_price_has_no_comment():
+    df = _pos_df(division_name=["DW", "DW"], msrp=["59.00", "59.00"])
+    reqs = {"PO1": _Req(msrp="Y"), "PO2": _Req(msrp="Y")}
+    ws = _sheet(generate_giii_production_plan(
+        ["PO1", "PO2"], _Store(df, _sizes_df()), {}, requirements=reqs))
+    mi = _col_idx(ws, "MSRP")
+    priced = [c for c in _data_cells(ws, mi) if c.value == "$59.00"]
+    assert priced and all(c.comment is None for c in priced)  # price shown → no note
+
+
+def test_populated_requirement_cell_has_no_comment():
+    reqs = {"PO1": _Req(pcs_box="36"), "PO2": _Req(pcs_box="36")}
+    store = _Store(_pos_df(division_name=["DW", "DW"]), _sizes_df())
+    ws = _sheet(generate_giii_production_plan(["PO1", "PO2"], store, {},
+                                             requirements=reqs))
+    pi = _col_idx(ws, "每箱件数")
+    cells = [c for c in _data_cells(ws, pi) if c.value == "36"]
+    assert cells and all(c.comment is None for c in cells)
+
+
+def test_prepack_falls_back_to_cprs_ratio_when_po_silent():
+    df = _pos_df(division_name=["DW", "DW"],
+                 packaging=[np.nan, np.nan], hanger=[np.nan, np.nan])
+    reqs = {"PO1": _Req(prepack_ratio="1-2-2-1"),
+            "PO2": _Req(prepack_ratio="1-2-2-1")}
+    ws = _sheet(generate_giii_production_plan(
+        ["PO1", "PO2"], _Store(df, _sizes_df()), {}, requirements=reqs))
+    ci = _col_idx(ws, "是否预包")
+    vals = [str(c.value) for c in _data_cells(ws, ci) if c.value]
+    assert any(v.startswith("Y 1-2-2-1") for v in vals)      # CPRS ratio → prepack Y
+
+
 def test_fmt_msrp_formats_only_bare_numbers():
     from po_extractor.exporters.giii_production_plan import _fmt_msrp
     assert _fmt_msrp("59.00") == "$59.00"

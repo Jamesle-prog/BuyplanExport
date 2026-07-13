@@ -144,6 +144,65 @@ def _fmt_msrp(val) -> str:
     return f"${s}"
 
 
+# ── explanatory comments for blank requirement cells ──────────────────────────
+
+def _req_empty_reason(field: str, has_brand: bool, has_req: bool) -> str:
+    """Bilingual explanation for WHY a requirement cell is blank."""
+    if not has_brand:
+        return ("PO 无品牌 → 未解析客户要求。\n"
+                "No brand on the PO — client requirements were not resolved.")
+    if not has_req:
+        return ("CPRS 未配置，或该品牌未在 CPRS 中匹配 → 未解析要求。\n"
+                "CPRS not configured, or the brand was not found in CPRS.")
+    return {
+        "packaging": "PO 未提供包装方式（Infor Nexus PO 常不含包装文本）。\n"
+                     "No packing method on the PO.",
+        "hanger": "PO 未提供衣架信息。\nNo hanger info on the PO.",
+        "ppk": "PO 未提供包装信息，CPRS 也无预包比例 → 无法判断是否预包。\n"
+               "No packing info on the PO and no prepack ratio from CPRS.",
+        "pcs": "CPRS 与 PO 均未提供每箱件数。\n"
+               "No pieces-per-carton from CPRS or the PO.",
+        "wtl": "CPRS 未提供箱重限制。\nNo carton weight limit from CPRS.",
+        "rfid": "CPRS 未提供该仓库的 RFID 要求（仓库可能未匹配）。\n"
+                "No RFID default from CPRS (the warehouse may be unresolved).",
+        "red": "CPRS 未返回红色箱贴代码（可能非预包单或不适用）。\n"
+               "No red-sticker code from CPRS (not prepack / not applicable).",
+        "mark": "CPRS 未返回主箱唛要求。\nNo carton-marking value from CPRS.",
+        "msrp": "CPRS 未提供该仓库的 MSRP 要求（仓库可能未匹配）。\n"
+                "No MSRP default from CPRS (the warehouse may be unresolved).",
+    }.get(field, "未找到数据。\nNo data found.")
+
+
+def _annotate_empty(ws, row, col, value, field, has_brand, has_req) -> None:
+    """Attach an explanatory comment to a blank requirement cell (no-op when the
+    cell has a value)."""
+    if str(value or "").strip():
+        return
+    from openpyxl.comments import Comment
+    ws.cell(row, col).comment = Comment(
+        _req_empty_reason(field, has_brand, has_req), "GIII 系统")
+
+
+def _annotate_msrp(ws, row, col, msrp_txt, po_msrp, has_brand, has_req) -> None:
+    """MSRP note: none when an actual price is shown; when the cell is only the
+    required-flag 'Y' (no price found) or blank, explain why the actual price is
+    missing."""
+    from openpyxl.comments import Comment
+    if po_msrp:                                # actual price shown → nothing to say
+        return
+    txt = str(msrp_txt or "").strip()
+    if txt.upper() == "Y":
+        ws.cell(row, col).comment = Comment(
+            "需要 MSRP，但 PO 未印价格、CPRS 未提供价格 → 无法填入实际价格。\n"
+            "MSRP is required, but no price is printed on the PO and CPRS "
+            "provides none — the actual price could not be filled in.",
+            "GIII 系统")
+    elif txt == "":
+        ws.cell(row, col).comment = Comment(
+            _req_empty_reason("msrp", has_brand, has_req), "GIII 系统")
+    # "N" → not required; no comment needed.
+
+
 _US_STATES = frozenset(
     "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS "
     "MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV "
@@ -764,7 +823,9 @@ def _write_style_sheet(
         msrp_txt = rep["po_msrp"] or (str(getattr(req, "msrp", "") or "") if req else "")
         rfid_txt = str(getattr(req, "rfid", "") or "") if req else ""
         if rep["is_prepack"] is None:
-            ppk_txt = ""
+            # PO packing silent → fall back to CPRS: a resolved prepack ratio
+            # means the order IS prepack.
+            ppk_txt = f"Y {ratio}".strip() if ratio else ""
         elif rep["is_prepack"]:
             ppk_txt = f"Y {ratio}".strip()
         else:
@@ -802,6 +863,23 @@ def _write_style_sheet(
             # Requirement artwork on top of (not instead of) the text values.
             _embed_img(ws, getattr(req, "red_img", None), C_RED, r0)
             _embed_img(ws, getattr(req, "mark_img", None), C_MARK, r0)
+
+        # Explain every blank requirement cell (hover the red triangle to see
+        # WHY it's empty). MSRP additionally notes when it's required but no
+        # actual price could be found.
+        _has_brand = bool(rep["brand"])
+        _has_req = req is not None
+        for _col, _val, _fld in (
+                (C_PACK, rep["packaging"], "packaging"),
+                (C_HANG, rep["hanger"], "hanger"),
+                (C_PPK, ppk_txt, "ppk"),
+                (C_PCS, pcs_txt, "pcs"),
+                (C_WTL, wtl_txt, "wtl"),
+                (C_RFID, rfid_txt, "rfid"),
+                (C_RED, red_txt, "red"),
+                (C_MARK, mark_txt, "mark")):
+            _annotate_empty(ws, r0, _col, _val, _fld, _has_brand, _has_req)
+        _annotate_msrp(ws, r0, C_MSRP, msrp_txt, rep["po_msrp"], _has_brand, _has_req)
 
     # ── Style-level merge (款号) — one value per style ─────────────────────────
     if records:

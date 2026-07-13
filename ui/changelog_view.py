@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.71.1",
+        "date": "2026-07-13",
+        "entries": [
+            {"type": "feat", "text": "Buy plan requirement columns now **explain their blanks**: every empty 包装方式/衣架/是否预包/每箱件数/箱重限制/MSRP/RFID/红色箱贴纸/主箱唛 cell gets an Excel comment (hover the red triangle) saying WHY — no brand on PO, CPRS not resolved, warehouse unmatched, not on the PO, etc."},
+            {"type": "feat", "text": "**MSRP** shows the actual price when the PO carries one; when MSRP is *required* (Y) but no price is found, the cell keeps `Y` and a comment explains the price is missing. **是否预包** now falls back to the CPRS prepack ratio when the PO has no packing text (so a prepack order isn't left blank)"},
+        ],
+    },
+    {
         "version": "2.71.0",
         "date": "2026-07-13",
         "entries": [
