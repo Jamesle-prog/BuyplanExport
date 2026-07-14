@@ -430,6 +430,18 @@ def brand_of(po_number, division: str = "") -> str:
     return brand_from_po(po_number) or str(division or "").strip()
 
 
+def clean_warehouse(code) -> str:
+    """Bare DC code for CPRS from the parsed destination code.
+
+    The parser stores the destination with a 'WRH' warehouse prefix
+    ('WRHUC' → 'UC', 'WRHDS' → 'DS'). CPRS wants the bare code and does NOT
+    resolve the prefixed form (verified: 'WRHUC' → warehouseInfo null, 'UC' →
+    resolved) — worse, sending 'WRHUC' overrides CPRS's own PO-suffix decode.
+    Strip a leading 'WRH'; a code without it (or blank) passes through."""
+    c = str(code or "").strip()
+    return c[3:] if len(c) > 3 and c[:3].upper() == "WRH" else c
+
+
 def _suffix_warehouse(po_number, codes) -> str:
     """DKNY-style PO numbers end in the DC code (DW867662UC → UC). Only trust
     the suffix when it is one of the client's real warehouse codes — mirrors
@@ -496,17 +508,23 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
             continue
 
         # Hand CPRS the RAW PO; /evaluate/po decodes brand→client, ship-to→
-        # warehouse, buyer→account, channel, COO — and evaluates it.
+        # warehouse, account→account, channel, COO — and evaluates it.
         raw: dict = {"brand": brand, "poNumber": po_no}
         if m.style:
             raw["style"] = m.style
-        if (m.destination_code or "").strip():
-            raw["warehouseCode"] = m.destination_code
+        wh = clean_warehouse(m.destination_code)   # strip the 'WRH' prefix
+        if wh:
+            raw["warehouseCode"] = wh
         if (m.ship_to or "").strip():
             raw["shipTo"] = m.ship_to
-        buyer = (m.buyer or m.customer or "").strip()
-        if buyer:
-            raw["account"] = buyer
+        # The retail ACCOUNT is the PO's Customer (Macy's / Ross / AM Retail …).
+        # The buyer field is the G-III vendor entity (G-III Apparel/Leather,
+        # Kostroma) — never a CPRS account, so sending it only produces a false
+        # "not matched" warning. When there's no customer, send no account and
+        # let CPRS apply brand-level defaults silently.
+        account = str(getattr(m, "customer", "") or "").strip()
+        if account:
+            raw["account"] = account
         if (m.country_of_origin or "").strip():
             raw["coo"] = m.country_of_origin
 
@@ -605,11 +623,12 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
         raw: dict = {"brand": brand, "poNumber": str(r.po_number or "")}
         if getattr(r, "style", ""):
             raw["style"] = r.style
-        if str(r.warehouse_code or "").strip():
-            raw["warehouseCode"] = r.warehouse_code
+        wh = clean_warehouse(r.warehouse_code)   # strip the 'WRH' prefix
+        if wh:
+            raw["warehouseCode"] = wh
         if str(r.ship_to or "").strip():
             raw["shipTo"] = r.ship_to
-        if str(r.buyer or "").strip():
+        if str(r.buyer or "").strip():          # account text (customer-first; see _buyplan)
             raw["account"] = r.buyer
         if getattr(r, "coo", ""):
             raw["coo"] = r.coo

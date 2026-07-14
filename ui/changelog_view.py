@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.73.6",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "fix", "text": "**Warehouse + account now resolve from the PO.** Two field-mapping fixes to CPRS: (1) the parsed destination code carries a `WRH` prefix (`WRHUC`) that CPRS can't resolve — it's now stripped to the bare DC code (`UC`), so the warehouse resolves and RFID/MSRP come from the actual DC. (2) The account is now taken from the PO's **Customer** (the retail account: AM Retail→AMRG, Ross→ROSS, MODIVO→MODIVO), not the buyer field (which is the G-III vendor entity and never matched). A PO with no customer sends no account and uses brand defaults silently instead of a false \"account not matched\" warning. Net effect: the wall of yellow account/warehouse warnings clears; the documents already generated, but now with warehouse- and account-specific requirements applied."},
+        ],
+    },
+    {
         "version": "2.73.5",
         "date": "2026-07-14",
         "entries": [

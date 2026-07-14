@@ -58,7 +58,10 @@ def resolve_reqs(cprs, meta_df: pd.DataFrame, manual: dict | None = None,
             po_number=_s(rec, "po_number"),
             warehouse_code=_s(rec, "destination_code"),
             ship_to=_s(rec, "ship_to"),
-            buyer=_s(rec, "buyer", "customer"),
+            # account text for CPRS: the retail CUSTOMER (Macy's/Ross/AM Retail)
+            # is what CPRS matches — the PO's buyer field is the G-III vendor
+            # entity and never matches, so use customer only.
+            buyer=_s(rec, "customer"),
             is_prepack=prepack_flag(_s(rec, "packaging"), _s(rec, "hanger")),
             style=_s(rec, "style"),
             coo=_s(rec, "country_of_origin"),

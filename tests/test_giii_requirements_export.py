@@ -40,10 +40,13 @@ class _Cprs:
         return None
 
 
-def _po(po="PO1", division="DKNY Sportswear", dest="UC", buyer="MY MACY'S"):
+def _po(po="PO1", division="DKNY Sportswear", dest="UC", customer="MY MACY'S"):
+    # buyer is the G-III vendor entity (never a CPRS account); the retail
+    # account is the PO's customer — that's what the resolver sends.
     return POData(metadata=POMetadata(po_number=po, style="ST1",
-                                      division_name=division,
-                                      destination_code=dest, buyer=buyer,
+                                      division_name=division, destination_code=dest,
+                                      buyer="G-III APPAREL GROUP LTD",
+                                      customer=customer,
                                       country_of_origin="China"))
 
 
@@ -69,6 +72,35 @@ def test_resolver_unknown_brand_warns_and_skips():
 def test_resolver_no_cprs():
     contexts, warns = resolve_po_requirements(None, [_po()])
     assert contexts == [] and any("not configured" in w for w in warns)
+
+
+def test_resolver_account_from_customer_and_wrh_stripped():
+    """The account is the PO's customer (retail account), not the G-III buyer;
+    and the 'WRH' warehouse prefix is stripped before it reaches CPRS."""
+    from po_extractor.models.po_data import POData, POMetadata
+    cprs = _Cprs()
+    po = POData(metadata=POMetadata(
+        po_number="DW843124UC", style="ST", division_name="DW",
+        destination_code="WRHUC", buyer="G-III APPAREL GROUP LTD",
+        customer="MY MACY'S", country_of_origin="China"))
+    contexts, warns = resolve_po_requirements(cprs, [po])
+    assert len(contexts) == 1
+    assert contexts[0]["account"] == "MACYS"    # from customer, NOT the G-III buyer
+    assert contexts[0]["warehouse"] == "UC"     # 'WRH' prefix stripped
+
+
+def test_resolver_no_customer_sends_no_account():
+    """A G-III-direct PO (no customer) sends no account — the buyer is never a
+    CPRS account, so we don't create a false 'not matched' signal."""
+    from po_extractor.models.po_data import POData, POMetadata
+    cprs = _Cprs()
+    po = POData(metadata=POMetadata(
+        po_number="DW843120DN", style="ST", division_name="DW",
+        destination_code="WRHDN", buyer="G-III LEATHER FASHIONS",
+        customer=None, country_of_origin="China"))
+    contexts, _ = resolve_po_requirements(cprs, [po])
+    assert len(contexts) == 1
+    assert contexts[0]["account"] == ""         # no customer → no account
 
 
 def test_resolver_cprs_down_one_reason_no_evaluate():

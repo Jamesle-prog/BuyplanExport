@@ -20,6 +20,17 @@ def test_brand_of_prefers_canonical_over_raw_division():
     assert brand_of("", "") == ""
 
 
+def test_clean_warehouse_strips_wrh_prefix():
+    from po_extractor.ui_helpers.giii_requirements import clean_warehouse
+    # The parser stores 'WRHUC'; CPRS wants the bare 'UC'
+    assert clean_warehouse("WRHUC") == "UC"
+    assert clean_warehouse("WRHDS") == "DS"
+    assert clean_warehouse("UC") == "UC"        # already clean — unchanged
+    assert clean_warehouse("WRH") == "WRH"      # too short to be prefix+code
+    assert clean_warehouse("") == ""
+    assert clean_warehouse(None) == ""
+
+
 def test_pcs_per_carton_mined_from_requirement_wording():
     """CK states the pack-out inside the hangtag requirement ('6 pre-packs
     per box, 36 pcs/carton') — 每箱件数 reads it from the evaluate results."""
