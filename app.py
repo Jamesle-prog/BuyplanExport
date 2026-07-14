@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.72.3"
+APP_VERSION = "2.73.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -289,6 +289,10 @@ def show_main():
     with st.sidebar:
         st.markdown("### 📦 PO Extractor")
         st.caption(f"v{APP_VERSION}")
+        st.divider()
+        # ── CPRS server status (at-a-glance; cached health probe) ─────────
+        from ui.cprs_status import render_sidebar_cprs_status
+        render_sidebar_cprs_status()
         st.divider()
         st.markdown(f"👤 **{st.session_state.username}**")
         with st.expander(f"🔑 {t('Change Password')}"):

@@ -71,21 +71,42 @@ class CprsClient:
 
     # ── health (surfaces errors for the admin test button) ───────────────────
 
-    def health(self) -> tuple[bool, str]:
-        """Return (ok, message). Public endpoint — no API key required."""
+    def health_info(self) -> dict:
+        """Full health probe for the status indicator. Public endpoint (no key).
+
+        Returns ``{ok, status, db, version, message}``. ``message`` is the exact
+        human string :meth:`health` has always returned, so existing callers are
+        unaffected. Never raises."""
         if not self.base:
-            return False, "No CPRS base URL configured."
+            return {"ok": False, "status": "", "db": "", "version": "",
+                    "message": "No CPRS base URL configured."}
         try:
             import requests
             r = requests.get(self.base + "/health", timeout=self.timeout)
             if r.status_code != 200:
-                return False, f"CPRS returned HTTP {r.status_code}."
-            body = r.json()
-            if body.get("status") == "ok":
-                return True, f"CPRS OK (db: {body.get('db', '?')})."
-            return False, f"CPRS status: {body.get('status', 'unknown')}."
+                return {"ok": False, "status": "", "db": "", "version": "",
+                        "message": f"CPRS returned HTTP {r.status_code}."}
+            try:
+                body = r.json()
+            except Exception:
+                body = {}
+            if not isinstance(body, dict):
+                body = {}
+            status = body.get("status", "")
+            ok = status == "ok"
+            db = body.get("db", "?")
+            return {"ok": ok, "status": status, "db": str(db),
+                    "version": str(body.get("version", "")),
+                    "message": (f"CPRS OK (db: {db})." if ok
+                                else f"CPRS status: {status or 'unknown'}.")}
         except Exception as exc:
-            return False, f"Could not reach CPRS: {exc}"
+            return {"ok": False, "status": "", "db": "", "version": "",
+                    "message": f"Could not reach CPRS: {exc}"}
+
+    def health(self) -> tuple[bool, str]:
+        """Return (ok, message). Public endpoint — no API key required."""
+        info = self.health_info()
+        return info["ok"], info["message"]
 
     # ── reference data (cached) ──────────────────────────────────────────────
 

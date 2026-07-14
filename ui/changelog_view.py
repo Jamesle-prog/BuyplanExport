@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.73.0",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "feat", "text": "**CPRS server status in the sidebar.** A live indicator near the top of the sidebar shows 🟢 Online (with the CPRS version) or 🔴 Offline (with the reason — connection refused, HTTP status, …), plus the host and DB state. The health probe is cached (~20 s TTL, short timeout) so it never slows the UI, and a 🔄 Refresh button re-checks on demand — so a CPRS outage is visible at a glance instead of only surfacing when a document comes back with blank requirement columns."},
+        ],
+    },
+    {
         "version": "2.72.3",
         "date": "2026-07-14",
         "entries": [
