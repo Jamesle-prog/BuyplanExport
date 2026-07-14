@@ -33,11 +33,6 @@ def _probe(base: str, api_key: str) -> dict:
                 "message": f"Could not reach CPRS: {exc}"}
 
 
-def _host(base: str) -> str:
-    """Bare host:port for a compact caption (drop scheme + path)."""
-    return str(base or "").split("://")[-1].split("/")[0]
-
-
 def render_sidebar_cprs_status() -> None:
     """Render the CPRS status line in the sidebar. Safe to call every rerun."""
     from po_extractor.store import get_app_settings_store
@@ -60,11 +55,16 @@ def render_sidebar_cprs_status() -> None:
     if info.get("ok"):
         ver = info.get("version") or ""
         st.markdown(f"🟢 **{t('Online')}**" + (f" · v{ver}" if ver else ""))
-        st.caption(f"{_host(base)} · db: {info.get('db', '?')}")
+        st.caption(f"db: {info.get('db', '?')}")
     else:
         st.markdown(f"🔴 **{t('Offline')}**")
-        # The reason (connection refused / HTTP status / …) is the whole point.
-        st.caption(f"{_host(base)} — {info.get('message', '')}")
+        # Reason only — never the host/address. A raw connection error can
+        # embed host:port, so collapse that case to a clean, address-free label
+        # (HTTP-status / status-string reasons carry no address, shown as-is).
+        msg = info.get("message", "")
+        if msg.startswith("Could not reach CPRS"):
+            msg = t("Unreachable")
+        st.caption(msg)
 
     if st.button(f"🔄 {t('Refresh')}", key="cprs_status_refresh",
                  use_container_width=True):

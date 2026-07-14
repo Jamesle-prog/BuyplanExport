@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.73.1",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "fix", "text": "The CPRS sidebar status no longer shows the server address (host:port). The Online line drops the host (keeps db state + version); the Offline line shows an address-free reason — a raw connection error (which can embed host:port) is collapsed to a clean \"Unreachable\", while HTTP-status reasons show as-is."},
+        ],
+    },
+    {
         "version": "2.73.0",
         "date": "2026-07-14",
         "entries": [

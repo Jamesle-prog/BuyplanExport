@@ -150,6 +150,7 @@ _SEED: list[tuple[str, str, str, str]] = [
     ("CPRS server",           "CPRS 服务器",    "label",   "shared"),
     ("Online",                "在线",          "label",   "shared"),
     ("Offline",               "离线",          "label",   "shared"),
+    ("Unreachable",           "无法连接",      "label",   "shared"),
     ("Not configured",        "未配置",        "label",   "shared"),
     ("Add",                   "添加",          "button",  "shared"),
     ("Edit",                  "编辑",          "button",  "shared"),
