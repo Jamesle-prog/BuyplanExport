@@ -218,14 +218,39 @@ def test_brand_not_decoded_is_skipped():
     assert reqs == {} and any("not decoded" in w for w in warns)
 
 
-def test_evaluate_po_failure_warns():
+def test_evaluate_po_failure_warns(monkeypatch):
     # No health() on this fake → pre-check is skipped, so the per-PO miss is what
     # surfaces (a client reachable at pre-check but returning None mid-run).
+    import po_extractor.ui_helpers.giii_requirements as gr
+    monkeypatch.setattr(gr, "_EVAL_BACKOFF", 0)   # don't sleep in tests
     class _Down(_Cprs):
         def evaluate_po(self, raw):
+            self.calls += 1
             return None
-    reqs, warns = resolve_requirements(_Down(), "DKNY", [_row()])
+    d = _Down()
+    reqs, warns = resolve_requirements(d, "DKNY", [_row()])
     assert reqs == {} and any("returned no evaluation" in w for w in warns)
+    assert d.calls == gr._EVAL_ATTEMPTS          # retried, not a one-shot give-up
+
+
+def test_evaluate_po_retries_transient_miss(monkeypatch):
+    """A single transient miss (a CPRS blip mid-run) is retried and recovers —
+    the PO resolves and no warning is emitted."""
+    import po_extractor.ui_helpers.giii_requirements as gr
+    monkeypatch.setattr(gr, "_EVAL_BACKOFF", 0)
+    class _Flaky(_Cprs):
+        def __init__(self):
+            super().__init__()
+            self.n = 0
+        def evaluate_po(self, raw):
+            self.n += 1
+            if self.n == 1:
+                return None                       # first attempt blips
+            return super().evaluate_po(raw)       # then recovers
+    c = _Flaky()
+    reqs, warns = resolve_requirements(c, "DKNY", [_row(warehouse_code="UC")])
+    assert len(reqs) == 1 and warns == []
+    assert c.n == 2                               # retried once, then succeeded
 
 
 def test_cprs_down_short_circuits_with_one_reason():

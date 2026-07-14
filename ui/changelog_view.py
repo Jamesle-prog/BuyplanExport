@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.73.4",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "fix", "text": "**Resilient to CPRS restarts mid-run.** CPRS often restarts between POs; a single transient miss used to drop that PO (\"CPRS returned no evaluation\") even though the server was back moments later. Each PO evaluation now retries a few times with a short backoff before giving up — free in the happy path (retries fire only on a miss). Successful evaluations are still cached per-PO, so a manual re-generate only re-hits CPRS for the ones that truly failed."},
+        ],
+    },
+    {
         "version": "2.73.3",
         "date": "2026-07-14",
         "entries": [

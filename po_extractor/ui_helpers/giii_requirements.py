@@ -23,7 +23,14 @@ Design points (vs. the first-pass integration that lived in the exporter):
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
+
+# CPRS restarts mid-run more often than we'd like; a single transient miss
+# should not drop the whole PO. Retry a few times with a short backoff before
+# giving up — free in the happy path (only fires on a miss).
+_EVAL_ATTEMPTS = 3
+_EVAL_BACKOFF = 0.8   # seconds between attempts
 
 
 @dataclass
@@ -76,6 +83,26 @@ def _cprs_down(cprs) -> str:
     except Exception:
         return ""
     return "" if ok else (str(msg or "").strip() or "no response")
+
+
+def _evaluate_po_resilient(cprs, raw: dict):
+    """``cprs.evaluate_po(raw)`` with a bounded retry so a CPRS blip mid-run
+    (a restart between POs) doesn't drop a PO that would otherwise resolve.
+    Returns the result dict or None after the last attempt. No sleeping when
+    the very first attempt succeeds — the retry cost is paid only on a miss."""
+    po = cprs.evaluate_po(raw)
+    if po:
+        return po
+    for _ in range(max(0, _EVAL_ATTEMPTS - 1)):
+        if _EVAL_BACKOFF > 0:
+            try:
+                time.sleep(_EVAL_BACKOFF)
+            except Exception:
+                pass
+        po = cprs.evaluate_po(raw)
+        if po:
+            return po
+    return None
 
 
 def _pending(rj: dict) -> str:
@@ -471,7 +498,7 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
         if (m.country_of_origin or "").strip():
             raw["coo"] = m.country_of_origin
 
-        po_ev = cprs.evaluate_po(raw)
+        po_ev = _evaluate_po_resilient(cprs, raw)
         if not po_ev:
             warnings.append(f"PO {po_no}: CPRS returned no evaluation — skipped "
                             f"(transient error, or CPRS went down mid-run).")
@@ -584,7 +611,7 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
             out[id(r)] = cached
             continue
 
-        po = cprs.evaluate_po(raw)
+        po = _evaluate_po_resilient(cprs, raw)
         if not po:
             warnings.append(f"PO {r.po_number}: CPRS returned no evaluation — "
                             f"requirement columns left blank (transient error, "
