@@ -52,21 +52,36 @@ def _norm_price_token(s) -> str:
     return str(s).translate({ord(ch): None for ch in "$£€¥, "}).strip()
 
 
+def _price_float(s):
+    """Numeric value of a price token ('$1,234.00' → 1234.0), or None when it
+    isn't a plain number. Lets '59' and '59.00' compare equal, so a known retail
+    price (MSRP) matches its PDF token regardless of trailing-zero formatting."""
+    try:
+        return float(_norm_price_token(s))
+    except (ValueError, TypeError):
+        return None
+
+
 _AI_PRICE_SYSTEM = (
-    "You find monetary PRICES and COSTS in purchase-order text. Return strict "
-    'JSON {"prices": [<exact substrings>]} listing every token that is a price, '
-    "cost, FOB, MSRP, unit price, or line total, written EXACTLY as it appears "
-    "(keep currency symbols and separators). Do NOT include quantities, "
-    "UPC/EAN barcodes, PO numbers, order/style numbers, dates, sizes, "
-    'percentages, or measurements. If there are none, return {"prices": []}.'
+    "You find CONFIDENTIAL monetary costs in purchase-order text — the amounts a "
+    "vendor must not reveal downstream. Return strict JSON "
+    '{"prices": [<exact substrings>]} listing every token that is a cost, FOB, '
+    "wholesale price, unit cost, or extended/line total, written EXACTLY as it "
+    "appears (keep currency symbols and separators). Do NOT include the RETAIL "
+    "price — MSRP, SRP, RRP, or suggested/recommended retail — which is PUBLIC "
+    "and must stay visible. Also exclude quantities, UPC/EAN barcodes, PO/order/"
+    "style numbers, dates, sizes, percentages, and measurements. If there are "
+    'none, return {"prices": []}.'
 )
 
 _AI_COLUMN_SYSTEM = (
     "You are given column headers from a purchase-order spreadsheet. Return "
     'strict JSON {"price_headers": [<headers>]} listing exactly the headers '
-    "that denote a monetary price or cost column (FOB, cost, unit price, MSRP, "
-    "extended/line total, amount). Exclude quantity, size, UPC, style, PO, and "
-    "date columns. Copy each header string exactly as given."
+    "that denote a CONFIDENTIAL monetary cost column (FOB, cost, unit cost, "
+    "wholesale, extended/line total, amount). Do NOT include RETAIL price "
+    "columns (MSRP, SRP, RRP, suggested retail) — those are public. Exclude "
+    "quantity, size, UPC, style, PO, and date columns. Copy each header string "
+    "exactly as given."
 )
 
 
@@ -126,19 +141,26 @@ def _pdf_text(pdf_path: str) -> str:
 
 def mask_prices(pdf_path: str, output_dir: str,
                 api_key: str | None = None, model: str = "deepseek-chat",
-                ai_prices: set[str] | None = None) -> str:
+                ai_prices: set[str] | None = None,
+                keep: "set | list | None" = None) -> str:
     """Write a price-redacted copy of a PDF; return the output path.
 
     When *api_key* is given, DeepSeek-detected prices are unioned with the
     pattern matches (AI augments, never replaces the regex). Pass *ai_prices* to
     supply an already-computed AI price set (e.g. from a parallelised batch) and
     skip the per-file model call.
+
+    *keep* is a set of retail prices (e.g. the PO's MSRP) that must NEVER be
+    redacted — retail prices are public. A token whose numeric value equals a
+    keep value is left visible even if the regex/AI would otherwise mask it.
     """
     import fitz  # PyMuPDF — loaded lazily so Excel-only callers don't need it
 
     masked_dir = os.path.join(output_dir, "masked")
     os.makedirs(masked_dir, exist_ok=True)
     out_path = os.path.join(masked_dir, os.path.basename(pdf_path))
+
+    keep_floats = {v for v in (_price_float(k) for k in (keep or ())) if v is not None}
 
     doc = fitz.open(pdf_path)
     try:
@@ -150,6 +172,9 @@ def mask_prices(pdf_path: str, output_dir: str,
         for page in doc:
             for word in page.get_text("words"):
                 token = word[4]
+                pf = _price_float(token)
+                if pf is not None and pf in keep_floats:
+                    continue        # retail price (MSRP/…) — public, never mask
                 if _PRICE_RE.match(token) or (ai_norm and _norm_price_token(token) in ai_norm):
                     rect = fitz.Rect(word[:4])
                     page.add_redact_annot(rect, fill=(1, 1, 1))
@@ -165,7 +190,8 @@ def mask_prices_batch(pdf_paths: list[str], output_dir: str,
                       errors: list[str] | None = None,
                       api_key: str | None = None,
                       model: str = "deepseek-chat",
-                      on_progress=None) -> list[str]:
+                      on_progress=None,
+                      keep: "set | list | None" = None) -> list[str]:
     """Mask prices in a list of PDFs; return output paths.
 
     Failures are appended to *errors* (if given) so UI callers can surface
@@ -214,7 +240,7 @@ def mask_prices_batch(pdf_paths: list[str], output_dir: str,
     for i, path in enumerate(pdf_paths, 1):
         try:
             out = mask_prices(path, output_dir, api_key=api_key, model=model,
-                              ai_prices=ai_by_path.get(path))
+                              ai_prices=ai_by_path.get(path), keep=keep)
             results.append(out)
             print(f"masked: {out}")
         except Exception as e:

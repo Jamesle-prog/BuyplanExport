@@ -29,6 +29,60 @@ def test_price_regex_rejects_non_prices(token):
     assert not _PRICE_RE.match(token), f"{token!r} should NOT be masked"
 
 
+# ── PDF keep-set: retail MSRP must never be redacted ─────────────────────────
+
+def _make_pdf(path, *tokens):
+    import fitz
+    doc = fitz.open()
+    page = doc.new_page()
+    y = 72
+    for tok in tokens:
+        page.insert_text((72, y), tok, fontsize=11)
+        y += 24
+    doc.save(str(path))
+    doc.close()
+
+
+def _pdf_text(path):
+    import fitz
+    doc = fitz.open(path)
+    try:
+        return "\n".join(p.get_text() for p in doc)
+    finally:
+        doc.close()
+
+
+def test_pdf_keep_leaves_msrp_visible(tmp_path):
+    """A retail price passed in `keep` survives even though the regex would
+    otherwise mask it; the confidential cost is still redacted. '$59' matches
+    the '59.00' token (numeric compare, trailing zeros ignored)."""
+    from po_extractor.utils.price_mask import mask_prices
+    pdf = tmp_path / "po.pdf"
+    _make_pdf(pdf, "Unit Cost 4.17", "MSRP 59.00")
+    out = mask_prices(str(pdf), str(tmp_path), keep=["$59"])
+    txt = _pdf_text(out)
+    assert "59.00" in txt        # retail MSRP kept
+    assert "4.17" not in txt     # confidential cost redacted
+
+
+def test_pdf_without_keep_masks_every_price(tmp_path):
+    """Sanity check: with no keep-set, both the cost and the (unprotected)
+    retail token are redacted — proving keep is what preserves the MSRP."""
+    from po_extractor.utils.price_mask import mask_prices
+    pdf = tmp_path / "po.pdf"
+    _make_pdf(pdf, "Unit Cost 4.17", "MSRP 59.00")
+    out = mask_prices(str(pdf), str(tmp_path))       # no keep
+    txt = _pdf_text(out)
+    assert "59.00" not in txt and "4.17" not in txt
+
+
+def test_ai_price_prompt_excludes_retail():
+    """The AI is instructed to keep retail prices visible, not mask them."""
+    from po_extractor.utils.price_mask import _AI_PRICE_SYSTEM, _AI_COLUMN_SYSTEM
+    for p in (_AI_PRICE_SYSTEM, _AI_COLUMN_SYSTEM):
+        assert "MSRP" in p and ("public" in p.lower() or "retail" in p.lower())
+
+
 # ── Excel column masking ─────────────────────────────────────────────────────
 
 def _build_xlsx(tmp_path, rows):
@@ -189,7 +243,7 @@ def test_mask_batch_runs_ai_concurrently_and_reports_progress(monkeypatch, tmp_p
         return {"9.99"}
     monkeypatch.setattr(pm, "detect_prices_ai", _detect)
 
-    def _mask(path, out, api_key=None, model="", ai_prices=None):
+    def _mask(path, out, api_key=None, model="", ai_prices=None, keep=None):
         mask_calls.append((path, ai_prices))
         return path + ".masked"
     monkeypatch.setattr(pm, "mask_prices", _mask)
@@ -209,7 +263,7 @@ def test_mask_batch_runs_ai_concurrently_and_reports_progress(monkeypatch, tmp_p
 def test_mask_batch_serial_without_ai_still_reports_progress(monkeypatch, tmp_path):
     from po_extractor.utils import price_mask as pm
     monkeypatch.setattr(pm, "mask_prices",
-                        lambda p, o, api_key=None, model="", ai_prices=None: p + ".m")
+                        lambda p, o, api_key=None, model="", ai_prices=None, keep=None: p + ".m")
     prog = []
     out = pm.mask_prices_batch(["a.pdf", "b.pdf"], str(tmp_path),
                                on_progress=lambda d, t: prog.append((d, t)))

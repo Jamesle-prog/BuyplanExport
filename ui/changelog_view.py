@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.73.7",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "fix", "text": "**MSRP (retail price) is never masked in PDFs.** Retail prices are public, so price-masking now leaves them visible: the AI detector is instructed to mask only confidential costs (FOB/cost/wholesale/unit cost/line total) and explicitly keep MSRP/SRP/RRP/retail, and any parsed MSRP value is added to a keep-set the redactor never covers (numeric compare, so \"$59\" protects the \"59.00\" token). Excel masking already excluded retail columns; this brings the PDF path in line."},
+        ],
+    },
+    {
         "version": "2.73.6",
         "date": "2026-07-14",
         "entries": [

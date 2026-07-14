@@ -184,9 +184,12 @@ def _run_extraction(uploaded_files, mask_prices: bool, company: str = ""):
             st.write(f"Masking prices in {len(pdf_paths)} PDF(s)…")
             _mask_errors: list[str] = []
             _ai_key, _ai_model = _mask_ai_creds()
+            # Retail MSRP is public — never mask it (keep any parsed MSRP value).
+            _keep_msrp = [p.metadata.msrp for p in pos if getattr(p.metadata, "msrp", None)]
             masked_paths = mask_prices_batch(pdf_paths, out_dir,
                                              errors=_mask_errors,
-                                             api_key=_ai_key, model=_ai_model)
+                                             api_key=_ai_key, model=_ai_model,
+                                             keep=_keep_msrp)
             for _me in _mask_errors:
                 st.warning(f"Price-mask failed — {_me} (file NOT in masked output)")
 
@@ -647,9 +650,10 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
             frac = 0.45 + 0.25 * (done / tot if tot else 1)
             _phase(frac, f"{t('Masking prices…')} {done}/{tot}")
 
+        _keep_msrp = [p.metadata.msrp for p in pos if getattr(p.metadata, "msrp", None)]
         masked_paths = mask_prices_batch(paths, out_dir, errors=_mask_errors,
                                          api_key=_ai_key, model=_ai_model,
-                                         on_progress=_mask_prog)
+                                         on_progress=_mask_prog, keep=_keep_msrp)
         for _me in _mask_errors:
             st.warning(f"Price-mask failed — {_me} (file NOT in masked output)")
 
