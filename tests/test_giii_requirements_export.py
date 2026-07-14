@@ -71,6 +71,20 @@ def test_resolver_no_cprs():
     assert contexts == [] and any("not configured" in w for w in warns)
 
 
+def test_resolver_cprs_down_one_reason_no_evaluate():
+    """CPRS outage (health() down) → ONE actionable warning, evaluate_po never
+    called, no per-PO noise."""
+    class _Outage(_Cprs):
+        def health(self):
+            return False, "Could not reach CPRS: Connection refused"
+        def evaluate_po(self, raw):
+            raise AssertionError("evaluate_po called despite CPRS being down")
+    contexts, warns = resolve_po_requirements(_Outage(), [_po("PO1"), _po("PO2")])
+    assert contexts == []
+    assert len(warns) == 1 and "not reachable" in warns[0]
+    assert "Connection refused" in warns[0]
+
+
 # ── exporter ─────────────────────────────────────────────────────────────────
 
 def _sample_results():

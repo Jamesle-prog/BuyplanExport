@@ -219,8 +219,44 @@ def test_brand_not_decoded_is_skipped():
 
 
 def test_evaluate_po_failure_warns():
+    # No health() on this fake → pre-check is skipped, so the per-PO miss is what
+    # surfaces (a client reachable at pre-check but returning None mid-run).
     class _Down(_Cprs):
         def evaluate_po(self, raw):
             return None
     reqs, warns = resolve_requirements(_Down(), "DKNY", [_row()])
-    assert reqs == {} and any("could not evaluate" in w for w in warns)
+    assert reqs == {} and any("returned no evaluation" in w for w in warns)
+
+
+def test_cprs_down_short_circuits_with_one_reason():
+    """A whole-server outage (health() says down) yields ONE actionable line —
+    not one ambiguous 'unreachable or empty rule set' per PO — and never even
+    calls evaluate_po."""
+    class _Outage(_Cprs):
+        def health(self):
+            return False, "Could not reach CPRS: Connection refused"
+        def evaluate_po(self, raw):        # must not be reached
+            raise AssertionError("evaluate_po called despite CPRS being down")
+    rows = [_row(po_number="PO1"), _row(po_number="PO2")]
+    reqs, warns = resolve_requirements(_Outage(), "DKNY", rows)
+    assert reqs == {}
+    assert len(warns) == 1
+    assert "not reachable" in warns[0] and "Connection refused" in warns[0]
+
+
+def test_healthy_client_is_not_blocked_by_precheck():
+    # health() returns ok → resolution proceeds exactly as before.
+    class _Up(_Cprs):
+        def health(self):
+            return True, "CPRS OK"
+    reqs, warns = resolve_requirements(_Up(), "DKNY", [_row(warehouse_code="UC")])
+    assert len(reqs) == 1 and warns == []
+
+
+def test_health_that_raises_is_treated_as_up():
+    # A health() that itself blows up must never abort resolution.
+    class _Flaky(_Cprs):
+        def health(self):
+            raise RuntimeError("boom")
+    reqs, _ = resolve_requirements(_Flaky(), "DKNY", [_row(warehouse_code="UC")])
+    assert len(reqs) == 1

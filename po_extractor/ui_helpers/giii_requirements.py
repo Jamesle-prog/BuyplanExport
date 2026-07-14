@@ -58,6 +58,26 @@ def _channel_for(account_type: str) -> str:
     return "WHOLESALE"
 
 
+def _cprs_down(cprs) -> str:
+    """Return the reason string when CPRS is unreachable, else '' (up / unknown).
+
+    Uses the client's ``health()`` (which returns ``(ok, message)``) as a single
+    pre-flight probe so a whole-server outage is reported once, with cause,
+    instead of one ambiguous line per PO. Clients without ``health()`` (the test
+    fakes) are treated as up — their ``evaluate_po`` speaks for itself. A
+    health() that itself raises must never break resolution, so failures here
+    are swallowed (treated as up; per-PO evaluation still reports real misses).
+    """
+    hc = getattr(cprs, "health", None)
+    if not callable(hc):
+        return ""
+    try:
+        ok, msg = hc()
+    except Exception:
+        return ""
+    return "" if ok else (str(msg or "").strip() or "no response")
+
+
 def _pending(rj: dict) -> str:
     w = (rj or {}).get("waiting_for", "")
     return f"待定:{w}" if w else "待定"
@@ -412,6 +432,14 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
     if not hasattr(cprs, "evaluate_po"):
         return [], ["CPRS client too old for /evaluate/po — no requirements "
                     "document generated."]
+    # One health pre-check so a CPRS OUTAGE yields a single actionable line,
+    # not one ambiguous "unreachable or empty rule set" per PO. (health() does
+    # its own request and returns WHY it failed.) Duck-typed clients that don't
+    # expose health() — the test fakes — just skip straight to evaluation.
+    down = _cprs_down(cprs)
+    if down:
+        return [], [f"CPRS is not reachable ({down}) — requirements document "
+                    f"skipped. Start CPRS, then re-generate."]
 
     contexts: list[dict] = []
     img_cache: dict[str, bytes | None] = {}   # image id → bytes (fetched once)
@@ -445,8 +473,8 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
 
         po_ev = cprs.evaluate_po(raw)
         if not po_ev:
-            warnings.append(f"PO {po_no}: CPRS could not evaluate (unreachable "
-                            f"or empty rule set) — skipped.")
+            warnings.append(f"PO {po_no}: CPRS returned no evaluation — skipped "
+                            f"(transient error, or CPRS went down mid-run).")
             continue
         decoded = po_ev.get("decoded") or {}
         results = (po_ev.get("evaluation") or {}).get("results") or []
@@ -513,6 +541,10 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
     if not hasattr(cprs, "evaluate_po"):
         return {}, ["CPRS client too old for /evaluate/po — requirement "
                     "columns left blank."]
+    down = _cprs_down(cprs)
+    if down:
+        return {}, [f"CPRS is not reachable ({down}) — requirement columns left "
+                    f"blank. Start CPRS, then re-generate."]
 
     manual = manual or {}
     global_dim = str(manual.get("dim_code", "") or "").strip()
@@ -554,9 +586,9 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
 
         po = cprs.evaluate_po(raw)
         if not po:
-            warnings.append(f"PO {r.po_number}: CPRS could not evaluate "
-                            f"(unreachable or brand unknown) — requirement "
-                            f"columns left blank.")
+            warnings.append(f"PO {r.po_number}: CPRS returned no evaluation — "
+                            f"requirement columns left blank (transient error, "
+                            f"or CPRS went down mid-run).")
             continue
         decoded = po.get("decoded") or {}
         results = (po.get("evaluation") or {}).get("results") or []

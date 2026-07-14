@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.72.3",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "fix", "text": "**Clearer CPRS-outage diagnostics.** When CPRS is unreachable, the buy plan / requirements document now show **one** actionable line — \"CPRS is not reachable (<reason>) — start CPRS, then re-generate\" — instead of a misleading \"unreachable or empty rule set\" repeated once per PO. A single `health()` pre-check runs before the per-PO loop and reports *why* (connection refused, HTTP status, …); if it says down, no PO is evaluated. The per-PO fallback message no longer conflates an outage with an empty rule set."},
+        ],
+    },
+    {
         "version": "2.72.2",
         "date": "2026-07-14",
         "entries": [
