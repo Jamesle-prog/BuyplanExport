@@ -98,6 +98,37 @@ def _result_text(res) -> str:
     return "见要求" if rj.get("required") else ""
 
 
+def _result_for(results, domain, subtypes):
+    """First CONFIRMED result for *domain* + *subtype(s)*, else the first one
+    present, else None. No app gating — CPRS's own status decides which wins."""
+    if isinstance(subtypes, str):
+        subtypes = (subtypes,)
+    cands = [r for r in (results or [])
+             if r.get("domain") == domain and r.get("subtype") in subtypes]
+    for r in cands:
+        if r.get("status") == "confirmed":
+            return r
+    return cands[0] if cands else None
+
+
+def _cell_value(res, dim_code: str = "") -> str:
+    """Status-aware buy-plan cell value taken verbatim from a CPRS result. The
+    app only maps the field → column; CPRS decides applicability and value
+    (no prepack-gating or other local rules)."""
+    if not res:
+        return ""
+    status = res.get("status")
+    if status == "not_applicable":
+        return "无需"
+    rj = res.get("resultJson") or {}
+    if status == "pending_input":
+        return dim_code or _pending(rj)      # operator's runtime input wins
+    if status == "conflict":
+        return "冲突"
+    v = rj.get("code") or rj.get("value") or rj.get("standard") or dim_code
+    return str(v) if v else "见要求"
+
+
 # An explicit pack-out figure stated in requirement wording, e.g.
 # "6 pre-packs per box, 36 pcs/carton" (CK discounter manual).
 _PCS_RE = re.compile(r"(\d{1,3})\s*(?:pcs?|pieces?)\s*(?:/|per\s*)(?:carton|ctn|box)",
@@ -375,97 +406,77 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
     warnings: list[str] = []
     if cprs is None:
         return [], ["CPRS not configured — no requirements document generated."]
-    lc = getattr(cprs, "list_clients", None)
-    if lc is not None and not (lc() or []):
-        return [], ["CPRS unreachable (or has no clients) — no requirements "
-                    "document generated. Check the CPRS server."]
+    if not hasattr(cprs, "evaluate_po"):
+        return [], ["CPRS client too old for /evaluate/po — no requirements "
+                    "document generated."]
 
     contexts: list[dict] = []
-    eval_cache: dict[tuple, list] = {}
-    client_cache: dict[str, str | None] = {}
     img_cache: dict[str, bytes | None] = {}   # image id → bytes (fetched once)
 
     for po in pos:
         m = po.metadata
         po_no = m.po_number or "?"
-        # Brand: division carries it for GIII PDFs (e.g. "DKNY"), customer as
-        # fallback, company last.
-        brand = (m.division_name or m.division or "").strip() \
-            or brand_from_po(m.po_number) \
-            or (m.customer or m.company or "").strip()
-        if brand not in client_cache:
-            client_cache[brand] = cprs.resolve_client(brand) if brand else None
-        client_id = client_cache[brand]
-        if not client_id:
-            warnings.append(f"PO {po_no}: brand '{brand or '—'}' not found in CPRS "
-                            f"— skipped in requirements document.")
+        # Brand off the PO only (division field / documented PO prefix); CPRS
+        # decodes it to a client. No customer/company guessing.
+        brand = (m.division_name or getattr(m, "division", "") or "").strip() \
+            or brand_from_po(m.po_number)
+        if not brand:
+            warnings.append(f"PO {po_no}: no brand on the PO — skipped in the "
+                            f"requirements document.")
             continue
 
-        # Warehouse: the PO's destination code IS the DC code when present;
-        # else the PO-number suffix when it is a real DC code; else resolve
-        # the ship-to address.
-        wh = (m.destination_code or "").strip() \
-            or _suffix_warehouse(m.po_number, _warehouse_codes(cprs, client_id)) \
-            or (cprs.resolve_warehouse(m.ship_to or "", client_id) or "")
-        if not wh:
-            warnings.append(f"PO {po_no}: warehouse not resolved — "
-                            f"warehouse-level requirements may be missing.")
-
+        # Hand CPRS the RAW PO; /evaluate/po decodes brand→client, ship-to→
+        # warehouse, buyer→account, channel, COO — and evaluates it.
+        raw: dict = {"brand": brand, "poNumber": po_no}
+        if m.style:
+            raw["style"] = m.style
+        if (m.destination_code or "").strip():
+            raw["warehouseCode"] = m.destination_code
+        if (m.ship_to or "").strip():
+            raw["shipTo"] = m.ship_to
         buyer = (m.buyer or m.customer or "").strip()
-        account = cprs.resolve_account(buyer, client_id) if buyer else None
+        if buyer:
+            raw["account"] = buyer
+        if (m.country_of_origin or "").strip():
+            raw["coo"] = m.country_of_origin
 
-        acct_type = ""
-        if account:   # guard: None == None would adopt an arbitrary row's type
-            for a in getattr(cprs, "list_accounts", lambda _c: [])(client_id) or []:
-                if (a.get("account_code") or a.get("code")) == account:
-                    acct_type = a.get("account_type", "")
-                    break
+        po_ev = cprs.evaluate_po(raw)
+        if not po_ev:
+            warnings.append(f"PO {po_no}: CPRS could not evaluate (unreachable "
+                            f"or empty rule set) — skipped.")
+            continue
+        decoded = po_ev.get("decoded") or {}
+        results = (po_ev.get("evaluation") or {}).get("results") or []
+        if not decoded.get("clientId"):
+            warnings.append(f"PO {po_no}: brand '{brand}' not decoded by CPRS "
+                            f"— skipped in the requirements document.")
+            continue
+        for w in (decoded.get("warnings") or []):
+            warnings.append(f"PO {po_no}: {w}")
 
-        order = {"clientId": client_id, "channel": _channel_for(acct_type)}
-        if wh:
-            order["warehouseCode"] = wh
-        if account:
-            order["accountCode"] = account
-        if m.country_of_origin:
-            order["coo"] = m.country_of_origin
-
-        ckey = tuple(sorted((k, str(v)) for k, v in order.items()))
-        if ckey not in eval_cache:
-            eval_cache[ckey] = cprs.evaluate(order)
-        results = eval_cache[ckey]
-        if not results:
-            warnings.append(f"PO {po_no}: CPRS returned no requirements "
-                            f"(service unreachable or empty rule set).")
-
-        # Attach ALL linked artwork bytes to each result so the requirements
-        # document can embed every picture. Deduped and idempotent (results are
-        # shared across POs with the same order context).
+        # Attach ALL linked artwork bytes to each result (deduped, idempotent).
         for res in results or []:
             if isinstance(res, dict) and "_images" not in res:
                 res["_images"] = _all_image_bytes(cprs, res, img_cache)
 
-        # Extra per-PO facts for the illustrated document's PO Index / Pre-pack.
+        whinfo = decoded.get("warehouseInfo") or {}
         units = sum(int(getattr(sr, "units", 0) or 0) for sr in (po.size_rows or []))
-        region = ""
-        if wh and hasattr(cprs, "warehouse_flags"):
-            try:
-                region = str((cprs.warehouse_flags(client_id, wh) or {}).get(
-                    "region", "") or "")
-            except Exception:
-                region = ""
         packing = " · ".join(p for p in (
             str(getattr(m, "packaging", "") or "").strip(),
             str(getattr(m, "hanger", "") or "").strip()) if p)
 
         contexts.append({
-            "po_number": po_no, "style": m.style or "",
-            "brand": brand, "warehouse": wh, "account": account or "",
-            "channel": order["channel"], "results": results,
+            "po_number": po_no, "style": m.style or "", "brand": brand,
+            # decoded context — CPRS resolved these
+            "warehouse": str(decoded.get("warehouseCode") or ""),
+            "account": str(decoded.get("accountCode") or ""),
+            "channel": str(decoded.get("channel") or "WHOLESALE"),
+            "region": str(whinfo.get("region", "") or ""),
+            "results": results,
             # PO Index / Pre-pack enrichment
             "units": units,
             "article": (str(getattr(m, "style_description", "") or "").strip()
                         or str(getattr(m, "fabric", "") or "").strip()),
-            "region": region,
             "destination": str(getattr(m, "ship_to", "") or "").strip(),
             "packing": packing,
             "msrp": str(getattr(m, "msrp", "") or "").strip(),
@@ -496,116 +507,94 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
     if not brand:
         return {}, ["POs without a brand — CPRS requirement columns left "
                     "blank; they are flagged in the buy plan."]
-    # Distinguish "CPRS is down" from "brand not found" — an unreachable
-    # server used to masquerade as a per-brand not-found warning.
-    lc = getattr(cprs, "list_clients", None)
-    if lc is not None and not (lc() or []):
-        return {}, ["CPRS unreachable (or has no clients) — requirement "
-                    "columns left blank. Check the CPRS server and "
-                    "Admin → Settings."]
-    client_id = cprs.resolve_client(brand)
-    if not client_id:
-        return {}, [f"Brand '{brand}' not found in CPRS — requirement columns left blank."]
-
-    wh_codes = _warehouse_codes(cprs, client_id)
+    if not hasattr(cprs, "evaluate_po"):
+        return {}, ["CPRS client too old for /evaluate/po — requirement "
+                    "columns left blank."]
 
     manual = manual or {}
     global_dim = str(manual.get("dim_code", "") or "").strip()
-    # Per-PO DIM codes (POs in one generation can carry different pre-pack
-    # codes); the single dim_code acts as the fallback for unlisted POs.
     dim_map = {str(k).strip(): str(v).strip()
                for k, v in (manual.get("dim_codes") or {}).items() if str(v).strip()}
     manual_pcs = str(manual.get("pcs_box", "") or "").strip()
-
-    def dim_for(row) -> str:
-        return dim_map.get(str(row.po_number).strip(), global_dim)
-
-    # account code -> type, for channel derivation
-    acct_type = {}
-    for a in getattr(cprs, "list_accounts", lambda _cid: [])(client_id) or []:
-        code = a.get("account_code") or a.get("code")
-        if code:
-            acct_type[code] = a.get("account_type", "")
 
     def cn(txt: str) -> str:
         return translate(txt) if (translate and txt) else txt
 
     out: dict[int, RowRequirements] = {}
-    ctx_cache: dict[tuple, RowRequirements] = {}
+    cache: dict[tuple, RowRequirements] = {}
 
     for r in rows:
-        dim_code = dim_for(r)
-        # Resolve the warehouse BEFORE the dedup key — two POs with no stored
-        # code but different PO-number suffixes are different contexts.
-        wh = (r.warehouse_code
-              or _suffix_warehouse(r.po_number, wh_codes)
-              or ((cprs.resolve_warehouse(r.ship_to, client_id) or "")
-                  if str(r.ship_to or "").strip() else ""))
-        ctx_key = (wh or r.ship_to or "", r.buyer or "",
-                   bool(r.is_prepack), dim_code)
-        cached = ctx_cache.get(ctx_key)
+        dim_code = dim_map.get(str(r.po_number).strip(), global_dim)
+        # Hand CPRS the RAW PO — /evaluate/po DECODES brand→client,
+        # ship-to→warehouse, buyer→account, channel and COO itself, then
+        # evaluates. The app no longer resolves or gates any of that.
+        raw: dict = {"brand": brand, "poNumber": str(r.po_number or "")}
+        if getattr(r, "style", ""):
+            raw["style"] = r.style
+        if str(r.warehouse_code or "").strip():
+            raw["warehouseCode"] = r.warehouse_code
+        if str(r.ship_to or "").strip():
+            raw["shipTo"] = r.ship_to
+        if str(r.buyer or "").strip():
+            raw["account"] = r.buyer
+        if getattr(r, "coo", ""):
+            raw["coo"] = r.coo
+        if dim_code:
+            raw["contextFields"] = {"dim_code": dim_code}
+
+        ckey = (raw.get("warehouseCode", ""), raw.get("shipTo", ""),
+                raw.get("account", ""), dim_code, raw.get("coo", ""))
+        cached = cache.get(ckey)
         if cached is not None:
             out[id(r)] = cached
             continue
 
-        if not wh and (r.ship_to or "").strip():
-            warnings.append(f"PO {r.po_number}: warehouse not resolved from ship-to "
-                            f"'{r.ship_to[:40]}' — MSRP/RFID left blank.")
+        po = cprs.evaluate_po(raw)
+        if not po:
+            warnings.append(f"PO {r.po_number}: CPRS could not evaluate "
+                            f"(unreachable or brand unknown) — requirement "
+                            f"columns left blank.")
+            continue
+        decoded = po.get("decoded") or {}
+        results = (po.get("evaluation") or {}).get("results") or []
+        if not decoded.get("clientId"):
+            warnings.append(f"PO {r.po_number}: brand '{brand}' not decoded by "
+                            f"CPRS — requirement columns left blank.")
+            continue
+        for w in (decoded.get("warnings") or []):
+            warnings.append(f"PO {r.po_number}: {w}")
 
-        account = cprs.resolve_account(r.buyer, client_id) if r.buyer else None
-        if r.buyer and not account:
-            warnings.append(f"PO {r.po_number}: buyer '{r.buyer}' didn't match a "
-                            f"CPRS account — account-level rules skipped.")
-
-        order = {"clientId": client_id,
-                 "channel": _channel_for(acct_type.get(account, ""))}
-        if wh:
-            order["warehouseCode"] = wh
-        if account:
-            order["accountCode"] = account
-        if dim_code:
-            order["contextFields"] = {"dim_code": dim_code}
-
-        carton = cprs.carton_results(order)
-        results = cprs.evaluate(order)   # cached — same call carton_results made
-        flags = cprs.warehouse_flags(client_id, wh) if wh else {"rfid": None, "msrp": None}
-        red = carton.get("red_carton_sticker")
-        mark = carton.get("carton_marking") or carton.get("warehouse_diamond")
-
-        # Red-sticker artwork can be linked under a sibling subtype
-        # (e.g. CK's red_carton_sticker_sizes) — fall back across them.
-        red_img = _image_bytes(cprs, red)
-        if red_img is None:
-            for sub, res in carton.items():
-                if sub.startswith("red_carton_sticker"):
-                    red_img = _image_bytes(cprs, res)
-                    if red_img:
-                        break
-
-        ratio, pcs_box = "", ""
-        if r.is_prepack and account and hasattr(cprs, "prepack_spec"):
-            spec = cprs.prepack_spec(client_id, account)
-            ratio, pcs_box = spec.get("ratio", ""), spec.get("pcs_box", "")
-            if not ratio:
-                warnings.append(f"PO {r.po_number}: no prepack ratio on file for "
-                                f"account '{account}'.")
-        if not pcs_box:
-            # 每箱件数 stated in the winning requirements' own wording
-            # (e.g. CK discounter: "6 pre-packs per box, 36 pcs/carton").
-            pcs_box = _pcs_from_results(results)
+        whinfo = decoded.get("warehouseInfo") or {}
+        red = _result_for(results, "carton", "red_carton_sticker")
+        mark = _result_for(results, "carton", ("carton_marking", "warehouse_diamond"))
+        prepk = _result_for(results, "packaging", ("pre_pack_ratio", "prepack"))
+        # 预包比例 / 每箱件数 are per-order pack-out details — they apply only
+        # when the PO itself is prepack (a PO fact, not a CPRS decision). The
+        # VALUES still come from CPRS; only their relevance follows the PO.
+        _prepack = r.is_prepack is not False
+        ratio = str((prepk or {}).get("resultJson", {}).get("ratio", "")
+                    or (prepk or {}).get("resultJson", {}).get("alpha", "") or "")
 
         req = RowRequirements(
-            warehouse=wh, region=str(flags.get("region", "") or ""),
-            channel=order["channel"], account=account or "",
-            red_sticker=_red_sticker_text(r.is_prepack, red, dim_code),
-            carton_mark=cn(_result_text(mark)),
-            prepack_ratio=ratio if r.is_prepack is not False else "",
-            pcs_box=manual_pcs or pcs_box,
+            # decoded context — CPRS resolved these, not the app
+            warehouse=str(decoded.get("warehouseCode") or r.warehouse_code or ""),
+            region=str(whinfo.get("region", "") or "").upper(),
+            channel=str(decoded.get("channel") or "WHOLESALE"),
+            account=str(decoded.get("accountCode") or ""),
+            # values verbatim from CPRS results (status-aware); the red sticker
+            # is whatever CPRS confirms — no prepack gating.
+            red_sticker=_cell_value(red, dim_code),
+            carton_mark=cn(_cell_value(mark)),
+            prepack_ratio=ratio if _prepack else "",
+            pcs_box=manual_pcs or (_pcs_from_results(results) if _prepack else ""),
             carton_weight=_weight_from_results(results),
-            msrp=_yn(flags.get("msrp")), rfid=_yn(flags.get("rfid")),
-            red_img=red_img, mark_img=_image_bytes(cprs, mark),
+            # MSRP/RFID defaults from CPRS's decoded warehouseInfo
+            msrp=_yn(whinfo.get("msrp_required_default")),
+            rfid=_yn(whinfo.get("rfid_default")),
+            red_img=_image_bytes(cprs, red),
+            mark_img=_image_bytes(cprs, mark),
         )
-        ctx_cache[ctx_key] = req
+        cache[ckey] = req
         out[id(r)] = req
 
     return out, warnings

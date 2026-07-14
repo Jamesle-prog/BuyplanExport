@@ -74,23 +74,38 @@ def test_totals_and_color_subtotals():
 
 
 class _MockCprs:
-    def resolve_client(self, brand): return "a1" if brand else None
-    def resolve_warehouse(self, ship_to, cid): return "UC"
-    def resolve_account(self, buyer, cid): return "MACYS"
-    def warehouse_flags(self, cid, wh):
-        return {"rfid": True, "msrp": True} if wh == "UC" else {"rfid": None, "msrp": None}
-    def carton_results(self, order):
-        return {
-            "red_carton_sticker": {"status": "confirmed",
-                                   "resultJson": {"code": "MY"}},
-            "carton_marking": {"status": "confirmed",
-                               "resultJson": {"value": "CTN# + net wt"}},
-        }
-    def evaluate(self, order):
-        return []
-    def prepack_spec(self, cid, account):
-        return {"ratio": "1-2-2-1", "pcs_box": "6"}
-    def manual_image(self, image_id): return None
+    """Fake CPRS /evaluate/po — decodes the raw PO to a UC warehouse and returns
+    a representative result set (red sticker, carton mark, prepack ratio, pcs)."""
+    _RED = {"domain": "carton", "subtype": "red_carton_sticker",
+            "status": "confirmed", "resultJson": {"code": "MY"}}
+
+    def evaluate_po(self, raw):
+        brand = str(raw.get("brand", "")).strip()
+        if not brand:
+            return {"decoded": {}, "evaluation": {"results": []}}
+        wh = raw.get("warehouseCode", "") or "UC"
+        return {"decoded": {
+                    "clientId": "a1", "clientName": brand, "channel": "WHOLESALE",
+                    "accountCode": "MACYS", "warehouseCode": wh,
+                    "warehouseInfo": ({"region": "US", "rfid_default": True,
+                                       "msrp_required_default": True}
+                                      if wh == "UC" else {}),
+                    "warnings": []},
+                "evaluation": {"results": self._results()}}
+
+    def _results(self):
+        return [
+            {"domain": "carton", "subtype": "carton_marking", "status": "confirmed",
+             "resultJson": {"value": "CTN# + net wt"}},
+            dict(self._RED),
+            {"domain": "packaging", "subtype": "prepack", "status": "confirmed",
+             "resultJson": {"ratio": "1-2-2-1"}},
+            {"domain": "hangtag", "status": "confirmed",
+             "resultJson": {"pre_pack": "6 pcs/carton"}},
+        ]
+
+    def manual_image(self, image_id):
+        return None
 
 
 def _prepack_rows():
@@ -101,11 +116,12 @@ def _prepack_rows():
 
 
 def test_export_non_prepack_columns():
-    """Non-prepack: red sticker 无需, and ratio/pcs blank (prepack-only)."""
+    """Non-prepack: red sticker shows whatever CPRS confirms (the code, NOT the
+    old app-forced 无需); ratio/pcs stay blank (per-order, prepack-only)."""
     ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
                _rows(), cprs=_MockCprs()))
     last10 = _grid(ws)[9][-10:]  # total, ex_fty, red, mark, packing, prepack, ratio, pcs, msrp, rfid
-    assert last10[2] == "无需"           # non-prepack → red sticker not required
+    assert last10[2] == "MY"            # CPRS-confirmed red sticker code (not 无需)
     assert last10[3] == "CTN# + net wt"  # carton mark
     assert last10[6] in ("", None)      # ratio blank (not a prepack)
     assert last10[7] in ("", None)      # pcs/box blank (not a prepack)
@@ -114,31 +130,33 @@ def test_export_non_prepack_columns():
 
 
 def test_prepack_shows_ratio_and_pcs_box():
-    """Prepack: per-account ratio + pieces-per-bag from prepack_spec."""
+    """Prepack: ratio from the CPRS prepack result + pcs mined from wording."""
     ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
                _prepack_rows(), cprs=_MockCprs(), manual={"dim_code": "MY"}))
     last10 = _grid(ws)[9][-10:]
-    assert last10[2] == "MY"        # red sticker DIM code
-    assert last10[6] == "1-2-2-1"   # prepack ratio (per-account)
-    assert last10[7] == "6"         # PCs/box = pieces_per_bag
+    assert last10[2] == "MY"        # red sticker code
+    assert last10[6] == "1-2-2-1"   # prepack ratio (from CPRS result)
+    assert last10[7] == "6"         # PCs/box from "6 pcs/carton"
 
 
-def test_red_sticker_non_prepack_is_wuxu():
-    """Not a prepack → red sticker not required, even if CPRS is pending."""
+def test_non_prepack_red_sticker_follows_cprs_status():
+    """Not the old forced 无需 — a non-prepack PO reflects CPRS's actual status."""
     class C(_MockCprs):
-        def carton_results(self, order):
-            return {"red_carton_sticker": {"status": "pending_input",
-                    "resultJson": {"waiting_for": "dim_code"}}}
+        def _results(self):
+            return [{"domain": "carton", "subtype": "red_carton_sticker",
+                     "status": "pending_input",
+                     "resultJson": {"waiting_for": "dim_code"}}]
     ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
                _rows(), cprs=C()))   # _rows() is non-prepack
-    assert _grid(ws)[9][-10:][2] == "无需"
+    assert _grid(ws)[9][-10:][2] == "待定:dim_code"
 
 
 def test_prepack_red_sticker_pending_without_dim_code():
     class C(_MockCprs):
-        def carton_results(self, order):
-            return {"red_carton_sticker": {"status": "pending_input",
-                    "resultJson": {"waiting_for": "dim_code"}}}
+        def _results(self):
+            return [{"domain": "carton", "subtype": "red_carton_sticker",
+                     "status": "pending_input",
+                     "resultJson": {"waiting_for": "dim_code"}}]
     ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
                _prepack_rows(), cprs=C()))
     assert _grid(ws)[9][-10:][2] == "待定:dim_code"

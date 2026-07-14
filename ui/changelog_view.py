@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.72.0",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "refactor", "text": "**Requirements now come straight from CPRS.** Both the buy plan and the requirements document resolve via CPRS's `/evaluate/po` (one-call PO intake): CPRS decodes the raw PO (brand→client, ship-to→warehouse, buyer→account, channel, COO) and evaluates it, and the app reads the values verbatim from `decoded` + `results`. The app no longer fuzzy-resolves the client/warehouse/account, derives the channel, or reads separate warehouse flags — that's all CPRS's job now"},
+            {"type": "fix", "text": "Consequences of the switch: the **红色箱贴纸** is whatever CPRS confirms (no more app-forced \"无需\" on non-prepack POs); **主箱唛** correctly falls through to a confirmed warehouse_diamond; **MSRP/RFID** come from CPRS's decoded warehouse defaults; and **COO** is always sent, so the buy plan and requirements document can no longer disagree on the same PO. 每箱件数/预包比例 still follow the PO's own prepack flag"},
+        ],
+    },
+    {
         "version": "2.71.1",
         "date": "2026-07-13",
         "entries": [

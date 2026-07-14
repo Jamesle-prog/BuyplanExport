@@ -34,21 +34,6 @@ def test_pcs_per_carton_mined_from_requirement_wording():
     assert _pcs_from_results([]) == ""
 
 
-def test_pcs_box_filled_from_evaluate_results():
-    class _CprsPcs(_Cprs):
-        def evaluate(self, order):
-            return [{"domain": "hangtag", "status": "confirmed",
-                     "resultJson": {"pre_pack": "6 pre-packs per box, 36 pcs/carton"}}]
-    # MY MACY'S has no prepack_spec ratios in the mock → the mined figure fills
-    rows = [_row(buyer="MY MACY'S", is_prepack=True)]
-    reqs, _ = resolve_requirements(_CprsPcs(), "DKNY", rows)
-    assert reqs[id(rows[0])].pcs_box == "36"
-    # ROSS has a spec (pcs 6) — the spec wins over the mined wording
-    rows2 = [_row(buyer="ROSS", is_prepack=True)]
-    reqs2, _ = resolve_requirements(_CprsPcs(), "DKNY", rows2)
-    assert reqs2[id(rows2[0])].pcs_box == "6"
-
-
 def test_carton_weight_limit_explicit_bounds():
     from po_extractor.ui_helpers.giii_requirements import _weight_from_results
 
@@ -96,36 +81,6 @@ def test_carton_weight_limit_explicit_bounds():
     assert _fmt_weight("40-ish", "kg") == "40-ish kg"
 
 
-def test_carton_weight_reaches_row_requirements():
-    class _CprsW(_Cprs):
-        def evaluate(self, order):
-            return [{"domain": "carton", "subtype": "carton_spec",
-                     "status": "confirmed",
-                     "resultJson": {"max_weight": "40 lbs / 18 kg per carton"}}]
-    rows = [_row()]
-    reqs, _ = resolve_requirements(_CprsW(), "DKNY", rows)
-    assert reqs[id(rows[0])].carton_weight == "上限 40 lbs / 18 kg per carton"
-
-
-def test_red_sticker_artwork_falls_back_to_sibling_subtype():
-    """CK links the red-sticker picture under red_carton_sticker_sizes —
-    when the main result has no image, sibling red_carton_sticker* results
-    supply it."""
-    class _CprsArt(_Cprs):
-        def carton_results(self, order):
-            self.evaluate_calls += 1
-            return {"red_carton_sticker": {"status": "confirmed", "resultJson": {}},
-                    "red_carton_sticker_sizes": {"status": "confirmed",
-                        "images": [{"id": "IMG_RED"}], "resultJson": {}},
-                    "carton_marking": {"status": "confirmed",
-                                       "resultJson": {"value": "CTN#"}}}
-        def manual_image(self, image_id):
-            return f"bytes:{image_id}".encode()
-    rows = [_row(is_prepack=True)]
-    reqs, _ = resolve_requirements(_CprsArt(), "DKNY", rows, manual={"dim_code": "MY"})
-    assert reqs[id(rows[0])].red_img == b"bytes:IMG_RED"
-
-
 def test_image_bytes_prefers_v165_images_array():
     """CPRS ≥1.6.5 attaches artwork as images[] on each result; the old
     resultJson.image_id shape must still work as the fallback."""
@@ -159,34 +114,45 @@ def test_brand_from_po_prefix_decode():
 
 
 class _Cprs:
+    """Fake CPRS whose /evaluate/po decodes a raw PO and evaluates it — mirrors
+    the live ``{decoded, evaluation}`` shape. The app no longer resolves client/
+    warehouse/account/channel itself; CPRS's ``decoded`` block does."""
     def __init__(self):
-        self.evaluate_calls = 0
-        self.wh_calls = 0
+        self.calls = 0
 
-    def resolve_client(self, brand): return "a1" if brand else None
-    def list_accounts(self, cid):
-        return [{"account_code": "MACYS_COM", "account_type": "E_COMMERCE"},
-                {"account_code": "ROSS", "account_type": "OFF_PRICE"}]
-    def resolve_account(self, buyer, cid):
-        up = (buyer or "").upper()
-        if "MACY" in up: return "MACYS_COM"
-        if "ROSS" in up: return "ROSS"
-        return None
-    def resolve_warehouse(self, ship_to, cid):
-        self.wh_calls += 1
-        return "UC" if ship_to else None
-    def list_warehouses(self, cid):
-        return [{"warehouse_code": "UC"}, {"warehouse_code": "DN"}]
-    def warehouse_flags(self, cid, wh):
-        return {"rfid": True, "msrp": True} if wh == "UC" else {"rfid": None, "msrp": None}
-    def carton_results(self, order):
-        self.evaluate_calls += 1
-        return {"carton_marking": {"status": "confirmed",
-                                   "resultJson": {"value": "CTN#"}}}
-    def evaluate(self, order): return []
-    def prepack_spec(self, cid, account):
-        return {"ratio": "4-14 1-1", "pcs_box": "6"} if account == "ROSS" else {"ratio": "", "pcs_box": ""}
-    def manual_image(self, image_id): return None
+    def evaluate_po(self, raw):
+        self.calls += 1
+        brand = str(raw.get("brand", "")).strip()
+        if not brand or "UNKNOWN" in brand.upper():
+            return {"decoded": {}, "evaluation": {"results": []}}
+        acct_txt = str(raw.get("account", "")).upper()
+        acct = ("MACYS_COM" if "MACY" in acct_txt
+                else "ROSS" if "ROSS" in acct_txt else "")
+        wh = raw.get("warehouseCode", "")
+        whinfo = ({"region": "US", "rfid_default": True,
+                   "msrp_required_default": True} if wh == "UC" else {})
+        dim = (raw.get("contextFields") or {}).get("dim_code", "")
+        red = {"domain": "carton", "subtype": "red_carton_sticker",
+               "status": "pending_input" if dim else "confirmed",
+               "resultJson": ({"waiting_for": "dim_code"} if dim else {}),
+               "images": [{"id": "IMG_RED"}]}
+        results = [
+            {"domain": "carton", "subtype": "carton_marking", "status": "confirmed",
+             "resultJson": {"value": "CTN#"}},
+            {"domain": "carton", "subtype": "carton_spec", "status": "confirmed",
+             "resultJson": {"max_weight": "40 lbs / 18 kg per carton"}},
+            {"domain": "hangtag", "status": "confirmed",
+             "resultJson": {"pre_pack": "6 pre-packs per box, 36 pcs/carton"}},
+            red,
+        ]
+        return {"decoded": {"clientId": "a1", "clientName": brand,
+                            "channel": "RETAIL" if acct else "WHOLESALE",
+                            "accountCode": acct, "warehouseCode": wh,
+                            "warehouseInfo": whinfo, "warnings": []},
+                "evaluation": {"results": results}}
+
+    def manual_image(self, image_id):
+        return f"bytes:{image_id}".encode()
 
 
 def _row(**over):
@@ -196,103 +162,65 @@ def _row(**over):
     return BuyPlanRow(**base)
 
 
-def test_channel_derived_from_account_type():
+def test_channel_derived_helper_still_available():
+    # _channel_for is no longer used by the resolver (CPRS decodes channel), but
+    # the pure helper stays valid.
     assert _channel_for("E_COMMERCE") == "ECOMM"
-    assert _channel_for("ECOMM") == "ECOMM"
-    assert _channel_for("OFF_PRICE") == "OFF_PRICE"
-    assert _channel_for("RETAIL") == "RETAIL"
     assert _channel_for("") == "WHOLESALE"
 
 
-def test_resolution_and_channel():
-    reqs, warns = resolve_requirements(_Cprs(), "DKNY", [_row()])
+def test_values_come_straight_from_evaluate_po():
+    reqs, warns = resolve_requirements(_Cprs(), "DKNY", [_row(warehouse_code="UC")])
     q = list(reqs.values())[0]
     assert isinstance(q, RowRequirements)
-    assert q.channel == "ECOMM"           # MACYS_COM is E_COMMERCE, not WHOLESALE
-    assert q.msrp == "Y" and q.rfid == "Y"
+    assert q.channel == "RETAIL"             # CPRS decoded the account → channel
+    assert q.account == "MACYS_COM"
+    assert q.warehouse == "UC" and q.region == "US"
+    assert q.msrp == "Y" and q.rfid == "Y"    # from decoded.warehouseInfo
     assert q.carton_mark == "CTN#"
+    assert q.carton_weight == "上限 40 lbs / 18 kg per carton"
+    assert q.pcs_box == "36"
+    assert q.red_img == b"bytes:IMG_RED"      # image straight from the CPRS result
     assert warns == []
 
 
-def test_context_dedup_resolves_once_for_same_context():
+def test_red_sticker_not_gated_on_prepack():
+    # a NON-prepack PO still gets whatever CPRS confirms (old code forced 无需).
+    reqs, _ = resolve_requirements(_Cprs(), "DKNY", [_row(is_prepack=False)])
+    q = list(reqs.values())[0]
+    assert q.red_sticker and q.red_sticker != "无需"
+
+
+def test_dim_code_shows_in_red_sticker():
+    rows = [_row(po_number="PO1"), _row(po_number="PO2", color_en="X")]
+    reqs, _ = resolve_requirements(_Cprs(), "DKNY", rows,
+                                   manual={"dim_code": "GL", "dim_codes": {"PO1": "AA"}})
+    assert reqs[id(rows[0])].red_sticker == "AA"   # per-PO override
+    assert reqs[id(rows[1])].red_sticker == "GL"   # global fallback
+
+
+def test_context_dedup_one_evaluate_po_per_context():
     cprs = _Cprs()
     rows = [_row(color_en="NAVY"), _row(color_en="CLAY"), _row(color_en="RED")]
     reqs, _ = resolve_requirements(cprs, "DKNY", rows)
-    assert len(reqs) == 3                  # every row got requirements
-    assert cprs.evaluate_calls == 1        # ...from ONE resolution (same context)
-
-
-def test_unmatched_buyer_warns_not_silently_blank():
-    reqs, warns = resolve_requirements(_Cprs(), "DKNY", [_row(buyer="MYSTERY SHOP")])
-    assert any("didn't match a CPRS account" in w for w in warns)
-    assert list(reqs.values())[0].account == ""
+    assert len(reqs) == 3 and cprs.calls == 1      # one call for the shared context
 
 
 def test_no_cprs_and_no_brand_warn():
     _, w1 = resolve_requirements(None, "DKNY", [_row()])
     assert any("not configured" in w for w in w1)
-    # No guessing: a missing brand means NO requirements + a clear warning.
     reqs, w2 = resolve_requirements(_Cprs(), "", [_row()])
-    assert reqs == {}
-    assert any("without a brand" in w for w in w2)
+    assert reqs == {} and any("without a brand" in w for w in w2)
 
 
-def test_warehouse_from_po_suffix_when_no_code_or_ship_to():
-    """DKNY POs carry the DC code as the PO-number suffix (DW843120DN → DN);
-    only trusted when it is one of the client's real warehouse codes."""
-    cprs = _Cprs()
-    rows = [_row(po_number="DW843120DN", warehouse_code="", ship_to=""),
-            _row(po_number="DW843124UC", warehouse_code="", ship_to="", color_en="X"),
-            _row(po_number="LKHHN0045", warehouse_code="", ship_to="", color_en="Y")]
-    reqs, _ = resolve_requirements(cprs, "DKNY", rows)
-    assert reqs[id(rows[0])].warehouse == "DN"
-    assert reqs[id(rows[1])].warehouse == "UC"
-    assert reqs[id(rows[2])].warehouse == ""      # "45" is not a DC code
-    assert cprs.wh_calls == 0                     # no ship-to lookups needed
+def test_brand_not_decoded_is_skipped():
+    reqs, warns = resolve_requirements(_Cprs(), "UNKNOWN BRAND", [_row()])
+    assert reqs == {} and any("not decoded" in w for w in warns)
 
 
-def test_unreachable_cprs_says_so_not_brand_not_found():
-    """A dead CPRS server (empty client list) must NOT report every brand as
-    'not found' — the warning names the real cause."""
+def test_evaluate_po_failure_warns():
     class _Down(_Cprs):
-        def list_clients(self): return []
-        def resolve_client(self, brand): return None
-    reqs, warns = resolve_requirements(_Down(), "Calvin Klein", [_row()])
-    assert reqs == {}
-    assert any("unreachable" in w for w in warns)
-    assert not any("not found" in w for w in warns)
-
-
-def test_unknown_brand_never_guessed():
-    """A brand string that doesn't resolve must NOT fall back to inference —
-    requirements stay empty and the warning says why."""
-    class _NoClient(_Cprs):
-        def resolve_client(self, brand): return None
-    reqs, warns = resolve_requirements(
-        _NoClient(), "6106.20.2010",
-        [_row(po_number="CSKHHN015R", warehouse_code="",
-              buyer="ROSS STORES", ship_to="ROSS STORES PERRIS CA")])
-    assert reqs == {}
-    assert any("not found in CPRS" in w for w in warns)
-
-
-def test_per_po_dim_codes_override_global():
-    rows = [_row(po_number="PO1", buyer="ROSS", is_prepack=True),
-            _row(po_number="PO2", buyer="ROSS", is_prepack=True, color_en="X")]
-    reqs, _ = resolve_requirements(
-        _Cprs(), "DKNY", rows,
-        manual={"dim_code": "GL", "dim_codes": {"PO1": "AA"}})
-    assert reqs[id(rows[0])].red_sticker == "AA"   # per-PO override
-    assert reqs[id(rows[1])].red_sticker == "GL"   # global fallback
-
-
-def test_prepack_rows_get_ratio_and_warn_when_missing():
-    rows = [_row(buyer="ROSS", is_prepack=True),
-            _row(buyer="MY MACY'S", is_prepack=True, color_en="X")]
-    reqs, warns = resolve_requirements(_Cprs(), "DKNY", rows,
-                                       manual={"dim_code": "RO"})
-    ross = reqs[id(rows[0])]
-    assert ross.prepack_ratio == "4-14 1-1" and ross.pcs_box == "6"
-    assert ross.red_sticker == "RO"
-    # MACYS_COM has no ratio on file → warned, not silent
-    assert any("no prepack ratio" in w for w in warns)
+        def evaluate_po(self, raw):
+            return None
+    reqs, warns = resolve_requirements(_Down(), "DKNY", [_row()])
+    assert reqs == {} and any("could not evaluate" in w for w in warns)

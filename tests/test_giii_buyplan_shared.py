@@ -39,25 +39,17 @@ def test_builder_empty_selection_returns_empty():
 
 
 class _FakeCprs:
-    def list_clients(self):
-        return [{"id": "a1", "name": "DKNY Sportswear"}]
-    def resolve_client(self, brand):
-        return "a1" if "DKNY" in (brand or "").upper() else None
-    def list_warehouses(self, cid):
-        return [{"warehouse_code": "UC", "region": "US",
-                 "rfid_default": True, "msrp_required_default": False}]
-    def list_accounts(self, cid):
-        return []
-    def resolve_account(self, buyer, cid):
-        return None
-    def resolve_warehouse(self, ship_to, cid):
-        return "UC" if ship_to else None
-    def carton_results(self, order):
-        return {}
-    def evaluate(self, order):
-        return []
-    def warehouse_flags(self, cid, wh):
-        return {"rfid": True, "msrp": False, "region": "US"}
+    def evaluate_po(self, raw):
+        brand = str(raw.get("brand", "")).upper()
+        if "DKNY" not in brand:
+            return {"decoded": {}, "evaluation": {"results": []}}
+        return {"decoded": {
+                    "clientId": "a1", "clientName": brand, "channel": "WHOLESALE",
+                    "accountCode": "", "warehouseCode": raw.get("warehouseCode", ""),
+                    "warehouseInfo": {"region": "US", "rfid_default": True,
+                                      "msrp_required_default": False},
+                    "warnings": []},
+                "evaluation": {"results": []}}
     def manual_image(self, image_id):
         return None
 

@@ -11,27 +11,33 @@ from po_extractor.ui_helpers.giii_requirements import resolve_po_requirements
 
 
 class _Cprs:
+    """Fake CPRS /evaluate/po — decodes a raw PO and returns {decoded, evaluation}."""
     def __init__(self):
-        self.eval_calls = 0
+        self.calls = 0
 
-    def resolve_client(self, brand):
-        return "a1" if "DKNY" in (brand or "").upper() else None
-    def list_accounts(self, cid):
-        return [{"account_code": "MACYS", "account_type": "WHOLESALE"}]
-    def resolve_account(self, buyer, cid):
-        return "MACYS" if "MACY" in (buyer or "").upper() else None
-    def resolve_warehouse(self, ship_to, cid):
-        return "UC" if ship_to else None
-    def evaluate(self, order):
-        self.eval_calls += 1
-        return [
-            {"domain": "label", "subtype": "care_label", "status": "confirmed",
-             "resultJson": {"standard": "Care label per FTC", "source": "Manual p3"}},
-            {"domain": "carton", "subtype": "red_carton_sticker",
-             "status": "pending_input", "resultJson": {"waiting_for": "dim_code"}},
-            {"domain": "packaging", "subtype": "polybag", "status": "not_applicable",
-             "resultJson": {}},
-        ]
+    def evaluate_po(self, raw):
+        self.calls += 1
+        brand = str(raw.get("brand", "")).upper()
+        if not any(k in brand for k in ("DKNY", "KARL", "CALVIN")):
+            return {"decoded": {}, "evaluation": {"results": []}}   # not decoded
+        acct = "MACYS" if "MACY" in str(raw.get("account", "")).upper() else ""
+        return {"decoded": {
+                    "clientId": "a1", "clientName": brand, "channel": "WHOLESALE",
+                    "accountCode": acct, "warehouseCode": raw.get("warehouseCode", ""),
+                    "warehouseInfo": {"region": "US", "rfid_default": False,
+                                      "msrp_required_default": False},
+                    "warnings": []},
+                "evaluation": {"results": [
+                    {"domain": "label", "subtype": "care_label", "status": "confirmed",
+                     "resultJson": {"standard": "Care label per FTC", "source": "Manual p3"}},
+                    {"domain": "carton", "subtype": "red_carton_sticker",
+                     "status": "pending_input", "resultJson": {"waiting_for": "dim_code"}},
+                    {"domain": "packaging", "subtype": "polybag",
+                     "status": "not_applicable", "resultJson": {}},
+                ]}}
+
+    def manual_image(self, image_id):
+        return None
 
 
 def _po(po="PO1", division="DKNY Sportswear", dest="UC", buyer="MY MACY'S"):
@@ -43,20 +49,21 @@ def _po(po="PO1", division="DKNY Sportswear", dest="UC", buyer="MY MACY'S"):
 
 # ── resolver ─────────────────────────────────────────────────────────────────
 
-def test_resolver_builds_contexts_and_dedups():
+def test_resolver_builds_contexts_from_decoded():
     cprs = _Cprs()
     contexts, warns = resolve_po_requirements(cprs, [_po("PO1"), _po("PO2")])
     assert len(contexts) == 2
-    assert cprs.eval_calls == 1            # same order context → one evaluation
-    assert contexts[0]["warehouse"] == "UC"    # from destination_code directly
-    assert contexts[0]["account"] == "MACYS"
+    assert cprs.calls == 2                       # one /evaluate/po per PO
+    assert contexts[0]["warehouse"] == "UC"      # from CPRS decoded.warehouseCode
+    assert contexts[0]["account"] == "MACYS"     # from CPRS decoded.accountCode
+    assert contexts[0]["region"] == "US"
     assert warns == []
 
 
 def test_resolver_unknown_brand_warns_and_skips():
     contexts, warns = resolve_po_requirements(_Cprs(), [_po(division="ACME")])
     assert contexts == []
-    assert any("not found in CPRS" in w for w in warns)
+    assert any("not decoded" in w for w in warns)
 
 
 def test_resolver_no_cprs():
@@ -66,10 +73,21 @@ def test_resolver_no_cprs():
 
 # ── exporter ─────────────────────────────────────────────────────────────────
 
+def _sample_results():
+    return [
+        {"domain": "label", "subtype": "care_label", "status": "confirmed",
+         "resultJson": {"standard": "Care label per FTC", "source": "Manual p3"}},
+        {"domain": "carton", "subtype": "red_carton_sticker",
+         "status": "pending_input", "resultJson": {"waiting_for": "dim_code"}},
+        {"domain": "packaging", "subtype": "polybag", "status": "not_applicable",
+         "resultJson": {}},
+    ]
+
+
 def _ctx(po="PO1"):
     return {"po_number": po, "style": "ST1", "brand": "DKNY Sportswear",
             "warehouse": "UC", "account": "MACYS", "channel": "WHOLESALE",
-            "results": _Cprs().evaluate({})}
+            "results": _sample_results()}
 
 
 def test_export_summary_and_per_po_sheets():
@@ -254,13 +272,16 @@ class _CprsImg(_Cprs):
         super().__init__()
         self.fetches = []
 
-    def evaluate(self, order):
-        self.eval_calls += 1
-        return [
-            {"domain": "carton", "subtype": "red_carton_sticker",
-             "status": "confirmed", "resultJson": {},
-             "images": [{"id": "img-1"}, {"id": "img-2"}]},
-        ]
+    def evaluate_po(self, raw):
+        self.calls += 1
+        return {"decoded": {"clientId": "a1", "warehouseCode": raw.get("warehouseCode", ""),
+                            "accountCode": "", "channel": "WHOLESALE",
+                            "warehouseInfo": {}, "warnings": []},
+                "evaluation": {"results": [
+                    {"domain": "carton", "subtype": "red_carton_sticker",
+                     "status": "confirmed", "resultJson": {},
+                     "images": [{"id": "img-1"}, {"id": "img-2"}]},
+                ]}}
 
     def manual_image(self, image_id):
         self.fetches.append(image_id)

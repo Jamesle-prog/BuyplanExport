@@ -224,6 +224,29 @@ class CprsClient:
             self._cache[key] = results if isinstance(results, list) else []
         return self._cache[key]
 
+    def evaluate_po(self, raw_po: dict) -> dict | None:
+        """POST /evaluate/po — CPRS's one-call PO intake: it DECODES the raw PO
+        (brand→client, ship-to→warehouse, account text→account code, channel,
+        COO) AND evaluates it, so the app never re-resolves any of that itself.
+
+        Returns ``{"decoded": {...}, "evaluation": {...}}`` (or ``None`` on
+        failure). ``decoded.warehouseInfo`` carries region / rfid_default /
+        msrp_required_default; ``evaluation.results`` is the full requirement
+        list. Cached per raw-PO so a multi-row buy plan makes one call per PO.
+        """
+        def _freeze(v):
+            if isinstance(v, dict):
+                return tuple(sorted((k, _freeze(x)) for k, x in v.items()))
+            return str(v)
+
+        key = ("evalpo", tuple(sorted((k, _freeze(v)) for k, v in raw_po.items())))
+        if key not in self._cache:
+            data = self._post("/evaluate/po", raw_po)
+            if data is None:
+                return None        # transient failure — don't cache the miss
+            self._cache[key] = data if isinstance(data, dict) else {}
+        return self._cache[key] or None
+
     def carton_results(self, order: dict) -> dict:
         """Return the carton-domain results keyed by subtype (for cols P/Q)."""
         out: dict[str, dict] = {}

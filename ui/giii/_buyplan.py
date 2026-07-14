@@ -17,14 +17,18 @@ from po_extractor.exporters.giii_production_plan import generate_giii_production
 
 
 class _ReqRow:
-    __slots__ = ("po_number", "warehouse_code", "ship_to", "buyer", "is_prepack")
+    __slots__ = ("po_number", "warehouse_code", "ship_to", "buyer", "is_prepack",
+                 "style", "coo")
 
-    def __init__(self, po_number, warehouse_code, ship_to, buyer, is_prepack):
+    def __init__(self, po_number, warehouse_code, ship_to, buyer, is_prepack,
+                 style="", coo=""):
         self.po_number = po_number
         self.warehouse_code = warehouse_code
         self.ship_to = ship_to
         self.buyer = buyer
         self.is_prepack = is_prepack
+        self.style = style
+        self.coo = coo
 
 
 def _s(rec: dict, *keys) -> str:
@@ -56,6 +60,8 @@ def resolve_reqs(cprs, meta_df: pd.DataFrame, manual: dict | None = None,
             ship_to=_s(rec, "ship_to"),
             buyer=_s(rec, "buyer", "customer"),
             is_prepack=prepack_flag(_s(rec, "packaging"), _s(rec, "hanger")),
+            style=_s(rec, "style"),
+            coo=_s(rec, "country_of_origin"),
         )
         brand = _s(rec, "division_name") or brand_from_po(_s(rec, "po_number"))
         rows_by_brand.setdefault(brand, []).append(row)
