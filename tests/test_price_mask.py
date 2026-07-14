@@ -67,15 +67,29 @@ def test_pdf_keep_leaves_msrp_visible(tmp_path):
     assert "4.17" not in txt     # confidential cost redacted
 
 
-def test_pdf_without_keep_masks_every_price(tmp_path):
-    """Sanity check: with no keep-set, both the cost and the (unprotected)
-    retail token are redacted — proving keep is what preserves the MSRP."""
+def test_pdf_without_keep_or_label_masks_every_price(tmp_path):
+    """Sanity check: an unlabelled price with no keep-set IS masked — a value is
+    only spared when it's a known/labelled retail price."""
     from po_extractor.utils.price_mask import mask_prices
     pdf = tmp_path / "po.pdf"
-    _make_pdf(pdf, "Unit Cost 4.17", "MSRP 59.00")
+    _make_pdf(pdf, "Unit Cost 4.17", "Extended Cost 59.00")   # no MSRP label
     out = mask_prices(str(pdf), str(tmp_path))       # no keep
     txt = _pdf_text(out)
     assert "59.00" not in txt and "4.17" not in txt
+
+
+def test_pdf_keeps_labelled_msrp_without_passed_keep(tmp_path):
+    """The PO labels its retail price ('MSRP: $54.00'); the masker reads that
+    label from the file itself and keeps the value — even when the caller passes
+    NO keep-set (the DKNY/DUKHSP parser captures no MSRP). The cost is masked."""
+    from po_extractor.utils.price_mask import mask_prices, _retail_values_from_text
+    assert _retail_values_from_text("MSRP: $54.00  SRP $59  Cost 4.17") == {54.0, 59.0}
+    pdf = tmp_path / "po.pdf"
+    _make_pdf(pdf, "MSRP: $54.00", "Unit Cost 4.17", "Extended Cost 11,793.60")
+    out = mask_prices(str(pdf), str(tmp_path))       # no keep argument
+    txt = _pdf_text(out)
+    assert "54.00" in txt                            # labelled MSRP kept
+    assert "4.17" not in txt and "11,793.60" not in txt   # costs masked
 
 
 def test_ai_price_prompt_excludes_retail():

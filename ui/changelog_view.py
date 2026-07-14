@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.73.9",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "fix", "text": "**MSRP now stays visible even when the parser didn't capture it.** DKNY-variant POs (e.g. DUKHSP) print `MSRP: $54.00` but the parser only extracts MSRP on KL POs, so the keep-set was empty and the `$54.00` got masked. The masker now reads the retail price straight from each PDF's own `MSRP:` / `SRP` / `RRP` label and keeps it — parser-independent — so the MSRP is preserved while unit cost / extended cost / tariff % / discount % are masked."},
+        ],
+    },
+    {
         "version": "2.73.8",
         "date": "2026-07-14",
         "entries": [

@@ -65,6 +65,23 @@ def _price_float(s):
         return None
 
 
+# The PO labels its public retail price ("MSRP: $54.00", "SRP $59"). Extract it
+# straight from the file's own text so it is kept visible even when the parser
+# didn't capture an MSRP (only the KL path does) — parser-independent.
+_RETAIL_LABEL_RE = re.compile(r'(?:MSRP|SRP|RRP)\b\s*[:=]?\s*\$?\s*([\d,]*\.?\d+)',
+                              re.IGNORECASE)
+
+
+def _retail_values_from_text(text) -> set:
+    """Numeric values of any MSRP/SRP/RRP-labelled retail prices in *text*."""
+    out: set = set()
+    for m in _RETAIL_LABEL_RE.finditer(str(text or "")):
+        pf = _price_float(m.group(1))
+        if pf is not None:
+            out.add(pf)
+    return out
+
+
 _AI_PRICE_SYSTEM = (
     "You find CONFIDENTIAL monetary costs in purchase-order text — the amounts a "
     "vendor must not reveal downstream. Return strict JSON "
@@ -167,9 +184,13 @@ def mask_prices(pdf_path: str, output_dir: str,
 
     doc = fitz.open(pdf_path)
     try:
+        full_text = "\n".join(page.get_text() for page in doc)
+        # Keep any retail price the PO labels (MSRP/SRP/RRP) — public, and works
+        # even when the parser captured no MSRP (so the caller passed no keep).
+        keep_floats |= _retail_values_from_text(full_text)
+
         ai_norm: set[str] = set(ai_prices) if ai_prices is not None else set()
         if api_key and ai_prices is None:
-            full_text = "\n".join(page.get_text() for page in doc)
             ai_norm = detect_prices_ai(full_text, api_key, model)
 
         for page in doc:
