@@ -1,9 +1,48 @@
 # GIII ⇄ CPRS Integration — API Design
 
-**Status:** layers 1–3 implemented (v2.37.0) · layers 4+ staged
+**Status:** live on CPRS `/evaluate/po` (one-call decode + evaluate) as of
+v2.72.x · buy-plan validation (`/production-submission/upload`) still staged
 **Prereq reading:** `docs/GIII_BuyPlan_Field_Mapping.md` (field sources)
 
-## The architecture (three layers, one direction)
+## Design principle — CPRS is the single source of truth (non-negotiable)
+
+> **Never build a local gate on CPRS. Always render CPRS results directly.**
+
+The app is a *renderer*, not a rules engine. Whatever `/evaluate/po` returns —
+the decoded order context and the requirement results — is written into the buy
+plan / requirements document verbatim. The app maps a field to a column and
+does nothing more.
+
+Concretely, the following are **forbidden** in this repo's GIII code:
+
+- **No applicability gates.** Do not suppress, blank, or override a CPRS value
+  with an app-side condition — not "prepack-only", not "warehouse == X", not
+  "channel == wholesale", not anything. If a value should not apply, CPRS says
+  so with a `not_applicable` status; the app renders that (→ 无需). The app
+  never *decides* applicability.
+- **No local derivation of decoded fields.** brand→client, ship-to→warehouse,
+  buyer→account, channel, and COO are decoded by `/evaluate/po`. The app does
+  not re-derive, fuzzy-match, or second-guess them.
+- **No local business rules.** Pack ratios, pcs-per-carton, carton weights, red
+  stickers, MSRP/RFID defaults — all come from the CPRS result set or the
+  decoded `warehouseInfo`. The app never hardcodes or infers them.
+
+The only app-side logic permitted is **status-aware rendering** (map
+`not_applicable / pending_input / conflict / confirmed` to a display string)
+and **PO-sourced facts that are not CPRS values** — e.g. the 是否预包 Y/N column
+reflects the PO's own packing text, and the printed MSRP price on the PO wins
+over CPRS's Y/N "required" flag. A PO is a source of truth *about itself*; that
+is never an override of a CPRS requirement.
+
+**Why:** the knowledge base changes without a code deploy. Every local gate is a
+second, stale copy of a rule that already lives in CPRS — it silently discards
+correct CPRS answers and drifts out of sync. Two real bugs came from exactly
+this: the red sticker forced to 无需 for non-prepack orders, and 每箱件数 blanked
+for non-prepack orders — both were CPRS-confirmed values thrown away by an
+app-side prepack gate. The fix each time was to **delete the gate**, not to add
+another condition.
+
+## The architecture (one call, one direction)
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -11,53 +50,79 @@
 │  · get_cprs_client()  — session-cached client (ui/stores.py)  │
 │  · shows resolution PREVIEW + WARNINGS before download        │
 └──────────────────────────┬───────────────────────────────────┘
-                           │ resolve_requirements(cprs, brand, rows, …)
+             resolve_requirements(cprs, brand, rows, …)  (buy plan)
+             resolve_po_requirements(cprs, pos)          (requirements doc)
 ┌──────────────────────────▼───────────────────────────────────┐
 │  Service (po_extractor/ui_helpers/giii_requirements.py)       │
-│  · RowRequirements dataclass — the contract with the exporter │
-│  · dedup by order context (warehouse|ship_to, buyer, prepack) │
-│  · channel derived from account_type (not hardcoded)          │
-│  · every fallback becomes a warning string                    │
+│  · ONE cprs.evaluate_po(rawPO) per distinct order context     │
+│  · reads decoded {warehouse, account, channel, region,        │
+│    rfid_default, msrp_required_default} + evaluation.results   │
+│  · maps result → column, status-aware.  NO GATES.             │
+│  · every fallback / blank becomes a warning string            │
 └──────────────────────────┬───────────────────────────────────┘
-                           │ typed calls, cached
+                           │ POST /evaluate/po (cached per raw PO)
 ┌──────────────────────────▼───────────────────────────────────┐
 │  Client (po_extractor/utils/cprs_client.py)                   │
-│  · transport + caching + graceful None/[] on failure          │
-│  · knows REAL field names (account_code, rfid_default, …)     │
+│  · transport + caching + graceful None on failure             │
+│  · evaluate_po(raw) -> {decoded, evaluation} | None           │
 └──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼   CPRS decodes AND evaluates the raw PO
 ```
 
-The exporter (`giii_buyplan_export.py`) consumes `requirements=` (the service's
-output) and no longer talks to CPRS itself; `cprs=` remains as a convenience
-that calls the service internally.
+`/evaluate/po` replaced the earlier multi-call resolve (client → account →
+warehouse → per-domain evaluate) precisely so the **decode** also happens in
+CPRS, not here. The exporters (`giii_production_plan.py`,
+`giii_buyplan_export.py`) consume the resolved `RowRequirements` and never talk
+to CPRS themselves.
 
 ## Contracts
 
-**Service → exporter/UI:** `resolve_requirements(...) -> (dict[id(row), RowRequirements], warnings)`
-with `RowRequirements = {warehouse, channel, account, red_sticker, carton_mark,
-prepack_ratio, pcs_box, msrp, rfid, red_img, mark_img}`.
+**Service → exporter/UI:** `resolve_requirements(...) -> ({id(row): RowRequirements}, warnings)`
+with `RowRequirements = {warehouse, region, channel, account, red_sticker,
+carton_mark, prepack_ratio, pcs_box, carton_weight, msrp, rfid, red_img,
+mark_img}`. `resolve_po_requirements(...) -> ([context, …], warnings)` builds
+the full upload-time requirements document (every domain, plus artwork bytes).
 
-**Diagnostics rule:** any silent blank is a bug. Unmatched buyer, unresolved
-ship-to, missing prepack ratio, unconfigured CPRS — each yields a warning the
-UI renders above the download button, next to a per-PO resolution preview
-table the operator verifies before sending to the factory.
+**Diagnostics rule:** any silent blank is a bug. Undecoded brand, unmatched
+buyer, unreachable CPRS — each yields a warning the UI renders above the
+download button, next to a per-PO resolution preview the operator verifies
+before sending to the factory.
 
-**Caching:** client instance is `functools.cache`d in `ui/stores.py` per
-(base_url, api_key) → its internal caches survive Streamlit reruns. The
-`evaluate` cache key includes nested `contextFields` (a supplied `dim_code`
-must never return the stale no-context result).
+**Caching:** the client instance is cached in `ui/stores.py` per
+(base_url, api_key). `evaluate_po` is cached per raw PO; the service also dedups
+by decoded order context `(warehouseCode, shipTo, account, dim_code, coo)` so
+POs sharing a context evaluate once. A supplied `dim_code` is part of both keys,
+so operator input never returns a stale no-context result.
 
-## Business rules encoded (verified against live CPRS)
+## How CPRS results become cells (rendering only — no gating)
 
-- Red sticker: **prepack-only** → 无需 otherwise; must show the pre-pack DIM
-  code (operator input; also sent as `contextFields.dim_code`, which resolves
-  the CPRS requirement pending→confirmed).
-- Prepack ratio + PCs/box: per-account inside `pre_pack_ratio.structured_output
-  .ratios` (evaluate reports conflict without account filtering) — read via
-  `prepack_spec()`, prepack rows only; manual PCs/box overrides.
-- MSRP/RFID: warehouse defaults (`rfid_default`, `msrp_required_default`).
-- Status mapping: not_applicable→无需/blank · pending_input→待定:<field> ·
-  conflict→冲突 · confirmed→value.
+`_cell_value(result, dim_code)` is the whole ruleset the app applies, and it is
+purely a status → string map:
+
+| CPRS status      | rendered as                                        |
+|------------------|----------------------------------------------------|
+| `not_applicable` | 无需                                                |
+| `pending_input`  | the operator's `dim_code`, else 待定:\<field\>       |
+| `conflict`       | 冲突                                                |
+| `confirmed`      | resultJson `code`/`value`/`standard`, else 见要求    |
+
+Field → column mapping (all values from the CPRS result set / decoded warehouse):
+
+- **红色箱贴纸 / 主箱唛** — `carton` results (`red_carton_sticker`,
+  `carton_marking`/`warehouse_diamond`), status-aware. Shown for whatever CPRS
+  confirms; the operator's DIM code satisfies a `pending_input` red sticker.
+- **预包比例 / 每箱件数** — from the `packaging`/`hangtag`/`carton` results
+  (`pre_pack_ratio` ratio; pcs mined from structured keys or "N pcs/carton"
+  wording). Rendered for **every** order — no prepack gate. If the order isn't a
+  prepack, CPRS simply returns no ratio (or `not_applicable`).
+- **箱重限制** — explicit carton-weight bounds from `carton`/`packaging` results.
+- **MSRP / RFID** — the decoded `warehouseInfo` defaults
+  (`msrp_required_default`, `rfid_default`). The PO's printed MSRP price wins
+  over the Y/N flag (a PO fact about itself, not a CPRS override).
+
+Every value above is taken verbatim from `/evaluate/po`; the app adds no
+prepack, warehouse, or channel condition on top of it.
 
 ## Staged next phases
 
@@ -79,4 +144,4 @@ must never return the stale no-context result).
    generated xlsx → `/compare` → show diff summary post-export.
 5. **CPRS data hygiene** — ongoing: `conflict` results (e.g. two tier-1
    `pre_pack_ratio` rules) can only render 冲突 here; the fix belongs in the
-   knowledge base.
+   knowledge base, not in an app-side tie-breaker (that would be a local gate).

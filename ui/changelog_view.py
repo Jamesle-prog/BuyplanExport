@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.72.2",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "fix", "text": "**预包比例 (pack ratio) now also reads straight from CPRS** — removed the last app-side prepack gate. With this, *every* GIII requirement value comes from CPRS's `/evaluate/po` verbatim, with no local applicability gate on top; CPRS's own status decides what applies (a non-prepack order simply gets no ratio back)."},
+            {"type": "docs", "text": "Recorded the non-negotiable design principle **\"CPRS is the single source of truth — never build a local gate on it\"** in `docs/GIII_CPRS_Integration_API.md` and `CLAUDE.md`. The doc now describes the `/evaluate/po` architecture (decode + evaluate in CPRS) and lists the forbidden patterns (applicability gates, local derivation, local business rules) so they can't creep back in."},
+        ],
+    },
+    {
         "version": "2.72.1",
         "date": "2026-07-14",
         "entries": [

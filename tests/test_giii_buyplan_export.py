@@ -116,14 +116,15 @@ def _prepack_rows():
 
 
 def test_export_non_prepack_columns():
-    """Non-prepack: red sticker shows whatever CPRS confirms (the code, NOT the
-    old app-forced 无需); ratio/pcs stay blank (per-order, prepack-only)."""
+    """Non-prepack: EVERY CPRS value shows verbatim — no local gate. Red sticker
+    is whatever CPRS confirms (not the old app-forced 无需), and 预包比例 /
+    每箱件数 render straight from CPRS regardless of the PO's prepack flag."""
     ws = _load(export_giii_buyplan(BuyPlanHeader(brand="DKNY Sportswear"),
                _rows(), cprs=_MockCprs()))
     last10 = _grid(ws)[9][-10:]  # total, ex_fty, red, mark, packing, prepack, ratio, pcs, msrp, rfid
     assert last10[2] == "MY"            # CPRS-confirmed red sticker code (not 无需)
     assert last10[3] == "CTN# + net wt"  # carton mark
-    assert last10[6] in ("", None)      # 预包比例 blank (ratio is prepack-only)
+    assert last10[6] == "1-2-2-1"       # 预包比例 from CPRS — no prepack gate
     assert last10[7] == "6"             # 每箱件数 from CPRS regardless of prepack
     assert last10[8] == "Y"             # MSRP (warehouse UC = yes)
     assert last10[9] == "Y"             # RFID

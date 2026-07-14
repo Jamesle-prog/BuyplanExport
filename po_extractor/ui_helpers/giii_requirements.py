@@ -7,15 +7,18 @@ requirements instead of talking to CPRS themselves.
 
 Design points (vs. the first-pass integration that lived in the exporter):
 
-* **Deduped resolution** — rows are grouped by their order context
-  ``(warehouse|ship_to, buyer)``; each distinct context is resolved once,
-  not once per row.
-* **Channel from the account catalog** — the CPRS account's ``account_type``
-  decides the evaluate channel (ECOMM / OFF_PRICE / RETAIL / WHOLESALE)
-  instead of hardcoding WHOLESALE.
-* **Diagnostics are first-class** — every silent fallback (unmatched buyer,
-  unresolved warehouse, CPRS unreachable) becomes a warning string the UI
-  can show, instead of an invisibly blank cell.
+* **CPRS is the single source of truth — no local gates.** One
+  ``cprs.evaluate_po(rawPO)`` call DECODES the PO (brand→client, ship-to→
+  warehouse, buyer→account, channel, COO) AND evaluates it; the app renders
+  the returned results verbatim (status-aware) and builds NO applicability
+  gate, derivation, or business rule on top. See
+  ``docs/GIII_CPRS_Integration_API.md`` ("Design principle").
+* **Deduped resolution** — rows are grouped by their decoded order context
+  ``(warehouseCode, shipTo, account, dim_code, coo)``; each distinct context
+  is evaluated once, not once per row.
+* **Diagnostics are first-class** — every silent fallback (undecoded brand,
+  unmatched buyer, CPRS unreachable) becomes a warning string the UI can
+  show, instead of an invisibly blank cell.
 """
 from __future__ import annotations
 
@@ -568,11 +571,11 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
         red = _result_for(results, "carton", "red_carton_sticker")
         mark = _result_for(results, "carton", ("carton_marking", "warehouse_diamond"))
         prepk = _result_for(results, "packaging", ("pre_pack_ratio", "prepack"))
-        # 预包比例 is the pack-ratio inside a prepack, so it only applies to a
-        # prepack order (a PO fact). 每箱件数 (pieces per carton) is a general
-        # pack-out spec that applies to EVERY order — read it straight from CPRS,
-        # no gating.
-        _prepack = r.is_prepack is not False
+        # Every requirement value is rendered straight from CPRS — NO local
+        # gate (not prepack, not warehouse, not channel, not anything). If CPRS
+        # returns a pack ratio / pcs-per-carton, it shows; if not, the cell is
+        # blank. CPRS's own status decides applicability, never an app-side PO
+        # fact. See docs/GIII_CPRS_Integration_API.md ("Design principle").
         ratio = str((prepk or {}).get("resultJson", {}).get("ratio", "")
                     or (prepk or {}).get("resultJson", {}).get("alpha", "") or "")
 
@@ -586,7 +589,7 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
             # is whatever CPRS confirms — no prepack gating.
             red_sticker=_cell_value(red, dim_code),
             carton_mark=cn(_cell_value(mark)),
-            prepack_ratio=ratio if _prepack else "",
+            prepack_ratio=ratio,                                # from CPRS, no gate
             pcs_box=manual_pcs or _pcs_from_results(results),   # from CPRS, all orders
             carton_weight=_weight_from_results(results),
             # MSRP/RFID defaults from CPRS's decoded warehouseInfo
