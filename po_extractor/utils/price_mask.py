@@ -17,12 +17,15 @@ Output is saved to output_dir/masked/<original_filename>.
 import os
 import re
 
-# A PDF token counts as a price when it is a decimal amount with exactly two
-# fraction digits, optionally led by a currency symbol and using comma
-# thousands separators. The two-decimal requirement keeps this conservative —
-# it won't grab bare integers (quantities, UPCs, PO numbers).
-#   matches: 4.17 · 69.00 · 1,234.00 · 12,345.67 · $4.17 · €1,000.00 · 45.00%? (no)
-_PRICE_RE = re.compile(r'^[$£€¥]?\d[\d,]*\.\d{2}$')
+# A PDF token counts as a maskable amount when it has exactly two fraction
+# digits, optionally led by a currency symbol / comma thousands separators (the
+# integer part may be absent, so a leading-dot form like ".75%" in prose is
+# caught too) and optionally FOLLOWED BY '%' — so the cost figures (unit cost,
+# extended cost) AND the discount / tariff percentages are all covered wherever
+# they appear. The two-decimal requirement keeps it conservative — it won't grab
+# bare integers (quantities, UPCs, PO numbers).
+#   matches: 4.17 · 69.00 · 1,234.00 · $4.17 · €1,000.00 · 0.75% · .75% · 000.00
+_PRICE_RE = re.compile(r'^[$£€¥]?[\d,]*\.\d{2}%?$')
 
 # Header keywords that identify CONFIDENTIAL "price" columns in Excel sheets.
 # Any column whose header (first 25 rows) contains one of these has its NUMERIC

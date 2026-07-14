@@ -13,6 +13,8 @@ from po_extractor.utils.price_mask import _PRICE_RE, mask_prices_excel
     "4.17", "69.00", "1234.00",
     "1,234.00", "12,345.67",          # thousands separators (was missed before)
     "$4.17", "€1,000.00", "£99.99", "¥50.00",   # currency prefixes
+    "0.75%", "000.00", "12.50%",      # discount / tariff percentages
+    ".75%", ".00",                    # leading-dot form (discount in prose)
 ])
 def test_price_regex_matches_prices(token):
     assert _PRICE_RE.match(token), f"{token!r} should be treated as a price"
@@ -22,8 +24,8 @@ def test_price_regex_matches_prices(token):
     "69",          # bare integer — quantity/PO#, must NOT mask
     "123456789012",  # UPC
     "2026",        # year
-    "4.1", "4.175",  # not two decimals
-    "abc", "", ".00",   # non-numeric / no leading digit
+    "4.1", "4.175",  # not exactly two decimals
+    "abc", "", "%",   # non-numeric / bare percent sign (a label, not a value)
 ])
 def test_price_regex_rejects_non_prices(token):
     assert not _PRICE_RE.match(token), f"{token!r} should NOT be masked"

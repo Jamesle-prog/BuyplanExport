@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.73.8",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "fix", "text": "PDF masking now also redacts the **discount % and tariff %** (e.g. `0.75%`, `000.00`) alongside the unit/extended cost — the price pattern matches a trailing `%` and the leading-dot form (`.75%`), so the discount is hidden both in the data field and in the standard G-III terms paragraph. MSRP, quantities, UPCs, and dates stay visible. Net: masking now covers unit cost + extended cost + tariff % + discount %, nothing else."},
+        ],
+    },
+    {
         "version": "2.73.7",
         "date": "2026-07-14",
         "entries": [
