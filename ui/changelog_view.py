@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.73.3",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "fix", "text": "Renamed the admin CPRS field **“CPRS base URL” → “CPRS server address”** (with help text “The CPRS API base URL, e.g. http://localhost:3100”) so the input for the CPRS address is easy to find in Admin → Settings → CPRS Knowledge Base. Same field, clearer label — no data change."},
+        ],
+    },
+    {
         "version": "2.73.2",
         "date": "2026-07-14",
         "entries": [

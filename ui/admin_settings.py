@@ -137,8 +137,9 @@ def _show_cprs_settings(store) -> None:
     cur_show = str(store.get(KEY_CPRS_SHOW_ADDRESS, "false")).lower() in ("true", "1", "yes")
 
     new_url = st.text_input(
-        t("CPRS base URL"), value=cur_url,
+        t("CPRS server address"), value=cur_url,
         placeholder="http://localhost:3100", key="admin_cprs_url",
+        help=t("The CPRS API base URL, e.g. http://localhost:3100"),
     )
     new_key = st.text_input(
         t("CPRS API key"), value=cur_key, type="password",
