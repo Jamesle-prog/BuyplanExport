@@ -50,7 +50,7 @@ def resolve_reqs(cprs, meta_df: pd.DataFrame, manual: dict | None = None,
     (division field, else the documented CS/LS/DW prefix); nothing is inferred.
     """
     from po_extractor.ui_helpers.giii_requirements import (
-        brand_from_po, prepack_flag, resolve_requirements,
+        brand_of, prepack_flag, resolve_requirements,
     )
     rows_by_brand: dict[str, list[_ReqRow]] = {}
     for rec in meta_df.to_dict("records"):
@@ -63,7 +63,7 @@ def resolve_reqs(cprs, meta_df: pd.DataFrame, manual: dict | None = None,
             style=_s(rec, "style"),
             coo=_s(rec, "country_of_origin"),
         )
-        brand = _s(rec, "division_name") or brand_from_po(_s(rec, "po_number"))
+        brand = brand_of(_s(rec, "po_number"), _s(rec, "division_name"))
         rows_by_brand.setdefault(brand, []).append(row)
 
     reqs_by_po: dict[str, object] = {}

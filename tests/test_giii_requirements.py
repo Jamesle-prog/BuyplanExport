@@ -3,8 +3,21 @@ from __future__ import annotations
 
 from po_extractor.exporters.giii_buyplan_export import BuyPlanRow
 from po_extractor.ui_helpers.giii_requirements import (
-    RowRequirements, _channel_for, brand_from_po, resolve_requirements,
+    RowRequirements, _channel_for, brand_from_po, brand_of, resolve_requirements,
 )
+
+
+def test_brand_of_prefers_canonical_over_raw_division():
+    """The parser stores a raw division code ("DW") or abbreviation
+    ("DKNY W/SPRTSWR") that CPRS 400s on — brand_of maps it to the canonical
+    name via the PO prefix, falling back to the division text when unknown."""
+    assert brand_of("DWCCC013DS", "DW") == "DKNY Sportswear"
+    assert brand_of("DWCCC013DS", "DKNY W/SPRTSWR") == "DKNY Sportswear"
+    assert brand_of("CS123456", "CS") == "Calvin Klein"
+    assert brand_of("LS123456", "LS") == "Karl Lagerfeld"
+    # Unknown prefix → fall back to the division text (best effort)
+    assert brand_of("XX999999", "Some Brand") == "Some Brand"
+    assert brand_of("", "") == ""
 
 
 def test_pcs_per_carton_mined_from_requirement_wording():

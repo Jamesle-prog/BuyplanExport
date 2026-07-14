@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.73.5",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "fix", "text": "**Fixed \"CPRS returned no evaluation\" for every DKNY/CK/KL PO.** The parser stores a raw division code (e.g. \"DW\") or abbreviation (\"DKNY W/SPRTSWR\") in the division field, and the resolver was sending that to CPRS as the brand — which CPRS rejects with 400 (\"Provide a recognizable brand name\"), so every PO was skipped. Brand derivation now maps the PO prefix to the canonical name CPRS accepts (\"DW…\" → \"DKNY Sportswear\", \"CS…\" → \"Calvin Klein\", \"LS…\" → \"Karl Lagerfeld\") before falling back to the division text. Verified live: the same POs now resolve with full requirement sets."},
+        ],
+    },
+    {
         "version": "2.73.4",
         "date": "2026-07-14",
         "entries": [

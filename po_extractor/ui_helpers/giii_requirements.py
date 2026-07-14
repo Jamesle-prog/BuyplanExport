@@ -418,6 +418,18 @@ def brand_from_po(po_number) -> str:
     return PO_PREFIX_BRANDS.get(po[:2], "")
 
 
+def brand_of(po_number, division: str = "") -> str:
+    """The CPRS-recognizable brand for a PO — what /evaluate/po must receive.
+
+    The parsed division field is often a raw code ("DW") or an abbreviation
+    ("DKNY W/SPRTSWR"), and CPRS rejects both with 400 ("Provide clientId or a
+    recognizable brand name"). The documented PO-prefix map yields the canonical
+    name CPRS accepts ("DW…" → "DKNY Sportswear"), so prefer it; fall back to the
+    division text only when the prefix is unknown (best effort for a brand the
+    map doesn't cover)."""
+    return brand_from_po(po_number) or str(division or "").strip()
+
+
 def _suffix_warehouse(po_number, codes) -> str:
     """DKNY-style PO numbers end in the DC code (DW867662UC → UC). Only trust
     the suffix when it is one of the client's real warehouse codes — mirrors
@@ -474,10 +486,10 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
     for po in pos:
         m = po.metadata
         po_no = m.po_number or "?"
-        # Brand off the PO only (division field / documented PO prefix); CPRS
-        # decodes it to a client. No customer/company guessing.
-        brand = (m.division_name or getattr(m, "division", "") or "").strip() \
-            or brand_from_po(m.po_number)
+        # Brand off the PO only, normalized to a name CPRS accepts — the parsed
+        # division is often a raw code ("DW") that CPRS 400s on, so brand_of()
+        # prefers the documented PO-prefix → canonical-brand map. No guessing.
+        brand = brand_of(m.po_number, m.division_name or getattr(m, "division", ""))
         if not brand:
             warnings.append(f"PO {po_no}: no brand on the PO — skipped in the "
                             f"requirements document.")
