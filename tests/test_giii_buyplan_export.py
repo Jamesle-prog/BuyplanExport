@@ -123,8 +123,8 @@ def test_export_non_prepack_columns():
     last10 = _grid(ws)[9][-10:]  # total, ex_fty, red, mark, packing, prepack, ratio, pcs, msrp, rfid
     assert last10[2] == "MY"            # CPRS-confirmed red sticker code (not 无需)
     assert last10[3] == "CTN# + net wt"  # carton mark
-    assert last10[6] in ("", None)      # ratio blank (not a prepack)
-    assert last10[7] in ("", None)      # pcs/box blank (not a prepack)
+    assert last10[6] in ("", None)      # 预包比例 blank (ratio is prepack-only)
+    assert last10[7] == "6"             # 每箱件数 from CPRS regardless of prepack
     assert last10[8] == "Y"             # MSRP (warehouse UC = yes)
     assert last10[9] == "Y"             # RFID
 

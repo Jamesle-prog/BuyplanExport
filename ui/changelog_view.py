@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.72.1",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "fix", "text": "**每箱件数 (pieces per carton) is read straight from CPRS for every order**, not just prepack ones — removed the app-side prepack gate. (预包比例 stays prepack-only, since a pack-ratio only exists inside a prepack.)"},
+        ],
+    },
+    {
         "version": "2.72.0",
         "date": "2026-07-14",
         "entries": [

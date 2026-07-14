@@ -568,9 +568,10 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
         red = _result_for(results, "carton", "red_carton_sticker")
         mark = _result_for(results, "carton", ("carton_marking", "warehouse_diamond"))
         prepk = _result_for(results, "packaging", ("pre_pack_ratio", "prepack"))
-        # 预包比例 / 每箱件数 are per-order pack-out details — they apply only
-        # when the PO itself is prepack (a PO fact, not a CPRS decision). The
-        # VALUES still come from CPRS; only their relevance follows the PO.
+        # 预包比例 is the pack-ratio inside a prepack, so it only applies to a
+        # prepack order (a PO fact). 每箱件数 (pieces per carton) is a general
+        # pack-out spec that applies to EVERY order — read it straight from CPRS,
+        # no gating.
         _prepack = r.is_prepack is not False
         ratio = str((prepk or {}).get("resultJson", {}).get("ratio", "")
                     or (prepk or {}).get("resultJson", {}).get("alpha", "") or "")
@@ -586,7 +587,7 @@ def resolve_requirements(cprs, brand: str, rows, manual: dict | None = None,
             red_sticker=_cell_value(red, dim_code),
             carton_mark=cn(_cell_value(mark)),
             prepack_ratio=ratio if _prepack else "",
-            pcs_box=manual_pcs or (_pcs_from_results(results) if _prepack else ""),
+            pcs_box=manual_pcs or _pcs_from_results(results),   # from CPRS, all orders
             carton_weight=_weight_from_results(results),
             # MSRP/RFID defaults from CPRS's decoded warehouseInfo
             msrp=_yn(whinfo.get("msrp_required_default")),
