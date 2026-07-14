@@ -17,6 +17,7 @@ from po_extractor.store.app_settings_store import (
     KEY_MASK_USE_AI,
     KEY_CPRS_BASE_URL,
     KEY_CPRS_API_KEY,
+    KEY_CPRS_SHOW_ADDRESS,
 )
 from po_extractor.utils.deepseek_client import chat_kwargs as _chat_kwargs
 
@@ -133,6 +134,7 @@ def _show_cprs_settings(store) -> None:
 
     cur_url = store.get(KEY_CPRS_BASE_URL, "")
     cur_key = store.get(KEY_CPRS_API_KEY, "")
+    cur_show = str(store.get(KEY_CPRS_SHOW_ADDRESS, "false")).lower() in ("true", "1", "yes")
 
     new_url = st.text_input(
         t("CPRS base URL"), value=cur_url,
@@ -141,6 +143,12 @@ def _show_cprs_settings(store) -> None:
     new_key = st.text_input(
         t("CPRS API key"), value=cur_key, type="password",
         placeholder="x-api-key …", key="admin_cprs_key",
+    )
+    show_addr = st.checkbox(
+        t("Show server address in the sidebar status"),
+        value=cur_show, key="admin_cprs_show_addr",
+        help=t("When off, the sidebar shows only Online/Offline + version; "
+               "the host:port is hidden."),
     )
 
     col_test, col_save = st.columns([1, 1])
@@ -156,6 +164,8 @@ def _show_cprs_settings(store) -> None:
             user = st.session_state.get(SK.USERNAME, "")
             store.set(KEY_CPRS_BASE_URL, new_url.strip(), updated_by=user)
             store.set(KEY_CPRS_API_KEY, new_key.strip(), updated_by=user)
+            store.set(KEY_CPRS_SHOW_ADDRESS,
+                      "true" if show_addr else "false", updated_by=user)
             st.success(t("✅ CPRS settings saved."))
 
 

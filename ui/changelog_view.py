@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.73.2",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "feat", "text": "Admin option **Show server address in the sidebar status** (Admin → Settings → CPRS Knowledge Base). Off by default — the sidebar shows only Online/Offline + version; turn it on to reveal the host:port (and the full offline reason). Saved with the CPRS settings."},
+        ],
+    },
+    {
         "version": "2.73.1",
         "date": "2026-07-14",
         "entries": [

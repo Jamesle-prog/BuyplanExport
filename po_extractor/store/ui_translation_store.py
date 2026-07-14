@@ -152,6 +152,12 @@ _SEED: list[tuple[str, str, str, str]] = [
     ("Offline",               "离线",          "label",   "shared"),
     ("Unreachable",           "无法连接",      "label",   "shared"),
     ("Not configured",        "未配置",        "label",   "shared"),
+    ("Show server address in the sidebar status",
+                              "在侧边栏状态中显示服务器地址", "label", "admin"),
+    ("When off, the sidebar shows only Online/Offline + version; "
+     "the host:port is hidden.",
+                              "关闭时，侧边栏仅显示在线/离线和版本号，隐藏主机:端口。",
+                                                             "caption", "admin"),
     ("Add",                   "添加",          "button",  "shared"),
     ("Edit",                  "编辑",          "button",  "shared"),
     ("Select all",            "全选",          "button",  "shared"),

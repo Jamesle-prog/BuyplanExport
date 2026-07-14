@@ -27,6 +27,7 @@ KEY_COLOR_AI_ENHANCE     = "color_ai_enhance_mode"   # "local" | "local_ai_enhan
 KEY_MASK_USE_AI          = "mask_use_ai"         # "true" | "false" — AI-assist price masking
 KEY_CPRS_BASE_URL        = "cprs_base_url"       # CPRS knowledge-base API base URL
 KEY_CPRS_API_KEY         = "cprs_api_key"        # CPRS x-api-key
+KEY_CPRS_SHOW_ADDRESS    = "cprs_show_address"   # "true" | "false" — show host in sidebar status
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +69,7 @@ _DEFAULTS: dict[str, str] = {
     KEY_MASK_USE_AI:          "false",      # "true" | "false"
     KEY_CPRS_BASE_URL:        "",           # e.g. http://localhost:3100
     KEY_CPRS_API_KEY:         "",
+    KEY_CPRS_SHOW_ADDRESS:    "false",       # hide the host in the sidebar by default
 }
 
 
