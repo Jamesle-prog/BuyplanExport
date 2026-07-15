@@ -679,10 +679,16 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
     # e.g. "(dark blue)" — both for a clean display and so the value can
     # exact-match a 大货进度表 / internal DB colour key (which carry no brackets).
     color_en = _strip_color_brackets(str(g.get("color_name", "") or "")).title()
-    # 品牌 from 大货进度表 (its BRAND column) when the progress file is loaded;
-    # falls back to the order file's own brand.
-    brand = _progress_brand(ctx.brand_by_pc, g.get("pc_no"), _row_sty_norm,
-                            str(g.get("brand", "") or ""))
+    # brand = the order file's own brand (GIII data) — the key every brand-keyed
+    # lookup (colour DB, label DB, boat-sample requirement) was built against.
+    # NEVER swap this for the progress-table brand: 大货进度表's BRAND text is a
+    # separate, free-typed field that won't match those DB keys, so silently
+    # rekeying the lookups would turn matches into misses.
+    brand = str(g.get("brand", "") or "")
+    # display_brand = what the 品牌 cell actually shows — 大货进度表 first (the
+    # requested source), falling back to the order-file brand. Display only;
+    # never used as a lookup key.
+    display_brand = _progress_brand(ctx.brand_by_pc, g.get("pc_no"), _row_sty_norm, brand)
     # color_en may combine two colours (e.g. "Dark Blue / White") — the multi
     # resolver tries each component individually.
     color_cn, cn_code, _pc_label, color_cn_display = _resolve_pc_color_multi(
@@ -724,7 +730,7 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
 
     _style_data(ws.cell(out_row, col["contract"]),  str(g.get("contract_no",  "") or ""))
     _style_data(ws.cell(out_row, col["style"]),     _row_style)
-    _style_data(ws.cell(out_row, col["brand"]),     brand)
+    _style_data(ws.cell(out_row, col["brand"]),     display_brand)
     _style_data(ws.cell(out_row, col["article"]),   str(g.get("article_name", "") or ""))
     _style_data(ws.cell(out_row, col["po"]),        str(g.get("zalando_po",   "") or ""))
     _style_data(ws.cell(out_row, col["config"]),    str(g.get("config_sku",   "") or ""))
@@ -794,7 +800,7 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
         "client_po_color": _raw_client_color,
         "progress_colors": _progress_colors,
         "label_color":  _label_clr,
-        "brand":        brand,
+        "brand":        display_brand,
         "po":           str(g.get("zalando_po", "") or ""),
         "config_sku":   str(g.get("config_sku", "") or ""),
         "article_name": str(g.get("article_name", "") or ""),

@@ -938,6 +938,57 @@ def test_buyplan_uses_db_label_color_over_keyword_derivation(fabric_in_db, tmp_p
         store.delete_by_client_brand("Sky East", "B_OVERRIDE")
 
 
+def test_progress_brand_display_only_never_a_lookup_key(fabric_in_db, tmp_path):
+    """brand_by_pc_lookup (大货进度表's BRAND) must change ONLY the printed 品牌
+    cell. Every brand-KEYED lookup — here, the 船样要求 boat-sample requirement —
+    must still resolve against the order file's own brand (GIII data), because
+    that is the brand boat_sample_req was registered under. Rekeying that
+    lookup to 大货进度表's (differently-spelled) BRAND text would silently turn
+    a real match into a miss.
+    """
+    from openpyxl import load_workbook
+    from auth.companies import COMPANY_SKY_EAST
+    from po_extractor.store import get_boat_sample_store
+    from po_extractor.lookups.progress_lookup import _norm_key
+    from po_extractor.exporters.sky_east_buyplan_export import export_sky_east_buyplan
+    from po_extractor.exporters._sky_east_helpers import _COL_BRAND, _COL_BOAT_SAMPLE
+
+    order_brand = "__TestBSR_OrderBrand__"
+    progress_brand = "__TestBSR_ProgressBrand__"
+    req_text = "Boat sample per client spec"
+
+    bss = get_boat_sample_store()
+    bss.upsert(COMPANY_SKY_EAST, order_brand, req_text)
+    try:
+        df = pd.DataFrame([{
+            "pc_no": "PC_BSR", "style": "S_BSR",
+            "contract_no": "C", "brand": order_brand, "article_name": "A",
+            "zalando_po": "PO1", "config_sku": "K",
+            "color_name": "NAVY", "colour_code": "",
+            "xs": 1, "s": 1, "m": 1, "l": 1, "xl": 1, "xxl": 1,
+            "ex_fty_date": "2026-07-22",
+            "fabric_item_no": fabric_in_db, "fabrication": "fb",
+        }])
+        brand_by_pc = {(_norm_key("PC_BSR"), _norm_key("S_BSR")): progress_brand}
+        path, _ = export_sky_east_buyplan(
+            df, {}, str(tmp_path),
+            fabric_parts_by_style=None, style_image_map=None,
+            brand_by_pc_lookup=brand_by_pc,
+            sky_east_store=None,   # keep colour-miss diagnostics out of the real DB
+        )
+        ws = _style_ws(load_workbook(path), "S_BSR")
+        assert ws.cell(9, _COL_BRAND).value == progress_brand, (
+            "printed 品牌 cell should show 大货进度表's brand"
+        )
+        assert ws.cell(9, _COL_BOAT_SAMPLE).value == req_text, (
+            "船样要求 must be found via the ORDER FILE's brand, not the "
+            "progress-table brand — a differently-spelled progress brand "
+            "must not turn this lookup into a miss"
+        )
+    finally:
+        bss.delete(COMPANY_SKY_EAST, order_brand)
+
+
 def test_sky_east_buyplan_warns_when_hhn_missing_from_db(tmp_path, capsys):
     """When an HHN isn't in fabric_master the export must emit a warning
     so the user sees what's wrong (loud-failure principle)."""

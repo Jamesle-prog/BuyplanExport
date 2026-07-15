@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.74.1",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "fix", "text": "**船样要求 (boat-sample requirement) now looks up by the ORDER FILE's brand again, not 大货进度表's.** v2.74.0's 大货进度表-first brand switch was applied too broadly — it also fed into the 船样要求 lookup and the colour/主标颜色 DB fallback, both of which are keyed by the order file's brand (GIII data) in their backing stores. A 大货进度表 BRAND value that doesn't exactly match those keys would have silently turned a real match into a miss. The printed 品牌 cell (and the Overview/Index brand columns) still show 大货进度表's brand as requested; every internal lookup key reverts to the order-file brand."},
+        ],
+    },
+    {
         "version": "2.74.0",
         "date": "2026-07-14",
         "entries": [
