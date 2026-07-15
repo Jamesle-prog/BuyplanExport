@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.75.3",
+        "date": "2026-07-15",
+        "entries": [
+            {"type": "fix", "text": "**AI colour recognition no longer runs for rows that aren't real items.** Found the cause of a remaining ~1.7s serial AI call: a row whose every field is literally the source file's own column-header text (e.g. style=\"Style No.\", colour=\"Color name\") had leaked into the items table — a parsing artifact with zero quantity in every size, not an actual order. AI colour lookup is now skipped for any row confirmed to have zero quantity across every size column (both in the new parallel prefetch and the real per-row resolution path), so it's never asked to guess a colour for something that was never a real PO/style combination in the first place. A row that simply doesn't carry size-column data at all (several existing call sites) is treated as \"unknown,\" not \"confirmed empty\" — AI still runs there as before."},
+        ],
+    },
+    {
         "version": "2.75.2",
         "date": "2026-07-15",
         "entries": [

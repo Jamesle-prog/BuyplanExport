@@ -166,6 +166,44 @@ def _available_progress_colors(
     })
 
 
+# Every size column a real ordered item carries a non-zero quantity in at
+# least one of.
+_SIZE_COLS = ("xs", "s", "m", "l", "xl", "xxl")
+
+
+def _row_has_real_quantity(row) -> bool:
+    """False ONLY when *row* has every size column present and each is
+    exactly zero -- a CONFIRMED-empty row. True otherwise, including when no
+    size columns are present at all: not knowing the sizes is not the same
+    as knowing there are none, and must not be treated as "confirmed empty"
+    -- that would block AI for any caller whose row shape doesn't happen to
+    carry size columns (several call sites/tests pass a minimal row with only
+    the fields that specific check needs).
+
+    Seen in production: a row whose every field is literally the source
+    file's own column-header text (pc_no a real PC No., but style="Style
+    No.", color_name="Color name", and EVERY size column present, each 0) --
+    a template row that leaked into the items table. Its "colour" isn't a
+    colour at all, so AI colour recognition should never be spent guessing
+    one for it; the PO/style combination behind it was never real to begin
+    with. That row has all six size columns present -- this function only
+    ever returns False for exactly that shape of evidence, never for an
+    absence of it.
+    """
+    seen_any_col = False
+    for col in _SIZE_COLS:
+        if col not in row:
+            continue
+        seen_any_col = True
+        v = row.get(col)
+        try:
+            if v and float(v) != 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return not seen_any_col
+
+
 def _resolve_pc_color(
     row, sty_norm: str, color_en: str, brand: str,
     cn_lookup: dict, cn_code_lookup: dict | None,
@@ -307,19 +345,23 @@ def _resolve_pc_color_multi(
     an LLM to identify the colour — candidate names are retried against the
     same local lookup, same as any other component. The API is never
     consulted before local resolution of that component has already failed,
-    and never for anything other than a colour miss.
+    and never for anything other than a colour miss, and never at all for a
+    row with zero quantity in every size (see ``_row_has_real_quantity`` —
+    such a row is a parsing artifact, not a real item, so it has no real
+    colour to look up).
     """
     components = [c.strip() for c in color_en.split(" / ") if c.strip()]
     if len(components) <= 1:
         components = [color_en]
 
+    _ai_eligible = ai_enhance and ai_api_key and _row_has_real_quantity(row)
     resolved = []
     for comp in components:
         result = _resolve_pc_color(
             row, sty_norm, comp, brand,
             cn_lookup, cn_code_lookup, cn_by_pc_lookup,
         )
-        if result[0] == _COLOR_NOT_FOUND and ai_enhance and ai_api_key:
+        if result[0] == _COLOR_NOT_FOUND and _ai_eligible:
             improved = _ai_retry_component(
                 row, sty_norm, comp, brand,
                 cn_lookup, cn_code_lookup, cn_by_pc_lookup,
@@ -392,8 +434,8 @@ def _prefetch_ai_color_cache(
 
     for _, row in df_items.iterrows():
         style = str(row.get("style", "") or "").strip()
-        if not style:
-            continue
+        if not style or not _row_has_real_quantity(row):
+            continue   # no real item behind this row -- nothing to look up
         sty_norm = sty_norm_cache.get(style)
         if sty_norm is None:
             sty_norm = sty_norm_cache[style] = _norm_key(style)

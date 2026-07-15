@@ -727,6 +727,74 @@ def test_ai_enhance_recovers_the_missing_component_in_a_two_tone_pair(monkeypatc
 # each, and report progress as jobs complete -- all BEFORE the row-writing
 # loop runs, off the network-call critical path.
 
+# ── Skip AI entirely for a row that isn't a real item (v2.75.3 fix) ──────────
+# Production data had a row whose every field was literally the source
+# file's own column-header text (pc_no a real PC No., but style="Style No.",
+# color_name="Color name", every size column 0) -- a template row that leaked
+# into the items table. Its "colour" was never a colour, so AI must never be
+# asked to guess one for it.
+
+def test_row_has_real_quantity_true_when_any_size_nonzero():
+    from po_extractor.exporters.sky_east_buyplan_export import _row_has_real_quantity
+    assert _row_has_real_quantity(
+        {"xs": 0, "s": 5, "m": 0, "l": 0, "xl": 0, "xxl": 0})
+    assert _row_has_real_quantity(
+        {"xs": 0, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 1})
+
+
+def test_row_has_real_quantity_false_only_when_every_size_col_present_and_zero():
+    from po_extractor.exporters.sky_east_buyplan_export import _row_has_real_quantity
+    assert not _row_has_real_quantity(
+        {"xs": 0, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0})
+
+
+def test_row_has_real_quantity_true_when_size_cols_simply_absent():
+    """No size-column info at all must NOT be treated as confirmed-empty --
+    many callers (and existing tests) pass a minimal row without size data,
+    and AI must not be silently blocked for them."""
+    from po_extractor.exporters.sky_east_buyplan_export import _row_has_real_quantity
+    assert _row_has_real_quantity({})
+    assert _row_has_real_quantity({"pc_no": "HHPPC048"})
+
+
+def test_ai_prefetch_skips_zero_quantity_artifact_row(monkeypatch):
+    """A row with pc_no/style but zero quantity in every size must never
+    queue an AI job, even when its colour would otherwise miss locally."""
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.exporters.sky_east_buyplan_export import _prefetch_ai_color_cache
+
+    def _boom(*a, **k):
+        raise AssertionError("AI must not be called for a zero-quantity artifact row")
+    monkeypatch.setattr(_ai, "recognize_colors", _boom)
+    monkeypatch.setattr(_ai, "match_color_to_candidates", _boom)
+
+    df = pd.DataFrame([{
+        "pc_no": "HHPPC046", "style": "Style No.", "color_name": "Color name",
+        "brand": "Brand", "xs": 0, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+    }])
+    _prefetch_ai_color_cache(df, {}, {}, None, True, "sk-fake", "deepseek-chat")
+
+
+def test_resolve_pc_color_multi_never_calls_ai_for_zero_quantity_row(monkeypatch):
+    """Same guard at the real per-row resolution path (_resolve_pc_color_multi),
+    not just the prefetch pass -- covers a run without the prefetch too."""
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.exporters.sky_east_buyplan_export import (
+        _COLOR_NOT_FOUND, _resolve_pc_color_multi,
+    )
+
+    def _boom(*a, **k):
+        raise AssertionError("AI must not be called for a zero-quantity artifact row")
+    monkeypatch.setattr(_ai, "recognize_colors", _boom)
+
+    row = {"pc_no": "HHPPC046", "xs": 0, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0}
+    result = _resolve_pc_color_multi(
+        row, "STYLENO", "Color Name", "Brand", {}, {}, None,
+        ai_enhance=True, ai_api_key="sk-fake",
+    )
+    assert result[0] == _COLOR_NOT_FOUND   # stays a miss -- never fabricated
+
+
 def test_ai_prefetch_noop_without_enhance_or_key():
     from po_extractor.exporters.sky_east_buyplan_export import _prefetch_ai_color_cache
 
