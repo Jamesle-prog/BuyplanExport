@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.74.0",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "feat", "text": "**Sky East buy plan sources 品牌 from 大货进度表.** The brand column now comes from the 大货进度表's own BRAND column (matched by PC No. · style, with a style-only fallback) whenever the progress file is loaded, instead of the order file's brand — applied to both the style sheets and the Index. Falls back to the order-file brand for any style the progress table doesn't cover."},
+        ],
+    },
+    {
         "version": "2.73.9",
         "date": "2026-07-14",
         "entries": [

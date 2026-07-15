@@ -184,6 +184,23 @@ def test_progress_lookup_get_image_id(sample_progress_xlsx):
     assert pl.get_image_id("DR5000", "BLACK", "") == ""
 
 
+def test_build_brand_lookup(sample_progress_xlsx):
+    """build_brand_lookup keys the 大货进度表 BRAND column by (PC No · style)
+    plus a style-only fallback."""
+    from po_extractor.lookups import ProgressLookup
+    from po_extractor.lookups.progress_lookup import _norm_key
+
+    bl = ProgressLookup(sample_progress_xlsx).build_brand_lookup()
+    # PC-scoped (precise)
+    assert bl[(_norm_key("HHPPC038"), _norm_key("DR4532"))] == "Brand1"
+    assert bl[(_norm_key("HHPPC041"), _norm_key("DR5000"))] == "Brand2"
+    # style-only fallback
+    assert bl[_norm_key("DR4532")] == "Brand1"
+    assert bl[_norm_key("DR5000")] == "Brand2"
+    # a row whose PC No. is blank still contributes a style-only brand
+    assert bl[_norm_key("DR6000")] == "Brand3"
+
+
 def test_progress_lookup_get_record(sample_progress_xlsx):
     """Test get_record returns full dict."""
     from po_extractor.lookups import ProgressLookup

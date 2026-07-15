@@ -133,6 +133,19 @@ def _brand_keyed_get(
     return lookup.get((company, brand, norm_en)) or default
 
 
+def _progress_brand(brand_by_pc: dict | None, pc_no, sty_norm: str,
+                    fallback: str) -> str:
+    """品牌 from 大货进度表: try ``(pc_no_norm, style_norm)`` then ``style_norm``
+    alone; fall back to *fallback* (the order file's own brand) when the
+    progress table has no brand for this style/PC or isn't loaded."""
+    if not brand_by_pc:
+        return fallback
+    pcn = _norm_key(str(pc_no or ""))
+    return (brand_by_pc.get((pcn, sty_norm))
+            or brand_by_pc.get(sty_norm)
+            or fallback)
+
+
 def _available_progress_colors(
     cn_by_pc_lookup: dict | None, pc_no_norm: str, sty_norm: str,
 ) -> list[str]:
@@ -626,6 +639,7 @@ class _RowContext(NamedTuple):
     cn_lookup: dict
     cn_code_lookup: dict | None
     cn_by_pc_lookup: dict | None
+    brand_by_pc: dict | None
     label_lookup: dict | None
     ai_enhance: bool
     ai_api_key: str
@@ -665,7 +679,10 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
     # e.g. "(dark blue)" — both for a clean display and so the value can
     # exact-match a 大货进度表 / internal DB colour key (which carry no brackets).
     color_en = _strip_color_brackets(str(g.get("color_name", "") or "")).title()
-    brand    = str(g.get("brand", "") or "")
+    # 品牌 from 大货进度表 (its BRAND column) when the progress file is loaded;
+    # falls back to the order file's own brand.
+    brand = _progress_brand(ctx.brand_by_pc, g.get("pc_no"), _row_sty_norm,
+                            str(g.get("brand", "") or ""))
     # color_en may combine two colours (e.g. "Dark Blue / White") — the multi
     # resolver tries each component individually.
     color_cn, cn_code, _pc_label, color_cn_display = _resolve_pc_color_multi(
@@ -803,6 +820,7 @@ def export_sky_east_buyplan(
     label_lookup: dict | None = None,
     cn_code_lookup: dict | None = None,
     cn_by_pc_lookup: dict | None = None,
+    brand_by_pc_lookup: dict | None = None,
     ai_enhance: bool | None = None,
     ai_api_key: str | None = None,
     ai_model: str | None = None,
@@ -841,6 +859,11 @@ def export_sky_east_buyplan(
                            resolved in one lookup with PC No. + style + color priority
                            (more specific than the brand + color flat lookup).
                            None → skipped.
+    brand_by_pc_lookup   : optional ``{(pc_no_norm, style_norm): brand, style_norm: brand}``
+                           from ``ProgressLookup.build_brand_lookup()``.  When
+                           provided, the 品牌 cell is sourced from 大货进度表 (PC
+                           No. + style, else style alone), falling back to the
+                           order file's own brand.  None → order-file brand only.
     ai_enhance            : optional override for the "Local + AI Enhance" colour
                            recognition mode.  When None, read from the admin
                            **Color Recognition** setting.  The API is only ever
@@ -951,7 +974,8 @@ def export_sky_east_buyplan(
     # Constant-for-the-whole-workbook context threaded into the per-row writer.
     _row_ctx = _RowContext(
         col=col, cn_lookup=cn_lookup, cn_code_lookup=cn_code_lookup,
-        cn_by_pc_lookup=cn_by_pc_lookup, label_lookup=label_lookup,
+        cn_by_pc_lookup=cn_by_pc_lookup, brand_by_pc=brand_by_pc_lookup,
+        label_lookup=label_lookup,
         ai_enhance=ai_enhance, ai_api_key=ai_api_key, ai_model=ai_model,
         bsr_cache=bsr_cache, boat_sample_col=_BOAT_SAMPLE_COL,
         se_store=_se_store, color_source=_color_source, sty_norm_cache={},
@@ -1129,7 +1153,9 @@ def export_sky_east_buyplan(
             _sheet_meta_list.append({
                 "style":       style,
                 "sheet_name":  sheet_title,
-                "brand":       str(first.get("brand",       "") or ""),
+                "brand":       _progress_brand(
+                    brand_by_pc_lookup, first.get("pc_no"),
+                    _norm_key(str(style or "")), str(first.get("brand", "") or "")),
                 "body_part":   str(getattr(_idx_fp, "body_part", "") or "") if _idx_fp else "",
                 "hhn_no":      _idx_hhn,
                 "display_key": _idx_dk,

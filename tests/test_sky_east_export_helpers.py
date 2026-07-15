@@ -46,6 +46,7 @@ def _basic_col() -> dict:
 def _ctx(**overrides) -> _RowContext:
     base = dict(
         col=_basic_col(), cn_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=None,
+        brand_by_pc=None,
         label_lookup={}, ai_enhance=False, ai_api_key="", ai_model="deepseek-chat",
         bsr_cache={}, boat_sample_col=18, se_store=None, color_source="db",
         sty_norm_cache={}, label_warnings=[], label_missing=[],

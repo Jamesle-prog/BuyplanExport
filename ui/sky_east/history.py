@@ -57,11 +57,17 @@ class BuyplanColorLookups(NamedTuple):
         ``{(pc_no_norm, style_norm, en_color_norm): PCColorMatch}`` — populated
         only when the user selects 大货进度表 as the color source AND a file is
         loaded.  ``None`` skips the PC-keyed tier inside the exporter.
+    brand_by_pc : dict | None
+        ``{(pc_no_norm, style_norm): brand, style_norm: brand}`` — populated
+        whenever a 大货进度表 is loaded (independent of the colour source), so
+        the buy plan's 品牌 comes from the progress table.  ``None`` → the
+        exporter uses the order file's own brand.
     """
     cn:      dict
     label:   dict | None
     cn_code: dict | None
     by_pc:   dict | None
+    brand_by_pc: dict | None
 
 
 def _build_buyplan_color_lookups() -> BuyplanColorLookups:
@@ -81,6 +87,11 @@ def _build_buyplan_color_lookups() -> BuyplanColorLookups:
     progress_lkup = get_progress_lookup(SOURCE_SKY_EAST)
     cn_lookup     = get_color_translation_store().build_lookup_dict()
 
+    # 品牌 comes from 大货进度表 (its BRAND column) whenever the progress file is
+    # loaded — independent of the colour-source choice.
+    brand_by_pc = (progress_lkup.build_brand_lookup()
+                   if progress_lkup is not None else None)
+
     if color_source == COLOR_SOURCE_PROGRESS and progress_lkup is None:
         # User picked 大货进度表 but neither an ad-hoc upload this session nor
         # any saved data exists — make the silent fallback to the Internal DB
@@ -91,14 +102,17 @@ def _build_buyplan_color_lookups() -> BuyplanColorLookups:
             "HHN Contract Progress**.",
             icon="⚠️",
         )
-        return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=None)
+        return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None,
+                                   by_pc=None, brand_by_pc=brand_by_pc)
 
     if color_source != COLOR_SOURCE_PROGRESS:
-        return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=None)
+        return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None,
+                                   by_pc=None, brand_by_pc=brand_by_pc)
 
     by_pc = progress_lkup.build_pc_style_color_lookups()
     st.caption(t("🗂 Chinese colors sourced from 大货进度表 (PC No. · style · color match only)."))
-    return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None, by_pc=by_pc)
+    return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None,
+                               by_pc=by_pc, brand_by_pc=brand_by_pc)
 
 
 def _se_hist_summary_table(df_contracts) -> None:
@@ -1119,6 +1133,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 label_lookup=color_lookups.label,
                                 cn_code_lookup=color_lookups.cn_code,
                                 cn_by_pc_lookup=color_lookups.by_pc,
+                                brand_by_pc_lookup=color_lookups.brand_by_pc,
                             )
                             with open(bp_path, "rb") as f:
                                 st.session_state[SK.SE_BP_BYTES] = f.read()

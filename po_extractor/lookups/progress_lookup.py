@@ -939,6 +939,34 @@ class ProgressLookup:
                             )
         return cn_result, code_result, label_result, pc_result
 
+    def build_brand_lookup(self) -> dict:
+        """Brand-per-order from 大货进度表 (its BRAND column, col 13), so the
+        Sky East buy plan can source the 品牌 from the progress table rather
+        than the order file.
+
+        Returns a dict with two key forms in one map:
+          ``(pc_no_norm, style_norm) -> brand``  — PC-scoped, precise
+          ``style_norm -> brand``                — fallback when the item row
+                                                   carries no PC No.
+        First non-empty BRAND per key wins. Empty when the file has no BRAND
+        data (older 大货进度表 revisions without the column).
+        """
+        self._load()
+        out: dict = {}
+        for records in self._by_style.values():
+            for rec in records:
+                brand = (rec.get("brand") or "").strip()
+                if not brand:
+                    continue
+                sn = _norm_key(rec.get("style") or "")
+                if not sn:
+                    continue
+                out.setdefault(sn, brand)                   # style-only fallback
+                pcn = _norm_key(rec.get("pc_no") or "")
+                if pcn:
+                    out.setdefault((pcn, sn), brand)        # PC-scoped (precise)
+        return out
+
     # ── Backward-compatible thin wrappers ────────────────────────────────────
 
     def build_cn_lookup(self, company: str) -> dict:

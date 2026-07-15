@@ -112,6 +112,26 @@ def test_overview_rows_include_english_and_chinese_color_plus_code(
     assert by_style["DR4578"]["Color Code"] == "602"
 
 
+def test_buyplan_brand_sourced_from_progress(two_style_df, pc_color_lookup, tmp_path):
+    """The 品牌 column comes from 大货进度表 (brand_by_pc_lookup) when present,
+    keyed by PC No · style; styles absent from the lookup keep the order-file
+    brand."""
+    from po_extractor.lookups.progress_lookup import _norm_key
+    brand_lkup = {(_norm_key("HHPPC048"), _norm_key("DR5124")): "Only"}   # DR4578 absent
+    path, _ = export_sky_east_buyplan(
+        two_style_df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=pc_color_lookup,
+        brand_by_pc_lookup=brand_lkup,
+    )
+    wb = load_workbook(path)
+    dr5124 = wb[next(s for s in wb.sheetnames if s.endswith("_DR5124"))]
+    dr4578 = wb[next(s for s in wb.sheetnames if s.endswith("_DR4578"))]
+    v5124 = [c.value for row in dr5124.iter_rows() for c in row]
+    v4578 = [c.value for row in dr4578.iter_rows() for c in row]
+    assert "Only" in v5124 and "Anna Field" not in v5124   # progress brand overrides
+    assert "Anna Field" in v4578                            # no progress brand → order file
+
+
 def test_overview_style_cell_hyperlinks_to_its_own_sheet(
     two_style_df, pc_color_lookup, tmp_path,
 ):
