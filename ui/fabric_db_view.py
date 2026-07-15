@@ -18,6 +18,7 @@ from ui.fabric_db.import_section import (
     _fabric_db_upload_section,
     _fabric_db_delete_section,
 )
+from ui.fabric_db.version_history import _fabric_db_version_history
 from ui.fabric_db.browse import _fabric_db_paginated_list, _fabric_db_detail_card
 from ui.fabric_db.validation import (
     _fabric_db_validation_section,
@@ -49,6 +50,8 @@ def show_fabric_db_tab() -> None:
     st.divider()
     _fabric_db_upload_section(store, count)
     _fabric_db_delete_section(store)
+    st.divider()
+    _fabric_db_version_history(store)
     st.divider()
 
     if count == 0:

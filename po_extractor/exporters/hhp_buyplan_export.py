@@ -104,6 +104,7 @@ def export_hhp_buyplan(
     output_dir: str,
     *,
     photo_map: dict | None = None,
+    fabric_version_id: int | None = None,
 ) -> str:
     """Build the HHP / Zalando buy-plan workbook and return the saved path.
 
@@ -115,6 +116,10 @@ def export_hhp_buyplan(
     photo_map  : optional dict — see :func:`resolve_photo_pair` for the
                  supported shapes (style → (front, back) tuple, or
                  filename → bytes).
+    fabric_version_id : optional fabric-list version (see
+                 ``FabricMasterStore.list_versions``) to enrich against
+                 instead of the live table.  None (default) → the latest
+                 version, unchanged from prior behavior.
     """
     photo_map = photo_map or {}
     path = versioned_path(output_dir, "Zalando_BuyPlan", ".xlsx")
@@ -144,7 +149,7 @@ def export_hhp_buyplan(
     # Pre-fetch fabric_master enrichment for all HHN codes used in this df —
     # one DB round-trip instead of N per style.  Used to fill weight (克重)
     # and width (有效门幅) into the column-D 综合 key.
-    fm_cache = _build_fabric_master_cache(df)
+    fm_cache = _build_fabric_master_cache(df, version_id=fabric_version_id)
 
     # Track sheet_name → style for the post-save photo injection
     sheet_style_map: dict[str, str] = {}
@@ -440,9 +445,14 @@ def _apply_row_styles(ws, dst_row: int, styles: list[dict]) -> None:
 # Photo plumbing
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _build_fabric_master_cache(df: pd.DataFrame) -> dict:
+def _build_fabric_master_cache(df: pd.DataFrame, version_id: int | None = None) -> dict:
     """One DB round-trip to fetch enrichment (composition / gsm / width) for
     every HHN code referenced anywhere in *df*.  Returns ``{hhn: record}``.
+
+    *version_id* pins the enrichment to a specific archived fabric-list
+    version (see ``FabricMasterStore.list_versions``) instead of the live
+    table; ``None`` (default) is "use the latest version", unchanged from
+    prior behavior.
 
     Returns an empty dict if the fabric_master DB is unavailable.
     """
@@ -463,7 +473,9 @@ def _build_fabric_master_cache(df: pd.DataFrame) -> dict:
 
     try:
         from ..store import get_fabric_master_store
-        return get_fabric_master_store().get_batch_enrichment(list(hhns)) or {}
+        return get_fabric_master_store().get_batch_enrichment(
+            list(hhns), version_id=version_id
+        ) or {}
     except Exception as exc:
         warnings.warn(f"[buyplan] fabric_master lookup failed: {exc!r}")
         return {}

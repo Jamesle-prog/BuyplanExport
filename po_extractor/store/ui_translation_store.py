@@ -855,6 +855,19 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Fabric master DB path', '面料主数据库路径', 'label', 'admin'),
     ('Fabric reference data from **面料统计表.xlsx**. Upload a new version of the file below to refresh all records. Use the search box to look up any fabric by code, composition, or supplier.', '面料参考数据来源于 **面料统计表.xlsx**。在下方上传新版本文件即可刷新所有记录。可使用搜索框按编号、成分或供应商查找面料。', 'label', 'admin'),
     ('Fabric slots', '面料槽位', 'label', 'admin'),
+    ('Version History', '版本历史', 'header', 'admin'),
+    ('Every fabric-table upload creates a new version. The current version plus the 3 most recent previous versions stay fully browsable below and selectable when generating a buy plan; older versions\' data is pruned automatically, but this log of who uploaded what and what changed is kept forever.',
+     '每次上传面料表都会生成一个新版本。当前版本及最近的3个历史版本可在下方完整浏览，并可在生成采购计划时选择使用；更早版本的数据会自动清理，但此处记录的上传人和变更内容会永久保留。', 'label', 'admin'),
+    ('No uploads recorded yet.', '暂无上传记录。', 'label', 'admin'),
+    ('by', '由', 'label', 'admin'),
+    ('Rows', '行数', 'label', 'admin'),
+    # 'inserted' / 'updated' / 'skipped' / 'Field' / 'Old value' / 'New value'
+    # already seeded above (keys are global, not per-module) -- reused as-is.
+    ('No changes detected in this version (identical data, or the first tracked import).',
+     '此版本未检测到变化（数据相同，或为首次记录的导入）。', 'label', 'admin'),
+    ('Quality No.', '面料编号', 'label', 'admin'),
+    ('Change', '变更类型', 'label', 'admin'),
+    ('Latest', '最新', 'label', 'shared'),
     ('Failed to save template:', '保存模板失败：', 'label', 'admin'),
     ('Failed to save:', '保存失败：', 'label', 'admin'),
     ('Failed:', '失败：', 'label', 'admin'),
@@ -1290,6 +1303,12 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Could not determine the PO type of:', '无法识别以下文件的订单类型：', 'label', 'giii'),
     ('file(s) skipped — InforNexus POs are portal PDFs, not .msg emails.',
      '个文件已跳过 — InforNexus 订单是门户PDF文件，不是 .msg 邮件。', 'label', 'giii'),
+    ('Fabric list version', '面料表版本', 'label', 'sky_east'),
+    ('Which uploaded fabric list to enrich the buy plan against. Defaults to the latest upload.',
+     '选择用于填充采购计划的面料表版本，默认使用最新上传的版本。', 'label', 'sky_east'),
+    ('Fabric list version (Excel/HHP files only)', '面料表版本（仅限Excel/HHP文件）', 'label', 'giii'),
+    ('Which uploaded fabric list to enrich against for Excel-format uploads. Defaults to the latest upload.',
+     '选择用于Excel格式上传文件的面料表版本，默认使用最新上传的版本。', 'label', 'giii'),
 ]
 # fmt: on
 

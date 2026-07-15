@@ -715,7 +715,8 @@ def _run_smart_processing(detections, saved_paths: dict[str, str],
                           mask_prices: bool,
                           method: str = "regex",
                           deepseek_api_key: str = "",
-                          deepseek_model: str = "deepseek-chat"):
+                          deepseek_model: str = "deepseek-chat",
+                          fabric_version_id: int | None = None):
     from ui.shared import (
         load_photo_map_from_dir as _load_photo_map_from_dir,
         images_dir as _get_images_dir,
@@ -761,6 +762,7 @@ def _run_smart_processing(detections, saved_paths: dict[str, str],
                 grp_out = _process_excel_group(
                     company, paths, out_dir, photo_map, log,
                     mask_prices=mask_prices,
+                    fabric_version_id=fabric_version_id,
                 )
             elif is_pdf and company != "Unknown":
                 grp_out = _process_pdf_group(

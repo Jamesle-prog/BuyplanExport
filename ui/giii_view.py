@@ -33,7 +33,7 @@ from ui.shared import (
 )
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.stores import get_store, get_app_settings_store
+from ui.stores import get_store, get_app_settings_store, get_fabric_master_store
 
 from ui.giii._shared import _XLSX_MIME, _CONF_BADGE, files_signature
 from ui.giii.extraction import _run_smart_processing
@@ -99,6 +99,17 @@ def _show_excel_tab():
             key="excel_client_profile",
         )
 
+        from ui.fabric_db.version_history import _fabric_version_options
+        _fm_options = _fabric_version_options(get_fabric_master_store())
+        _fm_choice = st.selectbox(
+            t("Fabric list version"), _fm_options,
+            format_func=lambda o: o[0],
+            key="excel_fabric_version",
+            help=t("Which uploaded fabric list to enrich the buy plan against. "
+                   "Defaults to the latest upload."),
+        )
+        excel_fabric_version_id = _fm_choice[1] if _fm_choice else None
+
     st.divider()
 
     # ── Template download (moved to Admin > Templates) ────────────────────────
@@ -142,6 +153,7 @@ def _show_excel_tab():
             sheet_name=sheet_name,
             mask_prices=excel_mask,
             progress_file=progress_file,
+            fabric_version_id=excel_fabric_version_id,
         )
 
     if st.session_state.excel_log:
@@ -222,6 +234,20 @@ def _show_giii_upload_section():
         key="smart_mask_prices",
         help="Replace FOB / cost / price values with *** in all output files.",
     )
+
+    # Only the Excel/HHP sub-pipeline enriches from fabric_master (the main
+    # PDF buy plan uses a separate style→fabric-parts mapping) — the choice
+    # here only affects files that route through that sub-pipeline.
+    from ui.fabric_db.version_history import _fabric_version_options
+    _fm_options = _fabric_version_options(get_fabric_master_store())
+    _fm_choice = st.selectbox(
+        t("Fabric list version (Excel/HHP files only)"), _fm_options,
+        format_func=lambda o: o[0],
+        key="smart_fabric_version",
+        help=t("Which uploaded fabric list to enrich against for Excel-format "
+               "uploads. Defaults to the latest upload."),
+    )
+    smart_fabric_version_id = _fm_choice[1] if _fm_choice else None
 
     # ── AI extraction is an admin-level choice (Admin → Settings) ────────────
     # The per-run toggle + session key override that used to live here was a
@@ -307,6 +333,7 @@ def _show_giii_upload_section():
                 detections, saved_paths, mask_prices,
                 method=_eff_method,
                 deepseek_api_key=_api_key, deepseek_model=_ds_model,
+                fabric_version_id=smart_fabric_version_id,
             )
     finally:
         # Files have been read into memory (detection + processing) — temp dir no longer needed

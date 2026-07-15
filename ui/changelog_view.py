@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.75.0",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "feat", "text": "**Fabric list versioning.** Every fabric-table upload (面料统计表.xlsx) now creates a version: the current list plus the 3 most recent previous uploads stay fully browsable, older snapshot data is pruned automatically, and a permanent incremental-diff log records exactly which fabrics were added, removed, or changed (and which field) between each consecutive version, with who uploaded it. New **📜 Version History** section in the Fabric DB tab shows this log. The Sky East and GIII (Excel/HHP) buy-plan screens each get a **Fabric list version** selector — defaults to Latest, but any of the retained previous versions can be picked to enrich that run's buy plan instead."},
+            {"type": "docs", "text": "A user restricted to only the Fabric DB tab (Admin → Users → Allowed tabs → only \"Fabric DB\" checked) can now be handed fabric-list maintenance exclusively — no other tab is visible to them. No new code was needed for this; the existing module-gating system already supports it."},
+        ],
+    },
+    {
         "version": "2.74.2",
         "date": "2026-07-14",
         "entries": [

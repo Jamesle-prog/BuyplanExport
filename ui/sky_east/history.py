@@ -973,6 +973,22 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                     "**📐 Reference Data → HHN Contract Progress**."
                 ))
 
+    # ── Fabric list version ─────────────────────────────────────────────────
+    # Fabric-master enrichment (composition/GSM/width) can be pinned to an
+    # older upload instead of the current live table — always defaults to
+    # "Latest". See Fabric DB tab → 📜 Version History for what changed
+    # between versions.
+    from ui.fabric_db.version_history import _fabric_version_options
+    _fm_options = _fabric_version_options(get_fabric_master_store())
+    _fm_choice = st.selectbox(
+        t("Fabric list version"), _fm_options,
+        format_func=lambda o: o[0],
+        key="se_bp_fabric_version",
+        help=t("Which uploaded fabric list to enrich the buy plan against. "
+               "Defaults to the latest upload."),
+    )
+    _fabric_version_id = _fm_choice[1] if _fm_choice else None
+
     # Button is always enabled when contracts exist.  Validating selection inside
     # the handler (rather than via disabled=) avoids the Streamlit 1.57.0 bug
     # where a multiselect's session-state desync keeps the button permanently
@@ -1134,6 +1150,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 cn_code_lookup=color_lookups.cn_code,
                                 cn_by_pc_lookup=color_lookups.by_pc,
                                 brand_by_pc_lookup=color_lookups.brand_by_pc,
+                                fabric_version_id=_fabric_version_id,
                             )
                             with open(bp_path, "rb") as f:
                                 st.session_state[SK.SE_BP_BYTES] = f.read()

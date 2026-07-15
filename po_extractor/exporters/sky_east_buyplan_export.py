@@ -539,11 +539,17 @@ class _FabricMasterCache:
 
 def _prefetch_fabric_master_cache(
     fabric_parts_by_style: dict | None, df_items: pd.DataFrame,
+    fabric_version_id: int | None = None,
 ) -> _FabricMasterCache:
     """Collect every HHN code referenced by *fabric_parts_by_style* and
     *df_items* and batch-fetch their fabric-master enrichment in one call,
     wrapped in a :class:`_FabricMasterCache`.  Best-effort: a store failure
     warns and yields an empty cache.
+
+    *fabric_version_id* pins the enrichment to a specific archived fabric-list
+    version (see ``FabricMasterStore.list_versions``/``get_batch_enrichment``)
+    instead of the live table; ``None`` (default) is "use the latest version",
+    unchanged from prior behavior.
     """
     fm_cache: dict = {}
     try:
@@ -562,7 +568,7 @@ def _prefetch_fabric_master_cache(
         if all_hhns:
             from ..store import get_fabric_master_store
             fm_cache = get_fabric_master_store().get_batch_enrichment(
-                list(all_hhns)
+                list(all_hhns), version_id=fabric_version_id
             ) or {}
     except Exception as exc:
         # Silent failures here have masked real bugs in the past — make the
@@ -827,6 +833,7 @@ def export_sky_east_buyplan(
     cn_code_lookup: dict | None = None,
     cn_by_pc_lookup: dict | None = None,
     brand_by_pc_lookup: dict | None = None,
+    fabric_version_id: int | None = None,
     ai_enhance: bool | None = None,
     ai_api_key: str | None = None,
     ai_model: str | None = None,
@@ -870,6 +877,10 @@ def export_sky_east_buyplan(
                            provided, the 品牌 cell is sourced from 大货进度表 (PC
                            No. + style, else style alone), falling back to the
                            order file's own brand.  None → order-file brand only.
+    fabric_version_id     : optional fabric-list version (see
+                           ``FabricMasterStore.list_versions``) to enrich
+                           against instead of the live table.  None (default)
+                           → the latest version, unchanged from prior behavior.
     ai_enhance            : optional override for the "Local + AI Enhance" colour
                            recognition mode.  When None, read from the admin
                            **Color Recognition** setting.  The API is only ever
@@ -975,7 +986,8 @@ def export_sky_east_buyplan(
     bsr_cache = _prefetch_boat_sample_cache(df_items)
 
     # ── Pre-fetch fabric_master display_key for all HHN codes in one batch ─
-    _fm = _prefetch_fabric_master_cache(fabric_parts_by_style, df_items)
+    _fm = _prefetch_fabric_master_cache(fabric_parts_by_style, df_items,
+                                        fabric_version_id=fabric_version_id)
 
     # Constant-for-the-whole-workbook context threaded into the per-row writer.
     _row_ctx = _RowContext(

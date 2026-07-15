@@ -20,6 +20,24 @@ from ._fabric_master_schema import (
     _SCHEMA, _NUMERIC_FIELDS,
     _build_col_map, _v, _num, _make_display_key,
 )
+from ._fabric_version_schema import (
+    _VERSION_SCHEMA, _ALL_FABRIC_COLUMNS, _DIFF_FIELDS, _SNAPSHOT_KEEP_VERSIONS,
+)
+
+
+def _current_actor() -> str:
+    """Best-effort: return the logged-in Streamlit user, else 'system'.
+
+    Mirrors ColorTranslationStore._current_actor() -- same fallback shape,
+    kept as an independent copy per this codebase's existing convention of
+    not sharing that helper across store modules.
+    """
+    try:
+        import streamlit as st
+        from ui.session_keys import SK
+        return str(st.session_state.get(SK.USERNAME) or "system").strip() or "system"
+    except Exception:
+        return "system"
 
 
 class FabricMasterStore(BaseSQLiteStore):
@@ -41,6 +59,7 @@ class FabricMasterStore(BaseSQLiteStore):
     def _ensure_schema(self):
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
+            conn.executescript(_VERSION_SCHEMA)
             self._migrate_swap_widths(conn)
             self._migrate_add_spot_price_cols(conn)
 
@@ -170,8 +189,36 @@ class FabricMasterStore(BaseSQLiteStore):
         col_field_pairs = [(col, field) for field, col in field_to_col.items()]
 
         inserted = updated = skipped = 0
+        actor = _current_actor()
 
         with self._conn() as conn:
+            # ── Versioning: capture the OLD state before this import's upsert.
+            # Read from the PREVIOUS version's own snapshot, not a live
+            # fabric_master read -- "Clear & Reimport" already ran delete_all()
+            # in its own committed transaction before we get here, so a live
+            # read at this point would see an already-empty table.
+            v_prev_row = conn.execute(
+                "SELECT MAX(version_id) AS v FROM fabric_versions"
+            ).fetchone()
+            v_prev = v_prev_row["v"] if v_prev_row and v_prev_row["v"] is not None else None
+
+            if v_prev is not None:
+                old_rows = conn.execute(
+                    f"SELECT quality_no, {', '.join(_DIFF_FIELDS)} "
+                    f"FROM fabric_master_snapshot WHERE version_id=?",
+                    (v_prev,),
+                ).fetchall()
+            else:
+                # First tracked import ever -- fall back to a live read
+                # (captures legacy pre-versioning data). Known gap: if THIS
+                # first import is a Clear & Reimport, delete_all() already
+                # destroyed that legacy baseline, so version 1's diff will
+                # show everything as "added" with nothing "removed".
+                old_rows = conn.execute(
+                    f"SELECT quality_no, {', '.join(_DIFF_FIELDS)} FROM fabric_master"
+                ).fetchall()
+            old_state = {r["quality_no"]: dict(r) for r in old_rows}
+
             for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 record: dict = {}
                 for col_idx, field in col_field_pairs:
@@ -226,6 +273,44 @@ class FabricMasterStore(BaseSQLiteStore):
                     )
                     inserted += 1
 
+            # ── Versioning: snapshot the resulting NEW state, diff, prune ──
+            new_version_id = 1 if v_prev is None else v_prev + 1
+            new_rows = conn.execute(
+                f"SELECT {', '.join(_ALL_FABRIC_COLUMNS)} FROM fabric_master"
+            ).fetchall()
+            new_state = {r["quality_no"]: dict(r) for r in new_rows}
+
+            conn.execute(
+                """INSERT INTO fabric_versions
+                      (version_id, created_at, uploaded_by, source_file,
+                       row_count, inserted, updated, skipped)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (new_version_id, imported_at, actor, source_file,
+                 len(new_state), inserted, updated, skipped),
+            )
+
+            if new_state:
+                cols = ", ".join(_ALL_FABRIC_COLUMNS)
+                ph = ", ".join("?" * len(_ALL_FABRIC_COLUMNS))
+                conn.executemany(
+                    f"INSERT INTO fabric_master_snapshot (version_id, {cols}) "
+                    f"VALUES (?, {ph})",
+                    [
+                        (new_version_id,) + tuple(rec.get(c) for c in _ALL_FABRIC_COLUMNS)
+                        for rec in new_state.values()
+                    ],
+                )
+
+            self._write_version_diff(conn, new_version_id, old_state, new_state, imported_at)
+
+            # Prune snapshot DATA older than the retention window --
+            # fabric_versions / fabric_version_diff rows are never pruned
+            # (permanent audit trail).
+            conn.execute(
+                "DELETE FROM fabric_master_snapshot WHERE version_id <= ?",
+                (new_version_id - _SNAPSHOT_KEEP_VERSIONS,),
+            )
+
         return {
             "inserted": inserted,
             "updated": updated,
@@ -233,7 +318,38 @@ class FabricMasterStore(BaseSQLiteStore):
             "total": inserted + updated,
             "col_map": {f: c for f, c in field_to_col.items()},
             "unmatched_headers": unmatched,
+            "version_id": new_version_id,
         }
+
+    @staticmethod
+    def _write_version_diff(conn, new_version_id: int,
+                            old_state: dict, new_state: dict, diffed_at: str) -> None:
+        """Emit one fabric_version_diff row per added/removed quality_no, and
+        one row per changed field for a quality_no present in both -- mirrors
+        ColorTranslationStore._audit_diff's field-level diff shape."""
+        rows: list[tuple] = []
+        for qno in set(old_state) | set(new_state):
+            old_row = old_state.get(qno)
+            new_row = new_state.get(qno)
+            if old_row is None:
+                rows.append((new_version_id, qno, "added", None, None, None, diffed_at))
+            elif new_row is None:
+                rows.append((new_version_id, qno, "removed", None, None, None, diffed_at))
+            else:
+                for f in _DIFF_FIELDS:
+                    ov = old_row.get(f)
+                    nv = new_row.get(f)
+                    ov_s = "" if ov is None else str(ov)
+                    nv_s = "" if nv is None else str(nv)
+                    if ov_s != nv_s:
+                        rows.append((new_version_id, qno, "changed", f, ov_s, nv_s, diffed_at))
+        if rows:
+            conn.executemany(
+                """INSERT INTO fabric_version_diff
+                      (version_id, quality_no, change_type, field, old_value, new_value, diffed_at)
+                   VALUES (?,?,?,?,?,?,?)""",
+                rows,
+            )
 
     # ── Lookups ───────────────────────────────────────────────────────────────
 
@@ -269,20 +385,32 @@ class FabricMasterStore(BaseSQLiteStore):
             ).fetchone()
         return row["display_key"] if row else ""
 
-    def get_batch_enrichment(self, fabric_nos: list) -> dict:
-        """Return {fabric_no: record} for all requested fabric numbers in one pass."""
-        _SQL = """SELECT quality_no, erp_code, display_key,
+    def get_batch_enrichment(self, fabric_nos: list, version_id: int | None = None) -> dict:
+        """Return {fabric_no: record} for all requested fabric numbers in one pass.
+
+        *version_id*=None (default) reads the live ``fabric_master`` table --
+        unchanged behavior for every existing caller. A specific *version_id*
+        reads the archived ``fabric_master_snapshot`` for that version instead
+        (only the current + 3 most recent versions have snapshot data
+        available; an older, pruned version_id simply returns no matches).
+        """
+        table = "fabric_master" if version_id is None else "fabric_master_snapshot"
+        extra_where = "" if version_id is None else " AND version_id=?"
+        _SQL = f"""SELECT quality_no, erp_code, display_key,
                          composition_en, weight_gsm, cuttable_width_cm,
                          shrinkage_rate, short_rate
-                  FROM fabric_master WHERE {col} IN ({ph})"""
+                  FROM {table} WHERE {{col}} IN ({{ph}}){extra_where}"""
         keys = list({str(f).strip() for f in fabric_nos if f})
         if not keys:
             return {}
 
+        version_args = [] if version_id is None else [version_id]
         result: dict = {}
         ph = ",".join("?" * len(keys))
         with self._conn() as conn:
-            rows = conn.execute(_SQL.format(col="quality_no", ph=ph), keys).fetchall()
+            rows = conn.execute(
+                _SQL.format(col="quality_no", ph=ph), keys + version_args
+            ).fetchall()
             matched_by_qno = set()
             for row in rows:
                 d = dict(row)
@@ -292,11 +420,53 @@ class FabricMasterStore(BaseSQLiteStore):
             unmatched = [k for k in keys if k not in matched_by_qno]
             if unmatched:
                 ph2 = ",".join("?" * len(unmatched))
-                for row in conn.execute(_SQL.format(col="erp_code", ph=ph2), unmatched).fetchall():
+                for row in conn.execute(
+                    _SQL.format(col="erp_code", ph=ph2), unmatched + version_args
+                ).fetchall():
                     d = dict(row)
                     result[d["erp_code"]] = d
 
         return result
+
+    # ── Versioning: read/query API ───────────────────────────────────────────
+
+    def list_versions(self, limit: int = 20) -> list[dict]:
+        """Return version metadata, newest first -- for populating a version picker."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT version_id, created_at, uploaded_by, source_file,
+                          row_count, inserted, updated, skipped
+                   FROM fabric_versions ORDER BY version_id DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_diff_summary(self, version_id: int) -> dict:
+        """Return {'added': n, 'removed': n, 'changed': n} distinct-quality_no
+        counts for one version's diff (a 'changed' quality_no may have several
+        field rows, counted once)."""
+        summary = {"added": 0, "removed": 0, "changed": 0}
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT change_type, COUNT(DISTINCT quality_no) AS n
+                   FROM fabric_version_diff WHERE version_id=?
+                   GROUP BY change_type""",
+                (version_id,),
+            ).fetchall()
+        for r in rows:
+            summary[r["change_type"]] = r["n"]
+        return summary
+
+    def get_version_diff(self, version_id: int) -> list[dict]:
+        """Return every diff row for one version, for the detail view."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT quality_no, change_type, field, old_value, new_value, diffed_at
+                   FROM fabric_version_diff WHERE version_id=?
+                   ORDER BY quality_no, id""",
+                (version_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def search(self, query: str, limit: int = 200) -> list[dict]:
         """Search by quality_no, composition_en, supplier, or structure_en."""

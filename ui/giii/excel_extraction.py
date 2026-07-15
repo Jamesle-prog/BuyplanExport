@@ -80,7 +80,8 @@ def _log_photo_matches(df, photo_map: dict, log: list) -> None:
 
 def _process_excel_group(company: str, paths: list[str], out_dir: str,
                          photo_map: dict, log: list,
-                         mask_prices: bool = False) -> dict | None:
+                         mask_prices: bool = False,
+                         fabric_version_id: int | None = None) -> dict | None:
     co_info = get_company(company) or {}
     sheet_name = co_info.get("excel_sheet") or "1.1.PO_Client"
 
@@ -123,7 +124,8 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
                      "unavailable) — 中文颜色/主标颜色 may be blank.")
                    + f" — {_exc}")
 
-    bp  = export_hhp_buyplan(enriched_df, out_dir, photo_map=photo_map)
+    bp  = export_hhp_buyplan(enriched_df, out_dir, photo_map=photo_map,
+                             fabric_version_id=fabric_version_id)
     tps = export_hhp_template_p(result.df, out_dir)
 
     out: dict = {}
@@ -167,7 +169,8 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
 
 def _run_excel_extraction(uploaded_excels, sheet_name: str,
                           mask_prices: bool = False,
-                          progress_file=None):
+                          progress_file=None,
+                          fabric_version_id: int | None = None):
     from ui.shared import (
         load_photo_map_from_dir as _load_photo_map_from_dir,
         images_dir as _get_images_dir,
@@ -344,7 +347,8 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
             st.write(f"  中文颜色: {cn_filled}/{len(_enriched_df)} row(s) (from 大货进度表)")
             log.append(f"中文颜色 enrichment: {cn_filled}/{len(_enriched_df)} rows (大货进度表)")
 
-        buyplan_path = export_hhp_buyplan(_enriched_df, out_dir, photo_map=photo_map)
+        buyplan_path = export_hhp_buyplan(_enriched_df, out_dir, photo_map=photo_map,
+                                          fabric_version_id=fabric_version_id)
         st.write(f"  → {os.path.basename(buyplan_path)}")
 
         # 8. Generate Template_P workbooks
