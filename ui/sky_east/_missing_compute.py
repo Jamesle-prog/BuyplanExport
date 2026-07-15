@@ -2,10 +2,20 @@
 from __future__ import annotations
 
 import pandas as pd
+import streamlit as st
 
 from ui.stores import get_sky_east_store
 
-
+# show_sky_east_tab() calls this UNCONDITIONALLY before st.tabs() (it needs the
+# count for the "Missing Fields N" tab label), and Streamlit re-executes every
+# st.tabs() body on every rerun regardless of which sub-tab is active — so
+# without caching, this full-table scan + per-row contract-no lookup + colour
+# enrichment reran on every widget interaction ANYWHERE in the Sky East tab
+# (e.g. a completely unrelated selector on the Generate/Export sub-tab).
+# Short TTL as a safety net; every write path that changes the underlying data
+# calls ``_compute_se_missing_df.clear()`` explicitly so the live-editing grid
+# in the Missing Fields sub-tab never shows stale rows after its own save.
+@st.cache_data(ttl=15, show_spinner=False)
 def _compute_se_missing_df() -> pd.DataFrame:
     """Build missing-fields DataFrame at view level."""
     from ui.sky_east.items_view import _enrich_items_df  # local to avoid circular

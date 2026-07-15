@@ -827,6 +827,9 @@ def _se_hist_delete_section(store, pc_options: list[str]) -> None:
                             key="se_del_pcs")
     if st.button(t("Delete selected"), disabled=not to_del, key="se_del_btn"):
         n = store.delete_contracts(to_del)
+        from ui.sky_east._missing_compute import _compute_se_missing_df
+        _compute_se_missing_df.clear()
+        _se_buyplan_fabric_preflight.clear()
         # Clear multiselect session state BEFORE rerun so Streamlit doesn't
         # raise StreamlitAPIException when deleted pc_nos are no longer in
         # pc_options on the next render pass.
@@ -834,6 +837,48 @@ def _se_hist_delete_section(store, pc_options: list[str]) -> None:
             st.session_state.pop(_key, None)
         st.toast(f"✅ Deleted {n} contract(s).", icon="🗑️")
         st.rerun()
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _se_buyplan_fabric_preflight(pc_nos: tuple[str, ...]) -> tuple[int, list[str]]:
+    """Distinct-style count + styles with no fabric code on file, for a PC
+    selection. Cached (keyed by *pc_nos*) so touching an unrelated widget on
+    the Generate/Export screen (colour-source radio, fabric-version selector,
+    …) doesn't re-scan items + re-run the fabric-mapping lookup/groupby with
+    the SAME selection every time -- only an actual selection change, an
+    upload, or the short TTL trigger a redo. Read-only display data (an
+    informational banner, not an editable form), so a brief staleness window
+    is an acceptable trade for not re-querying on every unrelated interaction.
+    """
+    from ui.stores import get_sky_east_store, get_store as _get_po_store
+    sel_items = get_sky_east_store().list_items(pc_nos=list(pc_nos))
+    if "style" not in sel_items.columns:
+        return 0, []
+
+    sty_series = sel_items["style"].fillna("").astype(str).str.strip()
+    distinct_styles = int(sty_series[sty_series != ""].nunique())
+
+    styles_set = sorted({s for s in sty_series if s})
+    try:
+        fab_map = (_get_po_store().load_fabric_parts_for_styles(
+            styles_set, source=SOURCE_SKY_EAST) if styles_set else {})
+    except Exception:
+        fab_map = {}
+    mapped = {
+        s for s, parts in (fab_map or {}).items()
+        if parts and str(getattr(parts[0], "hhn_no", "") or "").strip()
+    }
+    tmp = sel_items.assign(
+        _sty=sty_series,
+        _fab=(sel_items.get("fabric_item_no", pd.Series("", index=sel_items.index))
+              .fillna("").astype(str).str.strip().str.lower()),
+    )
+    tmp = tmp[tmp["_sty"] != ""]
+    has_code = tmp.groupby("_sty")["_fab"].apply(
+        lambda s: any(v not in ("", "none", "nan") for v in s)
+    )
+    uncovered = sorted(s for s, ok in has_code.items() if not ok and s not in mapped)
+    return distinct_styles, uncovered
 
 
 def _se_hist_buyplan_section(store, pc_options: list[str],
@@ -891,14 +936,13 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         # honestly, so "Styles: 8" can't be mistaken for the combo count.
         _combos = int(_sel_df["total_styles"].sum()) if "total_styles" in _sel_df.columns else 0
 
-        # Load the selected items once — reused for the distinct-style count and
-        # the fabric-code pre-flight below.
-        _sel_items = store.list_items(pc_nos=_effective_sel)
-        _sty_series = (
-            _sel_items["style"].fillna("").astype(str).str.strip()
-            if "style" in _sel_items.columns else pd.Series([], dtype=str)
+        # Cached by the PC selection: touching an unrelated widget on this
+        # screen (colour-source radio, fabric-version selector, …) reruns this
+        # whole function, but the item scan + fabric-mapping lookup + groupby
+        # below only need to redo when the SELECTION itself changes.
+        _distinct_styles, _uncovered = _se_buyplan_fabric_preflight(
+            tuple(sorted(_effective_sel))
         )
-        _distinct_styles = int(_sty_series[_sty_series != ""].nunique())
 
         _m1, _m2, _m3, _m4 = st.columns(4)
         _m1.metric(t("PCs selected"), len(_effective_sel))
@@ -912,40 +956,17 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         # code (and no saved fabric mapping to back-fill it) is silently skipped
         # in 核料. Flag those up-front, accounting for the fabric mapping so we
         # don't false-alarm on styles that will be back-filled at generation.
-        if "style" in _sel_items.columns:
-            _styles_set = sorted({s for s in _sty_series if s})
-            try:
-                _fab_map = (get_store().load_fabric_parts_for_styles(
-                    _styles_set, source=SOURCE_SKY_EAST) if _styles_set else {})
-            except Exception:
-                _fab_map = {}
-            _mapped = {
-                s for s, parts in (_fab_map or {}).items()
-                if parts and str(getattr(parts[0], "hhn_no", "") or "").strip()
-            }
-            _tmp = _sel_items.assign(
-                _sty=_sty_series,
-                _fab=(_sel_items.get("fabric_item_no", pd.Series("", index=_sel_items.index))
-                      .fillna("").astype(str).str.strip().str.lower()),
+        if _uncovered:
+            _prev = ", ".join(_uncovered[:6]) + (
+                f" … +{len(_uncovered) - 6} more" if len(_uncovered) > 6 else "")
+            st.info(
+                f"ℹ️ {len(_uncovered)} "
+                + t("style(s) have **no fabric code** on file")
+                + f" ({_prev}) — "
+                + t("核料 will skip them. Add the 面料编号 (HHN No.) via the "
+                    "**Missing Fields** tab or **📐 Reference Data** first."),
+                icon="🧩",
             )
-            _tmp = _tmp[_tmp["_sty"] != ""]
-            _has_code = _tmp.groupby("_sty")["_fab"].apply(
-                lambda s: any(v not in ("", "none", "nan") for v in s)
-            )
-            _uncovered = sorted(
-                s for s, ok in _has_code.items() if not ok and s not in _mapped
-            )
-            if _uncovered:
-                _prev = ", ".join(_uncovered[:6]) + (
-                    f" … +{len(_uncovered) - 6} more" if len(_uncovered) > 6 else "")
-                st.info(
-                    f"ℹ️ {len(_uncovered)} "
-                    + t("style(s) have **no fabric code** on file")
-                    + f" ({_prev}) — "
-                    + t("核料 will skip them. Add the 面料编号 (HHN No.) via the "
-                        "**Missing Fields** tab or **📐 Reference Data** first."),
-                    icon="🧩",
-                )
 
     # ── Color mapping source ──────────────────────────────────────────────────
     show_color_source_radio("se_bp_color_src_radio")
@@ -1500,6 +1521,9 @@ def _show_se_history_section():
     blank_pcs = df_contracts[df_contracts["pc_no"].fillna("").str.strip() == ""]["pc_no"].tolist()
     if blank_pcs:
         store.delete_contracts(blank_pcs)
+        from ui.sky_east._missing_compute import _compute_se_missing_df
+        _compute_se_missing_df.clear()
+        _se_buyplan_fabric_preflight.clear()
         df_contracts = store.list_contracts()   # refresh after cleanup
 
     total = len(df_contracts)

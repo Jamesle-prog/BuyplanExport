@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.75.1",
+        "date": "2026-07-15",
+        "entries": [
+            {"type": "perf", "text": "**Sky East → Generate/Export was recomputing expensive data on every unrelated click.** Streamlit re-renders every sub-tab's content on every rerun (regardless of which one is visually active), so the \"Missing Fields N\" badge count — a full item scan + per-row contract lookup + colour enrichment — was recomputed from scratch on *any* widget interaction anywhere in the Sky East tab, including the new fabric-version selector, the colour-source radio, or the PC multiselect. Same for the \"N style(s) have no fabric code\" pre-flight check on Generate/Export. Both are now cached (keyed by the actual selection where relevant) and explicitly invalidated at every real write point (contract upload, missing-field save/auto-fill, contract delete) — so results stay accurate immediately after your own edits, but an unrelated click no longer redoes the work. Measured ~100x faster on repeat renders (20ms → 0.1ms and 10ms → 0.1ms) with no behavior change."},
+        ],
+    },
+    {
         "version": "2.75.0",
         "date": "2026-07-14",
         "entries": [

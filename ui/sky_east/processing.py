@@ -384,6 +384,10 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             st.write("Saving to database...")
             store   = get_sky_east_store()
             results = store.save_many_contracts_checked(contracts)
+            from ui.sky_east._missing_compute import _compute_se_missing_df
+            from ui.sky_east.history import _se_buyplan_fabric_preflight
+            _compute_se_missing_df.clear()
+            _se_buyplan_fabric_preflight.clear()
 
             total_new  = sum(len(r["new_items"])       for r in results)
             total_upd  = sum(len(r["updated_items"])   for r in results)

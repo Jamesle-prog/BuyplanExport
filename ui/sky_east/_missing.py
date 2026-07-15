@@ -92,6 +92,10 @@ def _se_missing_show_autofill_controls(df_a, orig_a, af_mask, fl, pl) -> None:
             for _, row in df_a[af_mask].iterrows()
         )
         st.success(f"{t('Auto-filled and saved')} {saved} {t('item(s).')}")
+        from ui.sky_east._missing_compute import _compute_se_missing_df
+        from ui.sky_east.history import _se_buyplan_fabric_preflight
+        _compute_se_missing_df.clear()
+        _se_buyplan_fabric_preflight.clear()
         st.rerun()
 
 
@@ -158,6 +162,10 @@ def _se_missing_edit_grid(df_a, pid_b64_a: dict) -> None:
         (st.success(f"{t('Updated')} {saved} {t('item(s).')}") if saved
          else st.warning(t("No rows updated.")))
         if saved:
+            from ui.sky_east._missing_compute import _compute_se_missing_df
+            from ui.sky_east.history import _se_buyplan_fabric_preflight
+            _compute_se_missing_df.clear()
+            _se_buyplan_fabric_preflight.clear()
             st.rerun()
 
 
