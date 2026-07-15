@@ -1,4 +1,4 @@
-﻿"""Admin panel — 船样要求 (Boat Sample Requirements) management.
+﻿"""Admin panel — 船样要求 (Shipping Sample Requirements) management.
 
 Company and brand lists are sourced from the live data dictionaries:
   • Companies → auth.companies.list_company_names()
@@ -19,7 +19,7 @@ from ui.stores import get_boat_sample_store, list_all_brands
 def show_boat_sample_admin() -> None:
     st.markdown("#### 🚢 船样要求 管理")
     st.caption(
-        "Specify the boat-sample requirement text per **Company / Brand**. "
+        "Specify the shipping-sample requirement text per **Company / Brand**. "
         "The value is written into column P (船样要求) of every matching data "
         "row in the Sky East buy plan at export time."
     )
@@ -90,12 +90,12 @@ def show_boat_sample_admin() -> None:
             placeholder="— select brand —",
             key="bsr_brand_sel",
             help="Includes brands from the color-translation dictionary plus "
-                 "any brand already registered for boat-sample requirements "
+                 "any brand already registered for shipping-sample requirements "
                  "(e.g. auto-added when Sky East orders are loaded).",
         )
         req_text = st.text_area(
             "Requirement Text (船样要求)",
-            placeholder="Enter the boat-sample requirement text…",
+            placeholder="Enter the shipping-sample requirement text…",
             height=100,
             help="This text will be placed in column P of every data row for this brand.",
         )

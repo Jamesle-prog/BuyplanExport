@@ -105,7 +105,12 @@ STAGE_LABELS: dict[str, str] = {
     "qa":                      "QA",
     "final_qa":                "Final QA",
     # Group D
-    "boat_sample":             "Boat Sample",
+    # Stage KEY stays "boat_sample" — it's baked into real SQL column names
+    # (boat_sample_status/_planned/_actual/_notes/_expected_days) in the
+    # production_tracking table; renaming it needs a schema migration, not a
+    # terminology fix. Only the DISPLAYED label is corrected: 船样 = "shipping
+    # sample" (a pre-shipment sample), not "boat sample".
+    "boat_sample":             "Shipping Sample",
     "shipping":                "Shipping",
 }
 

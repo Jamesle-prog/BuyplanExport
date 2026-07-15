@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.74.2",
+        "date": "2026-07-14",
+        "entries": [
+            {"type": "docs", "text": "**Corrected \"boat sample\" → \"shipping sample\" in user-facing text.** 船样 means a pre-shipment sample, not a literal boat — fixed in the Admin → 船样要求 panel (captions, help text, placeholder), the auto-registration warning shown after Sky East uploads, and the Production Tracking stage label (Group D). Also accepts \"shipping sample\" / \"shipping sample req\" as column headers in uploaded templates (old \"boat sample\" wording still works). No behavior change — Python identifiers, the SQL table, and the production-tracking stage key are left as-is (shared with an external read-only consumer / would need a data migration)."},
+        ],
+    },
+    {
         "version": "2.74.1",
         "date": "2026-07-14",
         "entries": [

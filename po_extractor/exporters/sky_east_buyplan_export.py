@@ -445,8 +445,8 @@ def _present_order_sizes(df_items: pd.DataFrame) -> list[str]:
 
 
 def _prefetch_boat_sample_cache(df_items: pd.DataFrame) -> dict[str, str]:
-    """Batch-fetch 船样要求 (boat-sample requirement) text for every brand in
-    *df_items*, returning ``{brand: requirement}``.  Best-effort: any store
+    """Batch-fetch 船样要求 (shipping-sample requirement) text for every brand
+    in *df_items*, returning ``{brand: requirement}``.  Best-effort: any store
     failure warns and yields an empty cache so the buy plan still generates.
     """
     bsr_cache: dict[str, str] = {}
@@ -462,7 +462,7 @@ def _prefetch_boat_sample_cache(df_items: pd.DataFrame) -> dict[str, str]:
                 ) or {}
     except Exception as exc:
         import warnings as _w
-        _w.warn(f"[sky_east buyplan] boat_sample lookup failed: {exc!r}")
+        _w.warn(f"[sky_east buyplan] shipping-sample lookup failed: {exc!r}")
         bsr_cache = {}
     return bsr_cache
 
@@ -680,7 +680,7 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
     # exact-match a 大货进度表 / internal DB colour key (which carry no brackets).
     color_en = _strip_color_brackets(str(g.get("color_name", "") or "")).title()
     # brand = the order file's own brand (GIII data) — the key every brand-keyed
-    # lookup (colour DB, label DB, boat-sample requirement) was built against.
+    # lookup (colour DB, label DB, shipping-sample requirement) was built against.
     # NEVER swap this for the progress-table brand: 大货进度表's BRAND text is a
     # separate, free-typed field that won't match those DB keys, so silently
     # rekeying the lookups would turn matches into misses.

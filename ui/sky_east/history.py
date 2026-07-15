@@ -992,8 +992,8 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
 
                     # ── Auto-register new brands in 船样要求 admin ──────────────────────
                     # Any brand that appears in the loaded data but isn't yet in the
-                    # boat_sample_req table is added with empty req_text, so it shows up
-                    # in Admin → 船样要求 ready for the user to fill in.
+                    # shipping-sample-requirement table is added with empty req_text, so
+                    # it shows up in Admin → 船样要求 ready for the user to fill in.
                     if "brand" in df_items.columns:
                         _data_brands = (
                             df_items["brand"].dropna().astype(str).str.strip()
@@ -1012,7 +1012,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 st.warning(
                                     f"🆕 {len(_new_brands)} new brand(s) found and added "
                                     f"to **Admin → 🚢 船样要求**: {_list}. "
-                                    "Open that admin panel to fill in the boat-sample "
+                                    "Open that admin panel to fill in the shipping-sample "
                                     "requirement text — until then column **P** will be "
                                     "blank for these brands.",
                                     icon="🚢",

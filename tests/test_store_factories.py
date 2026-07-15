@@ -940,11 +940,11 @@ def test_buyplan_uses_db_label_color_over_keyword_derivation(fabric_in_db, tmp_p
 
 def test_progress_brand_display_only_never_a_lookup_key(fabric_in_db, tmp_path):
     """brand_by_pc_lookup (大货进度表's BRAND) must change ONLY the printed 品牌
-    cell. Every brand-KEYED lookup — here, the 船样要求 boat-sample requirement —
-    must still resolve against the order file's own brand (GIII data), because
-    that is the brand boat_sample_req was registered under. Rekeying that
-    lookup to 大货进度表's (differently-spelled) BRAND text would silently turn
-    a real match into a miss.
+    cell. Every brand-KEYED lookup — here, the 船样要求 shipping-sample
+    requirement — must still resolve against the order file's own brand (GIII
+    data), because that is the brand boat_sample_req was registered under.
+    Rekeying that lookup to 大货进度表's (differently-spelled) BRAND text would
+    silently turn a real match into a miss.
     """
     from openpyxl import load_workbook
     from auth.companies import COMPANY_SKY_EAST
@@ -955,7 +955,7 @@ def test_progress_brand_display_only_never_a_lookup_key(fabric_in_db, tmp_path):
 
     order_brand = "__TestBSR_OrderBrand__"
     progress_brand = "__TestBSR_ProgressBrand__"
-    req_text = "Boat sample per client spec"
+    req_text = "Shipping sample per client spec"
 
     bss = get_boat_sample_store()
     bss.upsert(COMPANY_SKY_EAST, order_brand, req_text)

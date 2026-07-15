@@ -133,7 +133,11 @@ _BUY_PLAN_COL_ALIASES: dict[str, set[str]] = {
     "l":         {"l"},
     "xl":        {"xl"},
     "xxl":       {"xxl", "2xl", "2xl"},
-    "boat_sample": {"船样要求", "boat sample", "boat sample req", "船样"},
+    # 船样 = "shipping sample" (a pre-shipment sample), not "boat sample" — the
+    # old English aliases are kept for backward compatibility with existing
+    # templates that already use that wording.
+    "boat_sample": {"船样要求", "shipping sample", "shipping sample req",
+                    "boat sample", "boat sample req", "船样"},
     "total":     {"total", "订单数合计", "qty", "total qty", "数量合计"},
     "ex_fty":    {"离厂时间", "ex-fty", "ex fty", "exfty", "ex_fty"},
 }

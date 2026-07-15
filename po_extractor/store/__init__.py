@@ -195,7 +195,7 @@ def list_all_brands(company: str) -> list[str]:
       • BoatSampleStore.list_known_brands(company)
 
     Use this anywhere you need a complete brand picker — it ensures that
-    brands auto-registered by one source (e.g. boat-sample requirements
+    brands auto-registered by one source (e.g. shipping-sample requirements
     inserted when Sky East orders are loaded) still appear in pickers
     powered by another source.
     """

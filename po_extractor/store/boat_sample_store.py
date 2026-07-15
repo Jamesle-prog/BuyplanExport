@@ -1,4 +1,4 @@
-"""SQLite store for 船样要求 (boat sample requirements) per (company, brand).
+"""SQLite store for 船样要求 (shipping sample requirements) per (company, brand).
 
 Each row specifies the sample requirement text for one company+brand pair.
 The value is injected into column P of Sky East buy-plan data rows during export.
