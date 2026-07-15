@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.75.2",
+        "date": "2026-07-15",
+        "entries": [
+            {"type": "perf", "text": "**Found the real cause of \"Generate Buy Plan\" taking 19+ seconds: \"Local + AI Enhance\" colour recognition was making blocking DeepSeek API calls one at a time, inline, inside the sheet-writing loop** (~1-3s per unresolved colour, serially). A new parallel pre-fetch pass resolves every colour the export will need to ask AI about — all at once, concurrently — before the (fast) serial sheet-writing begins, so those calls overlap instead of stacking up. Measured on a real 55-style / 9-contract run: **19.4s → 7.5s (2.6x faster)**, with zero change to the resolved colours themselves (same cache, same logic, same results — only when the network calls happen changed)."},
+            {"type": "feat", "text": "**Real progress bar for \"Generate Buy Plan.\"** The static \"Generating...\" status is now a percentage bar that tracks AI colour resolution (\"Resolving colours via AI (4/11)…\") and then each style sheet as it's written (\"Writing DR5124 (23/55)…\") — so a run that takes several seconds no longer looks frozen."},
+        ],
+    },
+    {
         "version": "2.75.1",
         "date": "2026-07-15",
         "entries": [

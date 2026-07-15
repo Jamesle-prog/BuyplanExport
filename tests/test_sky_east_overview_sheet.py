@@ -718,6 +718,119 @@ def test_ai_enhance_recovers_the_missing_component_in_a_two_tone_pair(monkeypatc
     assert result[1] == "52# / 3#"
 
 
+# ── AI colour prefetch (v2.75.2 perf fix) ────────────────────────────────────
+# "Local + AI Enhance" used to make one BLOCKING network call per unresolved
+# colour INLINE inside the serial row-writing loop -- for a run with a dozen
+# such colours (~1s+ each), that dominated total export time. These tests lock
+# _prefetch_ai_color_cache's own logic: it must skip colours that already
+# resolve locally, dedupe repeated raw strings across many rows into ONE job
+# each, and report progress as jobs complete -- all BEFORE the row-writing
+# loop runs, off the network-call critical path.
+
+def test_ai_prefetch_noop_without_enhance_or_key():
+    from po_extractor.exporters.sky_east_buyplan_export import _prefetch_ai_color_cache
+
+    df = pd.DataFrame([{"style": "DR1", "color_name": "Fuchsia", "brand": "", "pc_no": ""}])
+    calls = []
+    # ai_enhance=False -- must return immediately, no lookup work at all.
+    _prefetch_ai_color_cache(df, {}, {}, None, False, "sk-fake", "deepseek-chat")
+    # ai_enhance=True but no key -- same.
+    _prefetch_ai_color_cache(df, {}, {}, None, True, "", "deepseek-chat")
+    assert calls == []   # nothing to assert on calls, but neither call should raise
+
+
+def test_ai_prefetch_skips_colours_that_resolve_locally(monkeypatch):
+    """A colour present in cn_lookup must never trigger an AI job."""
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.exporters.sky_east_buyplan_export import _prefetch_ai_color_cache
+
+    def _boom(*a, **k):
+        raise AssertionError("AI must not be called for a colour that resolves locally")
+    monkeypatch.setattr(_ai, "recognize_colors", _boom)
+    monkeypatch.setattr(_ai, "match_color_to_candidates", _boom)
+
+    cn_lookup = {("Sky East", "Anna Field", "NAVY"): "藏青"}
+    df = pd.DataFrame([
+        {"style": "DR1", "color_name": "Navy", "brand": "Anna Field", "pc_no": "P1"},
+    ])
+    _prefetch_ai_color_cache(df, cn_lookup, {}, None, True, "sk-fake", "deepseek-chat")
+
+
+def test_ai_prefetch_dedupes_repeated_colour_across_rows(monkeypatch):
+    """The same unresolved raw colour string appearing on many rows must
+    trigger exactly ONE recognize_colors job, not one per row."""
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.exporters.sky_east_buyplan_export import _prefetch_ai_color_cache
+
+    calls = []
+    def _fake_recognize(raw, key, model="deepseek-chat"):
+        calls.append(raw)
+        return ("Navy",)
+    monkeypatch.setattr(_ai, "recognize_colors", _fake_recognize)
+
+    df = pd.DataFrame([
+        {"style": "DR1", "color_name": "Unresolvable Color Xyz", "brand": "Anna Field", "pc_no": "P1"},
+        {"style": "DR2", "color_name": "Unresolvable Color Xyz", "brand": "Anna Field", "pc_no": "P1"},
+        {"style": "DR3", "color_name": "Unresolvable Color Xyz", "brand": "Anna Field", "pc_no": "P1"},
+    ])
+    _prefetch_ai_color_cache(df, {}, {}, None, True, "sk-fake", "deepseek-chat")
+    assert calls == ["Unresolvable Color Xyz"]   # one job, not three
+
+
+def test_ai_prefetch_progress_callback_counts_to_total(monkeypatch):
+    """on_progress(done, total) must be called once before any job starts
+    (done=0) and once per completed job, ending at done==total."""
+    import po_extractor.lookups.color_ai_enhance as _ai
+    from po_extractor.exporters.sky_east_buyplan_export import _prefetch_ai_color_cache
+
+    monkeypatch.setattr(_ai, "recognize_colors", lambda raw, key, model="deepseek-chat": ("X",))
+
+    df = pd.DataFrame([
+        {"style": "DR1", "color_name": "__TestAI_A__", "brand": "", "pc_no": ""},
+        {"style": "DR2", "color_name": "__TestAI_B__", "brand": "", "pc_no": ""},
+        {"style": "DR3", "color_name": "__TestAI_C__", "brand": "", "pc_no": ""},
+    ])
+    ticks = []
+    _prefetch_ai_color_cache(df, {}, {}, None, True, "sk-fake", "deepseek-chat",
+                             on_progress=lambda d, t: ticks.append((d, t)))
+    assert ticks[0] == (0, 3)
+    assert ticks[-1] == (3, 3)
+    assert [d for d, _ in ticks] == sorted(d for d, _ in ticks)   # monotonic
+    assert all(t == 3 for _, t in ticks)
+
+
+def test_export_sky_east_buyplan_on_progress_reaches_zero_and_one():
+    """End-to-end (ai_enhance off, so no network calls, keeps the test fast):
+    on_progress must fire with 0.0 first and 1.0 last, strictly increasing
+    in between, covering the whole export call."""
+    import tempfile
+    from po_extractor.exporters.sky_east_buyplan_export import export_sky_east_buyplan
+
+    df = pd.DataFrame([
+        {"pc_no": "P1", "style": "DR1", "contract_no": "C1", "brand": "Anna Field",
+         "article_name": "DRESS", "zalando_po": "PO1", "config_sku": "K1",
+         "color_name": "Navy", "colour_code": "",
+         "xs": 1, "s": 1, "m": 1, "l": 1, "xl": 1, "xxl": 0,
+         "fabric_item_no": "", "fabrication": ""},
+        {"pc_no": "P1", "style": "DR2", "contract_no": "C1", "brand": "Anna Field",
+         "article_name": "DRESS", "zalando_po": "PO1", "config_sku": "K1",
+         "color_name": "Black", "colour_code": "",
+         "xs": 1, "s": 1, "m": 1, "l": 1, "xl": 1, "xxl": 0,
+         "fabric_item_no": "", "fabrication": ""},
+    ])
+    ticks = []
+    with tempfile.TemporaryDirectory() as out_dir:
+        export_sky_east_buyplan(
+            df, {}, out_dir,
+            sky_east_store=None,
+            on_progress=lambda f, l: ticks.append(f),
+        )
+    assert ticks[0] == 0.0
+    assert ticks[-1] == 1.0
+    assert ticks == sorted(ticks)   # monotonically non-decreasing
+    assert all(0.0 <= f <= 1.0 for f in ticks)
+
+
 def test_order_file_two_tone_shows_combined_chinese_names_end_to_end(tmp_path):
     """Overview sheet for a two-tone order-file colour whose both components
     resolve must show both Chinese names combined, not just one.

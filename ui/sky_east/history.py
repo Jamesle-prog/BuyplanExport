@@ -1162,6 +1162,14 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                         )
 
                         st.write("Building main buy plan (Template)...")
+                        _bp_progress = st.progress(0, text="Starting…")
+
+                        def _bp_on_progress(frac: float, label: str) -> None:
+                            try:
+                                _bp_progress.progress(min(max(frac, 0.0), 1.0), text=label)
+                            except Exception:
+                                pass   # a progress-UI hiccup must never fail the export
+
                         try:
                             bp_path, style_totals = export_sky_east_buyplan(
                                 df_items, color_lookups.cn, out_dir,
@@ -1172,6 +1180,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 cn_by_pc_lookup=color_lookups.by_pc,
                                 brand_by_pc_lookup=color_lookups.brand_by_pc,
                                 fabric_version_id=_fabric_version_id,
+                                on_progress=_bp_on_progress,
                             )
                             with open(bp_path, "rb") as f:
                                 st.session_state[SK.SE_BP_BYTES] = f.read()

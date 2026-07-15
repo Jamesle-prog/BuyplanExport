@@ -344,6 +344,116 @@ def _resolve_pc_color_multi(
     return combined_cn, combined_code, label, _format_body_color_cn(combined_code, combined_cn)
 
 
+def _prefetch_ai_color_cache(
+    df_items: pd.DataFrame,
+    cn_lookup: dict, cn_code_lookup: dict | None, cn_by_pc_lookup: dict | None,
+    ai_enhance: bool, ai_api_key: str, ai_model: str,
+    on_progress=None,
+) -> None:
+    """Parallel pre-warm of every AI colour-recognition call this export will
+    need, so the SERIAL per-row/per-sheet writing pass below never blocks on
+    a network round-trip.
+
+    "Local + AI Enhance" mode used to make one blocking DeepSeek API call per
+    colour that missed local resolution, INLINE inside the row-writing loop
+    (one style at a time) -- for a run with a dozen unresolved colours, at
+    ~1s+ per call, that alone dominated total export time (19s of a 21s
+    export, measured). Both AI functions cache by (raw string) /
+    (string, candidate-set) (see color_ai_enhance.py), so warming the cache
+    here turns the writing loop's calls into free dict lookups -- mirrors
+    price_mask.mask_prices_batch's existing pattern of parallelising AI
+    network calls while keeping the actual file-writing work serial.
+
+    Best-effort and over-inclusive by design: for a colour needing AI, BOTH
+    the constrained candidate-match (progress source only) and the
+    open-ended recognise call are queued, even though the row logic only
+    ever needs whichever one actually resolves -- deciding that upfront would
+    require replicating _ai_retry_component's full branch logic here just to
+    save a few parallel (not serial) calls. A prefetch failure just means the
+    writing loop's own call happens serially as before; never breaks export.
+
+    *on_progress(done, total)*, when given, is called once before any job
+    starts (done=0) and once as each of the *total* parallel jobs completes
+    (in COMPLETION order, not submission order) -- lets a caller show
+    "Resolving colours via AI (N/total)..." for what is typically the single
+    largest chunk of export time when AI enhance is on. Exceptions from the
+    callback are swallowed; a broken progress UI must never break the export.
+    """
+    if not (ai_enhance and ai_api_key):
+        return
+    if "style" not in df_items.columns or "color_name" not in df_items.columns:
+        return
+
+    from ..lookups.color_ai_enhance import match_color_to_candidates, recognize_colors
+
+    jobs: list = []
+    seen: set = set()
+    sty_norm_cache: dict[str, str] = {}
+
+    for _, row in df_items.iterrows():
+        style = str(row.get("style", "") or "").strip()
+        if not style:
+            continue
+        sty_norm = sty_norm_cache.get(style)
+        if sty_norm is None:
+            sty_norm = sty_norm_cache[style] = _norm_key(style)
+        brand = str(row.get("brand", "") or "")
+        color_en = _strip_color_brackets(str(row.get("color_name", "") or "")).title()
+        components = [c.strip() for c in color_en.split(" / ") if c.strip()] or [color_en]
+
+        for comp in components:
+            if not comp:
+                continue
+            result = _resolve_pc_color(
+                row, sty_norm, comp, brand, cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+            )
+            if result[0] != _COLOR_NOT_FOUND:
+                continue   # resolves locally -- no AI needed for this component
+
+            if cn_by_pc_lookup is not None:
+                candidates = _available_progress_colors(
+                    cn_by_pc_lookup, _norm_key(row.get("pc_no") or ""), sty_norm,
+                )
+                if candidates:
+                    key = ("match", comp, tuple(sorted(candidates)))
+                    if key not in seen:
+                        seen.add(key)
+                        jobs.append(lambda c=comp, cs=candidates:
+                                    match_color_to_candidates(c, cs, ai_api_key, ai_model))
+
+            key = ("recognize", comp)
+            if key not in seen:
+                seen.add(key)
+                jobs.append(lambda c=comp:
+                            recognize_colors(c, ai_api_key, ai_model))
+
+    if not jobs:
+        return
+
+    total = len(jobs)
+    done = 0
+    if on_progress:
+        try:
+            on_progress(done, total)
+        except Exception:
+            pass
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=min(6, total)) as ex:
+        futs = [ex.submit(job) for job in jobs]
+        for f in as_completed(futs):
+            try:
+                f.result()
+            except Exception:
+                pass
+            done += 1
+            if on_progress:
+                try:
+                    on_progress(done, total)
+                except Exception:
+                    pass
+
+
 def _resolve_ai_enhance_settings(
     ai_enhance: bool | None,
     ai_api_key: str | None,
@@ -838,6 +948,7 @@ def export_sky_east_buyplan(
     ai_api_key: str | None = None,
     ai_model: str | None = None,
     sky_east_store=_AUTO_STORE,
+    on_progress=None,
 ) -> str:
     """Generate the main Sky East buy plan.
 
@@ -899,6 +1010,14 @@ def export_sky_east_buyplan(
                            Pass ``None`` explicitly to disable colour-miss
                            logging entirely (e.g. in tests, to avoid writing
                            diagnostic rows into a real database).
+    on_progress            : optional ``callable(frac: float, label: str)``
+                           called repeatedly as this call progresses from 0.0
+                           to 1.0 -- covers the parallel AI colour-resolution
+                           prefetch (often the single largest chunk of export
+                           time when "Local + AI Enhance" is on) and then each
+                           style-group sheet as it's written. Never called if
+                           there's nothing to report progress on. Exceptions
+                           from the callback are swallowed.
 
     Returns
     -------
@@ -989,6 +1108,31 @@ def export_sky_east_buyplan(
     _fm = _prefetch_fabric_master_cache(fabric_parts_by_style, df_items,
                                         fabric_version_id=fabric_version_id)
 
+    def _tick(frac: float, label: str) -> None:
+        if on_progress:
+            try:
+                on_progress(frac, label)
+            except Exception:
+                pass
+
+    # ── Pre-warm AI colour recognition IN PARALLEL ──────────────────────────
+    # "Local + AI Enhance" mode's colour lookups happen one style at a time in
+    # the serial writing loop below -- warm the process-level cache with every
+    # needed call up front (concurrently) so that loop hits cache, not network.
+    # Typically the single largest chunk of export time when AI enhance is on
+    # -- gets its own progress range (5%-40%) rather than a single opaque step.
+    def _ai_tick(done: int, total: int) -> None:
+        _tick(0.05 + 0.35 * (done / total if total else 1),
+              f"Resolving colours via AI ({done}/{total})…")
+
+    _tick(0.0, "Resolving colours…")
+    _prefetch_ai_color_cache(
+        df_items, cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+        ai_enhance, ai_api_key, ai_model,
+        on_progress=_ai_tick,
+    )
+    _tick(0.4, "Writing style sheets…")
+
     # Constant-for-the-whole-workbook context threaded into the per-row writer.
     _row_ctx = _RowContext(
         col=col, cn_lookup=cn_lookup, cn_code_lookup=cn_code_lookup,
@@ -1032,12 +1176,16 @@ def export_sky_east_buyplan(
         lambda s: _se_base_style_key(s, _known_styles)
     )
 
-    for style, style_df in df_items.groupby(_group_keys, sort=False):
+    _style_groups = list(df_items.groupby(_group_keys, sort=False))
+    _total_groups = len(_style_groups)
+    for _gi, (style, style_df) in enumerate(_style_groups, start=1):
         # ``style`` here is the *base* style (group representative) — used for the
         # sheet name, fabric-part lookup, header placeholder and per-tab total.
         style = str(style or "").strip()
         if not style:
             continue
+        _tick(0.4 + 0.55 * (_gi / _total_groups if _total_groups else 1),
+              f"Writing {style} ({_gi}/{_total_groups})…")
 
         first = style_df.iloc[0]
         parts = (fabric_parts_by_style or {}).get(style, []) if fabric_parts_by_style else []
@@ -1247,6 +1395,7 @@ def export_sky_east_buyplan(
             f"[sky_east buyplan] 主标颜色 missing — {n} item(s) have no label "
             f"colour on file (left blank, not derived; enter manually): {preview}"
         )
+    _tick(1.0, "Buy plan complete")
     return str(path), style_totals
 
 
