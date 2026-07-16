@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.77.0",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "feat", "text": "**Sky East upload now prompts for a shipping sample requirement (船样要求) on any brand never seen before.** Previously, a brand with no requirement on file was just silently left blank in the buy plan until someone noticed at generation time (which only shows a static \"go fill it in\" warning). Now, right after uploading, any brand not already registered gets a review box with one row per new brand — enter the requirement (or leave blank if none applies) and Save. Existing brands are completely unaffected."},
+        ],
+    },
+    {
         "version": "2.76.7",
         "date": "2026-07-16",
         "entries": [

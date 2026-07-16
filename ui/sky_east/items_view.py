@@ -7,10 +7,11 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from auth.companies import COMPANY_SKY_EAST
 from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import XLSX_MIME, CSV_MIME, _th, _tr, build_image_cache_for_ids, persisted_download
-from ui.stores import get_store, get_sky_east_store, get_fabric_master_store
+from ui.stores import get_store, get_sky_east_store, get_fabric_master_store, get_boat_sample_store
 from ui.sky_east._shared import live_label, _get_dual_header, _write_dual_header_excel, _write_wash_label_excel
 from ui.sky_east._missing import _show_se_missing_fields_section  # re-export
 
@@ -191,6 +192,37 @@ def _show_return_label_conflicts(pending: list[dict]) -> None:
         if col2.button(t("Keep all as recorded (dismiss)"), use_container_width=True,
                        key="se_rl_pending_dismiss"):
             st.session_state[SK.SE_RL_PENDING] = []
+            st.rerun()
+
+
+def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
+    """One-time prompt after an upload introduces a brand never seen before
+    in 船样要求 (shipping sample requirements) -- entered here instead of
+    being silently left blank until someone notices at buy-plan generation
+    time (BoatSampleStore.get_batch skips brands with no/empty req_text).
+    """
+    st.info(
+        f"📦 {len(pending_brands)} " +
+        t("new brand(s) found in this upload. Enter each one's shipping "
+          "sample requirement below (leave blank if none applies):")
+    )
+    with st.expander(t("Shipping sample requirement — new brands"), expanded=True):
+        col_brand, col_req = _th("Brand"), _th("Shipping Sample Requirement")
+        df = pd.DataFrame([{col_brand: b, col_req: ""} for b in pending_brands])
+        edited = st.data_editor(
+            df, hide_index=True, use_container_width=True, num_rows="fixed",
+            disabled=[col_brand],
+            key="se_new_brand_editor",
+        )
+        if st.button(t("Save"), type="primary", key="se_new_brand_save"):
+            store = get_boat_sample_store()
+            for _, row in edited.iterrows():
+                store.upsert(COMPANY_SKY_EAST, row[col_brand], row[col_req] or "")
+            st.session_state[SK.SE_NEW_BRAND_PENDING] = []
+            st.success(
+                f"✅ {t('Saved shipping sample requirement for')} "
+                f"{len(pending_brands)} {t('brand(s)')}."
+            )
             st.rerun()
 
 

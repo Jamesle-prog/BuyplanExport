@@ -8,6 +8,7 @@ from ui.sky_east._shared import live_label, show_color_source_radio
 from ui.sky_east.processing import _run_sky_east_processing, _compute_se_missing_df
 from ui.sky_east.items_view import (
     _show_se_results, _show_se_missing_fields_section, _show_return_label_conflicts,
+    _show_new_brand_shipping_sample_prompt,
 )
 from ui.sky_east.history import _show_se_history_section
 from ui.sky_east.reports_tab import PIN_BUYPLAN, _show_se_reports_tab
@@ -113,6 +114,10 @@ def _show_se_upload_section():
     _rl_pending = st.session_state.get(SK.SE_RL_PENDING)
     if _rl_pending:
         _show_return_label_conflicts(_rl_pending)
+
+    _new_brand_pending = st.session_state.get(SK.SE_NEW_BRAND_PENDING)
+    if _new_brand_pending:
+        _show_new_brand_shipping_sample_prompt(_new_brand_pending)
 
     if st.session_state.get(SK.SE_MASKED_ZIP):
         st.download_button(

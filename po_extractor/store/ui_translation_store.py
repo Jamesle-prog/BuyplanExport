@@ -1384,6 +1384,16 @@ _SEED: list[tuple[str, str, str, str]] = [
     # Sky East — Return Label column in the Contract History item browser
     # and the Order Summary tab's Sky East item list (v2.76.6)
     ('Return Label', '退货标签', 'label', 'sky_east'),
+
+    # Sky East — new-brand shipping sample requirement prompt on upload (v2.77.0)
+    ('Shipping Sample Requirement', '船样要求', 'label', 'sky_east'),
+    ('Shipping sample requirement — new brands', '船样要求 — 新品牌', 'label', 'sky_east'),
+    ("new brand(s) found in this upload. Enter each one's shipping "
+     "sample requirement below (leave blank if none applies):",
+     '个新品牌在本次上传中出现。请在下方填写各自的船样要求（如无要求可留空）：',
+     'label', 'sky_east'),
+    ('Saved shipping sample requirement for', '已保存船样要求，品牌数：', 'label', 'sky_east'),
+    ('brand(s)', '个', 'label', 'sky_east'),
 ]
 # fmt: on
 

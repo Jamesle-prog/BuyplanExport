@@ -12,7 +12,7 @@ from auth.companies import COMPANY_SKY_EAST, SOURCE_SKY_EAST
 from po_extractor.utils.price_mask import mask_prices_excel_batch
 from ui.session_keys import SK
 from ui.shared import ProgressTracker, save_images_to_disk, EXTRACTED_IMAGES_DIR
-from ui.stores import get_store, get_sky_east_store
+from ui.stores import get_store, get_sky_east_store, get_boat_sample_store
 from ui.sky_east._shared import _parse_fabric_mapping_file, live_label
 from ui.sky_east._validators import _se_report_sku_conflicts, _se_validate_contracts
 from ui.sky_east._missing_compute import _compute_se_missing_df  # noqa: F401 (re-export)
@@ -34,6 +34,21 @@ def _se_build_style_pid_map(contracts) -> dict[str, list[str]]:
                 if pid not in lst and len(lst) < 2:
                     lst.append(pid)
     return style_pid_map
+
+
+def _se_distinct_brands(contracts) -> list[str]:
+    """Distinct, order-preserved brand names across all parsed contracts'
+    items -- the same raw item.brand field _prefetch_boat_sample_cache reads
+    at buy-plan generation time (never the progress-table override)."""
+    seen: set[str] = set()
+    brands: list[str] = []
+    for c in contracts:
+        for itm in (c.items or []):
+            b = (itm.brand or "").strip()
+            if b and b not in seen:
+                seen.add(b)
+                brands.append(b)
+    return brands
 
 
 def _enrich_fabric_parts_from_cache(style_parts_map: dict) -> None:
@@ -416,6 +431,23 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
                     for p in r["pending_return_label"]:
                         pending[(p["pc_no"], p["style"], p["color_name"], p["zalando_po"])] = p
                 st.session_state[SK.SE_RL_PENDING] = list(pending.values())
+
+            # New brands (never seen in 船样要求/shipping-sample requirements
+            # before) -- held for an upload-time prompt rather than silently
+            # left blank until someone notices at buy-plan generation time.
+            _new_brands = _se_distinct_brands(contracts)
+            if _new_brands:
+                _bsr_store = get_boat_sample_store()
+                _known = _bsr_store.list_known_brands(COMPANY_SKY_EAST)
+                _unseen = [b for b in _new_brands if b not in _known]
+                if _unseen:
+                    _pending_brands = list(st.session_state.get(SK.SE_NEW_BRAND_PENDING, []))
+                    for b in _unseen:
+                        if b not in _pending_brands:
+                            _pending_brands.append(b)
+                    st.session_state[SK.SE_NEW_BRAND_PENDING] = _pending_brands
+                    st.write(f"  {len(_unseen)} new brand(s) need a shipping sample requirement")
+                    log.append(f"{len(_unseen)} new brand(s) need a shipping sample requirement")
 
             _se_save_fabric_parts_universal(contracts, fabric_lookup, log)
             _se_patch_contract_numbers(store, contracts, progress_lookup, log)
