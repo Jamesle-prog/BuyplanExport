@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.78.1",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "refactor", "text": "**Fabric-list version stamp slimmed down for outside-facing buy plans.** The separate \"Fabric Version\" tab (added in v2.78.0) is replaced by a single discreet footer cell on the Index sheet — `面料表版本 Fabric list version: v5 (2026-07-16)`, plus a \"pinned\" marker when an older version was deliberately selected. Buy plans are sent to clients and factories, so internal housekeeping (who uploaded the fabric list, the internal filename, change counts) now stays out of the workbook entirely; the version number is enough for our own team to look up the full record in Fabric DB → Version History."},
+        ],
+    },
+    {
         "version": "2.78.0",
         "date": "2026-07-16",
         "entries": [

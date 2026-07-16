@@ -34,7 +34,7 @@ __all__ = [
     "_norm", "_thin",
     "_apply_config_overrides", "_clean_sheet_name",
     "_clear_data_area", "_cn_color", "_create_index_sheet", "_create_overview_sheet",
-    "_create_fabric_version_sheet",
+    "_fabric_version_note",
     "_detect_buyplan_layout", "_detect_fabric_rows", "_detect_nukuryou_layout",
     "_embed_style_photos", "_prep_image_for_embed",
     "_replace_placeholders", "_set_sheet_column_widths", "_strip_color_brackets",
@@ -716,7 +716,8 @@ def derive_main_label_color(en_color: str | None) -> str:
 
 def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                         style_image_map: dict | None = None,
-                        sheet_meta_list: list | None = None) -> None:
+                        sheet_meta_list: list | None = None,
+                        fabric_version_note: str | None = None) -> None:
     """Create Index sheet as the first sheet — mirrors VBA CreateIndexSheet.
 
     Parameters
@@ -917,6 +918,14 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
             w = max(14, len(h_str) + cjk_count + 4)
         idx_ws.column_dimensions[idx_ws.cell(1, ci).column_letter].width = w
 
+    # ── Fabric-list version note (single cell, discreet footer) ─────────────
+    # Written AFTER the alignment/width passes so it keeps its own subtle
+    # styling. One blank row below the last data row, column B (under 款号).
+    if fabric_version_note:
+        note_cell = idx_ws.cell(idx_ws.max_row + 2, 2, value=fabric_version_note)
+        note_cell.font = Font(size=9, italic=True, color="FF808080")
+        note_cell.alignment = Alignment(horizontal="left", vertical="center")
+
     # Freeze the header row so it stays visible while scrolling
     idx_ws.freeze_panes = "A2"
 
@@ -1107,72 +1116,34 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
     ov_ws.freeze_panes = "A2"
 
 
-def _create_fabric_version_sheet(wb, fabric_version_id: int | None) -> None:
-    """Small info sheet recording WHICH fabric-list version enriched this
-    buy plan -- inserted right after Overview. Best-effort: any store/lookup
-    failure skips the sheet rather than failing the export.
+def _fabric_version_note(fabric_version_id: int | None) -> str | None:
+    """One-line provenance note for the Index sheet: which fabric-list
+    version enriched this buy plan. Deliberately terse -- buy plans are sent
+    to clients/factories, so internal detail (uploader, internal filename,
+    change counts) is omitted; the version id + date is enough for our own
+    team to look up the full record in the Fabric DB tab's Version History.
 
-    ``fabric_version_id=None`` means "Latest" (the live fabric_master table,
-    i.e. the newest version). A specific id means the buy plan was pinned to
-    that archived version via the generation screen's version selector.
+    ``fabric_version_id=None`` means "Latest" (the live table / newest
+    version); a specific id means the export was pinned to that archived
+    version. Returns None (no note) when no version info is available --
+    best-effort, never breaks the export.
     """
-    from datetime import datetime as _dt
-
     try:
         from ..store import get_fabric_master_store
-        store = get_fabric_master_store()
-        versions = store.list_versions(limit=10)
-
+        versions = get_fabric_master_store().list_versions(limit=10)
         if fabric_version_id is None:
             meta = versions[0] if versions else None
-            pin_note = "Latest 最新"
+            suffix = ""
         else:
             meta = next((v for v in versions
                          if v["version_id"] == fabric_version_id), None)
-            pin_note = "Pinned to historical version 指定历史版本"
-
-        summary = (store.get_diff_summary(meta["version_id"])
-                   if meta else {"added": 0, "removed": 0, "changed": 0})
+            suffix = " · 指定历史版本 pinned"
+        if meta is None:
+            return None
+        when = str(meta["created_at"])[:10]
+        return f"面料表版本 Fabric list version: v{meta['version_id']} ({when}){suffix}"
     except Exception:
-        return   # no version info available -- don't break the export
-
-    ws = wb.create_sheet("Fabric Version", 2)   # after Index + Overview
-
-    header = ws.cell(1, 1, value="面料表版本 / Fabric Database Version")
-    header.fill = PatternFill(start_color="FF1F3864", end_color="FF1F3864", fill_type="solid")
-    header.font = Font(bold=True, color="FFFFFFFF", size=11)
-    header.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=2)
-    ws.row_dimensions[1].height = 24
-
-    if meta is None:
-        rows = [("版本 Version",
-                 "No fabric-list versions recorded — live table used 无版本记录（使用当前数据表）")]
-    else:
-        when = str(meta["created_at"])[:19].replace("T", " ")
-        rows = [
-            ("版本 Version",        f"v{meta['version_id']} ({pin_note})"),
-            ("上传时间 Uploaded at", when),
-            ("上传人 Uploaded by",   meta.get("uploaded_by") or ""),
-            ("来源文件 Source file", meta.get("source_file") or ""),
-            ("记录数 Rows",          meta.get("row_count") or 0),
-            ("本版本变更 Changes",
-             f"+{summary['added']} added / -{summary['removed']} removed / "
-             f"~{summary['changed']} changed"),
-        ]
-    rows.append(("生成时间 Generated at",
-                 _dt.now().strftime("%Y-%m-%d %H:%M:%S")))
-
-    for ri, (label, value) in enumerate(rows, start=2):
-        lc = ws.cell(ri, 1, value=label)
-        lc.font = Font(bold=True, size=10)
-        lc.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-        vc = ws.cell(ri, 2, value=value)
-        vc.font = Font(size=10)
-        vc.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-
-    ws.column_dimensions["A"].width = 26
-    ws.column_dimensions["B"].width = 60
+        return None
 
 
 def _prep_image_for_embed(img_bytes: bytes, display_px: int) -> bytes:

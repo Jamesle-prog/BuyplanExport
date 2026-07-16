@@ -75,9 +75,8 @@ def test_overview_sheet_created_right_after_index(two_style_df, pc_color_lookup,
     wb = load_workbook(path)
     assert wb.sheetnames[0] == "Index"
     assert wb.sheetnames[1] == "Overview"
-    assert wb.sheetnames[2] == "Fabric Version"
     # Sheet names are "<index>_<style>" -- verify by suffix, not exact name.
-    style_sheets = wb.sheetnames[3:]
+    style_sheets = wb.sheetnames[2:]
     assert len(style_sheets) == 2
     assert any(s.endswith("_DR5124") for s in style_sheets)
     assert any(s.endswith("_DR4578") for s in style_sheets)
@@ -198,23 +197,32 @@ def _fabric_store_with_versions(tmp_path, monkeypatch, n_versions: int = 1):
     return store
 
 
-def test_fabric_version_sheet_shows_latest_version(
+def test_index_sheet_carries_fabric_version_note(
     two_style_df, pc_color_lookup, tmp_path, monkeypatch,
 ):
+    """The buy plan records which fabric-list version enriched it as a
+    single discreet cell on the Index sheet -- deliberately NOT a separate
+    tab and deliberately terse (version + date only): these files go to
+    clients/factories, so internal detail (uploader, internal filename,
+    change counts) stays out of the workbook entirely."""
     _fabric_store_with_versions(tmp_path, monkeypatch, n_versions=2)
     path, _totals = export_sky_east_buyplan(
         two_style_df, cn_lookup={}, output_dir=str(tmp_path),
         label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=pc_color_lookup,
     )
     wb = load_workbook(path)
-    assert "Fabric Version" in wb.sheetnames
-    ws = wb["Fabric Version"]
+    assert "Fabric Version" not in wb.sheetnames   # no separate tab
+    ws = wb["Index"]
     values = [str(c.value) for row in ws.iter_rows() for c in row if c.value]
-    assert any("v2" in v and "Latest" in v for v in values), values
-    assert any("fv2.xlsx" in v for v in values)
+    note = next((v for v in values if "Fabric list version" in v), None)
+    assert note is not None, values
+    assert "v2" in note
+    # Internal housekeeping detail must NOT leak into an outside-facing file.
+    assert "fv2.xlsx" not in note
+    assert not any("fv2.xlsx" in v for v in values)
 
 
-def test_fabric_version_sheet_shows_pinned_version(
+def test_index_sheet_fabric_version_note_pinned_variant(
     two_style_df, pc_color_lookup, tmp_path, monkeypatch,
 ):
     _fabric_store_with_versions(tmp_path, monkeypatch, n_versions=2)
@@ -223,10 +231,11 @@ def test_fabric_version_sheet_shows_pinned_version(
         label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=pc_color_lookup,
         fabric_version_id=1,
     )
-    ws = load_workbook(path)["Fabric Version"]
+    ws = load_workbook(path)["Index"]
     values = [str(c.value) for row in ws.iter_rows() for c in row if c.value]
-    assert any("v1" in v and "Pinned" in v for v in values), values
-    assert any("fv1.xlsx" in v for v in values)
+    note = next((v for v in values if "Fabric list version" in v), None)
+    assert note is not None, values
+    assert "v1" in note and "pinned" in note
 
 
 def test_index_sheet_return_label_defaults_to_na_when_absent(two_style_df, pc_color_lookup, tmp_path):
