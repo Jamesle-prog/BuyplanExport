@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.77.3",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "fix", "text": "**Fabric list versioning: numeric values compare at 2 decimal places.** Fabric-table numbers (weight, widths, MOQ/MCQ, prices, shrinkage/short rates) are only meaningful to 2 dp — precision noise beyond that (Excel float artifacts, a source file carrying 66.666667 where 66.67 is already on file, 200 vs 200.0) no longer registers as a \"changed\" field, so it can't mint a spurious new version by itself. Real changes at 2 dp still bump normally, and the version-history diff now records the rounded values for numeric fields."},
+        ],
+    },
+    {
         "version": "2.77.2",
         "date": "2026-07-16",
         "entries": [

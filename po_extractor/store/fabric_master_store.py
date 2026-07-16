@@ -356,12 +356,33 @@ class FabricMasterStore(BaseSQLiteStore):
         }
 
     @staticmethod
-    def _compute_version_diff(old_state: dict, new_state: dict) -> list[tuple]:
+    def _diff_value_norm(field: str, value) -> str:
+        """Canonical string form of *value* for version-diff comparison.
+
+        Numeric fabric fields are capped at 2 decimal places before
+        comparing: the fabric tables' numbers are only meaningful to 2 dp,
+        so precision noise beyond that (Excel float artifacts, a source file
+        carrying 66.666667 where 66.67 is already on file, int-vs-float
+        representation like 200 vs 200.0) must not register as a "changed"
+        field -- and hence must not mint a new version by itself.
+        """
+        if value is None:
+            return ""
+        if field in _NUMERIC_FIELDS:
+            try:
+                return str(round(float(value), 2))
+            except (ValueError, TypeError):
+                pass   # non-numeric text in a numeric column: string-compare
+        return str(value)
+
+    @classmethod
+    def _compute_version_diff(cls, old_state: dict, new_state: dict) -> list[tuple]:
         """Return one (quality_no, change_type, field, old_value, new_value)
         tuple per added/removed quality_no, and one per changed field for a
         quality_no present in both -- mirrors ColorTranslationStore._audit_diff's
         field-level diff shape. Empty list == the two states are identical
-        across _DIFF_FIELDS (i.e. no version bump warranted)."""
+        across _DIFF_FIELDS (i.e. no version bump warranted). Numeric fields
+        compare (and are recorded) at 2 dp -- see _diff_value_norm."""
         rows: list[tuple] = []
         for qno in set(old_state) | set(new_state):
             old_row = old_state.get(qno)
@@ -372,10 +393,8 @@ class FabricMasterStore(BaseSQLiteStore):
                 rows.append((qno, "removed", None, None, None))
             else:
                 for f in _DIFF_FIELDS:
-                    ov = old_row.get(f)
-                    nv = new_row.get(f)
-                    ov_s = "" if ov is None else str(ov)
-                    nv_s = "" if nv is None else str(nv)
+                    ov_s = cls._diff_value_norm(f, old_row.get(f))
+                    nv_s = cls._diff_value_norm(f, new_row.get(f))
                     if ov_s != nv_s:
                         rows.append((qno, "changed", f, ov_s, nv_s))
         return rows

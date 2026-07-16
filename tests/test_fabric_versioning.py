@@ -18,16 +18,31 @@ import pytest
 from po_extractor.store.fabric_master_store import FabricMasterStore
 
 
+# The importer positionally fallback-maps EVERY field via _COL_MAP_FALLBACK
+# (setdefault), so a fixture that packs its 4 fields into columns 1-4 leaks
+# the weight/width values into the text fields whose canonical columns those
+# are (supplier_no=3, supplier=4). Write each field at its canonical column
+# instead, leaving every other column empty (-> None -> no cross-mapping).
+_FIXTURE_COLS = {          # field -> 1-based canonical column (_COL_MAP_FALLBACK)
+    "quality_no": 1, "composition_en": 5, "weight_gsm": 10, "cuttable_width_cm": 11,
+}
+_FIXTURE_HEADERS = {
+    "quality_no": "公司面料编号", "composition_en": "面料成分(英文)",
+    "weight_gsm": "克重(gsm)", "cuttable_width_cm": "有效门幅(cm)",
+}
+
+
 def _make_fabric_xlsx(rows: list[dict]) -> bytes:
     """Build a minimal 面料统计表.xlsx ('all' sheet) from row dicts keyed by
     quality_no/composition_en/weight_gsm/cuttable_width_cm."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "all"
-    ws.append(["公司面料编号", "面料成分(英文)", "克重(gsm)", "有效门幅(cm)"])
-    for r in rows:
-        ws.append([r.get("quality_no"), r.get("composition_en"),
-                   r.get("weight_gsm"), r.get("cuttable_width_cm")])
+    for field, col in _FIXTURE_COLS.items():
+        ws.cell(row=1, column=col, value=_FIXTURE_HEADERS[field])
+    for ri, r in enumerate(rows, start=2):
+        for field, col in _FIXTURE_COLS.items():
+            ws.cell(row=ri, column=col, value=r.get(field))
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -210,6 +225,42 @@ def test_identical_reimport_does_not_consume_retention_window(store, tmp_path):
     # Version 1's snapshot must still be inside the retention window.
     assert store.get_batch_enrichment(["A"], version_id=1)["A"]["weight_gsm"] == 101
     assert [v["version_id"] for v in store.list_versions()] == [4, 3, 2, 1]
+
+
+def test_numeric_precision_noise_beyond_2dp_is_not_a_change(store, tmp_path):
+    """Fabric-table numbers are only meaningful to 2 decimal places -- a
+    re-upload whose numeric values differ only beyond 2 dp (Excel float
+    artifacts, 66.666667 vs 66.67 on file) must count as unchanged and must
+    NOT mint a new version."""
+    _import(store, tmp_path, "v1.xlsx", [
+        {"quality_no": "A", "composition_en": "100%Cotton",
+         "weight_gsm": 66.666666, "cuttable_width_cm": 140.004},
+    ])
+    result = _import(store, tmp_path, "v1_rounded.xlsx", [
+        {"quality_no": "A", "composition_en": "100%Cotton",
+         "weight_gsm": 66.67, "cuttable_width_cm": 140.0},
+    ])
+    assert result["unchanged"] is True
+    assert result["version_id"] == 1
+    assert [v["version_id"] for v in store.list_versions()] == [1]
+
+
+def test_numeric_change_at_2dp_still_bumps_and_records_rounded_values(store, tmp_path):
+    _import(store, tmp_path, "v1.xlsx", [
+        {"quality_no": "A", "composition_en": "100%Cotton",
+         "weight_gsm": 66.66, "cuttable_width_cm": 140},
+    ])
+    result = _import(store, tmp_path, "v2.xlsx", [
+        {"quality_no": "A", "composition_en": "100%Cotton",
+         "weight_gsm": 66.68, "cuttable_width_cm": 140},
+    ])
+    assert result["unchanged"] is False
+    assert result["version_id"] == 2
+
+    diff = store.get_version_diff(2)
+    weight_diff = next(d for d in diff if d["field"] == "weight_gsm")
+    assert weight_diff["old_value"] == "66.66"
+    assert weight_diff["new_value"] == "66.68"
 
 
 def test_get_batch_enrichment_no_version_matches_live_table(store, tmp_path):
