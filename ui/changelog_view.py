@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.76.6",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "feat", "text": "**Return Label now also shows in the two in-app Sky East summary tables**, not just the Excel output: the Contract History tab's item browser, and the 📊 Order Summary tab's \"Sky East — full item list\" (and its Excel download)."},
+        ],
+    },
+    {
         "version": "2.76.5",
         "date": "2026-07-16",
         "entries": [

@@ -443,11 +443,12 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
                 "fabric_item_no": "Fabric Code",
                 "total_qty":   "Units",
                 "ex_fty_date": "Ex-Fty",
+                "return_label": "Return Label",
             }
             se_avail = [k for k in se_field_labels if k in se_df.columns]
             se_default = [k for k in
                           ["pc_no", "zalando_po", "company", "style", "brand",
-                           "color_name", "total_qty", "ex_fty_date"]
+                           "color_name", "total_qty", "ex_fty_date", "return_label"]
                           if k in se_avail]
 
             # Seed-once + guard (never key= AND default= together — CLAUDE.md).

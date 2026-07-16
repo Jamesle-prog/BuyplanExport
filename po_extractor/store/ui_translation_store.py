@@ -1380,6 +1380,10 @@ _SEED: list[tuple[str, str, str, str]] = [
      'Review below before these are saved:',
      '个项目的 Return Label 与已存档的记录不同。请在下方确认后再保存：',
      'label', 'sky_east'),
+
+    # Sky East — Return Label column in the Contract History item browser
+    # and the Order Summary tab's Sky East item list (v2.76.6)
+    ('Return Label', '退货标签', 'label', 'sky_east'),
 ]
 # fmt: on
 

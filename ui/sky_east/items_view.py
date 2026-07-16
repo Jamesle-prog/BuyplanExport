@@ -315,7 +315,7 @@ def _build_items_display_df(df_items):
     show_cols = [c for c in
                  ["pc_no", "contract_no", "style", "color_name", "brand", "zalando_po",
                   "config_sku", "article_name", "colour_code", "total_qty", *size_cols,
-                  "ex_fty_date", *_fabric_slot_cols]
+                  "ex_fty_date", "return_label", *_fabric_slot_cols]
                  if c in df.columns]
 
     rename_map = {c: live_label(c, c) for c in show_cols}
@@ -325,6 +325,7 @@ def _build_items_display_df(df_items):
     rename_map["colour_code"]  = _th("Color Code")
     rename_map["total_qty"]    = _th("Total Qty")
     rename_map["ex_fty_date"]  = _th("Ex-Fty")
+    rename_map["return_label"] = _th("Return Label")
     rename_map["color_name"]   = _th("Color")
     rename_map["brand"]        = _th("Brand")
     rename_map["style"]        = _th("Style")
