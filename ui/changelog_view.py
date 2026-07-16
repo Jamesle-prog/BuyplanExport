@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.77.2",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "fix", "text": "**Fabric list versioning: re-uploading an identical file no longer creates a new version.** Every import used to mint a version unconditionally — a byte-identical re-upload produced a duplicate snapshot, an empty diff entry, and (worst) pushed a genuinely different older snapshot out of the current+3 retention window to make room for the no-op copy. The import now diffs against the latest version first and only bumps when the fabric data actually changed (filename/upload-timestamp differences don't count); an unchanged upload shows \"matches the latest fabric list — no new version created\" instead. The very first import still always creates version 1 as the baseline."},
+        ],
+    },
+    {
         "version": "2.77.1",
         "date": "2026-07-16",
         "entries": [

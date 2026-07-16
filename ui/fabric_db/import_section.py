@@ -25,13 +25,20 @@ def _fabric_db_do_import(store, uploaded) -> None:
             finally:
                 os.unlink(tmp_path)
             m, s = divmod(int(time.time() - t0), 60)
-            st.success(
-                f"✅ Import complete in {m}:{s:02d} — "
-                f"**{result['inserted']}** new, "
-                f"**{result['updated']}** updated, "
-                f"**{result['skipped']}** skipped "
-                f"(total: {result['total']} fabrics)"
-            )
+            if result.get("unchanged"):
+                st.info(
+                    f"ℹ️ Import complete in {m}:{s:02d} — the file matches the "
+                    f"latest fabric list exactly (v{result['version_id']}), so no "
+                    f"new version was created. {result['total']} fabrics checked."
+                )
+            else:
+                st.success(
+                    f"✅ Import complete in {m}:{s:02d} — "
+                    f"**{result['inserted']}** new, "
+                    f"**{result['updated']}** updated, "
+                    f"**{result['skipped']}** skipped "
+                    f"(total: {result['total']} fabrics, now v{result['version_id']})"
+                )
             # Show detected column map so user can verify header detection
             col_map = result.get("col_map", {})
             unmatched = result.get("unmatched_headers", [])

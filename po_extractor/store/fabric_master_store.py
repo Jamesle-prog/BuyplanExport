@@ -273,12 +273,39 @@ class FabricMasterStore(BaseSQLiteStore):
                     )
                     inserted += 1
 
-            # ── Versioning: snapshot the resulting NEW state, diff, prune ──
-            new_version_id = 1 if v_prev is None else v_prev + 1
+            # ── Versioning: diff FIRST, and only mint a new version when the
+            # data actually changed. A byte-identical re-upload used to bump
+            # the version anyway -- writing a duplicate snapshot, an empty
+            # diff, and (worst) pruning a genuinely different older snapshot
+            # out of the retention window to make room for the no-op copy.
+            # The diff compares _DIFF_FIELDS only (imported_at/source_file/
+            # display_key excluded), so a re-upload of the same data under a
+            # new filename/timestamp still counts as unchanged.
             new_rows = conn.execute(
                 f"SELECT {', '.join(_ALL_FABRIC_COLUMNS)} FROM fabric_master"
             ).fetchall()
             new_state = {r["quality_no"]: dict(r) for r in new_rows}
+            diff_rows = self._compute_version_diff(old_state, new_state)
+
+            if v_prev is not None and not diff_rows:
+                # Nothing changed vs the latest version -- no new version.
+                # (The upsert above still refreshed imported_at/source_file on
+                # the live table; that's import metadata, not fabric data.)
+                return {
+                    "inserted": inserted,
+                    "updated": updated,
+                    "skipped": skipped,
+                    "total": inserted + updated,
+                    "col_map": {f: c for f, c in field_to_col.items()},
+                    "unmatched_headers": unmatched,
+                    "version_id": v_prev,
+                    "unchanged": True,
+                }
+
+            # First-ever import (v_prev None) always creates version 1, even
+            # with an empty diff -- a baseline snapshot must exist for future
+            # imports to compare against.
+            new_version_id = 1 if v_prev is None else v_prev + 1
 
             conn.execute(
                 """INSERT INTO fabric_versions
@@ -301,7 +328,13 @@ class FabricMasterStore(BaseSQLiteStore):
                     ],
                 )
 
-            self._write_version_diff(conn, new_version_id, old_state, new_state, imported_at)
+            if diff_rows:
+                conn.executemany(
+                    """INSERT INTO fabric_version_diff
+                          (version_id, quality_no, change_type, field, old_value, new_value, diffed_at)
+                       VALUES (?,?,?,?,?,?,?)""",
+                    [(new_version_id, *row, imported_at) for row in diff_rows],
+                )
 
             # Prune snapshot DATA older than the retention window --
             # fabric_versions / fabric_version_diff rows are never pruned
@@ -319,22 +352,24 @@ class FabricMasterStore(BaseSQLiteStore):
             "col_map": {f: c for f, c in field_to_col.items()},
             "unmatched_headers": unmatched,
             "version_id": new_version_id,
+            "unchanged": False,
         }
 
     @staticmethod
-    def _write_version_diff(conn, new_version_id: int,
-                            old_state: dict, new_state: dict, diffed_at: str) -> None:
-        """Emit one fabric_version_diff row per added/removed quality_no, and
-        one row per changed field for a quality_no present in both -- mirrors
-        ColorTranslationStore._audit_diff's field-level diff shape."""
+    def _compute_version_diff(old_state: dict, new_state: dict) -> list[tuple]:
+        """Return one (quality_no, change_type, field, old_value, new_value)
+        tuple per added/removed quality_no, and one per changed field for a
+        quality_no present in both -- mirrors ColorTranslationStore._audit_diff's
+        field-level diff shape. Empty list == the two states are identical
+        across _DIFF_FIELDS (i.e. no version bump warranted)."""
         rows: list[tuple] = []
         for qno in set(old_state) | set(new_state):
             old_row = old_state.get(qno)
             new_row = new_state.get(qno)
             if old_row is None:
-                rows.append((new_version_id, qno, "added", None, None, None, diffed_at))
+                rows.append((qno, "added", None, None, None))
             elif new_row is None:
-                rows.append((new_version_id, qno, "removed", None, None, None, diffed_at))
+                rows.append((qno, "removed", None, None, None))
             else:
                 for f in _DIFF_FIELDS:
                     ov = old_row.get(f)
@@ -342,14 +377,8 @@ class FabricMasterStore(BaseSQLiteStore):
                     ov_s = "" if ov is None else str(ov)
                     nv_s = "" if nv is None else str(nv)
                     if ov_s != nv_s:
-                        rows.append((new_version_id, qno, "changed", f, ov_s, nv_s, diffed_at))
-        if rows:
-            conn.executemany(
-                """INSERT INTO fabric_version_diff
-                      (version_id, quality_no, change_type, field, old_value, new_value, diffed_at)
-                   VALUES (?,?,?,?,?,?,?)""",
-                rows,
-            )
+                        rows.append((qno, "changed", f, ov_s, nv_s))
+        return rows
 
     # ── Lookups ───────────────────────────────────────────────────────────────
 

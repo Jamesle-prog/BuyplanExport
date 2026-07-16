@@ -1,10 +1,12 @@
 """Tests for fabric_master versioning: snapshot history, incremental diff log,
 version-scoped enrichment, and pruning.
 
-Locks the v2.75.0 feature: every ``import_from_xlsx`` call becomes a new
-version (current + 3 previous snapshots stay queryable; older snapshot DATA
-is pruned but ``fabric_versions``/``fabric_version_diff`` never are), and
-``get_batch_enrichment`` can be pinned to a specific historical version.
+Locks the v2.75.0 feature (current + 3 previous snapshots stay queryable;
+older snapshot DATA is pruned but ``fabric_versions``/``fabric_version_diff``
+never are; ``get_batch_enrichment`` can be pinned to a historical version)
+plus the v2.77.x refinement: an import only mints a new version when the
+fabric DATA actually differs from the latest version -- a byte-identical
+re-upload (even under a new filename) is a no-op version-wise.
 """
 from __future__ import annotations
 
@@ -88,11 +90,14 @@ def test_removed_row_only_detected_after_delete(store, tmp_path):
         {"quality_no": "A", "composition_en": "100%Cotton", "weight_gsm": 200, "cuttable_width_cm": 140},
         {"quality_no": "B", "composition_en": "100%Poly", "weight_gsm": 150, "cuttable_width_cm": 150},
     ])
-    # Simulate "Update/Add": B is simply omitted from the new file, but never deleted.
+    # Simulate "Update/Add": B is simply omitted from the new file, but never
+    # deleted. Nothing actually differs, so (post-v2.77.x) this is a no-op
+    # version-wise -- the point stands: B is NOT flagged "removed".
     result = _import(store, tmp_path, "v2_update.xlsx", [
         {"quality_no": "A", "composition_en": "100%Cotton", "weight_gsm": 200, "cuttable_width_cm": 140},
     ])
-    assert store.get_diff_summary(result["version_id"]) == {"added": 0, "removed": 0, "changed": 0}
+    assert result["unchanged"] is True
+    assert result["version_id"] == 1        # no new version minted
     assert store.count() == 2   # B is still there, untouched
 
     # Now simulate "Clear & Reimport": delete_all() then a fresh, smaller file.
@@ -142,6 +147,69 @@ def test_pruning_keeps_current_plus_3_previous(store, tmp_path):
     assert store.get_batch_enrichment(["Q1"], version_id=1) == {}
     # ...but a retained version still resolves.
     assert store.get_batch_enrichment(["Q2"], version_id=2) != {}
+
+
+def test_identical_reimport_does_not_bump_version(store, tmp_path):
+    """Re-uploading a byte-identical fabric list (even under a different
+    filename) must NOT mint a new version -- no duplicate snapshot, no empty
+    diff entry, version stays where it was."""
+    rows = [
+        {"quality_no": "A", "composition_en": "100%Cotton", "weight_gsm": 200, "cuttable_width_cm": 140},
+        {"quality_no": "B", "composition_en": "100%Poly", "weight_gsm": 150, "cuttable_width_cm": 150},
+    ]
+    first = _import(store, tmp_path, "v1.xlsx", rows)
+    assert first["version_id"] == 1
+    assert first.get("unchanged") is False
+
+    again = _import(store, tmp_path, "same_data_new_name.xlsx", rows)
+    assert again["version_id"] == 1, "identical re-upload must not bump the version"
+    assert again["unchanged"] is True
+    # The upsert itself still ran (rows refreshed in place) -- only the
+    # VERSION machinery was skipped.
+    assert again["updated"] == 2
+
+    assert [v["version_id"] for v in store.list_versions()] == [1]
+    with store._conn() as conn:
+        n_snap_versions = conn.execute(
+            "SELECT COUNT(DISTINCT version_id) FROM fabric_master_snapshot"
+        ).fetchone()[0]
+    assert n_snap_versions == 1
+
+
+def test_identical_reimport_then_real_change_still_bumps(store, tmp_path):
+    rows = [{"quality_no": "A", "composition_en": "100%Cotton",
+             "weight_gsm": 200, "cuttable_width_cm": 140}]
+    _import(store, tmp_path, "v1.xlsx", rows)
+    _import(store, tmp_path, "v1_again.xlsx", rows)          # no-op, still v1
+
+    changed = [{"quality_no": "A", "composition_en": "100%Cotton",
+                "weight_gsm": 220, "cuttable_width_cm": 140}]
+    result = _import(store, tmp_path, "v2.xlsx", changed)
+    assert result["version_id"] == 2
+    assert result["unchanged"] is False
+    assert store.get_diff_summary(2) == {"added": 0, "removed": 0, "changed": 1}
+
+
+def test_identical_reimport_does_not_consume_retention_window(store, tmp_path):
+    """The real cost of the old behaviour: each no-op re-upload pushed a
+    genuinely different old snapshot out of the current+3 retention window.
+    After 4 real versions, any number of identical re-uploads must leave all
+    4 snapshots (including the oldest) intact and queryable."""
+    for i in range(1, 5):   # 4 real versions, each with different data
+        _import(store, tmp_path, f"v{i}.xlsx", [
+            {"quality_no": "A", "composition_en": "100%Cotton",
+             "weight_gsm": 100 + i, "cuttable_width_cm": 140},
+        ])
+
+    last_rows = [{"quality_no": "A", "composition_en": "100%Cotton",
+                  "weight_gsm": 104, "cuttable_width_cm": 140}]
+    for j in range(3):      # 3 no-op re-uploads of the latest data
+        r = _import(store, tmp_path, f"noop{j}.xlsx", last_rows)
+        assert r["unchanged"] is True
+
+    # Version 1's snapshot must still be inside the retention window.
+    assert store.get_batch_enrichment(["A"], version_id=1)["A"]["weight_gsm"] == 101
+    assert [v["version_id"] for v in store.list_versions()] == [4, 3, 2, 1]
 
 
 def test_get_batch_enrichment_no_version_matches_live_table(store, tmp_path):
