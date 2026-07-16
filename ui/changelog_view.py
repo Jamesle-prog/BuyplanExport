@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.76.0",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "feat", "text": "**Sky East buy plan: new Return Label column.** Reads the client PO's Return Label column (the parser already recognised the header — \"需要挂 Return Label\", \"Return Label\", etc. — but never extracted the value) and writes \"Yes\" / \"No\" per line item (same per-row granularity as size quantities), defaulting to \"NA\" when the source PO has no recognisable value. Written to a new column past the template's existing last column; older buy-plan templates that don't already have a matching header get one added automatically (\"Return Label\") so the column isn't left unlabeled."},
+        ],
+    },
+    {
         "version": "2.75.6",
         "date": "2026-07-16",
         "entries": [

@@ -23,6 +23,7 @@ class SkyEastItem:
     ex_fty_date: str | None = None
     picture_id: str | None = None          # DISPIMG ID extracted from formula
     fabric_parts: list = field(default_factory=list)  # list[FabricPart] — structured fabric data
+    return_label: str = "NA"               # "Yes" / "No" / "NA" — from the client PO's Return Label column
 
 
 @dataclass

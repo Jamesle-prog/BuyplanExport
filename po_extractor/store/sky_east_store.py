@@ -31,6 +31,11 @@ class SkyEastStore(BaseSQLiteStore):
                 self._add_column_if_missing(
                     conn, "sky_east_color_misses", "progress_colors", "TEXT"
                 )
+            # Migrate: add return_label if missing (existing DBs)
+            for tbl in ("sky_east_items", "sky_east_item_history"):
+                cols = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})")}
+                if "return_label" not in cols:
+                    self._add_column_if_missing(conn, tbl, "return_label", "TEXT DEFAULT 'NA'")
 
     # ------------------------------------------------------------------ #
     # Internal helpers                                                     #
@@ -91,8 +96,8 @@ class SkyEastStore(BaseSQLiteStore):
                 color_name, colour_code, launch_date, fabric_item_no, fabrication,
                 contract_no,
                 xs, s, m, l, xl, xxl, total_qty, fob_usd, total_cost_usd,
-                ex_fty_date, picture_id, revision_reason, archived_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ex_fty_date, picture_id, revision_reason, return_label, archived_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 existing.get("pc_no"), existing.get("zalando_po"), existing.get("style"),
                 existing.get("config_sku"), existing.get("article_name"), existing.get("brand"),
@@ -103,7 +108,8 @@ class SkyEastStore(BaseSQLiteStore):
                 existing.get("l", 0), existing.get("xl", 0), existing.get("xxl", 0),
                 existing.get("total_qty", 0), existing.get("fob_usd", 0.0),
                 existing.get("total_cost_usd", 0.0), existing.get("ex_fty_date"),
-                existing.get("picture_id"), existing.get("revision_reason"), now,
+                existing.get("picture_id"), existing.get("revision_reason"),
+                existing.get("return_label", "NA"), now,
             ),
         )
 
@@ -118,8 +124,8 @@ class SkyEastStore(BaseSQLiteStore):
                 color_name, colour_code, launch_date, fabric_item_no, fabrication,
                 contract_no,
                 xs, s, m, l, xl, xxl, total_qty, fob_usd, total_cost_usd,
-                ex_fty_date, picture_id, revision_reason)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ex_fty_date, picture_id, revision_reason, return_label)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 item.pc_no, item.zalando_po, item.style, item.config_sku,
                 item.article_name, item.brand, item.color_name, item.colour_code,
@@ -128,6 +134,7 @@ class SkyEastStore(BaseSQLiteStore):
                 xs, s, m, l, xl, xxl,
                 item.total_qty, item.fob_usd, item.total_cost_usd,
                 item.ex_fty_date, item.picture_id, revision_reason,
+                item.return_label,
             ),
         )
 
@@ -142,14 +149,14 @@ class SkyEastStore(BaseSQLiteStore):
                fabric_item_no=?, fabrication=?, contract_no=?,
                xs=?, s=?, m=?, l=?, xl=?, xxl=?,
                total_qty=?, fob_usd=?, total_cost_usd=?,
-               ex_fty_date=?, picture_id=?, revision_reason=?
+               ex_fty_date=?, picture_id=?, revision_reason=?, return_label=?
                WHERE pc_no=? AND style=? AND color_name=? AND zalando_po=?""",
             (
                 item.config_sku, item.article_name, item.brand, item.colour_code,
                 item.launch_date, item.fabric_item_no, item.fabrication, item.contract_no,
                 xs, s, m, l, xl, xxl,
                 item.total_qty, item.fob_usd, item.total_cost_usd,
-                item.ex_fty_date, item.picture_id, revision_reason,
+                item.ex_fty_date, item.picture_id, revision_reason, item.return_label,
                 item.pc_no, item.style, item.color_name, item.zalando_po,
             ),
         )

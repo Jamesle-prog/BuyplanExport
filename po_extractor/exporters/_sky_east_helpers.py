@@ -24,7 +24,7 @@ __all__ = [
     "_COL_CONTRACT", "_COL_STYLE", "_COL_BRAND", "_COL_ARTICLE", "_COL_PO",
     "_COL_CONFIG", "_COL_COLOR_EN", "_COL_COLOR_CN", "_COL_LABEL_CLR",
     "_COL_XS", "_COL_S", "_COL_M", "_COL_L", "_COL_XL", "_COL_XXL",
-    "_COL_BOAT_SAMPLE", "_COL_TOTAL", "_COL_EXFTY",
+    "_COL_BOAT_SAMPLE", "_COL_TOTAL", "_COL_EXFTY", "_COL_RETURN_LABEL",
     # Fabric header fallback column positions
     "_COL_COMPOSITION", "_COL_DISPLAY_KEY",
     "_DATA_ROW_FB",
@@ -106,6 +106,7 @@ _COL_XXL       = 15   # O  XXL
 _COL_BOAT_SAMPLE = 16 # P  船样要求 (populated from BoatSampleStore when available)
 _COL_TOTAL     = 17   # Q  Total
 _COL_EXFTY     = 18   # R  离厂时间
+_COL_RETURN_LABEL = 19  # S  Return Label (Yes/No/NA) — new column, one past ex_fty
 _DATA_ROW_FB   =  8   # Fallback data start row
 
 # Fabric-header section fallback column positions (rows 2-5).
@@ -140,6 +141,7 @@ _BUY_PLAN_COL_ALIASES: dict[str, set[str]] = {
                     "boat sample", "boat sample req", "船样"},
     "total":     {"total", "订单数合计", "qty", "total qty", "数量合计"},
     "ex_fty":    {"离厂时间", "ex-fty", "ex fty", "exfty", "ex_fty"},
+    "return_label": {"return label", "退货标签", "退货唛头", "需要挂 return label"},
 }
 
 # For nukuryou (Sky_East_P.xlsx) — same size aliases plus color column
@@ -202,6 +204,7 @@ def _detect_buyplan_layout(ws) -> tuple[dict[str, int], int]:
         "xl": _COL_XL, "xxl": _COL_XXL,
         "boat_sample": _COL_BOAT_SAMPLE,
         "total": _COL_TOTAL, "ex_fty": _COL_EXFTY,
+        "return_label": _COL_RETURN_LABEL,
     }
     for field, col in fallbacks.items():
         col_map.setdefault(field, col)

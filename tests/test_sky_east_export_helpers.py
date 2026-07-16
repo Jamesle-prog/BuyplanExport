@@ -40,7 +40,11 @@ def _basic_col() -> dict:
     keys = ["contract", "style", "brand", "article", "po", "config", "color_en",
             "color_cn", "label_clr", "xs", "s", "m", "l", "xl", "xxl",
             "total", "ex_fty"]
-    return {k: i + 1 for i, k in enumerate(keys)}
+    col = {k: i + 1 for i, k in enumerate(keys)}
+    # boat_sample lives outside `col` (ctx.boat_sample_col, defaults to 18 in
+    # _ctx() below) -- return_label must not collide with that column number.
+    col["return_label"] = 19
+    return col
 
 
 def _ctx(**overrides) -> _RowContext:

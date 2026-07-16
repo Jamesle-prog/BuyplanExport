@@ -107,6 +107,20 @@ def _float(v) -> float:
         return 0.0
 
 
+_RETURN_LABEL_YES = {"yes", "y", "true", "1", "是", "需要"}
+_RETURN_LABEL_NO  = {"no", "n", "false", "0", "否", "不需要"}
+
+
+def _normalize_return_label(v) -> str:
+    """Normalize the client PO's Return Label cell to 'Yes' / 'No' / 'NA'."""
+    s = _v(v).strip().lower()
+    if s in _RETURN_LABEL_YES:
+        return "Yes"
+    if s in _RETURN_LABEL_NO:
+        return "No"
+    return "NA"
+
+
 def _dispimg_id(val) -> str:
     if not val:
         return ""
@@ -740,6 +754,7 @@ def parse(path: str, processed_by: str = "") -> SkyEastContract:
             picture_id     = (dispimg_pos.get((r, col.get("picture", 8)))
                               or _dispimg_id(cv(r, "picture"))),
             fabric_parts   = fabric_parts,
+            return_label   = _normalize_return_label(cv(r, "return_label")),
         )
         items.append(item)
 

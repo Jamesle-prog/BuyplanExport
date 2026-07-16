@@ -37,7 +37,7 @@ from openpyxl import load_workbook
 
 from ._sky_east_helpers import (
     _TEMPLATES_DIR, _SE_TEMPLATE, _SE_TEMPLATE_P,
-    _SIZES_LC, _COL_BOAT_SAMPLE,
+    _SIZES_LC, _COL_BOAT_SAMPLE, _COL_RETURN_LABEL,
     _apply_config_overrides, _clean_sheet_name, _clear_data_area, _cn_color,
     _create_index_sheet, _create_overview_sheet,
     _detect_buyplan_layout, _detect_fabric_rows, _detect_nukuryou_layout,
@@ -946,6 +946,9 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
     _style_data(ws.cell(out_row, col["total"]),  row_total)
     _ex_fty = str(g.get("ex_fty_date", "") or "")
     _style_data(ws.cell(out_row, col["ex_fty"]), _ex_fty)
+    # Return Label: Yes/No from the client's PO, "NA" when not present/parseable.
+    _return_label = str(g.get("return_label", "") or "").strip() or "NA"
+    _style_data(ws.cell(out_row, col["return_label"]), _return_label)
 
     overview_row = {
         "contract_no":  str(g.get("contract_no", "") or ""),
@@ -1120,6 +1123,19 @@ def export_sky_east_buyplan(
     col, data_row, fabric_rows = _apply_config_overrides(
         "sky_east_buyplan", col, data_row, fabric_rows,
     )
+
+    # ── Return Label column header ──────────────────────────────────────────
+    # "return_label" defaults to the fallback column _COL_RETURN_LABEL (one
+    # past the existing last column) when the template has no header text
+    # recognised by the "return_label" aliases. Older templates predating
+    # this feature won't have that header cell filled in at all — write it
+    # once on the template (before the per-style copy loop below) so every
+    # copied sheet inherits a labeled column instead of a blank one. Templates
+    # that DO already have a recognised header (any language/wording in
+    # _BUY_PLAN_COL_ALIASES["return_label"]) are left untouched.
+    _rl_header_cell = tpl_ws.cell(row=data_row - 1, column=col["return_label"])
+    if not _rl_header_cell.value:
+        _rl_header_cell.value = "Return Label"
 
     # Compute the style-total anchor cell.  Canonically row 5 of the header
     # block — but data_start_row is admin-configurable, and writing the total

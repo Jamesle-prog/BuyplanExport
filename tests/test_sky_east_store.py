@@ -80,3 +80,44 @@ def test_duplicate_key_within_same_contract_both_updates_applied(tmp_path):
         f"expected archive of qty=1 (baseline) then qty=2 (first item's "
         f"write, overwritten by the second item) -- got {archived_qtys}"
     )
+
+
+def test_return_label_persists_through_insert_and_update(tmp_path):
+    """The Return Label value (Yes/No/NA from the client's PO) must round-trip
+    through insert, update, and archive -- same column added alongside the
+    other item fields."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+
+    store = SkyEastStore(str(tmp_path / "se.db"))
+
+    store.save_contract_checked(_make_contract([
+        _make_item(style="RL1", color_name="Blue", zalando_po="PO1",
+                   return_label="Yes"),
+    ]))
+    items = store.list_items(["PC1"])
+    row = items[items["style"] == "RL1"].iloc[0]
+    assert row["return_label"] == "Yes"
+
+    # Update: same key, changed quantity AND return_label -- confirm the
+    # UPDATE path (not just INSERT) writes the new value.
+    store.save_contract_checked(_make_contract([
+        _make_item(style="RL1", color_name="Blue", zalando_po="PO1",
+                   sizes={"S": 9}, total_qty=9, return_label="No"),
+    ]))
+    items = store.list_items(["PC1"])
+    row = items[items["style"] == "RL1"].iloc[0]
+    assert row["return_label"] == "No"
+
+    history = store.list_item_history("PC1", style="RL1")
+    assert history.iloc[0]["return_label"] == "Yes"
+
+
+def test_return_label_defaults_to_na_when_not_set(tmp_path):
+    from po_extractor.store.sky_east_store import SkyEastStore
+
+    store = SkyEastStore(str(tmp_path / "se.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="RL2", color_name="Red", zalando_po="PO2"),
+    ]))
+    items = store.list_items(["PC1"])
+    assert items[items["style"] == "RL2"].iloc[0]["return_label"] == "NA"

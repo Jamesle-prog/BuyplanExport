@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS sky_east_items (
     ex_fty_date     TEXT,
     picture_id      TEXT,
     revision_reason TEXT,
+    return_label    TEXT DEFAULT 'NA',
     UNIQUE(pc_no, style, color_name, zalando_po)
 );
 
@@ -71,6 +72,7 @@ CREATE TABLE IF NOT EXISTS sky_east_item_history (
     ex_fty_date     TEXT,
     picture_id      TEXT,
     revision_reason TEXT,
+    return_label    TEXT DEFAULT 'NA',
     archived_at     TEXT
 );
 
