@@ -1394,6 +1394,7 @@ _SEED: list[tuple[str, str, str, str]] = [
      'label', 'sky_east'),
     ('Saved shipping sample requirement for', '已保存船样要求，品牌数：', 'label', 'sky_east'),
     ('brand(s)', '个', 'label', 'sky_east'),
+    ("Remind me later (don't save)", '稍后提醒（暂不保存）', 'button', 'sky_east'),
 ]
 # fmt: on
 

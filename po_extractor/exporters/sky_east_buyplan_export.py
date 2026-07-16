@@ -1117,6 +1117,11 @@ def export_sky_east_buyplan(
     # ── Detect column layout and data start row from the template ─────────
     col, data_row = _detect_buyplan_layout(tpl_ws)
     fabric_rows   = _detect_fabric_rows(tpl_ws, max_row=data_row - 1)
+    # The template's ACTUAL header row, as detected. Captured before config
+    # overrides: an admin can move data_start_row deeper via the config
+    # without the template's header row moving, so "data_row - 1" is only
+    # the header row in the un-overridden case.
+    _detected_header_row = data_row - 1
 
     # ── Apply user-configured overrides (Sky_East_config.json) ─────────────
     # Configured values win over auto-detection, so admins can override the
@@ -1134,7 +1139,7 @@ def export_sky_east_buyplan(
     # copied sheet inherits a labeled column instead of a blank one. Templates
     # that DO already have a recognised header (any language/wording in
     # _BUY_PLAN_COL_ALIASES["return_label"]) are left untouched.
-    _rl_header_cell = tpl_ws.cell(row=data_row - 1, column=col["return_label"])
+    _rl_header_cell = tpl_ws.cell(row=_detected_header_row, column=col["return_label"])
     if not _rl_header_cell.value:
         _rl_header_cell.value = "Return Label"
 

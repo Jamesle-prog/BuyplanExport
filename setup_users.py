@@ -70,7 +70,6 @@ def main():
     else:
         print("No accounts exist yet. Creating the 4 standard accounts below.\n")
 
-    touched: list[str] = []
     for default_username, label, role, modules in ACCOUNT_SLOTS:
         print(f"-- {label} --")
         username = prompt_username(default_username)
@@ -78,11 +77,19 @@ def main():
         if password is None:
             print("  (skipped)\n")
             continue
-        create_user(username, password, role=role, modules=modules)
+        # Existing account: password reset ONLY -- role/modules stay exactly
+        # as they are (create_user preserves them when passed None). Passing
+        # the slot's role/modules here would silently clobber a custom scope,
+        # or demote an admin whose username was typed into a user slot.
+        already_exists = get_user(username) is not None
+        create_user(
+            username, password,
+            role=None if already_exists else role,
+            modules=None if already_exists else modules,
+        )
         final = get_user(username)
         scope = "all tabs" if not final["modules"] else ", ".join(final["modules"])
         print(f"  ✓ User '{username}' saved (role: {final['role']}, modules: {scope}).\n")
-        touched.append(username)
 
     users = list_users()
     if users:

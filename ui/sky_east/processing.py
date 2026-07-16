@@ -435,19 +435,25 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             # New brands (never seen in 船样要求/shipping-sample requirements
             # before) -- held for an upload-time prompt rather than silently
             # left blank until someone notices at buy-plan generation time.
-            _new_brands = _se_distinct_brands(contracts)
-            if _new_brands:
-                _bsr_store = get_boat_sample_store()
-                _known = _bsr_store.list_known_brands(COMPANY_SKY_EAST)
-                _unseen = [b for b in _new_brands if b not in _known]
-                if _unseen:
-                    _pending_brands = list(st.session_state.get(SK.SE_NEW_BRAND_PENDING, []))
-                    for b in _unseen:
-                        if b not in _pending_brands:
-                            _pending_brands.append(b)
-                    st.session_state[SK.SE_NEW_BRAND_PENDING] = _pending_brands
-                    st.write(f"  {len(_unseen)} new brand(s) need a shipping sample requirement")
-                    log.append(f"{len(_unseen)} new brand(s) need a shipping sample requirement")
+            # Best-effort: the contracts are already saved by this point, so a
+            # lookup failure must not crash the rest of the upload flow (same
+            # principle as the image-save fallback above).
+            try:
+                _new_brands = _se_distinct_brands(contracts)
+                if _new_brands:
+                    _bsr_store = get_boat_sample_store()
+                    _known = _bsr_store.list_known_brands(COMPANY_SKY_EAST)
+                    _unseen = [b for b in _new_brands if b not in _known]
+                    if _unseen:
+                        _pending_brands = list(st.session_state.get(SK.SE_NEW_BRAND_PENDING, []))
+                        for b in _unseen:
+                            if b not in _pending_brands:
+                                _pending_brands.append(b)
+                        st.session_state[SK.SE_NEW_BRAND_PENDING] = _pending_brands
+                        st.write(f"  {len(_unseen)} new brand(s) need a shipping sample requirement")
+                        log.append(f"{len(_unseen)} new brand(s) need a shipping sample requirement")
+            except Exception as _brand_exc:
+                log.append(f"⚠️ New-brand shipping-sample check skipped: {_brand_exc}")
 
             _se_save_fabric_parts_universal(contracts, fabric_lookup, log)
             _se_patch_contract_numbers(store, contracts, progress_lookup, log)

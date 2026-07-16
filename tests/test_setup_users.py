@@ -116,3 +116,31 @@ def test_rerunning_resets_password_but_preserves_role(tmp_path, monkeypatch):
     assert users_mod.verify_password("skyeast", "newpw")
     assert users_mod.get_user("skyeast")["role"] == ROLE_USER
     assert users_mod.get_user("skyeast")["modules"] == [MODULE_SKY_EAST]
+
+
+def test_rerunning_never_clobbers_a_customized_existing_account(tmp_path, monkeypatch):
+    """The strong version of the preserve guarantee: an existing account whose
+    role/modules DIFFER from the slot defaults must survive a password reset
+    untouched. (The weaker test above passes vacuously when the pre-existing
+    values happen to equal the slot's -- this one catches the real bug: an
+    admin's username typed into a user slot must not demote them, and a
+    custom module scope must not be reset to the slot default.)"""
+    monkeypatch.setattr(users_mod, "_USERS_FILE", str(tmp_path / "users.json"))
+    # "skyeast" was later promoted to admin with a widened, custom scope.
+    users_mod.create_user(
+        "skyeast", "oldpw", role=ROLE_ADMIN,
+        modules=[MODULE_SKY_EAST, MODULE_GIII],
+    )
+
+    usernames = iter(["", "", "", ""])   # accept defaults; slot 2 hits "skyeast"
+    monkeypatch.setattr(builtins, "input", lambda *_a: next(usernames))
+    passwords = iter(["", "newpw", "newpw", "", ""])
+    monkeypatch.setattr(setup_users.getpass, "getpass", lambda *_a: next(passwords))
+
+    setup_users.main()
+
+    assert users_mod.verify_password("skyeast", "newpw")
+    info = users_mod.get_user("skyeast")
+    assert info["role"] == ROLE_ADMIN, "password reset must not demote an admin"
+    assert info["modules"] == [MODULE_SKY_EAST, MODULE_GIII], \
+        "password reset must not reset a customized module scope to the slot default"

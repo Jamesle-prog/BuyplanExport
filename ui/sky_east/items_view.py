@@ -214,7 +214,9 @@ def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
             disabled=[col_brand],
             key="se_new_brand_editor",
         )
-        if st.button(t("Save"), type="primary", key="se_new_brand_save"):
+        col1, col2 = st.columns(2)
+        if col1.button(t("Save"), type="primary", use_container_width=True,
+                       key="se_new_brand_save"):
             store = get_boat_sample_store()
             for _, row in edited.iterrows():
                 store.upsert(COMPANY_SKY_EAST, row[col_brand], row[col_req] or "")
@@ -223,6 +225,13 @@ def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
                 f"✅ {t('Saved shipping sample requirement for')} "
                 f"{len(pending_brands)} {t('brand(s)')}."
             )
+            st.rerun()
+        # Escape hatch: nothing is written or registered -- the same brands
+        # will be prompted again on the next upload (unlike Save-with-blank,
+        # which registers the brand as "known, no requirement").
+        if col2.button(t("Remind me later (don't save)"), use_container_width=True,
+                       key="se_new_brand_later"):
+            st.session_state[SK.SE_NEW_BRAND_PENDING] = []
             st.rerun()
 
 

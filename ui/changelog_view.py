@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.77.1",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "fix", "text": "**setup_users.py password reset no longer overwrites an account's role or tab scope.** Re-running the script always forced the slot's default role/modules onto whatever username was entered — so resetting a password could silently demote an admin (if their username was typed into a user slot) or wipe a custom tab scope back to the default. Existing accounts now get a true password-only reset, exactly as the script's own instructions promised; only brand-new accounts receive the slot's role/scope."},
+            {"type": "fix", "text": "**New-brand shipping sample prompt: added a \"Remind me later\" button** — previously the only way to close the box was Save, which registered every listed brand (even a junk name from a malformed file). Remind-me-later dismisses without writing anything; the same brands are prompted again next upload."},
+            {"type": "fix", "text": "**Upload flow hardening:** the new-brand detection lookup is now best-effort (a database error there can no longer crash the upload after the PO data was already saved), and the auto-added \"Return Label\" template header now anchors to the template's actual detected header row instead of assuming data starts directly below it (which an admin config override can change)."},
+        ],
+    },
+    {
         "version": "2.77.0",
         "date": "2026-07-16",
         "entries": [
