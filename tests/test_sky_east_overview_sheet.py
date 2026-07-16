@@ -75,8 +75,9 @@ def test_overview_sheet_created_right_after_index(two_style_df, pc_color_lookup,
     wb = load_workbook(path)
     assert wb.sheetnames[0] == "Index"
     assert wb.sheetnames[1] == "Overview"
+    assert wb.sheetnames[2] == "Fabric Version"
     # Sheet names are "<index>_<style>" -- verify by suffix, not exact name.
-    style_sheets = wb.sheetnames[2:]
+    style_sheets = wb.sheetnames[3:]
     assert len(style_sheets) == 2
     assert any(s.endswith("_DR5124") for s in style_sheets)
     assert any(s.endswith("_DR4578") for s in style_sheets)
@@ -169,6 +170,63 @@ def test_index_sheet_includes_return_label_column(two_style_df, pc_color_lookup,
     by_style = {r["款号"]: r for r in rows}
     assert by_style["DR5124"]["Return Label"] == "Yes"
     assert by_style["DR4578"]["Return Label"] == "No"
+
+
+def _fabric_store_with_versions(tmp_path, monkeypatch, n_versions: int = 1):
+    """Point the fabric-master factory at a tmp store holding *n_versions*
+    real versions, so the Fabric Version sheet has deterministic content."""
+    import io as _io
+    import openpyxl as _oxl
+    from po_extractor.store.fabric_master_store import FabricMasterStore
+    import po_extractor.store as _store_pkg
+
+    store = FabricMasterStore(str(tmp_path / "fabric_version_sheet.db"))
+    for i in range(1, n_versions + 1):
+        wb = _oxl.Workbook()
+        ws = wb.active
+        ws.title = "all"
+        ws.cell(row=1, column=1, value="公司面料编号")
+        ws.cell(row=1, column=10, value="克重(gsm)")
+        ws.cell(row=2, column=1, value="HHN-TEST-0001")
+        ws.cell(row=2, column=10, value=100 + i)
+        buf = _io.BytesIO()
+        wb.save(buf)
+        p = tmp_path / f"fv{i}.xlsx"
+        p.write_bytes(buf.getvalue())
+        store.import_from_xlsx(str(p), source_file_name=f"fv{i}.xlsx")
+    monkeypatch.setattr(_store_pkg, "get_fabric_master_store", lambda: store)
+    return store
+
+
+def test_fabric_version_sheet_shows_latest_version(
+    two_style_df, pc_color_lookup, tmp_path, monkeypatch,
+):
+    _fabric_store_with_versions(tmp_path, monkeypatch, n_versions=2)
+    path, _totals = export_sky_east_buyplan(
+        two_style_df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=pc_color_lookup,
+    )
+    wb = load_workbook(path)
+    assert "Fabric Version" in wb.sheetnames
+    ws = wb["Fabric Version"]
+    values = [str(c.value) for row in ws.iter_rows() for c in row if c.value]
+    assert any("v2" in v and "Latest" in v for v in values), values
+    assert any("fv2.xlsx" in v for v in values)
+
+
+def test_fabric_version_sheet_shows_pinned_version(
+    two_style_df, pc_color_lookup, tmp_path, monkeypatch,
+):
+    _fabric_store_with_versions(tmp_path, monkeypatch, n_versions=2)
+    path, _totals = export_sky_east_buyplan(
+        two_style_df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=pc_color_lookup,
+        fabric_version_id=1,
+    )
+    ws = load_workbook(path)["Fabric Version"]
+    values = [str(c.value) for row in ws.iter_rows() for c in row if c.value]
+    assert any("v1" in v and "Pinned" in v for v in values), values
+    assert any("fv1.xlsx" in v for v in values)
 
 
 def test_index_sheet_return_label_defaults_to_na_when_absent(two_style_df, pc_color_lookup, tmp_path):
@@ -459,7 +517,8 @@ def test_sheet_names_are_index_then_style_no_fabric_code(tmp_path):
         fabric_parts_by_style=fabric_parts_by_style,
     )
     wb = load_workbook(path)
-    style_sheets = wb.sheetnames[2:]   # skip Index, Overview
+    _summary_tabs = {"Index", "Overview", "Fabric Version"}
+    style_sheets = [s for s in wb.sheetnames if s not in _summary_tabs]
     assert style_sheets == ["1_DR5124", "2_DR4578"]
     assert not any("HHN" in s for s in style_sheets)
 
@@ -487,7 +546,8 @@ def test_sheet_names_disambiguate_multiple_combos_of_same_style(tmp_path):
         fabric_parts_by_style=fabric_parts_by_style,
     )
     wb = load_workbook(path)
-    style_sheets = wb.sheetnames[2:]
+    _summary_tabs = {"Index", "Overview", "Fabric Version"}
+    style_sheets = [s for s in wb.sheetnames if s not in _summary_tabs]
     assert style_sheets == ["1_DR5009", "2_DR5009"]
 
 

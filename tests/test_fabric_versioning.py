@@ -263,6 +263,111 @@ def test_numeric_change_at_2dp_still_bumps_and_records_rounded_values(store, tmp
     assert weight_diff["new_value"] == "66.68"
 
 
+def test_manual_delete_mints_version_with_removed_diff(store, tmp_path):
+    """Manual row deletion is a data change like any other -- it must mint a
+    version (source 'manual delete') with 'removed' diff rows. Previously it
+    bypassed versioning entirely: invisible in history, live table drifting
+    from the latest snapshot, and a later re-upload of the deleted rows
+    reported 'unchanged' while silently restoring them."""
+    rows = [
+        {"quality_no": "A", "composition_en": "100%Cotton", "weight_gsm": 200, "cuttable_width_cm": 140},
+        {"quality_no": "B", "composition_en": "100%Poly", "weight_gsm": 150, "cuttable_width_cm": 150},
+    ]
+    _import(store, tmp_path, "v1.xlsx", rows)
+
+    n = store.delete_by_quality_nos(["A"])
+    assert n == 1
+
+    versions = store.list_versions()
+    assert [v["version_id"] for v in versions] == [2, 1]
+    assert versions[0]["source_file"] == "manual delete"
+    assert store.get_diff_summary(2) == {"added": 0, "removed": 1, "changed": 0}
+
+    # The re-upload that used to be invisible: the original file (contains A)
+    # now correctly registers as a change (A re-added) and mints v3.
+    result = _import(store, tmp_path, "v1_again.xlsx", rows)
+    assert result["unchanged"] is False
+    assert result["version_id"] == 3
+    assert store.get_diff_summary(3) == {"added": 1, "removed": 0, "changed": 0}
+
+
+def test_delete_of_nonexistent_rows_mints_nothing(store, tmp_path):
+    _import(store, tmp_path, "v1.xlsx", [
+        {"quality_no": "A", "composition_en": "100%Cotton", "weight_gsm": 200, "cuttable_width_cm": 140},
+    ])
+    assert store.delete_by_quality_nos(["NOPE"]) == 0
+    assert [v["version_id"] for v in store.list_versions()] == [1]
+
+
+def test_clear_first_import_replaces_in_one_version(store, tmp_path):
+    """clear_first=True ("Delete All & Reimport") wipes and reimports in ONE
+    transaction/version -- the diff shows exactly what the replacement did."""
+    _import(store, tmp_path, "v1.xlsx", [
+        {"quality_no": "A", "composition_en": "100%Cotton", "weight_gsm": 200, "cuttable_width_cm": 140},
+        {"quality_no": "B", "composition_en": "100%Poly", "weight_gsm": 150, "cuttable_width_cm": 150},
+    ])
+
+    path = tmp_path / "v2_clear.xlsx"
+    path.write_bytes(_make_fabric_xlsx([
+        {"quality_no": "A", "composition_en": "100%Cotton", "weight_gsm": 200, "cuttable_width_cm": 140},
+        {"quality_no": "C", "composition_en": "100%Wool", "weight_gsm": 300, "cuttable_width_cm": 145},
+    ]))
+    result = store.import_from_xlsx(str(path), source_file_name="v2_clear.xlsx",
+                                    clear_first=True)
+    assert result["cleared"] == 2
+    assert result["version_id"] == 2
+    assert store.get_diff_summary(2) == {"added": 1, "removed": 1, "changed": 0}
+    assert store.count() == 2   # A + C
+
+
+def test_clear_first_rolls_back_wipe_when_import_fails(store, tmp_path):
+    """The old flow committed delete_all() first -- a bad file then left the
+    table permanently empty. With clear_first inside the import transaction,
+    a failure must leave the existing data untouched."""
+    import openpyxl as _oxl
+
+    _import(store, tmp_path, "v1.xlsx", [
+        {"quality_no": "A", "composition_en": "100%Cotton", "weight_gsm": 200, "cuttable_width_cm": 140},
+    ])
+
+    # A workbook with no 'all' sheet -> import raises before/without committing.
+    bad = tmp_path / "bad.xlsx"
+    wb = _oxl.Workbook()
+    wb.active.title = "wrong_sheet"
+    wb.save(str(bad))
+
+    import pytest as _pytest
+    with _pytest.raises(ValueError):
+        store.import_from_xlsx(str(bad), source_file_name="bad.xlsx",
+                               clear_first=True)
+
+    assert store.count() == 1                       # data intact
+    assert [v["version_id"] for v in store.list_versions()] == [1]
+
+
+def test_clear_first_on_legacy_unversioned_data_keeps_baseline(store, tmp_path):
+    """The formerly-documented 'known gap': a first-ever import that is also
+    Clear & Reimport used to lose the legacy baseline (delete_all committed
+    before the live-read fallback ran). With clear_first, the baseline is
+    captured before the wipe -- v1's diff records the legacy rows as removed."""
+    with store._conn() as conn:   # legacy pre-versioning row, no version exists
+        conn.execute(
+            "INSERT INTO fabric_master (quality_no, composition_en) VALUES ('LEG', 'Old')"
+        )
+
+    path = tmp_path / "first_clear.xlsx"
+    path.write_bytes(_make_fabric_xlsx([
+        {"quality_no": "A", "composition_en": "100%Cotton", "weight_gsm": 200, "cuttable_width_cm": 140},
+    ]))
+    result = store.import_from_xlsx(str(path), source_file_name="first_clear.xlsx",
+                                    clear_first=True)
+    assert result["version_id"] == 1
+    summary = store.get_diff_summary(1)
+    assert summary == {"added": 1, "removed": 1, "changed": 0}
+    diff = store.get_version_diff(1)
+    assert {d["quality_no"]: d["change_type"] for d in diff} == {"LEG": "removed", "A": "added"}
+
+
 def test_get_batch_enrichment_no_version_matches_live_table(store, tmp_path):
     """Regression guard: get_batch_enrichment(fabric_nos) with no version_id
     must behave exactly as before versioning existed -- reads live fabric_master."""

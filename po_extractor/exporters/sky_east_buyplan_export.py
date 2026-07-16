@@ -39,7 +39,7 @@ from ._sky_east_helpers import (
     _TEMPLATES_DIR, _SE_TEMPLATE, _SE_TEMPLATE_P,
     _SIZES_LC, _COL_BOAT_SAMPLE, _COL_RETURN_LABEL,
     _apply_config_overrides, _clean_sheet_name, _clear_data_area, _cn_color,
-    _create_index_sheet, _create_overview_sheet,
+    _create_index_sheet, _create_overview_sheet, _create_fabric_version_sheet,
     _detect_buyplan_layout, _detect_fabric_rows, _detect_nukuryou_layout,
     _embed_style_photos, _replace_placeholders, _set_sheet_column_widths,
     _strip_color_brackets, _style_data, _style_total, derive_main_label_color,
@@ -1411,6 +1411,9 @@ def export_sky_east_buyplan(
     # ── Overview sheet — flat item-level cross-check table ────────────────
     if _overview_rows:
         _create_overview_sheet(tpl_wb, _overview_rows, n_fabric_slots=len(fabric_rows))
+
+    # ── Fabric Version sheet — which fabric-list version enriched this plan ─
+    _create_fabric_version_sheet(tpl_wb, fabric_version_id)
 
     if not tpl_wb.sheetnames:
         tpl_wb.create_sheet("Empty")

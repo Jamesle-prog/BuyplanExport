@@ -10,10 +10,56 @@ import pandas as pd
 import streamlit as st
 
 from ui.fabric_db._shared import FABRIC_DB_LIST_RENAME
+from ui.session_keys import SK
 
 
-def _fabric_db_do_import(store, uploaded) -> None:
-    """Write *uploaded* to a temp file, call import_from_xlsx, show result."""
+def _col_letter(n: int) -> str:
+    letters = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        letters = string.ascii_uppercase[r] + letters
+    return letters
+
+
+def _fabric_db_show_flash() -> None:
+    """Render (and clear) the outcome of the last import/delete action.
+
+    The action handlers end with ``st.rerun()`` (to refresh the record count,
+    version history, etc.), which discards everything rendered in the same
+    run -- so success/info banners written just before it only flashed for a
+    moment. Stash them in session state instead and render on the NEXT run.
+    """
+    flash = st.session_state.pop(SK.FABRIC_DB_FLASH, None)
+    if not flash:
+        return
+    kind = flash.get("kind", "info")
+    (st.success if kind == "success" else st.info)(flash["text"])
+    col_map = flash.get("col_map") or {}
+    if col_map:
+        with st.expander("🗂 Detected column layout", expanded=False):
+            rows = [
+                {"Column": _col_letter(c), "Field": f}
+                for f, c in sorted(col_map.items(), key=lambda x: x[1])
+            ]
+            st.dataframe(pd.DataFrame(rows), hide_index=True,
+                         use_container_width=False)
+            unmatched = flash.get("unmatched") or []
+            if unmatched:
+                st.caption(
+                    "⚠️ Unrecognised headers (not mapped to any field): "
+                    + ", ".join(f"Col {_col_letter(c)} '{h}'"
+                                for c, h in unmatched[:10])
+                )
+
+
+def _fabric_db_do_import(store, uploaded, clear_first: bool = False) -> None:
+    """Write *uploaded* to a temp file, call import_from_xlsx, show result.
+
+    *clear_first*=True is the "Delete All & Reimport" flow -- the wipe and
+    the import run in ONE store transaction, so a bad file rolls the wipe
+    back too (previously delete_all() committed first and a failed import
+    left the table empty).
+    """
     with st.spinner("Importing fabric data…"):
         try:
             t0 = time.time()
@@ -21,47 +67,36 @@ def _fabric_db_do_import(store, uploaded) -> None:
                 tmp.write(uploaded.getbuffer())
                 tmp_path = tmp.name
             try:
-                result = store.import_from_xlsx(tmp_path, source_file_name=uploaded.name)
+                result = store.import_from_xlsx(tmp_path, source_file_name=uploaded.name,
+                                                clear_first=clear_first)
             finally:
                 os.unlink(tmp_path)
             m, s = divmod(int(time.time() - t0), 60)
+            cleared_note = (
+                f"{result.get('cleared', 0):,} existing record(s) replaced. "
+                if clear_first else ""
+            )
             if result.get("unchanged"):
-                st.info(
+                text = (
                     f"ℹ️ Import complete in {m}:{s:02d} — the file matches the "
                     f"latest fabric list exactly (v{result['version_id']}), so no "
                     f"new version was created. {result['total']} fabrics checked."
                 )
+                kind = "info"
             else:
-                st.success(
-                    f"✅ Import complete in {m}:{s:02d} — "
+                text = (
+                    f"✅ Import complete in {m}:{s:02d} — {cleared_note}"
                     f"**{result['inserted']}** new, "
                     f"**{result['updated']}** updated, "
                     f"**{result['skipped']}** skipped "
                     f"(total: {result['total']} fabrics, now v{result['version_id']})"
                 )
-            # Show detected column map so user can verify header detection
-            col_map = result.get("col_map", {})
-            unmatched = result.get("unmatched_headers", [])
-            if col_map:
-                with st.expander("🗂 Detected column layout", expanded=False):
-                    def _col_letter(n):
-                        letters = ""
-                        while n:
-                            n, r = divmod(n - 1, 26)
-                            letters = string.ascii_uppercase[r] + letters
-                        return letters
-                    rows = [
-                        {"Column": _col_letter(c), "Field": f}
-                        for f, c in sorted(col_map.items(), key=lambda x: x[1])
-                    ]
-                    st.dataframe(pd.DataFrame(rows), hide_index=True,
-                                 use_container_width=False)
-                    if unmatched:
-                        st.caption(
-                            "⚠️ Unrecognised headers (not mapped to any field): "
-                            + ", ".join(f"Col {_col_letter(c)} '{h}'"
-                                        for c, h in unmatched[:10])
-                        )
+                kind = "success"
+            st.session_state[SK.FABRIC_DB_FLASH] = {
+                "kind": kind, "text": text,
+                "col_map": result.get("col_map", {}),
+                "unmatched": result.get("unmatched_headers", []),
+            }
             st.rerun()
         except Exception as exc:
             st.error(f"Import failed: {exc}")
@@ -114,9 +149,10 @@ def _fabric_db_upload_section(store, count: int) -> None:
             if reimport_file and confirmed:
                 if st.button("🗑  Delete All & Reimport", type="primary",
                              key="fabric_db_clear_reimport"):
-                    deleted = store.delete_all()
-                    st.info(f"🗑 {deleted:,} record(s) deleted.")
-                    _fabric_db_do_import(store, reimport_file)
+                    # Wipe + import happen in ONE store transaction (clear_first)
+                    # -- a bad file rolls the wipe back instead of leaving an
+                    # emptied table behind.
+                    _fabric_db_do_import(store, reimport_file, clear_first=True)
             elif reimport_file and not confirmed:
                 st.caption("☝️ Tick the checkbox above to enable the button.")
 
@@ -179,7 +215,11 @@ def _fabric_db_delete_section(store) -> None:
         if st.button(f"🗑  Delete {len(selected)} record(s)", type="primary",
                      key="fabric_db_del_confirm"):
             deleted = store.delete_by_quality_nos(selected)
-            st.success(f"✅ {deleted} record(s) deleted.")
+            st.session_state[SK.FABRIC_DB_FLASH] = {
+                "kind": "success",
+                "text": (f"✅ {deleted} record(s) deleted. The deletion is "
+                         f"recorded in the version history below."),
+            }
             # Clear selection and rerun
             st.session_state.pop("fabric_db_del_sel", None)
             st.rerun()

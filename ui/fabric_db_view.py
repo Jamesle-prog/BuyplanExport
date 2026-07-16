@@ -17,6 +17,7 @@ from ui.fabric_db._shared import _fabric_db_stats_bar, _fabric_db_list_table
 from ui.fabric_db.import_section import (
     _fabric_db_upload_section,
     _fabric_db_delete_section,
+    _fabric_db_show_flash,
 )
 from ui.fabric_db.version_history import _fabric_db_version_history
 from ui.fabric_db.browse import _fabric_db_paginated_list, _fabric_db_detail_card
@@ -47,6 +48,7 @@ def show_fabric_db_tab() -> None:
     ))
 
     _fabric_db_stats_bar(count, last)
+    _fabric_db_show_flash()
     st.divider()
     _fabric_db_upload_section(store, count)
     _fabric_db_delete_section(store)

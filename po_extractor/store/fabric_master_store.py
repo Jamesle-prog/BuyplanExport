@@ -160,24 +160,120 @@ class FabricMasterStore(BaseSQLiteStore):
     # ── Import ────────────────────────────────────────────────────────────────
 
     def import_from_xlsx(self, xlsx_path: str,
-                         source_file_name: str | None = None) -> dict:
+                         source_file_name: str | None = None,
+                         clear_first: bool = False) -> dict:
         """Import all rows from the 'all' sheet of 面料统计表.xlsx.
+
+        *clear_first*=True wipes fabric_master inside the SAME transaction
+        as the import ("Clear & Reimport") -- a failed import rolls the
+        delete back too, instead of leaving an emptied table behind.
 
         Returns a summary dict:
             {"inserted": int, "updated": int, "skipped": int, "total": int,
-             "col_map": dict, "unmatched_headers": list}
+             "cleared": int, "col_map": dict, "unmatched_headers": list,
+             "version_id": int, "unchanged": bool}
         """
         wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
         # try/finally: a mid-import exception used to skip wb.close(), and on
         # Windows the open zip handle kept the uploaded file locked until GC —
         # an immediate retry of the same file failed with a share violation.
         try:
-            return self._import_from_open_workbook(wb, xlsx_path, source_file_name)
+            return self._import_from_open_workbook(wb, xlsx_path, source_file_name,
+                                                   clear_first=clear_first)
         finally:
             wb.close()
 
+    @staticmethod
+    def _capture_old_state(conn) -> tuple[int | None, dict]:
+        """(latest version_id or None, {quality_no: diff-field dict}) — the
+        baseline every subsequent diff compares against. Reads the latest
+        version's own snapshot when one exists; falls back to a live
+        fabric_master read on a never-versioned DB (legacy data). MUST be
+        called BEFORE mutating fabric_master — the live fallback would
+        otherwise capture the post-mutation state as the baseline.
+        """
+        v_prev_row = conn.execute(
+            "SELECT MAX(version_id) AS v FROM fabric_versions"
+        ).fetchone()
+        v_prev = v_prev_row["v"] if v_prev_row and v_prev_row["v"] is not None else None
+
+        if v_prev is not None:
+            old_rows = conn.execute(
+                f"SELECT quality_no, {', '.join(_DIFF_FIELDS)} "
+                f"FROM fabric_master_snapshot WHERE version_id=?",
+                (v_prev,),
+            ).fetchall()
+        else:
+            old_rows = conn.execute(
+                f"SELECT quality_no, {', '.join(_DIFF_FIELDS)} FROM fabric_master"
+            ).fetchall()
+        return v_prev, {r["quality_no"]: dict(r) for r in old_rows}
+
+    def _mint_version(self, conn, v_prev: int | None, old_state: dict, *,
+                      actor: str, source_file: str, stamp: str,
+                      inserted: int = 0, updated: int = 0,
+                      skipped: int = 0) -> tuple[int | None, bool]:
+        """Version the CURRENT live fabric_master state against *old_state*.
+
+        Shared by every mutation path (xlsx import, manual row deletion) so
+        no data change can slip past the version history. Returns
+        ``(version_id, unchanged)``: when nothing differs from the latest
+        version, no new version is minted and the latest id is returned with
+        ``unchanged=True``. The first-ever version is always minted (the
+        baseline snapshot future diffs compare against).
+        """
+        new_rows = conn.execute(
+            f"SELECT {', '.join(_ALL_FABRIC_COLUMNS)} FROM fabric_master"
+        ).fetchall()
+        new_state = {r["quality_no"]: dict(r) for r in new_rows}
+        diff_rows = self._compute_version_diff(old_state, new_state)
+
+        if v_prev is not None and not diff_rows:
+            return v_prev, True
+
+        new_version_id = 1 if v_prev is None else v_prev + 1
+
+        conn.execute(
+            """INSERT INTO fabric_versions
+                  (version_id, created_at, uploaded_by, source_file,
+                   row_count, inserted, updated, skipped)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (new_version_id, stamp, actor, source_file,
+             len(new_state), inserted, updated, skipped),
+        )
+
+        if new_state:
+            cols = ", ".join(_ALL_FABRIC_COLUMNS)
+            ph = ", ".join("?" * len(_ALL_FABRIC_COLUMNS))
+            conn.executemany(
+                f"INSERT INTO fabric_master_snapshot (version_id, {cols}) "
+                f"VALUES (?, {ph})",
+                [
+                    (new_version_id,) + tuple(rec.get(c) for c in _ALL_FABRIC_COLUMNS)
+                    for rec in new_state.values()
+                ],
+            )
+
+        if diff_rows:
+            conn.executemany(
+                """INSERT INTO fabric_version_diff
+                      (version_id, quality_no, change_type, field, old_value, new_value, diffed_at)
+                   VALUES (?,?,?,?,?,?,?)""",
+                [(new_version_id, *row, stamp) for row in diff_rows],
+            )
+
+        # Prune snapshot DATA older than the retention window --
+        # fabric_versions / fabric_version_diff rows are never pruned
+        # (permanent audit trail).
+        conn.execute(
+            "DELETE FROM fabric_master_snapshot WHERE version_id <= ?",
+            (new_version_id - _SNAPSHOT_KEEP_VERSIONS,),
+        )
+        return new_version_id, False
+
     def _import_from_open_workbook(self, wb, xlsx_path: str,
-                                   source_file_name: str | None) -> dict:
+                                   source_file_name: str | None,
+                                   clear_first: bool = False) -> dict:
         if "all" not in wb.sheetnames:
             raise ValueError("Sheet 'all' not found in workbook.")
 
@@ -188,36 +284,20 @@ class FabricMasterStore(BaseSQLiteStore):
         field_to_col, unmatched = _build_col_map(ws)
         col_field_pairs = [(col, field) for field, col in field_to_col.items()]
 
-        inserted = updated = skipped = 0
+        inserted = updated = skipped = cleared = 0
         actor = _current_actor()
 
         with self._conn() as conn:
-            # ── Versioning: capture the OLD state before this import's upsert.
-            # Read from the PREVIOUS version's own snapshot, not a live
-            # fabric_master read -- "Clear & Reimport" already ran delete_all()
-            # in its own committed transaction before we get here, so a live
-            # read at this point would see an already-empty table.
-            v_prev_row = conn.execute(
-                "SELECT MAX(version_id) AS v FROM fabric_versions"
-            ).fetchone()
-            v_prev = v_prev_row["v"] if v_prev_row and v_prev_row["v"] is not None else None
+            # Baseline captured before any mutation (see _capture_old_state) —
+            # including before clear_first's wipe, which also closes the old
+            # "first import happens to be Clear & Reimport" gap: the legacy
+            # live baseline is read while it still exists.
+            v_prev, old_state = self._capture_old_state(conn)
 
-            if v_prev is not None:
-                old_rows = conn.execute(
-                    f"SELECT quality_no, {', '.join(_DIFF_FIELDS)} "
-                    f"FROM fabric_master_snapshot WHERE version_id=?",
-                    (v_prev,),
-                ).fetchall()
-            else:
-                # First tracked import ever -- fall back to a live read
-                # (captures legacy pre-versioning data). Known gap: if THIS
-                # first import is a Clear & Reimport, delete_all() already
-                # destroyed that legacy baseline, so version 1's diff will
-                # show everything as "added" with nothing "removed".
-                old_rows = conn.execute(
-                    f"SELECT quality_no, {', '.join(_DIFF_FIELDS)} FROM fabric_master"
-                ).fetchall()
-            old_state = {r["quality_no"]: dict(r) for r in old_rows}
+            if clear_first:
+                cleared = conn.execute(
+                    "SELECT COUNT(*) FROM fabric_master").fetchone()[0]
+                conn.execute("DELETE FROM fabric_master")
 
             for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 record: dict = {}
@@ -274,85 +354,26 @@ class FabricMasterStore(BaseSQLiteStore):
                     inserted += 1
 
             # ── Versioning: diff FIRST, and only mint a new version when the
-            # data actually changed. A byte-identical re-upload used to bump
-            # the version anyway -- writing a duplicate snapshot, an empty
-            # diff, and (worst) pruning a genuinely different older snapshot
-            # out of the retention window to make room for the no-op copy.
-            # The diff compares _DIFF_FIELDS only (imported_at/source_file/
-            # display_key excluded), so a re-upload of the same data under a
-            # new filename/timestamp still counts as unchanged.
-            new_rows = conn.execute(
-                f"SELECT {', '.join(_ALL_FABRIC_COLUMNS)} FROM fabric_master"
-            ).fetchall()
-            new_state = {r["quality_no"]: dict(r) for r in new_rows}
-            diff_rows = self._compute_version_diff(old_state, new_state)
-
-            if v_prev is not None and not diff_rows:
-                # Nothing changed vs the latest version -- no new version.
-                # (The upsert above still refreshed imported_at/source_file on
-                # the live table; that's import metadata, not fabric data.)
-                return {
-                    "inserted": inserted,
-                    "updated": updated,
-                    "skipped": skipped,
-                    "total": inserted + updated,
-                    "col_map": {f: c for f, c in field_to_col.items()},
-                    "unmatched_headers": unmatched,
-                    "version_id": v_prev,
-                    "unchanged": True,
-                }
-
-            # First-ever import (v_prev None) always creates version 1, even
-            # with an empty diff -- a baseline snapshot must exist for future
-            # imports to compare against.
-            new_version_id = 1 if v_prev is None else v_prev + 1
-
-            conn.execute(
-                """INSERT INTO fabric_versions
-                      (version_id, created_at, uploaded_by, source_file,
-                       row_count, inserted, updated, skipped)
-                   VALUES (?,?,?,?,?,?,?,?)""",
-                (new_version_id, imported_at, actor, source_file,
-                 len(new_state), inserted, updated, skipped),
-            )
-
-            if new_state:
-                cols = ", ".join(_ALL_FABRIC_COLUMNS)
-                ph = ", ".join("?" * len(_ALL_FABRIC_COLUMNS))
-                conn.executemany(
-                    f"INSERT INTO fabric_master_snapshot (version_id, {cols}) "
-                    f"VALUES (?, {ph})",
-                    [
-                        (new_version_id,) + tuple(rec.get(c) for c in _ALL_FABRIC_COLUMNS)
-                        for rec in new_state.values()
-                    ],
-                )
-
-            if diff_rows:
-                conn.executemany(
-                    """INSERT INTO fabric_version_diff
-                          (version_id, quality_no, change_type, field, old_value, new_value, diffed_at)
-                       VALUES (?,?,?,?,?,?,?)""",
-                    [(new_version_id, *row, imported_at) for row in diff_rows],
-                )
-
-            # Prune snapshot DATA older than the retention window --
-            # fabric_versions / fabric_version_diff rows are never pruned
-            # (permanent audit trail).
-            conn.execute(
-                "DELETE FROM fabric_master_snapshot WHERE version_id <= ?",
-                (new_version_id - _SNAPSHOT_KEEP_VERSIONS,),
+            # data actually changed (see _mint_version). A re-upload of the
+            # same data under a new filename/timestamp counts as unchanged --
+            # the diff compares _DIFF_FIELDS only (imported_at/source_file/
+            # display_key excluded), numeric fields at 2 dp.
+            version_id, unchanged = self._mint_version(
+                conn, v_prev, old_state,
+                actor=actor, source_file=source_file, stamp=imported_at,
+                inserted=inserted, updated=updated, skipped=skipped,
             )
 
         return {
             "inserted": inserted,
             "updated": updated,
             "skipped": skipped,
+            "cleared": cleared,
             "total": inserted + updated,
             "col_map": {f: c for f, c in field_to_col.items()},
             "unmatched_headers": unmatched,
-            "version_id": new_version_id,
-            "unchanged": False,
+            "version_id": version_id,
+            "unchanged": unchanged,
         }
 
     @staticmethod
@@ -561,23 +582,46 @@ class FabricMasterStore(BaseSQLiteStore):
         return [dict(r) for r in rows]
 
     def delete_all(self) -> int:
-        """Delete every row from fabric_master. Returns the number of rows removed."""
+        """Delete every row from fabric_master. Returns the number of rows removed.
+
+        Version-TRANSPARENT by design: intended only as a step inside a
+        larger versioned operation (e.g. ``import_from_xlsx(clear_first=True)``
+        does the equivalent wipe inside the import's own transaction, so the
+        subsequent version diff records the removals). Do not expose this
+        directly to users -- a standalone wipe would bypass version history.
+        """
         with self._conn() as conn:
             n = conn.execute("SELECT COUNT(*) FROM fabric_master").fetchone()[0]
             conn.execute("DELETE FROM fabric_master")
         return n
 
     def delete_by_quality_nos(self, quality_nos: list[str]) -> int:
-        """Delete rows whose quality_no is in *quality_nos*. Returns rows deleted."""
+        """Delete rows whose quality_no is in *quality_nos*. Returns rows deleted.
+
+        VERSIONED: a manual deletion is a data change like any other, so it
+        mints a version (source labelled "manual delete") with "removed" diff
+        rows -- otherwise the deletion would be invisible in the history, the
+        live table would silently drift from the latest snapshot, and a later
+        re-upload containing the deleted rows would be reported "unchanged"
+        while actually restoring them.
+        """
         if not quality_nos:
             return 0
         keys = [str(q).strip() for q in quality_nos if q]
         ph   = ",".join("?" * len(keys))
         with self._conn() as conn:
+            v_prev, old_state = self._capture_old_state(conn)
             cur = conn.execute(
                 f"DELETE FROM fabric_master WHERE quality_no IN ({ph})", keys
             )
-        return cur.rowcount
+            n = cur.rowcount
+            if n:
+                self._mint_version(
+                    conn, v_prev, old_state,
+                    actor=_current_actor(), source_file="manual delete",
+                    stamp=datetime.utcnow().isoformat(),
+                )
+        return n
 
     def list_all_quality_nos(self) -> list[str]:
         """Return all quality_no values for cross-system HHN orphan checks."""

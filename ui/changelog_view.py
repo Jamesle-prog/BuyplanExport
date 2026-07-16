@@ -10,6 +10,16 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.78.0",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "feat", "text": "**Sky East buy plan: new \"Fabric Version\" tab** — records exactly which fabric-list version enriched this workbook (version number, Latest vs. pinned-to-historical, upload date/user/source file, row count, that version's change summary, and the generation timestamp), right after the Overview tab. No more guessing which fabric list a months-old buy plan was built against."},
+            {"type": "fix", "text": "**Manually deleting fabric records now creates a version** (source shown as \"manual delete\") with the removed rows in its diff. Previously a manual delete bypassed version history entirely: it was invisible in the log, the live table silently drifted from the latest snapshot, and re-uploading a file containing the deleted rows was reported \"unchanged\" while actually restoring them."},
+            {"type": "fix", "text": "**\"Delete All & Reimport\" is now a single transaction** — the wipe and the re-import commit (and version) together, so a bad file rolls the wipe back instead of leaving the fabric table empty. This also closes the old first-import gap: a Clear & Reimport on a never-versioned database now records the legacy rows it replaced as \"removed\" in version 1's diff, instead of losing that baseline."},
+            {"type": "fix", "text": "**Fabric DB import/delete result messages no longer vanish instantly.** The success/\"no new version created\" banners and the detected-column-layout panel were wiped by the automatic screen refresh right after they rendered; they now survive the refresh and display normally."},
+        ],
+    },
+    {
         "version": "2.77.3",
         "date": "2026-07-16",
         "entries": [

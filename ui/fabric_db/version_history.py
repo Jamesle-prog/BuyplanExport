@@ -20,11 +20,13 @@ def _fabric_db_version_history(store) -> None:
         expanded=False,
     ):
         st.caption(t(
-            "Every fabric-table upload creates a new version. The current "
-            "version plus the 3 most recent previous versions stay fully "
-            "browsable below and selectable when generating a buy plan; "
-            "older versions' data is pruned automatically, but this log of "
-            "who uploaded what and what changed is kept forever."
+            "Every data change creates a new version — an upload whose "
+            "contents actually differ from the latest list, or a manual "
+            "record deletion. Re-uploading an identical file does not. The "
+            "current version plus the 3 most recent previous versions stay "
+            "fully browsable below and selectable when generating a buy "
+            "plan; older versions' data is pruned automatically, but this "
+            "log of who changed what is kept forever."
         ))
         if not versions:
             st.info(t("No uploads recorded yet."))
