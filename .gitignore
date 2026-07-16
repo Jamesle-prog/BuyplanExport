@@ -60,6 +60,7 @@ temp/
 /test_output/
 /test_mask/
 /zalandoFile/
+/dist/
 
 # Auth / license artifacts (keep code, exclude installed keys)
 auth/license.key

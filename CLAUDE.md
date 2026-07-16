@@ -42,6 +42,7 @@
 - **Rollback snapshot:** `requirements.lock` (78 packages, exact versions as of 2026-06-18).
   Roll back with `python -m pip install -r requirements.lock`.
 - **Deep architecture reference:** `IMPLEMENTATION_GUIDE.md` (data models, PDF/Excel pipelines, exporters, column mapping). Read it before large changes; don't duplicate it here.
+- **Building a distributable install pack** (to set the app up on a different PC): `installer/Build-DistPackage.bat` (dev machine only) — exports the tracked tree via `git archive`, flattens `installer/*` up to the pack root (`Install.ps1`/`Update.ps1`/`Uninstall.ps1` all assume they're siblings of `app.py`/`requirements.lock`, not nested a folder down), and zips the result into `dist/` (gitignored). The target PC just needs internet access to run the resulting `Install.bat`.
 
 ## Layout (where things live)
 

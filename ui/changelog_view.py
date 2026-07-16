@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.76.2",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "feat", "text": "**New dev tool: build a self-contained install pack for a different PC.** `installer/Build-DistPackage.bat` exports the git-tracked source tree, flattens `installer/`'s scripts up to the pack's root (`Install.ps1`/`Update.ps1`/`Uninstall.ps1` all assume they're direct siblings of `app.py`/`requirements.lock`, not one folder down), and zips the result into `dist/` — clean by construction, since anything never committed (`.venv`, databases, `auth/users.json`, `auth/license.key`, `__pycache__`, scratch files) was never seen by `git archive` in the first place. Copy the resulting zip to a different Windows PC, extract it anywhere, and run `Install.bat` there — same install flow as today, just packaged into one file instead of a raw git checkout."},
+        ],
+    },
+    {
         "version": "2.76.1",
         "date": "2026-07-16",
         "entries": [
