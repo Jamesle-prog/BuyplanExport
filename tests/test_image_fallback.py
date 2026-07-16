@@ -60,3 +60,27 @@ def test_load_style_photo_pair_sanitizes_style_name(tmp_path, monkeypatch):
 
     pair = shared.load_style_photo_pair("DR/5:A", str(tmp_path / "primary_missing"))
     assert pair[0] is not None
+
+
+def test_save_images_to_disk_unreachable_folder_does_not_raise(tmp_path, monkeypatch):
+    """A misconfigured/unreachable image folder (e.g. a network path this
+    install can't authenticate to -- WinError 1326) must warn, not crash the
+    whole upload flow. The real PO/contract data is already saved to the DB
+    by the time this runs; photo embedding is best-effort on top of that."""
+    def _raise(*_a, **_kw):
+        raise OSError(1326, "Logon failure: unknown user name or bad password")
+    monkeypatch.setattr(shared.os, "makedirs", _raise)
+
+    # Must not raise.
+    shared.save_images_to_disk({"ID_1": _png()}, img_dir=str(tmp_path / "unreachable"))
+
+
+def test_save_images_to_disk_still_writes_to_a_valid_folder(tmp_path):
+    folder = tmp_path / "images"
+    shared.save_images_to_disk(
+        {"ID_1": _png()},
+        style_pid_map={"DR1": ["ID_1"]},
+        img_dir=str(folder),
+    )
+    assert (folder / "ID_1.png").exists()
+    assert (folder / "DR1_front.png").exists()

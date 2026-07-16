@@ -448,28 +448,42 @@ def save_images_to_disk(image_dict: dict,
     Saves two forms:
       {picture_id}.png          -- internal key used for DB lookups
       {style}_front.png / {style}_back.png -- human-readable front/back copies
+
+    Best-effort: photo embedding is a secondary feature layered on top of
+    the real PO/contract data (already saved to the DB by the time this
+    runs). A misconfigured or unreachable folder -- e.g. a network path
+    from a different machine/office that this install can't authenticate
+    to (WinError 1326) -- must not crash the whole upload; warn and return
+    instead so the caller's fallback save (EXTRACTED_IMAGES_DIR) still runs.
     """
     import re as _re
     folder = img_dir if img_dir is not None else images_dir()
-    os.makedirs(folder, exist_ok=True)
+    try:
+        os.makedirs(folder, exist_ok=True)
 
-    for pid, data in image_dict.items():
-        if pid and data:
-            path = os.path.join(folder, f"{pid}.png")
-            if not os.path.exists(path):
-                with open(path, "wb") as f:
-                    f.write(data)
+        for pid, data in image_dict.items():
+            if pid and data:
+                path = os.path.join(folder, f"{pid}.png")
+                if not os.path.exists(path):
+                    with open(path, "wb") as f:
+                        f.write(data)
 
-    if style_pid_map:
-        for style, pids in style_pid_map.items():
-            safe_style = _re.sub(r'[\\/:*?"<>|]', '_', style)
-            for i, pid in enumerate(pids[:2]):
-                position = "front" if i == 0 else "back"
-                img_bytes = image_dict.get(pid)
-                if img_bytes:
-                    fname = os.path.join(folder, f"{safe_style}_{position}.png")
-                    with open(fname, "wb") as f:
-                        f.write(img_bytes)
+        if style_pid_map:
+            for style, pids in style_pid_map.items():
+                safe_style = _re.sub(r'[\\/:*?"<>|]', '_', style)
+                for i, pid in enumerate(pids[:2]):
+                    position = "front" if i == 0 else "back"
+                    img_bytes = image_dict.get(pid)
+                    if img_bytes:
+                        fname = os.path.join(folder, f"{safe_style}_{position}.png")
+                        with open(fname, "wb") as f:
+                            f.write(img_bytes)
+    except OSError as exc:
+        st.warning(
+            f"⚠️ Could not save images to '{folder}' ({exc}). "
+            "Photos will still be found via the local extracted-images fallback; "
+            "check the configured image folder in Admin Settings if this persists."
+        )
 
 
 def build_image_cache_for_ids(picture_ids,

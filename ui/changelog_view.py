@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.76.3",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "fix", "text": "**Sky East upload could crash after successfully saving PO data**, if the configured image folder was a network path (e.g. from an office share) that the current machine/login couldn't reach or authenticate to (Windows error 1326, \"unknown user name or bad password\"). The PO/contract data was already safely in the database by that point, but the crash still stopped photo-saving and the run-to-completion cleanup step. Saving images is now best-effort: an unreachable/misconfigured folder shows a warning instead of crashing, and the local extracted-images fallback (which most buy-plan photo lookups already use) still runs normally."},
+        ],
+    },
+    {
         "version": "2.76.2",
         "date": "2026-07-16",
         "entries": [
