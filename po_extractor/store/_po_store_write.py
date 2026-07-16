@@ -110,6 +110,9 @@ class _WritesMixin:
 
     def save(self, po: POData) -> None:
         """Unconditional save — used internally and for testing."""
+        po_number = (po.metadata.po_number or "").strip()
+        if not po_number:
+            return  # BUG-05: guard against NULL-keyed row insertion
         self._do_save(po)
 
     def force_save(self, po: POData) -> None:

@@ -34,13 +34,11 @@ class POStore(_WritesMixin, _ReadsMixin, _ExceptionsMixin, _FabricMixin,
             # Migrate: add company column to existing databases
             cols = {r[1] for r in conn.execute("PRAGMA table_info(po_metadata)")}
             if "company" not in cols:
-                conn.execute("ALTER TABLE po_metadata ADD COLUMN company TEXT")
+                self._add_column_if_missing(conn, "po_metadata", "company", "TEXT")
             # Migrate: add traceability + placeholder columns to existing databases
             for col_name, col_type in _NEW_METADATA_COLS:
                 if col_name not in cols:
-                    conn.execute(
-                        f"ALTER TABLE po_metadata ADD COLUMN {col_name} {col_type}"
-                    )
+                    self._add_column_if_missing(conn, "po_metadata", col_name, col_type)
             # Migrate: add combo_idx column to style_fabric_parts (fabric combination
             # grouping).  SQLite cannot alter a UNIQUE constraint in-place, so we
             # recreate the table with the updated schema when the column is absent.

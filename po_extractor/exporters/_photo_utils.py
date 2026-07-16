@@ -22,6 +22,31 @@ from dataclasses import dataclass
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, TwoCellAnchor
 
+from ..config import DATA_DIR as _DATA_DIR
+
+# Default images folder — same value/convention as ui.stores.IMAGES_DIR_DEFAULT,
+# computed independently here so po_extractor (backend) doesn't import ui/.
+_DEFAULT_IMAGES_DIR = os.path.join(_DATA_DIR, "images")
+
+
+def _is_within_images_dir(path: str, images_dir: str | None) -> bool:
+    """True if *path* resolves (``os.path.realpath``) to a location inside
+    *images_dir* (or :data:`_DEFAULT_IMAGES_DIR` when *images_dir* is falsy).
+
+    Sandboxes the legacy Photo1/Photo2-as-file-path fallback in
+    :func:`resolve_photo_pair`: those cell values come straight from a
+    user-uploaded PO/Excel file, so an unrestricted ``os.path.isfile()``
+    check would let any path the server process can read be embedded into
+    the output workbook (arbitrary file read).
+    """
+    base = os.path.realpath(images_dir or _DEFAULT_IMAGES_DIR)
+    target = os.path.realpath(path)
+    try:
+        return os.path.commonpath([base, target]) == base
+    except ValueError:
+        # Different drives on Windows, or otherwise incomparable paths.
+        return False
+
 
 # ---------------------------------------------------------------------------
 # Region constants — single source of truth
@@ -180,6 +205,7 @@ def resolve_photo_pair(
     style: str,
     first_row,
     photo_map: dict,
+    images_dir: str | None = None,
 ) -> tuple[bytes | str | None, bytes | str | None]:
     """Resolve (front, back) photos for *style* using a multi-strategy lookup.
 
@@ -197,7 +223,12 @@ def resolve_photo_pair(
       3. **Photo1 / Photo2 columns** on *first_row* — legacy:
             • basename match against *photo_map*
             • style-prefix match against *photo_map* keys
-            • absolute disk path
+            • absolute disk path — SANDBOXED: only accepted when it resolves
+              inside *images_dir* (or :data:`_DEFAULT_IMAGES_DIR` when not
+              given). These cell values are fully attacker-controlled (read
+              straight from an uploaded Excel file), so without this check
+              any file path the server process can read would be embedded
+              into the output workbook.
 
     Returned values are bytes, a path string, or None.
     """
@@ -261,8 +292,9 @@ def resolve_photo_pair(
                 if isinstance(k, str) and k.startswith(prefix) \
                         and isinstance(v, (bytes, bytearray)):
                     return v
-        # 3c. Disk path
-        if os.path.isfile(path_or_name):
+        # 3c. Disk path — only within the allow-listed images folder (see
+        # _is_within_images_dir docstring: this cell value is user-controlled).
+        if os.path.isfile(path_or_name) and _is_within_images_dir(path_or_name, images_dir):
             return path_or_name
         return None
 

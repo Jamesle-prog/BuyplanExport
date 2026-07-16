@@ -28,8 +28,13 @@ def export_color_plan(df_size: pd.DataFrame, output_dir: str) -> str:
     has_cn = "Color (CN)" in df_size.columns
     cn_map: dict = {}
     if has_cn:
+        # Normalise the key to string at construction time — df_size["Color"]
+        # may be numeric dtype (e.g. all-digit color codes), while the lookup
+        # below always coerces with str(color); building the map from the
+        # native dtype would make it never match.
         cn_map = (
             df_size[["Color", "Color (CN)"]]
+            .assign(Color=lambda d: d["Color"].astype(str))
             .drop_duplicates(subset=["Color"])
             .set_index("Color")["Color (CN)"]
             .fillna("")

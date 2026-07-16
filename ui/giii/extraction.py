@@ -90,7 +90,15 @@ def _run_extraction(uploaded_files, mask_prices: bool, company: str = ""):
     tmpdir = tempfile.mkdtemp()
     out_dir = tempfile.mkdtemp()
     log = []
+    try:
+        _run_extraction_body(uploaded_files, mask_prices, company, tmpdir, out_dir, log)
+    finally:
+        _shutil.rmtree(tmpdir,  ignore_errors=True)
+        _shutil.rmtree(out_dir, ignore_errors=True)
 
+
+def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
+                         tmpdir: str, out_dir: str, log: list) -> None:
     n_files  = len(uploaded_files)
     # Steps: parse×n + save + csv + buyplan + color + summary + crosscheck [+ mask]
     n_steps  = n_files + 6 + (1 if mask_prices else 0)
@@ -236,9 +244,7 @@ def _run_extraction(uploaded_files, mask_prices: bool, company: str = ""):
 
     st.session_state.results = outputs
     st.session_state.parse_log = log
-    # All outputs are now in session_state — clean up temp dirs
-    _shutil.rmtree(tmpdir,  ignore_errors=True)
-    _shutil.rmtree(out_dir, ignore_errors=True)
+    # Temp dirs are cleaned up by the caller's (_run_extraction) finally block.
 
 
 def _build_requirements_doc(pos) -> tuple[bytes, list[str]] | None:
@@ -717,17 +723,33 @@ def _run_smart_processing(detections, saved_paths: dict[str, str],
                           deepseek_api_key: str = "",
                           deepseek_model: str = "deepseek-chat",
                           fabric_version_id: int | None = None):
+    import shutil as _shutil
+    out_dir = tempfile.mkdtemp()
+    try:
+        _run_smart_processing_body(
+            detections, saved_paths, mask_prices, out_dir,
+            method=method, deepseek_api_key=deepseek_api_key,
+            deepseek_model=deepseek_model, fabric_version_id=fabric_version_id,
+        )
+    finally:
+        _shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def _run_smart_processing_body(detections, saved_paths: dict[str, str],
+                               mask_prices: bool, out_dir: str,
+                               method: str = "regex",
+                               deepseek_api_key: str = "",
+                               deepseek_model: str = "deepseek-chat",
+                               fabric_version_id: int | None = None) -> None:
     from ui.shared import (
         load_photo_map_from_dir as _load_photo_map_from_dir,
         images_dir as _get_images_dir,
     )
-    out_dir = tempfile.mkdtemp()
     log: list[str] = []
 
     # Load photos from the configured image folder
-    photo_map: dict[str, bytes] = _load_photo_map_from_dir(
-        _get_images_dir("giii_images_dir")
-    )
+    images_folder = _get_images_dir("giii_images_dir")
+    photo_map: dict[str, bytes] = _load_photo_map_from_dir(images_folder)
     if photo_map:
         log.append(f"📷 {len(photo_map)} photo(s) loaded from image folder")
 
@@ -763,6 +785,7 @@ def _run_smart_processing(detections, saved_paths: dict[str, str],
                     company, paths, out_dir, photo_map, log,
                     mask_prices=mask_prices,
                     fabric_version_id=fabric_version_id,
+                    images_dir=images_folder,
                 )
             elif is_pdf and company != "Unknown":
                 grp_out = _process_pdf_group(

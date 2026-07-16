@@ -193,11 +193,25 @@ class SkyEastStore(BaseSQLiteStore):
             }
 
             for item in contract.items:
-                existing = existing_map.get((item.style, item.color_name, item.zalando_po))
+                key = (item.style, item.color_name, item.zalando_po)
+                existing = existing_map.get(key)
 
                 if existing is None:
                     self._insert_item(conn, item, revision_reason=None)
                     result["new_items"].append((item.style, item.color_name, item.zalando_po))
+                    # BUG fix: existing_map was built once before the loop and
+                    # never updated, so a second item in this same contract
+                    # sharing (style, color_name, zalando_po) — the table's
+                    # UNIQUE key — would look up the stale pre-loop state
+                    # instead of what this loop iteration just wrote,
+                    # silently losing the first iteration's update or
+                    # double-archiving. Re-read what we just inserted so the
+                    # next iteration of a duplicate key sees it.
+                    existing_map[key] = dict(conn.execute(
+                        "SELECT * FROM sky_east_items "
+                        "WHERE pc_no=? AND style=? AND color_name=? AND zalando_po=?",
+                        (contract.pc_no, item.style, item.color_name, item.zalando_po),
+                    ).fetchone())
                 else:
                     old_sizes = _item_sizes_dict(existing)
                     # Normalise to canonical 6-key format so raw parser keys
@@ -232,6 +246,15 @@ class SkyEastStore(BaseSQLiteStore):
                         (item.style, item.color_name, item.zalando_po,
                          old_sizes, dict(new_sizes), changed)
                     )
+                    # Same fix as the insert branch above: refresh the map
+                    # entry so a later duplicate-key item in this contract
+                    # compares against the row we just wrote, not the
+                    # pre-loop snapshot.
+                    existing_map[key] = dict(conn.execute(
+                        "SELECT * FROM sky_east_items "
+                        "WHERE pc_no=? AND style=? AND color_name=? AND zalando_po=?",
+                        (contract.pc_no, item.style, item.color_name, item.zalando_po),
+                    ).fetchone())
 
         return result
 

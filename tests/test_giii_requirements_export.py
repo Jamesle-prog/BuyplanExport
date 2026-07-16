@@ -240,6 +240,25 @@ def test_requirement_matrix_columns_by_destination():
     assert red[ai] == "✓" and red[si] == "—"       # only AMRG has the red sticker
 
 
+def test_requirement_matrix_merges_results_when_two_pos_share_destination():
+    """Two PO contexts with the SAME destination label used to collide in
+    groups.setdefault(label, ctx["results"]) — the second PO's entire
+    results list was silently discarded rather than merged, so its
+    domain/subtypes never showed up in the matrix. Both must appear now."""
+    only_in_first = {"domain": "label", "subtype": "main_label",
+                     "status": "confirmed", "resultJson": {}}
+    only_in_second = {"domain": "carton", "subtype": "red_sticker",
+                      "status": "confirmed", "resultJson": {}}
+    data = export_giii_requirements([
+        _ctx_kl("P1", "ST1", "AMRG", "US", 80, [dict(only_in_first)]),
+        _ctx_kl("P2", "ST1", "AMRG", "US", 100, [dict(only_in_second)])])
+    ws = openpyxl.load_workbook(io.BytesIO(data))["Requirement Matrix"]
+    rows = [[c.value for c in row] for row in ws.iter_rows(min_row=3)]
+    keys = {r[0] for r in rows}
+    assert "label/main_label" in keys        # from P1 — must survive
+    assert "carton/red_sticker" in keys      # from P2 — must NOT be dropped
+
+
 def test_actions_sheet_flags_conflicts():
     r = [{"domain": "hangtag", "subtype": "main_hangtag", "status": "conflict",
           "resultJson": {"standard": "two rules disagree"}}]

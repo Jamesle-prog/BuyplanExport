@@ -520,7 +520,11 @@ def _write_style_sheet(
     sheet_title = base_title
     suffix = 2
     while sheet_title in wb.sheetnames:
-        sheet_title = f"{base_title[:28]}_{suffix}"
+        # Reserve exactly enough room for "_{suffix}" so the title never
+        # exceeds Excel's 31-char sheet-name limit — a fixed base_title[:28]
+        # slice overflows once suffix reaches 2 digits ("_100" = 4 chars).
+        tail = f"_{suffix}"
+        sheet_title = f"{base_title[:31 - len(tail)]}{tail}"
         suffix += 1
     ws = wb.create_sheet(title=sheet_title)
 

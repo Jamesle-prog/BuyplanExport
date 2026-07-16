@@ -126,20 +126,20 @@ def show_boat_sample_admin() -> None:
     if rows:
         st.markdown("##### Delete requirement")
         options = [f"{r['company']} / {r['brand']}" for r in rows]
-        to_delete = st.selectbox(
+        del_idx = st.selectbox(
             "Select entry to delete",
-            options,
+            options=range(len(options)),
+            format_func=lambda i: options[i],
             index=None,
             placeholder="— choose —",
             key="bsr_del_sel",
         )
-        if st.button("🗑️ Delete selected", disabled=not to_delete, key="bsr_del_btn"):
-            if to_delete:
-                parts = to_delete.split(" / ", 1)
-                if len(parts) == 2:
-                    n = store.delete(parts[0], parts[1])
-                    if n:
-                        st.success(f"Deleted: {to_delete}")
-                        st.rerun()
-                    else:
-                        st.warning("Entry not found (already deleted?).")
+        if st.button("🗑️ Delete selected", disabled=del_idx is None, key="bsr_del_btn"):
+            if del_idx is not None:
+                company_d, brand_d = rows[del_idx]["company"], rows[del_idx]["brand"]
+                n = store.delete(company_d, brand_d)
+                if n:
+                    st.success(f"Deleted: {options[del_idx]}")
+                    st.rerun()
+                else:
+                    st.warning("Entry not found (already deleted?).")

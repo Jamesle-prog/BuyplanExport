@@ -178,3 +178,57 @@ def test_uploaded_by_defaults_to_system_outside_streamlit(store, tmp_path):
     versions = store.list_versions()
     assert versions[0]["uploaded_by"] == "system"
     assert versions[0]["version_id"] == result["version_id"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# migrate_from_db: src_conn must not leak on a mid-read exception
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_migrate_from_db_closes_src_conn_on_exception(tmp_path, monkeypatch):
+    """If reading the source DB raises between connect() and the explicit
+    .close() call (e.g. a transient OperationalError), migrate_from_db must
+    still close src_conn via a finally -- previously the explicit
+    ``src_conn.close()`` calls were only reached on the success and the two
+    early-return ("no table" / "empty table") paths, so any other exception
+    leaked the connection.
+    """
+    import sqlite3
+    from po_extractor.store.fabric_master_store import FabricMasterStore
+
+    src_path = str(tmp_path / "src.db")
+    FabricMasterStore(src_path)  # creates the fabric_master schema
+    with sqlite3.connect(src_path) as c:
+        c.execute(
+            "INSERT INTO fabric_master (quality_no, composition_en) VALUES (?, ?)",
+            ("Q1", "100%Cotton"),
+        )
+
+    closed = {"called": False}
+
+    class _SpyConnection(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if sql.strip() == "SELECT * FROM fabric_master":
+                raise sqlite3.OperationalError("simulated read failure")
+            return super().execute(sql, *args, **kwargs)
+
+        def close(self):
+            closed["called"] = True
+            return super().close()
+
+    real_connect = sqlite3.connect
+
+    def _connect_with_spy(path, *a, **kw):
+        if path == src_path:
+            kw["factory"] = _SpyConnection
+        return real_connect(path, *a, **kw)
+
+    monkeypatch.setattr(sqlite3, "connect", _connect_with_spy)
+
+    dst_path = str(tmp_path / "dst.db")
+    result = FabricMasterStore.migrate_from_db(src_path, dst_path)
+
+    assert "Cannot read source DB" in result["message"]
+    assert closed["called"], (
+        "src_conn.close() must run even when reading the source DB raises "
+        "between connect() and the explicit close() call"
+    )

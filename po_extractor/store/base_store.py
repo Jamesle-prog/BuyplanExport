@@ -50,9 +50,16 @@ class BaseSQLiteStore:
             # (e.g. the DB is locked by another connection), so only mark the
             # path done once WAL actually took effect; otherwise retry on the
             # next connection.
-            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
-            if str(mode).lower() == "wal":
-                BaseSQLiteStore._wal_initialized.add(self.db_path)
+            try:
+                mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+                if str(mode).lower() == "wal":
+                    BaseSQLiteStore._wal_initialized.add(self.db_path)
+            except sqlite3.OperationalError:
+                # e.g. "database is locked" on the very first switch of a
+                # brand-new/non-WAL file under concurrent access — don't crash
+                # the connection, just leave the path unmarked so a later
+                # connection retries the switch.
+                pass
         conn.execute("PRAGMA synchronous=NORMAL")
         # Wait (up to 5s) for a competing writer instead of failing immediately
         # with "database is locked" — matters when several PDAs write stocktake

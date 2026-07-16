@@ -71,9 +71,9 @@ def _fabric_db_detail_card(store) -> None:
         ki = st.columns(3)
         ki[0].metric("面料成分（英文）", rec.get("composition_en") or "—")
         ki[1].metric("克重 GSM",
-                     f"{int(rec['weight_gsm'])}" if rec.get("weight_gsm") else "—")
+                     f"{int(rec['weight_gsm'])}" if rec.get("weight_gsm") is not None else "—")
         ki[2].metric("有效门幅 CM",
-                     f"{int(rec['cuttable_width_cm'])}" if rec.get("cuttable_width_cm") else "—")
+                     f"{int(rec['cuttable_width_cm'])}" if rec.get("cuttable_width_cm") is not None else "—")
 
         ki2 = st.columns(3)
         ki2[0].metric("烫缩率",

@@ -136,6 +136,7 @@ def show_pipeline_layout_admin() -> None:
         },
         key=f"admin_pipe_cols_{pipe.pipeline_id}",
     )
+    edited_cols = edited_cols.fillna("")
 
     st.markdown(f"**{t('Size columns')}** — {t('size label → Excel column letter')}")
     sz_map = cfg.get("size_column_map") or {}
@@ -149,6 +150,7 @@ def show_pipeline_layout_admin() -> None:
         df_sz, num_rows="dynamic", width="stretch", hide_index=True,
         key=f"admin_pipe_sz_{pipe.pipeline_id}",
     )
+    edited_sz = edited_sz.fillna("")
 
     st.markdown(f"**{t('Meta columns')}** — {t('extra fields → Excel column letter')}")
     meta_map = cfg.get("meta_column_map") or {}
@@ -160,6 +162,7 @@ def show_pipeline_layout_admin() -> None:
         df_meta, num_rows="dynamic", width="stretch", hide_index=True,
         key=f"admin_pipe_meta_{pipe.pipeline_id}",
     )
+    edited_meta = edited_meta.fillna("")
 
     edited_slots_df = None
     if pipe.supports_fabric_slots:
@@ -191,6 +194,7 @@ def show_pipeline_layout_admin() -> None:
             },
             key=f"admin_pipe_slots_{pipe.pipeline_id}",
         )
+        edited_slots_df = edited_slots_df.fillna("")
 
     new_notes = st.text_area(
         t("Notes (free-text, stored with the config)"),

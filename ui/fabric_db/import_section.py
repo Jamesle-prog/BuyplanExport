@@ -20,8 +20,10 @@ def _fabric_db_do_import(store, uploaded) -> None:
             with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
                 tmp.write(uploaded.getbuffer())
                 tmp_path = tmp.name
-            result = store.import_from_xlsx(tmp_path, source_file_name=uploaded.name)
-            os.unlink(tmp_path)
+            try:
+                result = store.import_from_xlsx(tmp_path, source_file_name=uploaded.name)
+            finally:
+                os.unlink(tmp_path)
             m, s = divmod(int(time.time() - t0), 60)
             st.success(
                 f"✅ Import complete in {m}:{s:02d} — "

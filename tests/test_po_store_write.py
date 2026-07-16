@@ -171,3 +171,99 @@ class TestRowHash:
         store.check_and_save(po_no_upc)
         s2, _ = store.check_and_save(po_has_upc)
         assert s2 == "updated"
+
+
+# ---------------------------------------------------------------------------
+# BUG-05: save() must guard against an empty po_number, same as force_save()
+# ---------------------------------------------------------------------------
+
+class TestSaveEmptyPoNumberGuard:
+    def test_save_with_empty_po_number_is_a_noop(self, store):
+        """save() previously had no guard (unlike force_save()), so an empty
+        po_number would insert a NULL-keyed po_metadata row."""
+        po = _make_po("", "STYLE-EMPTY", "Black", "M", units=10)
+        store.save(po)
+        with store._conn() as conn:
+            n = conn.execute(
+                "SELECT COUNT(*) FROM po_metadata WHERE po_number = ''"
+            ).fetchone()[0]
+        assert n == 0, "save() must not insert a row with an empty po_number"
+
+    def test_save_with_whitespace_only_po_number_is_a_noop(self, store):
+        po = _make_po("   ", "STYLE-EMPTY2", "Black", "M", units=10)
+        store.save(po)
+        with store._conn() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM po_metadata").fetchone()[0]
+        assert total == 0
+
+    def test_save_with_real_po_number_still_works(self, store):
+        """The guard must not affect the normal, non-empty case."""
+        po = _make_po("PO020", "STYLE-REAL", "Blue", "L", units=8)
+        store.save(po)
+        with store._conn() as conn:
+            n = conn.execute(
+                "SELECT COUNT(*) FROM po_metadata WHERE po_number = 'PO020'"
+            ).fetchone()[0]
+        assert n == 1
+
+
+# ---------------------------------------------------------------------------
+# po_metadata migrations must use _add_column_if_missing (tolerates a
+# concurrent winner), not a raw ALTER TABLE that crashes on a duplicate
+# column race.
+# ---------------------------------------------------------------------------
+
+class TestPoMetadataMigrationUsesSharedHelper:
+    def test_po_store_source_has_no_raw_alter_table_for_po_metadata(self):
+        """Locks the fix: po_store.py must route every po_metadata column
+        migration through BaseSQLiteStore._add_column_if_missing instead of
+        issuing 'ALTER TABLE po_metadata ADD COLUMN ...' directly -- a raw
+        ALTER crashes with 'duplicate column name' if two threads race the
+        same first-time migration on a legacy DB."""
+        import os
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(base, "po_extractor", "store", "po_store.py")
+        src = open(path, encoding="utf-8").read()
+        assert "ALTER TABLE po_metadata" not in src, (
+            "po_store.py must not issue a raw ALTER TABLE on po_metadata -- "
+            "use self._add_column_if_missing(conn, 'po_metadata', col, type) instead"
+        )
+        assert "_add_column_if_missing(conn, \"po_metadata\"" in src
+
+    def test_legacy_db_migration_still_adds_all_columns(self, tmp_path):
+        """Functional check: a legacy po_metadata table (missing every
+        _NEW_METADATA_COLS entry) must still end up with all of them after
+        POStore.__init__ runs the migration through _add_column_if_missing.
+
+        The table already carries 'company' here because _SCHEMA's
+        ``CREATE INDEX idx_pom_company ON po_metadata(company)`` runs
+        unconditionally on every startup (even against a pre-existing
+        table, since CREATE TABLE IF NOT EXISTS is a no-op there) -- a
+        genuinely companyless legacy table would fail at that CREATE INDEX
+        before ever reaching either migration loop, which is a separate,
+        pre-existing ordering issue outside this fix's scope.
+        """
+        import sqlite3
+        from po_extractor.store.po_store import POStore
+        from po_extractor.store._po_store_schema import _NEW_METADATA_COLS
+
+        db_path = str(tmp_path / "legacy.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute("""
+            CREATE TABLE po_metadata (
+                po_number TEXT PRIMARY KEY, style TEXT, factory TEXT,
+                country_of_origin TEXT, xport_date TEXT, issue_date TEXT,
+                version TEXT, division_code TEXT, division_name TEXT,
+                source_format TEXT, file_name TEXT, extracted_at TEXT,
+                company TEXT
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+        POStore(db_path)
+        with sqlite3.connect(db_path) as c:
+            cols = {r[1] for r in c.execute("PRAGMA table_info(po_metadata)")}
+        assert "company" in cols
+        for col_name, _col_type in _NEW_METADATA_COLS:
+            assert col_name in cols, f"migration did not add {col_name!r}"

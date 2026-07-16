@@ -323,68 +323,72 @@ def _run_giii_mapping_import(mapping_file, dry_run: bool = False,
                    (``"giii"`` or ``"sky_east"``); controls both the DB write
                    and the session-state key used to surface results.
     """
+    import shutil as _shutil
     tmpdir = tempfile.mkdtemp()
-    path = os.path.join(tmpdir, mapping_file.name)
-    with open(path, "wb") as f:
-        f.write(mapping_file.getbuffer())
-
     try:
-        style_parts = _parse_fabric_mapping_file(path)
-    except Exception as exc:
-        st.error(f"Could not parse mapping file: {exc}")
-        return
+        path = os.path.join(tmpdir, mapping_file.name)
+        with open(path, "wb") as f:
+            f.write(mapping_file.getbuffer())
 
-    store = get_store()
-    fabric_store = get_fabric_master_store()
-    total_parts = sum(len(v) for v in style_parts.values())
-    enriched = 0
-    missing_hhns: list[str] = []        # not in HHN cache
-    not_in_master: list[str] = []       # not in fabric_master either
-    bad_format_hhns: list[str] = []     # HHN format doesn't match pattern
+        try:
+            style_parts = _parse_fabric_mapping_file(path)
+        except Exception as exc:
+            st.error(f"Could not parse mapping file: {exc}")
+            return
 
-    import re as _re
-    _HHN_RE = _re.compile(r'^[A-Za-z]{2,5}-[A-Za-z]{1,5}-?\d{4,8}$')
+        store = get_store()
+        fabric_store = get_fabric_master_store()
+        total_parts = sum(len(v) for v in style_parts.values())
+        enriched = 0
+        missing_hhns: list[str] = []        # not in HHN cache
+        not_in_master: list[str] = []       # not in fabric_master either
+        bad_format_hhns: list[str] = []     # HHN format doesn't match pattern
 
-    # Enrich each FabricPart with composition from the HHN cache
-    from po_extractor.models.fabric_part import FabricPart
-    for style, parts in style_parts.items():
-        for p in parts:
-            if p.hhn_no:
-                # Format check
-                if not _HHN_RE.match(p.hhn_no.strip()) and p.hhn_no not in bad_format_hhns:
-                    bad_format_hhns.append(p.hhn_no)
+        import re as _re
+        _HHN_RE = _re.compile(r'^[A-Za-z]{2,5}-[A-Za-z]{1,5}-?\d{4,8}$')
 
-                detail = store.get_fabric_by_hhn(p.hhn_no)
-                if detail:
-                    p.composition = detail.get("composition", "")
-                    p.weight_gsm  = detail.get("weight_gsm", 0) or 0
-                    p.width_cm    = detail.get("width_cm",   0) or 0
-                    if p.composition:
-                        enriched += 1
-                else:
-                    if p.hhn_no not in missing_hhns:
-                        missing_hhns.append(p.hhn_no)
-                    # Also cross-check fabric_master directly
-                    master_rec = fabric_store.get_by_quality_no(p.hhn_no.strip())
-                    if not master_rec and p.hhn_no not in not_in_master:
-                        not_in_master.append(p.hhn_no)
+        # Enrich each FabricPart with composition from the HHN cache
+        from po_extractor.models.fabric_part import FabricPart
+        for style, parts in style_parts.items():
+            for p in parts:
+                if p.hhn_no:
+                    # Format check
+                    if not _HHN_RE.match(p.hhn_no.strip()) and p.hhn_no not in bad_format_hhns:
+                        bad_format_hhns.append(p.hhn_no)
 
-    result = {
-        "dry_run":        dry_run,
-        "styles":         len(style_parts),
-        "parts":          total_parts,
-        "enriched":       enriched,
-        "missing_hhns":   missing_hhns,
-        "not_in_master":  not_in_master,
-        "bad_format_hhns": bad_format_hhns,
-    }
+                    detail = store.get_fabric_by_hhn(p.hhn_no)
+                    if detail:
+                        p.composition = detail.get("composition", "")
+                        p.weight_gsm  = detail.get("weight_gsm", 0) or 0
+                        p.width_cm    = detail.get("width_cm",   0) or 0
+                        if p.composition:
+                            enriched += 1
+                    else:
+                        if p.hhn_no not in missing_hhns:
+                            missing_hhns.append(p.hhn_no)
+                        # Also cross-check fabric_master directly
+                        master_rec = fabric_store.get_by_quality_no(p.hhn_no.strip())
+                        if not master_rec and p.hhn_no not in not_in_master:
+                            not_in_master.append(p.hhn_no)
 
-    if not dry_run:
-        n = store.save_fabric_parts_batch(source, style_parts)
-        result["saved"] = n
+        result = {
+            "dry_run":        dry_run,
+            "styles":         len(style_parts),
+            "parts":          total_parts,
+            "enriched":       enriched,
+            "missing_hhns":   missing_hhns,
+            "not_in_master":  not_in_master,
+            "bad_format_hhns": bad_format_hhns,
+        }
 
-    # Store under a source-specific key so GIII and Sky East results don't clash
-    st.session_state[f"{source}_mapping_result"] = result
+        if not dry_run:
+            n = store.save_fabric_parts_batch(source, style_parts)
+            result["saved"] = n
+
+        # Store under a source-specific key so GIII and Sky East results don't clash
+        st.session_state[f"{source}_mapping_result"] = result
+    finally:
+        _shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def _compute_giii_missing_df(companies: "list[str] | None" = None) -> "pd.DataFrame":

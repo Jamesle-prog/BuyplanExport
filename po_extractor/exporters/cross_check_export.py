@@ -25,17 +25,21 @@ def _buyplan_totals(path: str) -> dict:
     """Return {style: total_units} by summing the 'Total' column in each sheet's data rows.
 
     Canonical layout: info rows 1-4, header row 5, data rows 6..N-1, total
-    row N — but client templates make the header row configurable, so the
-    'Total' header is searched in the first 10 rows instead of hardcoding
-    row 5 (a template with a different header row used to make every style
-    read 0 here and flag as MISMATCH).
+    row N — but client templates make the header row configurable (see
+    ``buyplan_export.save_client_template``'s admin-settable ``header_row``,
+    which has no upper bound), so the 'Total' header is searched instead of
+    hardcoded to row 5 (a template with a different header row used to make
+    every style read 0 here and flag as MISMATCH). This function has no
+    access to the specific company/template's configured ``header_row``, so
+    the scan is widened to 30 rows — comfortably above any known template's
+    metadata block — rather than the previous hardcoded 10.
     """
     wb = load_workbook(path, data_only=True)
     out = {}
     for sheet in wb.sheetnames:
         ws = wb[sheet]
         total_col = header_row = None
-        for r in range(1, min(10, ws.max_row) + 1):
+        for r in range(1, min(30, ws.max_row) + 1):
             for cell in ws[r]:
                 if cell.value == "Total":
                     total_col, header_row = cell.column, r

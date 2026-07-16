@@ -587,6 +587,7 @@ class FabricMasterStore(BaseSQLiteStore):
         import sqlite3 as _sqlite3
 
         # ── Read from source ────────────────────────────────────────────────
+        src_conn = None
         try:
             src_conn = _sqlite3.connect(src_db_path)
             src_conn.row_factory = _sqlite3.Row
@@ -595,13 +596,11 @@ class FabricMasterStore(BaseSQLiteStore):
                 "WHERE type='table' AND name='fabric_master'"
             ).fetchone()
             if not has_table:
-                src_conn.close()
                 return {"rows_read": 0, "net_added": 0, "already_in_dst": 0,
                         "message": "Source DB has no fabric_master table."}
 
             src_rows = src_conn.execute("SELECT * FROM fabric_master").fetchall()
             if not src_rows:
-                src_conn.close()
                 return {"rows_read": 0, "net_added": 0, "already_in_dst": 0,
                         "message": "Source fabric_master is empty — nothing to migrate."}
 
@@ -609,10 +608,12 @@ class FabricMasterStore(BaseSQLiteStore):
             src_cols = [desc[0] for desc in src_conn.execute(
                 "SELECT * FROM fabric_master LIMIT 0"
             ).description]
-            src_conn.close()
         except Exception as exc:
             return {"rows_read": 0, "net_added": 0, "already_in_dst": 0,
                     "message": f"Cannot read source DB: {exc}"}
+        finally:
+            if src_conn is not None:
+                src_conn.close()
 
         # ── Ensure destination schema, then write ───────────────────────────
         dst_store = cls(dst_db_path)

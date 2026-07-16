@@ -48,7 +48,10 @@ def get_progress_lookup(source: str = "sky_east"):
         return session_lkup
     from po_extractor.lookups.progress_lookup import ProgressLookup
     from ui.stores import get_store
-    db_records = get_store().load_progress_records(source)
+    try:
+        db_records = get_store().load_progress_records(source)
+    except Exception:
+        return None
     return ProgressLookup.from_records(db_records) if db_records else None
 
 

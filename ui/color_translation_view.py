@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import os
 import tempfile
 
 import pandas as pd
@@ -159,8 +160,8 @@ def show_color_translation_tab() -> None:
         )
         if prog_file and st.button(f"▶ {t('Import progress tracker')}",
                                     key="ct_progress_run", use_container_width=True):
+            tmp = tempfile.mktemp(suffix=".xlsx")
             try:
-                tmp = tempfile.mktemp(suffix=".xlsx")
                 with open(tmp, "wb") as fh:
                     fh.write(prog_file.read())
                 with st.spinner(f"{t('Reading')} {prog_file.name}…"):
@@ -174,6 +175,9 @@ def show_color_translation_tab() -> None:
                 st.rerun()
             except Exception as exc:
                 st.error(f"{t('Import failed:')} {exc}")
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
 
     st.divider()
 
@@ -228,12 +232,12 @@ def show_color_translation_tab() -> None:
                 st.warning(t("⚠️ This will delete ALL existing color translations before importing."))
                 client_filter = "__ALL__"
             if st.button(f"▶ {t('Run import')}", key="ct_ul_run"):
+                tmp = tempfile.mktemp(suffix=".xlsx")
                 try:
-                    tmp = tempfile.mktemp(suffix=".xlsx")
                     with open(tmp, "wb") as fh:
                         fh.write(up_file.read())
                     if client_filter == "__ALL__":
-                        with store._connect() as conn:
+                        with store._conn() as conn:
                             conn.execute("DELETE FROM color_translations")
                     result = store.import_from_xlsx(tmp)
                     st.success(
@@ -244,6 +248,9 @@ def show_color_translation_tab() -> None:
                     st.rerun()
                 except Exception as exc:
                     st.error(f"{t('Import failed:')} {exc}")
+                finally:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
 
     st.divider()
 

@@ -73,6 +73,25 @@ def test_seed_force_overwrites(tmp_store):
     assert lookup.get("Save") == "保存"
 
 
+def test_seed_force_reseed_reports_updated_not_inserted(tmp_store):
+    """Bug fix: seed_defaults() used to increment `inserted` after BOTH the
+    insert and update branches, so a force re-seed (skip_existing=False) on
+    an already-seeded store miscounted every UPDATE as an "insert". Existing
+    rows must be counted under `updated`, and `inserted` must stay 0 when
+    nothing new was added."""
+    first = tmp_store.seed_defaults(skip_existing=True)
+    assert first["inserted"] > 0
+
+    second = tmp_store.seed_defaults(skip_existing=False)
+    assert second["inserted"] == 0, (
+        "no new keys were added on the second pass -- inserted must be 0"
+    )
+    assert second["updated"] == first["inserted"], (
+        "every previously-seeded row must be counted as 'updated', not 'inserted'"
+    )
+    assert second["skipped"] == 0
+
+
 # ---------------------------------------------------------------------------
 # Upsert / CRUD
 # ---------------------------------------------------------------------------

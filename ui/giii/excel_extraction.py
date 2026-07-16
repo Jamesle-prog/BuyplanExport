@@ -1,6 +1,7 @@
 """GIII Excel-pipeline processing functions (Zalando / HHP client Excel files)."""
 from __future__ import annotations
 
+import html
 import io
 import os
 import tempfile
@@ -75,33 +76,34 @@ def _log_photo_matches(df, photo_map: dict, log: list) -> None:
         st.success(summary)
     log.append(summary)
     if misses:
-        log.append("⚠️ no photo: " + ", ".join(misses[:10]))
+        log.append("⚠️ no photo: " + ", ".join(html.escape(str(m)) for m in misses[:10]))
 
 
 def _process_excel_group(company: str, paths: list[str], out_dir: str,
                          photo_map: dict, log: list,
                          mask_prices: bool = False,
-                         fabric_version_id: int | None = None) -> dict | None:
+                         fabric_version_id: int | None = None,
+                         images_dir: str | None = None) -> dict | None:
     co_info = get_company(company) or {}
     sheet_name = co_info.get("excel_sheet") or "1.1.PO_Client"
 
     result = combine_excel_files(paths, sheet_name=sheet_name)
     for skipped in result.skipped_files:
-        log.append(f'<span style="color:#dc3545">❌ {skipped}</span>')
+        log.append(f'<span style="color:#dc3545">❌ {html.escape(str(skipped))}</span>')
     for src in result.source_files:
         n = len(result.df[result.df["_source_file"] == src]) if "_source_file" in result.df.columns else "?"
-        log.append(f'<span style="color:#198754">✅ {src}</span> — {n} rows')
+        log.append(f'<span style="color:#198754">✅ {html.escape(str(src))}</span> — {n} rows')
 
     if result.df.empty:
         log.append(f"⚠️ {company}: no data found.")
         return None
 
     for conflict in result.conflicts:
-        log.append(f'<span style="color:#b08800">⚠️ {conflict}</span>')
+        log.append(f'<span style="color:#b08800">⚠️ {html.escape(str(conflict))}</span>')
 
     repeats = repeat_order_summary(result)
     for line in repeats:
-        log.append(f"↩ {line}")
+        log.append(f"↩ {html.escape(str(line))}")
 
     _save_fabric_parts_from_df(result.df, source=company.lower().replace(" ", "_"))
 
@@ -125,7 +127,8 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
                    + f" — {_exc}")
 
     bp  = export_hhp_buyplan(enriched_df, out_dir, photo_map=photo_map,
-                             fabric_version_id=fabric_version_id)
+                             fabric_version_id=fabric_version_id,
+                             images_dir=images_dir)
     tps = export_hhp_template_p(result.df, out_dir)
 
     out: dict = {}
@@ -153,7 +156,7 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
                                                    errors=_mask_errors,
                                                    api_key=_ai_key, model=_ai_model)
             for _me in _mask_errors:
-                log.append(f"⚠️ price-mask failed — {_me} (file NOT in masked zip)")
+                log.append(f"⚠️ price-mask failed — {html.escape(str(_me))} (file NOT in masked zip)")
             if masked_files:
                 mbuf = io.BytesIO()
                 with zipfile.ZipFile(mbuf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -171,13 +174,28 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
                           mask_prices: bool = False,
                           progress_file=None,
                           fabric_version_id: int | None = None):
+    import shutil as _shutil
+    tmpdir  = tempfile.mkdtemp()
+    out_dir = tempfile.mkdtemp()
+    try:
+        _run_excel_extraction_body(
+            uploaded_excels, sheet_name, mask_prices, progress_file,
+            fabric_version_id, tmpdir, out_dir,
+        )
+    finally:
+        _shutil.rmtree(tmpdir, ignore_errors=True)
+        _shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
+                               mask_prices: bool, progress_file,
+                               fabric_version_id: int | None,
+                               tmpdir: str, out_dir: str) -> None:
+    import shutil as _shutil
     from ui.shared import (
         load_photo_map_from_dir as _load_photo_map_from_dir,
         images_dir as _get_images_dir,
     )
-    import shutil as _shutil
-    tmpdir  = tempfile.mkdtemp()
-    out_dir = tempfile.mkdtemp()
     log: list[str] = []
 
     with st.status("Processing Excel files…", expanded=True) as status:
@@ -200,12 +218,11 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
                 log.append(f"📊 Progress lookup: {len(progress_lookup)} record(s)")
             except Exception as exc:
                 st.warning(f"Could not load progress file: {exc}")
-                log.append(f"⚠️ Progress lookup error: {exc}")
+                log.append(f"⚠️ Progress lookup error: {html.escape(str(exc))}")
 
         # 2. Load photos from configured image folder
-        photo_map: dict[str, bytes] = _load_photo_map_from_dir(
-            _get_images_dir("excel_images_dir")
-        )
+        images_folder = _get_images_dir("excel_images_dir")
+        photo_map: dict[str, bytes] = _load_photo_map_from_dir(images_folder)
         if photo_map:
             st.write(f"  📷 {len(photo_map)} photo(s) loaded from image folder")
             log.append(f"📷 {len(photo_map)} photo(s) loaded from image folder")
@@ -216,13 +233,13 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
 
         for skipped in result.skipped_files:
             st.write(f"  ❌ {skipped}")
-            log.append(f'<span style="color:#dc3545">❌ {skipped}</span>')
+            log.append(f'<span style="color:#dc3545">❌ {html.escape(str(skipped))}</span>')
 
         for src in result.source_files:
             n_rows = (len(result.df[result.df["_source_file"] == src])
                       if "_source_file" in result.df.columns else "?")
             st.write(f"  ✅ {src} — {n_rows} row(s)")
-            log.append(f'<span style="color:#198754">✅ {src}</span> — {n_rows} rows')
+            log.append(f'<span style="color:#198754">✅ {html.escape(str(src))}</span> — {n_rows} rows')
 
         if result.df.empty:
             status.update(label="No data found in the uploaded files.", state="error")
@@ -232,7 +249,7 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
         # 4. Conflict warnings
         for conflict in result.conflicts:
             st.warning(conflict)
-            log.append(f'<span style="color:#b08800">⚠️ {conflict}</span>')
+            log.append(f'<span style="color:#b08800">⚠️ {html.escape(str(conflict))}</span>')
 
         # 5. Repeat-order summary
         repeat_lines = repeat_order_summary(result)
@@ -243,7 +260,7 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
             )
             for line in repeat_lines:
                 st.caption(f"  ↩ {line}")
-                log.append(f"↩ {line}")
+                log.append(f"↩ {html.escape(str(line))}")
 
         total_styles = (result.df["Main Supplier Config SKU"].nunique()
                         if "Main Supplier Config SKU" in result.df.columns else 0)
@@ -290,7 +307,8 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
                 cleaned, steps = clean_color_for_lookup(raw)
                 if steps and cleaned != raw:
                     cleanup_lines.append(
-                        f"  '{raw}' → '{cleaned}'  ({'; '.join(steps)})"
+                        f"  '{html.escape(str(raw))}' → '{html.escape(str(cleaned))}'"
+                        f"  ({'; '.join(steps)})"
                     )
             if cleanup_lines:
                 st.write(f"🧹 Color cleanup ({len(cleanup_lines)} value(s)):")
@@ -348,7 +366,8 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
             log.append(f"中文颜色 enrichment: {cn_filled}/{len(_enriched_df)} rows (大货进度表)")
 
         buyplan_path = export_hhp_buyplan(_enriched_df, out_dir, photo_map=photo_map,
-                                          fabric_version_id=fabric_version_id)
+                                          fabric_version_id=fabric_version_id,
+                                          images_dir=images_folder)
         st.write(f"  → {os.path.basename(buyplan_path)}")
 
         # 8. Generate Template_P workbooks
@@ -369,7 +388,7 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
                                                        api_key=_ai_key, model=_ai_model)
                 for _me in _mask_errors:
                     st.warning(f"Price-mask failed — {_me} (file NOT in masked zip)")
-                    log.append(f"⚠️ price-mask failed — {_me}")
+                    log.append(f"⚠️ price-mask failed — {html.escape(str(_me))}")
                 if masked_files:
                     mbuf = io.BytesIO()
                     with zipfile.ZipFile(mbuf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -418,6 +437,4 @@ def _run_excel_extraction(uploaded_excels, sheet_name: str,
 
     st.session_state.excel_results = outputs
     st.session_state.excel_log = log
-    # Clean up temp directories — all data is now in session_state as bytes
-    _shutil.rmtree(tmpdir, ignore_errors=True)
-    _shutil.rmtree(out_dir, ignore_errors=True)
+    # Temp dirs are cleaned up by the caller's (_run_excel_extraction) finally block.

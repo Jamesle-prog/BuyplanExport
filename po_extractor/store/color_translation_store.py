@@ -212,9 +212,14 @@ class ColorTranslationStore(BaseSQLiteStore):
         Returns {"inserted", "updated", "skipped", "total"}.
         """
         wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
-        ws = wb.active
-        rows = list(ws.iter_rows(values_only=True))
-        wb.close()
+        # try/finally: a mid-import exception used to skip wb.close(), leaking
+        # the open zip handle and locking the file on Windows (matches the
+        # convention established in FabricMasterStore.import_from_xlsx).
+        try:
+            ws = wb.active
+            rows = list(ws.iter_rows(values_only=True))
+        finally:
+            wb.close()
         if not rows:
             return {"inserted": 0, "updated": 0, "skipped": 0, "total": 0}
 
@@ -317,7 +322,7 @@ class ColorTranslationStore(BaseSQLiteStore):
         Sky East:  client = COMPANY_SKY_EAST, brand = item brand (e.g. "Anna Field")
         """
         now = datetime.utcnow().isoformat()
-        inserted = skipped = giii_n = se_n = 0
+        inserted = updated = skipped = giii_n = se_n = 0
 
         with self._conn() as conn:
             # ── GIII: po_size_rows + po_metadata ─────────────────────────────
@@ -356,6 +361,20 @@ class ColorTranslationStore(BaseSQLiteStore):
                     )
                     inserted += 1
                     giii_n += 1
+                elif not skip_existing:
+                    # BUG fix: skip_existing=False previously had no effect on
+                    # existing rows (always fell through to skipped += 1).
+                    # This function only ever discovers (client, brand,
+                    # en_color) — it has no cn_color/color_code/notes to
+                    # source here, so we deliberately don't touch those
+                    # (would otherwise clobber manually-entered translations
+                    # with blanks). Just refresh updated_at to mark the
+                    # combo as re-observed.
+                    conn.execute(
+                        "UPDATE color_translations SET updated_at=? WHERE id=?",
+                        (now, exists["id"]),
+                    )
+                    updated += 1
                 else:
                     skipped += 1
 
@@ -399,11 +418,17 @@ class ColorTranslationStore(BaseSQLiteStore):
                     )
                     inserted += 1
                     se_n += 1
+                elif not skip_existing:
+                    conn.execute(
+                        "UPDATE color_translations SET updated_at=? WHERE id=?",
+                        (now, exists["id"]),
+                    )
+                    updated += 1
                 else:
                     skipped += 1
 
         return {
-            "inserted": inserted, "skipped": skipped,
+            "inserted": inserted, "updated": updated, "skipped": skipped,
             "sources": {"giii": giii_n, "sky_east": se_n},
         }
 
@@ -561,148 +586,152 @@ class ColorTranslationStore(BaseSQLiteStore):
         """
         import openpyxl as _ox
         wb = _ox.load_workbook(xlsx_path, read_only=True, data_only=True)
+        # try/finally: an exception raised anywhere while reading sheets or
+        # writing rows used to skip wb.close(), leaking the open zip handle and
+        # locking the file on Windows.
+        try:
+            BRAND_HEADERS    = {"brand", "客户品牌", "品牌"}
+            EN_HEADERS       = {"颜色", "英文颜色", "color", "color (en)", "en color",
+                                "english color", "colour", "colour (en)"}
+            MAIN_HEADERS     = {"主标颜色", "main label color", "label color"}
+            CN_HEADERS       = {"中文颜色", "颜色(中文)", "颜色（中文）", "color (cn)",
+                                "colour (cn)", "cn color"}
+            CODE_HEADERS     = {"中文颜色代码", "color code", "colour code", "colorcode"}
 
-        BRAND_HEADERS    = {"brand", "客户品牌", "品牌"}
-        EN_HEADERS       = {"颜色", "英文颜色", "color", "color (en)", "en color",
-                            "english color", "colour", "colour (en)"}
-        MAIN_HEADERS     = {"主标颜色", "main label color", "label color"}
-        CN_HEADERS       = {"中文颜色", "颜色(中文)", "颜色（中文）", "color (cn)",
-                            "colour (cn)", "cn color"}
-        CODE_HEADERS     = {"中文颜色代码", "color code", "colour code", "colorcode"}
+            def _h(v):
+                return str(v).strip().lower() if v else ""
 
-        def _h(v):
-            return str(v).strip().lower() if v else ""
+            inserted = updated = skipped = 0
+            seen_keys: set = set()
+            sheets_with_data = 0
 
-        inserted = updated = skipped = 0
-        seen_keys: set = set()
-        sheets_with_data = 0
+            for sn in wb.sheetnames:
+                try:
+                    ws = wb[sn]
+                except Exception:
+                    continue
+                cols = {}
+                header_row = None
+                for ri, row in enumerate(ws.iter_rows(max_row=5, values_only=True), 1):
+                    for ci, v in enumerate(row, 1):
+                        h = _h(v)
+                        if not h:
+                            continue
+                        if h in BRAND_HEADERS:    cols.setdefault("brand", ci)
+                        elif h in EN_HEADERS:     cols.setdefault("en",    ci)
+                        elif h in MAIN_HEADERS:   cols.setdefault("main",  ci)
+                        elif h in CN_HEADERS:     cols.setdefault("cn",    ci)
+                        elif h in CODE_HEADERS:   cols.setdefault("code",  ci)
+                    if "en" in cols and ("cn" in cols or "main" in cols or "code" in cols):
+                        header_row = ri
+                        break
+                if not header_row:
+                    continue
+                sheets_with_data += 1
+                now = datetime.utcnow().isoformat()
 
-        for sn in wb.sheetnames:
-            try:
-                ws = wb[sn]
-            except Exception:
-                continue
-            cols = {}
-            header_row = None
-            for ri, row in enumerate(ws.iter_rows(max_row=5, values_only=True), 1):
-                for ci, v in enumerate(row, 1):
-                    h = _h(v)
-                    if not h:
-                        continue
-                    if h in BRAND_HEADERS:    cols.setdefault("brand", ci)
-                    elif h in EN_HEADERS:     cols.setdefault("en",    ci)
-                    elif h in MAIN_HEADERS:   cols.setdefault("main",  ci)
-                    elif h in CN_HEADERS:     cols.setdefault("cn",    ci)
-                    elif h in CODE_HEADERS:   cols.setdefault("code",  ci)
-                if "en" in cols and ("cn" in cols or "main" in cols or "code" in cols):
-                    header_row = ri
-                    break
-            if not header_row:
-                continue
-            sheets_with_data += 1
-            now = datetime.utcnow().isoformat()
+                with self._conn() as conn:
+                    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+                        if cols["en"] > len(row):
+                            continue
+                        en_raw = row[cols["en"] - 1]
+                        if en_raw is None or str(en_raw).strip() == "":
+                            skipped += 1
+                            continue
 
-            with self._conn() as conn:
-                for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
-                    if cols["en"] > len(row):
-                        continue
-                    en_raw = row[cols["en"] - 1]
-                    if en_raw is None or str(en_raw).strip() == "":
-                        skipped += 1
-                        continue
+                        en_color = _normalize_color_name(en_raw)
 
-                    en_color = _normalize_color_name(en_raw)
+                        def _cell(key):
+                            ci = cols.get(key)
+                            if ci and ci <= len(row) and row[ci - 1] is not None:
+                                return str(row[ci - 1]).strip()
+                            return ""
 
-                    def _cell(key):
-                        ci = cols.get(key)
-                        if ci and ci <= len(row) and row[ci - 1] is not None:
-                            return str(row[ci - 1]).strip()
-                        return ""
+                        cn_color   = _cell("cn")
+                        label      = _cell("main")
+                        brand      = _cell("brand")
+                        color_code = _cell("code")
 
-                    cn_color   = _cell("cn")
-                    label      = _cell("main")
-                    brand      = _cell("brand")
-                    color_code = _cell("code")
+                        key = (client, brand, en_color)
+                        if key in seen_keys:
+                            # Already processed in this run — skip duplicates
+                            # within the same workbook
+                            continue
+                        seen_keys.add(key)
 
-                    key = (client, brand, en_color)
-                    if key in seen_keys:
-                        # Already processed in this run — skip duplicates
-                        # within the same workbook
-                        continue
-                    seen_keys.add(key)
+                        # Auto-derive shade + label when not in source.  We use
+                        # the keyword classifier just like the buyplan exporter
+                        # so the table stays consistent.
+                        derived_shade, derived_label = _derive_shade_and_label(en_color)
+                        shade_final = derived_shade
+                        label_final = label or derived_label
 
-                    # Auto-derive shade + label when not in source.  We use
-                    # the keyword classifier just like the buyplan exporter
-                    # so the table stays consistent.
-                    derived_shade, derived_label = _derive_shade_and_label(en_color)
-                    shade_final = derived_shade
-                    label_final = label or derived_label
-
-                    # Use COLLATE NOCASE so "NAVY" in DB matches normalised
-                    # "Navy" from the importer; also match the exact-case form.
-                    existing = conn.execute(
-                        "SELECT id, en_color, cn_color, color_code, "
-                        "light_or_dark, label_color, notes "
-                        "FROM color_translations "
-                        "WHERE client=? AND brand=? AND en_color=? COLLATE NOCASE",
-                        key,
-                    ).fetchone()
-                    if existing:
-                        # Preserve existing manual values when source is blank
-                        old_cn    = existing["cn_color"]      or ""
-                        old_code  = existing["color_code"]    or ""
-                        old_label = existing["label_color"]   or ""
-                        old_shade = existing["light_or_dark"] or ""
-                        new_cn    = cn_color    or old_cn
-                        new_code  = color_code  or old_code
-                        new_label = label_final or old_label
-                        # Shade too: when the keyword classifier can't place
-                        # the colour (derived ""), keep a manually set value
-                        # instead of blanking it on every re-import.
-                        new_shade = shade_final or old_shade
-                        conn.execute(
-                            """UPDATE color_translations SET
-                                  cn_color=?, color_code=?, light_or_dark=?,
-                                  label_color=?, updated_at=?
-                               WHERE id=?""",
-                            (new_cn, new_code, new_shade, new_label,
-                             now, existing["id"]),
-                        )
-                        updated += 1
-                        _audit_diff(
-                            conn, existing["id"], client, brand, en_color,
-                            {f: existing[f] for f in _AUDIT_FIELDS},
-                            {"cn_color": new_cn,
-                             "color_code": new_code,
-                             "light_or_dark": new_shade,
-                             "label_color": new_label,
-                             "notes": existing["notes"] or ""},
-                        )
-                    else:
-                        conn.execute(
-                            """INSERT INTO color_translations
-                                  (client, brand, en_color, cn_color,
-                                   color_code, light_or_dark, label_color,
-                                   notes, updated_at)
-                               VALUES (?,?,?,?,?,?,?,?,?)""",
-                            (client, brand, en_color, cn_color, color_code,
-                             shade_final, label_final, "", now),
-                        )
-                        inserted += 1
-                        new_id = conn.execute(
-                            "SELECT id FROM color_translations "
-                            "WHERE client=? AND brand=? AND en_color=?",
+                        # Use COLLATE NOCASE so "NAVY" in DB matches normalised
+                        # "Navy" from the importer; also match the exact-case form.
+                        existing = conn.execute(
+                            "SELECT id, en_color, cn_color, color_code, "
+                            "light_or_dark, label_color, notes "
+                            "FROM color_translations "
+                            "WHERE client=? AND brand=? AND en_color=? COLLATE NOCASE",
                             key,
-                        ).fetchone()[0]
-                        _audit_log(
-                            conn, "insert", new_id, client, brand, en_color,
-                            "*", None,
-                            f"cn={cn_color!r}, code={color_code!r}, "
-                            f"shade={shade_final!r}, label={label_final!r} "
-                            f"(progress-xlsx import)",
-                        )
+                        ).fetchone()
+                        if existing:
+                            # Preserve existing manual values when source is blank
+                            old_cn    = existing["cn_color"]      or ""
+                            old_code  = existing["color_code"]    or ""
+                            old_label = existing["label_color"]   or ""
+                            old_shade = existing["light_or_dark"] or ""
+                            new_cn    = cn_color    or old_cn
+                            new_code  = color_code  or old_code
+                            new_label = label_final or old_label
+                            # Shade too: when the keyword classifier can't place
+                            # the colour (derived ""), keep a manually set value
+                            # instead of blanking it on every re-import.
+                            new_shade = shade_final or old_shade
+                            conn.execute(
+                                """UPDATE color_translations SET
+                                      cn_color=?, color_code=?, light_or_dark=?,
+                                      label_color=?, updated_at=?
+                                   WHERE id=?""",
+                                (new_cn, new_code, new_shade, new_label,
+                                 now, existing["id"]),
+                            )
+                            updated += 1
+                            _audit_diff(
+                                conn, existing["id"], client, brand, en_color,
+                                {f: existing[f] for f in _AUDIT_FIELDS},
+                                {"cn_color": new_cn,
+                                 "color_code": new_code,
+                                 "light_or_dark": new_shade,
+                                 "label_color": new_label,
+                                 "notes": existing["notes"] or ""},
+                            )
+                        else:
+                            conn.execute(
+                                """INSERT INTO color_translations
+                                      (client, brand, en_color, cn_color,
+                                       color_code, light_or_dark, label_color,
+                                       notes, updated_at)
+                                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                                (client, brand, en_color, cn_color, color_code,
+                                 shade_final, label_final, "", now),
+                            )
+                            inserted += 1
+                            new_id = conn.execute(
+                                "SELECT id FROM color_translations "
+                                "WHERE client=? AND brand=? AND en_color=?",
+                                key,
+                            ).fetchone()[0]
+                            _audit_log(
+                                conn, "insert", new_id, client, brand, en_color,
+                                "*", None,
+                                f"cn={cn_color!r}, code={color_code!r}, "
+                                f"shade={shade_final!r}, label={label_final!r} "
+                                f"(progress-xlsx import)",
+                            )
 
-        wb.close()
+        finally:
+            wb.close()
         return {
             "inserted":   inserted,
             "updated":    updated,

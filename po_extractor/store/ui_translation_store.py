@@ -1404,10 +1404,10 @@ class UITranslationStore(BaseSQLiteStore):
     def seed_defaults(self, skip_existing: bool = True) -> dict[str, int]:
         """Insert built-in translations.  Skips rows already present by default.
 
-        Returns ``{"inserted": N, "skipped": N}``.
+        Returns ``{"inserted": N, "updated": N, "skipped": N}``.
         """
         now = datetime.now(timezone.utc).isoformat()
-        inserted = skipped = 0
+        inserted = updated = skipped = 0
         with self._conn() as conn:
             for key, zh_text, category, module in _SEED:
                 exists = conn.execute(
@@ -1424,6 +1424,7 @@ class UITranslationStore(BaseSQLiteStore):
                            WHERE key=?""",
                         (zh_text, category, module, now, key),
                     )
+                    updated += 1
                 else:
                     conn.execute(
                         """INSERT INTO ui_translations
@@ -1432,8 +1433,8 @@ class UITranslationStore(BaseSQLiteStore):
                            VALUES (?,?,?,?,?,?,?)""",
                         (key, key, zh_text, category, module, now, "seed"),
                     )
-                inserted += 1
-        return {"inserted": inserted, "skipped": skipped}
+                    inserted += 1
+        return {"inserted": inserted, "updated": updated, "skipped": skipped}
 
     # ── Upsert / write ────────────────────────────────────────────────────────
 

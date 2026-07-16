@@ -44,6 +44,7 @@ from openpyxl.utils import get_column_letter
 
 from ..utils.file_utils import versioned_path
 from ..config import EXCEL_PALETTE as _P
+from ._buyplan_helpers import _clear_data_area
 from ._excel_helpers import (
     clean_sheet_name, stable_unique, cell_value, apply_print_settings,
     set_internal_hyperlink,
@@ -64,6 +65,35 @@ TOTAL_FORMULA_COL = 18     # column R
 FACTORY_DATE_COL  = 19     # column S
 GRAND_TOTAL_CELL  = "R5"
 MAX_DATA_COL      = 19     # column S (last column we write to)
+
+# Columns that uniquely key a data row group: PO × Config SKU × Color.
+# Config SKU / Main Supplier Color Description are optional per the parser's
+# schema (not in REQUIRED_INTERNAL — see client_excel.py), so either may be
+# absent from a given input DataFrame.
+_GROUP_COLS = ["Purchase Order Number", "Config SKU",
+              "Main Supplier Color Description"]
+
+
+def _safe_group_rows(sub: pd.DataFrame) -> list:
+    """Group *sub* by (PO, Config SKU, Color) for one output row per group.
+
+    Grouping by only the columns that happen to be present (dropping a
+    missing one from the key) is unsafe: two rows that actually differ by
+    SKU or color — but share the remaining key columns — would be merged
+    into one group and have their sizes silently summed together. When any
+    of the 3 key columns is missing we therefore fall back to one group per
+    row (no aggregation) instead of guessing at a narrower key.
+    """
+    missing = [c for c in _GROUP_COLS if c not in sub.columns]
+    if missing:
+        warnings.warn(
+            f"[hhp_buyplan] grouping column(s) missing from input: {missing} — "
+            "treating each row as its own group to avoid merging rows that "
+            "may actually differ by SKU/color."
+        )
+        return [((pos,), sub.iloc[[pos]]) for pos in range(len(sub))]
+    return list(sub.groupby(_GROUP_COLS, sort=False, dropna=False))
+
 
 # ── Template path ─────────────────────────────────────────────────────────────
 _TEMPLATES_DIR = Path(__file__).parent.parent.parent / "data" / "buyplan_templates"
@@ -105,6 +135,7 @@ def export_hhp_buyplan(
     *,
     photo_map: dict | None = None,
     fabric_version_id: int | None = None,
+    images_dir: str | None = None,
 ) -> str:
     """Build the HHP / Zalando buy-plan workbook and return the saved path.
 
@@ -120,6 +151,11 @@ def export_hhp_buyplan(
                  ``FabricMasterStore.list_versions``) to enrich against
                  instead of the live table.  None (default) → the latest
                  version, unchanged from prior behavior.
+    images_dir : the caller's configured images folder — passed through to
+                 :func:`resolve_photo_pair` so its legacy Photo1/Photo2
+                 disk-path fallback stays sandboxed to this folder (see
+                 ``_is_within_images_dir``). None → the shared default
+                 images folder.
     """
     photo_map = photo_map or {}
     path = versioned_path(output_dir, "Zalando_BuyPlan", ".xlsx")
@@ -184,7 +220,8 @@ def export_hhp_buyplan(
 
     # Inject photos (front in J3:L6, back in M3:O6) via zip-level patch.
     # openpyxl copy_worksheet drops drawings, so we do this after save.
-    sheet_photo_map = _build_photo_map(df, sheet_style_map, photo_map)
+    sheet_photo_map = _build_photo_map(df, sheet_style_map, photo_map,
+                                      images_dir=images_dir)
     if sheet_photo_map:
         inject_style_photos(path, sheet_photo_map)
 
@@ -225,11 +262,7 @@ def _fill_template_sheet(ws, style: str, sub: pd.DataFrame,
     _fill_fabric_block(ws, first_row, fm_cache)
 
     # ── Data rows ────────────────────────────────────────────────────────────
-    group_cols = [c for c in ["Purchase Order Number", "Config SKU",
-                              "Main Supplier Color Description"]
-                  if c in sub.columns]
-    groups = list(sub.groupby(group_cols, sort=False, dropna=False)) if group_cols \
-             else [((), sub)]
+    groups = _safe_group_rows(sub)
 
     # Capture row 9's styling once — used to clone style onto rows 10+
     template_styles = _capture_row_styles(ws, DATA_START_ROW)
@@ -241,6 +274,12 @@ def _fill_template_sheet(ws, style: str, sub: pd.DataFrame,
             _apply_row_styles(ws, out_row, template_styles)
         _write_data_row(ws, out_row, style, grp)
         last_row = out_row
+
+    # Clear any stale rows the template copy carried past what we just wrote
+    # (mirrors buyplan_export.py's _clear_data_area call before writing —
+    # here it runs AFTER, and only past last_row, so it never touches the
+    # rows we just populated).
+    _clear_data_area(ws, last_row + 1)
 
     # Grand total — referenced from the Index sheet
     if groups:
@@ -306,16 +345,18 @@ def _fill_fabric_block(ws, first_row, fm_cache: dict | None = None) -> None:
     ]
     for row, suffix, full_key in fabric_specs:
         position = cell_value(first_row, f"面料_面料{suffix}_部位")
-        if position:
-            ws.cell(row=row, column=2).value = position
+        # Always assign (falling back to None) so a row with no position/
+        # details for THIS style clears whatever the copied template — or a
+        # previous export's leftover value — already had in B/D, instead of
+        # silently keeping a stale value from a different style.
+        ws.cell(row=row, column=2).value = position or None
 
         details = _fabric_details(first_row, suffix, full_key, fm_cache)
-        if details:
-            # Always column D = 4.  Explicitly clear E so any prior
-            # overflow / sample value the template may have had cannot
-            # mislead the user into thinking the value sits in E.
-            ws.cell(row=row, column=4).value = details
-            ws.cell(row=row, column=5).value = None
+        # Always column D = 4.  Explicitly clear E so any prior
+        # overflow / sample value the template may have had cannot
+        # mislead the user into thinking the value sits in E.
+        ws.cell(row=row, column=4).value = details or None
+        ws.cell(row=row, column=5).value = None
 
 
 def _fabric_details(first_row, suffix: str, full_key: str,
@@ -498,11 +539,16 @@ def _build_photo_map(
     df: pd.DataFrame,
     sheet_style_map: dict[str, str],
     photo_map: dict,
+    images_dir: str | None = None,
 ) -> dict[str, dict[str, bytes | None]]:
     """Build ``{sheet_title: {'front': bytes|None, 'back': bytes|None}}``.
 
     Path strings returned by :func:`resolve_photo_pair` are read from disk
     here so the post-save zip patcher gets raw bytes.
+
+    *images_dir* is forwarded to :func:`resolve_photo_pair` so its legacy
+    Photo1/Photo2 disk-path fallback stays sandboxed to the caller's
+    configured images folder (see ``_is_within_images_dir``).
 
     Emits a one-line summary via ``warnings.warn`` showing how many photos
     were resolved (visible in the Streamlit terminal output) — helpful when
@@ -519,7 +565,8 @@ def _build_photo_map(
               if style_col in df.columns else pd.DataFrame()
         if sub.empty:
             continue
-        front_raw, back_raw = resolve_photo_pair(style, sub.iloc[0], photo_map)
+        front_raw, back_raw = resolve_photo_pair(style, sub.iloc[0], photo_map,
+                                                 images_dir=images_dir)
         front = _to_bytes(front_raw)
         back  = _to_bytes(back_raw)
         out[sheet_name] = {"front": front, "back": back}
@@ -620,11 +667,7 @@ def _fill_blank_sheet(ws, style: str, sub: pd.DataFrame) -> None:
     for col, h in enumerate(headers, start=1):
         ws.cell(row=DATA_START_ROW - 1, column=col, value=h)
 
-    group_cols = [c for c in ["Purchase Order Number", "Config SKU",
-                              "Main Supplier Color Description"]
-                  if c in sub.columns]
-    groups = list(sub.groupby(group_cols, sort=False, dropna=False)) if group_cols \
-             else [((), sub)]
+    groups = _safe_group_rows(sub)
     last_row = DATA_START_ROW
     for g_idx, (_k, grp) in enumerate(groups):
         out_row = DATA_START_ROW + g_idx

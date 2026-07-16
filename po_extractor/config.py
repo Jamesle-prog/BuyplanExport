@@ -114,13 +114,16 @@ def get_fabric_db_path() -> str:
     try:
         with open(_FABRIC_CONFIG_FILE, encoding="utf-8") as _fh:
             _cfg = _json.load(_fh)
-        path = (_cfg.get("fabric_db_path") or "").strip()
-        if path:
-            return path
+        if isinstance(_cfg, dict):
+            path = str(_cfg.get("fabric_db_path") or "").strip()
+            if path:
+                return path
     except FileNotFoundError:
         pass  # No config yet — first run.
-    except (OSError, _json.JSONDecodeError) as _exc:
-        # Corrupt config or permissions issue — surface it so the user can fix.
+    except (OSError, _json.JSONDecodeError, AttributeError, TypeError) as _exc:
+        # Corrupt config (e.g. a JSON array instead of an object, or a
+        # non-string fabric_db_path value) or a permissions issue — treat it
+        # the same as "no config yet" instead of crashing the caller.
         import warnings as _w
         _w.warn(f"[fabric_config] could not read {_FABRIC_CONFIG_FILE}: {_exc!r}")
     return str(_ROOT / "data" / "fabric_master.db")
@@ -137,7 +140,11 @@ def save_fabric_db_path(path: str) -> None:
         cfg = {}
     except (OSError, _json.JSONDecodeError):
         cfg = {}
-    cfg["fabric_db_path"] = path.strip()
+    if not isinstance(cfg, dict):
+        # Malformed config (e.g. a JSON array) — treat the same as missing
+        # rather than crash on the dict-only assignment below.
+        cfg = {}
+    cfg["fabric_db_path"] = str(path or "").strip()
     with open(_FABRIC_CONFIG_FILE, "w", encoding="utf-8") as _fh:
         _json.dump(cfg, _fh, indent=2, ensure_ascii=False)
 

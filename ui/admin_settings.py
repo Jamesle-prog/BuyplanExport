@@ -220,7 +220,7 @@ def _show_deepseek_settings(store) -> None:
         import hashlib as _hl
         from po_extractor.parsers.deepseek_parser import FALLBACK_MODELS
         _key_fp = _hl.md5((new_key or "").encode()).hexdigest()[:10] if new_key else ""
-        live = _live_deepseek_models(_key_fp) if (chosen_method == "deepseek" and new_key) else []
+        live = _live_deepseek_models(_key_fp) if (chosen_method in ("deepseek", "auto") and new_key) else []
         model_options = list(dict.fromkeys(
             [m for m in live] + FALLBACK_MODELS
             + ([current_model] if current_model else [])

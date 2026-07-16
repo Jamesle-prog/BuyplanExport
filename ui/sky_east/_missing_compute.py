@@ -35,12 +35,15 @@ def _compute_se_missing_df() -> pd.DataFrame:
             cno = str(row.get("contract_no", "") or "").strip()
             if cno and cno.lower() not in ("", "none", "nan"):
                 return cno
-            return pl.get_contract_no(
-                str(row.get("style", "")).strip(),
-                str(row.get("color_name", "")).strip(),
-                str(row.get("zalando_po", "")).strip(),
-                pc_no=str(row.get("pc_no", "")).strip(),
-            ) or cno
+            try:
+                return pl.get_contract_no(
+                    str(row.get("style", "")).strip(),
+                    str(row.get("color_name", "")).strip(),
+                    str(row.get("zalando_po", "")).strip(),
+                    pc_no=str(row.get("pc_no", "")).strip(),
+                ) or cno
+            except Exception:
+                return cno
         all_items["contract_no"] = all_items.apply(_fill_cno, axis=1)
 
     enriched = _enrich_items_df(all_items)

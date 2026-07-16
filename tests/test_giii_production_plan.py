@@ -708,6 +708,36 @@ def test_upc_summary_blank_when_po_has_no_upc():
     assert ws.cell(ttl_r, ti).value == 350            # quantities still total
 
 
+# ── sheet-title de-duplication (31-char Excel limit) ──────────────────────────
+
+def test_sheet_title_suffix_never_exceeds_excel_limit_past_99_collisions():
+    """f'{base_title[:28]}_{suffix}' overflowed 31 chars once suffix reached
+    3 digits (100+) — '_100' alone is 4 chars, so base[:28] + '_100' = 32,
+    which openpyxl rejects. Pre-seed the workbook with 148 colliding sheet
+    names (suffixes 2..149, built with the SAME fixed naming scheme) so the
+    style's own title is forced to search well past the 100 boundary."""
+    import openpyxl
+    from po_extractor.exporters.giii_production_plan import _write_style_sheet
+
+    base = "A" * 31   # already at the 31-char cap before any suffix
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    wb.create_sheet(base)   # the bare base title itself is taken
+    for suffix in range(2, 150):
+        tail = f"_{suffix}"
+        wb.create_sheet(f"{base[:31 - len(tail)]}{tail}")
+
+    style_df = pd.DataFrame({"po_number": ["PO1"]})
+    sizes_df = pd.DataFrame({
+        "po_number": ["PO1"], "color": ["BLACK"], "size": ["S"], "units": [10],
+    })
+    summary = _write_style_sheet(wb, base, style_df, sizes_df, {})
+    assert summary is not None
+    new_title = summary["sheet"]
+    assert len(new_title) <= 31, f"sheet title {new_title!r} exceeds 31 chars"
+    assert new_title == wb.sheetnames[-1]
+
+
 # ── export_buyplan zero-row filter ────────────────────────────────────────────
 
 def test_export_buyplan_drops_all_zero_color_rows(tmp_path):

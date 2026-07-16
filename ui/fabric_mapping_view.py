@@ -387,10 +387,9 @@ def _show_fabric_mapping_section() -> None:
         with st.spinner(t("Saving fabric mapping...")):
             try:
                 store = get_store()
+                is_replace_all = "Replace all" in import_mode
 
-                if "Replace all" in import_mode:
-                    deleted = store.delete_fabric_parts(source)
-                    st.caption(f"{t('Deleted')} {deleted} {t('existing fabric part(s) for')} {fm_company}.")
+                if is_replace_all:
                     to_save = style_parts_map
                 elif "Add new only" in import_mode:
                     to_save = {s: p for s, p in style_parts_map.items()
@@ -404,7 +403,15 @@ def _show_fabric_mapping_section() -> None:
                 if not to_save:
                     st.warning(t("Nothing to import after applying the selected mode."))
                 else:
-                    store.save_fabric_parts_batch(source, to_save)
+                    if is_replace_all:
+                        # Delete + insert happen in a SINGLE transaction (see
+                        # replace_fabric_parts_batch) — if the insert half
+                        # raises, the delete rolls back too, instead of
+                        # permanently losing this source's fabric data.
+                        deleted = store.replace_fabric_parts_batch(source, to_save)
+                        st.caption(f"{t('Deleted')} {deleted} {t('existing fabric part(s) for')} {fm_company}.")
+                    else:
+                        store.save_fabric_parts_batch(source, to_save)
                     _enrich_fabric_parts_from_cache(to_save)
                     n_styles = len(to_save)
                     n_parts  = sum(len(v) for v in to_save.values())

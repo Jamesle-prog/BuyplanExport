@@ -270,8 +270,12 @@ def _show_seed_tab(store) -> None:
                      type="primary", key="i18n_force_seed"):
             result = store.seed_defaults(skip_existing=False)
             clear_cache("zh")
+            # seed_defaults now reports inserted/updated separately (existing
+            # rows are UPDATEd, not counted as "inserted") — sum both for the
+            # total-processed count this message has always shown.
+            total_seeded = result['inserted'] + result.get('updated', 0)
             st.success(
-                f"{t('Force-seeded')} **{result['inserted']}** " + t("key(s). Cache cleared.")
+                f"{t('Force-seeded')} **{total_seeded}** " + t("key(s). Cache cleared.")
             )
             st.rerun()
 

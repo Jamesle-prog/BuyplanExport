@@ -398,6 +398,71 @@ class _FabricMixin:
                 ).rowcount
         return n
 
+    def replace_fabric_parts_batch(
+        self,
+        source: str,
+        style_parts_map: dict,
+        enrich_from_lookup=None,
+    ) -> int:
+        """
+        Atomically replace all fabric parts for *source*: delete every
+        existing row for *source*, then batch-upsert *style_parts_map* — all
+        within a SINGLE ``self._conn()`` transaction.
+
+        Calling ``delete_fabric_parts()`` followed by ``save_fabric_parts_batch()``
+        separately opens two independent connections/transactions — if the
+        save half raises after the delete already committed, the source's
+        fabric-mapping data is permanently lost. Doing both in one transaction
+        means a failure during the insert half rolls back the delete too.
+
+        Returns the number of rows deleted (mirrors ``delete_fabric_parts()``'s
+        return value, for callers that report "Deleted N existing part(s)").
+        """
+        from ..models.fabric_part import FabricPart
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with self._conn() as conn:
+            deleted = conn.execute(
+                "DELETE FROM style_fabric_parts WHERE source=?", (source,)
+            ).rowcount
+
+            for style, parts in (style_parts_map or {}).items():
+                if not parts or not style:
+                    continue
+                for p in parts:
+                    if not isinstance(p, FabricPart) or p.is_empty():
+                        continue
+
+                    comp   = p.composition
+                    weight = p.weight_gsm
+                    width  = p.width_cm
+
+                    if enrich_from_lookup and p.hhn_no and not comp:
+                        detail = enrich_from_lookup.get_fabric_detail(p.hhn_no) or {}
+                        comp   = detail.get("composition", "") or comp
+                        weight = detail.get("weight_gsm",  0)  or weight
+                        width  = detail.get("width_cm",    0)  or width
+
+                    conn.execute(
+                        """INSERT INTO style_fabric_parts
+                           (source, style, combo_idx, seq, body_part, hhn_no, composition,
+                            weight_gsm, width_cm, updated_at)
+                           VALUES (?,?,?,?,?,?,?,?,?,?)
+                           ON CONFLICT(source, style, combo_idx, seq) DO UPDATE SET
+                             body_part   = excluded.body_part,
+                             hhn_no      = excluded.hhn_no,
+                             composition = excluded.composition,
+                             weight_gsm  = excluded.weight_gsm,
+                             width_cm    = excluded.width_cm,
+                             updated_at  = excluded.updated_at
+                        """,
+                        (source, style, p.combo_idx, p.seq, p.body_part, p.hhn_no,
+                         comp, weight, width, now),
+                    )
+
+        return deleted or 0
+
     # ------------------------------------------------------------------ #
     # HHN fabric composition cache                                         #
     # ------------------------------------------------------------------ #

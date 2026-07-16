@@ -432,7 +432,10 @@ def _write_requirement_matrix_sheet(wb, contexts, cell, index=4):
     from collections import OrderedDict
     groups: "OrderedDict[str, list]" = OrderedDict()
     for ctx in contexts:
-        groups.setdefault(_dest_label(ctx), ctx.get("results", []))
+        # setdefault(..., []).extend(...) — two PO contexts can share the same
+        # destination label; setdefault(..., ctx["results"]) would only keep
+        # the FIRST context's results and silently drop the rest.
+        groups.setdefault(_dest_label(ctx), []).extend(ctx.get("results", []))
     labels = list(groups.keys())
 
     subs: "OrderedDict[tuple, dict]" = OrderedDict()
