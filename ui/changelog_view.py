@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.75.4",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "fix", "text": "**Fabric DB validation tables now translate to Chinese.** The composition and field-check issue tables (Fabric DB tab) showed messages like \"Unknown fiber 'spandex'\" or \"Cuttable width (153.0 cm) exceeds full width (148.0 cm)\" in English even with the UI switched to Chinese — these are backend-generated diagnostic strings that were never wired into the translation layer. Every validator message is now built from a translatable template plus its raw values (e.g. field name, percentage, quality_no) instead of a pre-baked English sentence, and the column headers (Detail, Field, Value, Issue, Total %, Suggested Fix) are translated too. Downloaded .csv/.xlsx issue exports now match the active UI language as well."},
+        ],
+    },
+    {
         "version": "2.75.3",
         "date": "2026-07-15",
         "entries": [

@@ -7,6 +7,8 @@ import pandas as pd
 import streamlit as st
 
 from ui.fabric_db._shared import CSV_MIME, XLSX_MIME
+from ui.i18n import t
+from ui.shared import _th
 from ui.stores import get_store
 
 
@@ -37,7 +39,7 @@ def _fabric_db_validation_section(store) -> None:
         dl1, dl2 = st.columns(2)
         csv_bytes = df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
         dl1.download_button(
-            "⬇ Download issues (.csv)", data=csv_bytes,
+            f"⬇ {t('Download issues (.csv)')}", data=csv_bytes,
             file_name=f"{stem}.csv", mime=CSV_MIME,
             key=f"{stem}_csv", use_container_width=True,
         )
@@ -45,7 +47,7 @@ def _fabric_db_validation_section(store) -> None:
         with pd.ExcelWriter(buf, engine="openpyxl") as xw:
             df.to_excel(xw, index=False, sheet_name="Issues")
         dl2.download_button(
-            "⬇ Download issues (.xlsx)", data=buf.getvalue(),
+            f"⬇ {t('Download issues (.xlsx)')}", data=buf.getvalue(),
             file_name=f"{stem}.xlsx", mime=XLSX_MIME,
             key=f"{stem}_xlsx", use_container_width=True,
         )
@@ -54,34 +56,35 @@ def _fabric_db_validation_section(store) -> None:
     n_comp = len(comp_issues)
     if n_comp:
         c_parts = []
-        for kind, tag in [("SUM","sum"),("SPELL","spelling"),("CASE","case"),("PARSE","parse")]:
+        for kind, tag in [("SUM", t("sum")), ("SPELL", t("spelling")),
+                           ("CASE", t("case")), ("PARSE", t("parse"))]:
             k = sum(1 for i in comp_issues if i.kind == kind)
             if k: c_parts.append(f"{k} {tag}")
         comp_label = "⚠️ 面料成分 — " + " · ".join(c_parts)
     else:
-        comp_label = "✅ 面料成分 checks passed"
+        comp_label = "✅ 面料成分 " + t("checks passed")
 
     with st.expander(comp_label, expanded=bool(n_comp)):
         if not n_comp:
-            st.caption(
+            st.caption(t(
                 "Every composition string sums to 100 %, uses known fiber names, "
                 "and each fiber starts with a capital letter."
-            )
+            ))
         else:
             df_comp = pd.DataFrame([{
-                "公司面料编号":    i.quality_no,
-                "面料成分（英文）": i.composition,
-                "Issue":           i.kind,
-                "Detail":          i.detail,
-                "Total %":         round(i.total_pct, 2) if i.total_pct else None,
-                "Suggested Fix":   i.suggestions,
+                "公司面料编号":       i.quality_no,
+                "面料成分（英文）":    i.composition,
+                _th("Issue"):         i.kind,
+                _th("Detail"):        t(i.template).format(**i.template_args) if i.template else i.detail,
+                _th("Total %"):       round(i.total_pct, 2) if i.total_pct else None,
+                _th("Suggested Fix"): i.suggestions,
             } for i in comp_issues])
             st.dataframe(
                 df_comp, width="stretch", hide_index=True,
                 column_config={
                     "面料成分（英文）": st.column_config.TextColumn(width="medium"),
-                    "Detail":          st.column_config.TextColumn(width="large"),
-                    "Total %":         st.column_config.NumberColumn(format="%.2f"),
+                    _th("Detail"):     st.column_config.TextColumn(width="large"),
+                    _th("Total %"):    st.column_config.NumberColumn(format="%.2f"),
                 },
             )
             _dl_buttons(df_comp, "fabric_composition_issues")
@@ -90,36 +93,36 @@ def _fabric_db_validation_section(store) -> None:
     n_field = len(field_issues)
     if n_field:
         f_parts = []
-        for kind, tag in [("MISSING","missing"),("RANGE","range"),
-                          ("CONSISTENCY","consistency"),("FORMAT","format")]:
+        for kind, tag in [("MISSING", t("missing")), ("RANGE", t("range")),
+                          ("CONSISTENCY", t("consistency")), ("FORMAT", t("format"))]:
             k = sum(1 for i in field_issues if i.kind == kind)
             if k: f_parts.append(f"{k} {tag}")
-        field_label = "⚠️ Field checks — " + " · ".join(f_parts)
+        field_label = "⚠️ " + t("Field checks") + " — " + " · ".join(f_parts)
     else:
-        field_label = "✅ Field checks passed"
+        field_label = "✅ " + t("Field checks") + " " + t("checks passed")
 
     with st.expander(field_label, expanded=bool(n_field)):
         if not n_field:
-            st.caption(
+            st.caption(t(
                 "All weight, width, shrinkage and short-rate values are within "
                 "expected ranges and quality_no formats are valid."
-            )
+            ))
         else:
-            st.caption(
-                f"Thresholds: weight 50–800 g/m² · width 30–250 cm · "
-                f"shrinkage ≤ 30% · short rate ≤ 15%"
-            )
+            st.caption(t(
+                "Thresholds: weight 50–800 g/m² · width 30–250 cm · "
+                "shrinkage ≤ 30% · short rate ≤ 15%"
+            ))
             df_field = pd.DataFrame([{
-                "公司面料编号": i.quality_no,
-                "Field":        i.field,
-                "Issue":        i.kind,
-                "Value":        i.value,
-                "Detail":       i.detail,
+                "公司面料编号":  i.quality_no,
+                _th("Field"):   i.field,
+                _th("Issue"):   i.kind,
+                _th("Value"):   i.value,
+                _th("Detail"):  t(i.template).format(**i.template_args) if i.template else i.detail,
             } for i in field_issues])
             st.dataframe(
                 df_field, width="stretch", hide_index=True,
                 column_config={
-                    "Detail": st.column_config.TextColumn(width="large"),
+                    _th("Detail"): st.column_config.TextColumn(width="large"),
                 },
             )
             _dl_buttons(df_field, "fabric_field_issues")

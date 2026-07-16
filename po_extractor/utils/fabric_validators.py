@@ -22,7 +22,9 @@ class FabricFieldIssue(NamedTuple):
     field:      str
     kind:       str   # "MISSING" | "RANGE" | "CONSISTENCY" | "FORMAT"
     value:      str
-    detail:     str
+    detail:     str            # pre-formatted English message (CSV/back-compat)
+    template:      str = ""    # English format-string, translatable via ui.i18n.t()
+    template_args: dict = {}   # kwargs for template.format() -- read-only, never mutated
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +57,7 @@ def validate_record(rec: dict) -> list[FabricFieldIssue]:
         issues.append(FabricFieldIssue(
             quality_no="", field="quality_no", kind="MISSING",
             value="", detail="quality_no is empty",
+            template="quality_no is empty", template_args={},
         ))
     elif not _QNO_RE.match(qno):
         issues.append(FabricFieldIssue(
@@ -62,6 +65,9 @@ def validate_record(rec: dict) -> list[FabricFieldIssue]:
             value=qno,
             detail=f"'{qno}' does not match expected pattern "
                    "(e.g. BO-DW240485 / MQ-BD181446)",
+            template="'{qno}' does not match expected pattern "
+                     "(e.g. BO-DW240485 / MQ-BD181446)",
+            template_args={"qno": qno},
         ))
 
     # ── weight_gsm ────────────────────────────────────────────────────────────
@@ -71,6 +77,7 @@ def validate_record(rec: dict) -> list[FabricFieldIssue]:
             issues.append(FabricFieldIssue(
                 quality_no=qno, field="weight_gsm", kind="RANGE",
                 value=str(gsm), detail="Weight (g/m²) must be positive",
+                template="Weight (g/m²) must be positive", template_args={},
             ))
         elif not (_GSM_MIN <= gsm <= _GSM_MAX):
             issues.append(FabricFieldIssue(
@@ -78,15 +85,18 @@ def validate_record(rec: dict) -> list[FabricFieldIssue]:
                 value=str(gsm),
                 detail=f"Weight {gsm} g/m² is outside the typical range "
                        f"{int(_GSM_MIN)}–{int(_GSM_MAX)} g/m²",
+                template="Weight {gsm} g/m² is outside the typical range "
+                         "{gsm_min}–{gsm_max} g/m²",
+                template_args={"gsm": gsm, "gsm_min": int(_GSM_MIN), "gsm_max": int(_GSM_MAX)},
             ))
 
     # ── width fields ──────────────────────────────────────────────────────────
     cw = rec.get("cuttable_width_cm")
     fw = rec.get("full_width_cm")
 
-    for field_name, val, label in [
-        ("cuttable_width_cm", cw, "Cuttable width"),
-        ("full_width_cm",     fw, "Full width"),
+    for field_name, val, label, label_template in [
+        ("cuttable_width_cm", cw, "Cuttable width", "Cuttable width"),
+        ("full_width_cm",     fw, "Full width",     "Full width"),
     ]:
         if val is None:
             continue
@@ -94,6 +104,7 @@ def validate_record(rec: dict) -> list[FabricFieldIssue]:
             issues.append(FabricFieldIssue(
                 quality_no=qno, field=field_name, kind="RANGE",
                 value=str(val), detail=f"{label} must be positive",
+                template=label_template + " must be positive", template_args={},
             ))
         elif not (_WIDTH_MIN <= val <= _WIDTH_MAX):
             issues.append(FabricFieldIssue(
@@ -101,6 +112,9 @@ def validate_record(rec: dict) -> list[FabricFieldIssue]:
                 value=str(val),
                 detail=f"{label} {val} cm is outside the typical range "
                        f"{int(_WIDTH_MIN)}–{int(_WIDTH_MAX)} cm",
+                template=label_template + " {val} cm is outside the typical range "
+                         "{width_min}–{width_max} cm",
+                template_args={"val": val, "width_min": int(_WIDTH_MIN), "width_max": int(_WIDTH_MAX)},
             ))
 
     if cw and fw and cw > 0 and fw > 0 and cw > fw:
@@ -108,6 +122,8 @@ def validate_record(rec: dict) -> list[FabricFieldIssue]:
             quality_no=qno, field="cuttable_width_cm", kind="CONSISTENCY",
             value=f"{cw} > {fw}",
             detail=f"Cuttable width ({cw} cm) exceeds full width ({fw} cm)",
+            template="Cuttable width ({cw} cm) exceeds full width ({fw} cm)",
+            template_args={"cw": cw, "fw": fw},
         ))
 
     # ── shrinkage_rate ────────────────────────────────────────────────────────
@@ -117,12 +133,15 @@ def validate_record(rec: dict) -> list[FabricFieldIssue]:
             issues.append(FabricFieldIssue(
                 quality_no=qno, field="shrinkage_rate", kind="RANGE",
                 value=str(sr), detail="Shrinkage rate cannot be negative",
+                template="Shrinkage rate cannot be negative", template_args={},
             ))
         elif sr > _SHRINK_MAX:
             issues.append(FabricFieldIssue(
                 quality_no=qno, field="shrinkage_rate", kind="RANGE",
                 value=str(sr),
                 detail=f"Shrinkage {sr}% is unusually high (expected ≤ {int(_SHRINK_MAX)}%)",
+                template="Shrinkage {sr}% is unusually high (expected ≤ {shrink_max}%)",
+                template_args={"sr": sr, "shrink_max": int(_SHRINK_MAX)},
             ))
 
     # ── short_rate ────────────────────────────────────────────────────────────
@@ -132,12 +151,15 @@ def validate_record(rec: dict) -> list[FabricFieldIssue]:
             issues.append(FabricFieldIssue(
                 quality_no=qno, field="short_rate", kind="RANGE",
                 value=str(shr), detail="Short rate cannot be negative",
+                template="Short rate cannot be negative", template_args={},
             ))
         elif shr > _SHORT_MAX:
             issues.append(FabricFieldIssue(
                 quality_no=qno, field="short_rate", kind="RANGE",
                 value=str(shr),
                 detail=f"Short rate {shr}% is unusually high (expected ≤ {int(_SHORT_MAX)}%)",
+                template="Short rate {shr}% is unusually high (expected ≤ {short_max}%)",
+                template_args={"shr": shr, "short_max": int(_SHORT_MAX)},
             ))
 
     return issues

@@ -183,9 +183,11 @@ class CompositionIssue(NamedTuple):
     quality_no: str
     composition: str
     kind: str             # "SUM" | "SPELL" | "PARSE" | "CASE"
-    detail: str
+    detail: str            # pre-formatted English message (CSV/back-compat)
     total_pct: float
     suggestions: str      # comma-joined suggested fixes (empty if none)
+    template: str = ""     # English format-string, translatable via ui.i18n.t()
+    template_args: dict = {}  # kwargs for template.format() -- read-only, never mutated
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +274,7 @@ def validate_composition(
             quality_no=quality_no, composition=raw, kind="PARSE",
             detail="Could not parse any '<pct>% <fiber>' tokens",
             total_pct=0.0, suggestions="",
+            template="Could not parse any '<pct>% <fiber>' tokens", template_args={},
         ))
         return issues
 
@@ -284,6 +287,8 @@ def validate_composition(
             quality_no=quality_no, composition=raw, kind="SUM",
             detail=f"Percentages total {total}% (expected 100%)",
             total_pct=total, suggestions="",
+            template="Percentages total {total}% (expected 100%)",
+            template_args={"total": total},
         ))
 
     # Spelling check — one issue per unknown fiber token
@@ -294,12 +299,18 @@ def validate_composition(
             continue
         suggestion = _suggest_fiber(name, all_fibers)
         seen_bad.add(name)
+        if suggestion:
+            template = "Unknown fiber '{name}' — did you mean '{suggestion}'?"
+        else:
+            template = "Unknown fiber '{name}'"
         issues.append(CompositionIssue(
             quality_no=quality_no, composition=raw, kind="SPELL",
             detail=f"Unknown fiber '{name}'"
                    + (f" — did you mean '{suggestion}'?" if suggestion else ""),
             total_pct=total,
             suggestions=suggestion,
+            template=template,
+            template_args={"name": name, "suggestion": suggestion},
         ))
 
     # Case check — each fiber name must start with a capital letter
@@ -318,6 +329,8 @@ def validate_composition(
                 detail=f"Fiber '{name}' should start with a capital letter",
                 total_pct=total,
                 suggestions=corrected,
+                template="Fiber '{name}' should start with a capital letter",
+                template_args={"name": name},
             ))
 
     return issues
