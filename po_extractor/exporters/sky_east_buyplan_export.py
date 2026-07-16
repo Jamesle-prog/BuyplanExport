@@ -968,6 +968,7 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
         "xs": xs, "s": s, "m": m, "l": l, "xl": xl, "xxl": xxl,
         "total":        row_total,
         "ex_fty":       _ex_fty,
+        "return_label": _return_label,
         "photo":        front,
         "fabrics":      fabric_summary,
     }

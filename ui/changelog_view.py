@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.76.5",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "feat", "text": "**Sky East buy plan's Overview (summary) sheet now includes a Return Label column**, alongside the existing per-style sheet column — \"Yes\" / \"No\" / \"NA\" per item, so the flat cross-check table matches what's on each style tab without needing to open it."},
+        ],
+    },
+    {
         "version": "2.76.4",
         "date": "2026-07-16",
         "entries": [

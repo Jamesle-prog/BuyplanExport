@@ -112,6 +112,43 @@ def test_overview_rows_include_english_and_chinese_color_plus_code(
     assert by_style["DR4578"]["Color Code"] == "602"
 
 
+def test_overview_includes_return_label_column(two_style_df, pc_color_lookup, tmp_path):
+    df = two_style_df.copy()
+    df.loc[df["style"] == "DR5124", "return_label"] = "Yes"
+    df.loc[df["style"] == "DR4578", "return_label"] = "No"
+
+    path, _totals = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=pc_color_lookup,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+    assert "Return Label" in headers
+
+    def _row_dict(ri):
+        return dict(zip(headers, [ov.cell(ri, c + 1).value for c in range(len(headers))]))
+
+    rows = [_row_dict(r) for r in (2, 3)]
+    by_style = {r["Style"]: r for r in rows}
+    assert by_style["DR5124"]["Return Label"] == "Yes"
+    assert by_style["DR4578"]["Return Label"] == "No"
+
+
+def test_overview_return_label_defaults_to_na_when_absent(two_style_df, pc_color_lookup, tmp_path):
+    path, _totals = export_sky_east_buyplan(
+        two_style_df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={}, cn_by_pc_lookup=pc_color_lookup,
+    )
+    ov = load_workbook(path)["Overview"]
+    headers = [c.value for c in ov[1]]
+
+    def _row_dict(ri):
+        return dict(zip(headers, [ov.cell(ri, c + 1).value for c in range(len(headers))]))
+
+    assert _row_dict(2)["Return Label"] == "NA"
+    assert _row_dict(3)["Return Label"] == "NA"
+
+
 def test_buyplan_brand_sourced_from_progress(two_style_df, pc_color_lookup, tmp_path):
     """The 品牌 column comes from 大货进度表 (brand_by_pc_lookup) when present,
     keyed by PC No · style; styles absent from the lookup keep the order-file

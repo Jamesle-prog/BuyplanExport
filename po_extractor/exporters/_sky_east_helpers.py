@@ -938,6 +938,7 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
                              "article_name": str,
                              "xs": int, "s": int, "m": int, "l": int,
                              "xl": int, "xxl": int, "total": int, "ex_fty": str,
+                             "return_label": str,   # "Yes" / "No" / "NA"
                              "photo": bytes | None,
                              "fabrics": [(label, display_key), ...],
                          }
@@ -968,7 +969,7 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
         "No.", "Contract No.", "客人PC NO", "Style", "Color (EN)", "Color (CN)",
         "Color Code", "主标颜色",
         "Brand", "PO No.", "Config SKU", "Article Name",
-        "XS", "S", "M", "L", "XL", "2XL", "Total Qty", "Ex-Fty",
+        "XS", "S", "M", "L", "XL", "2XL", "Total Qty", "Ex-Fty", "Return Label",
     ]
     headers = (_base_headers[:3] + ["Photo"] + _base_headers[3:]
               if has_photos else list(_base_headers))
@@ -1007,7 +1008,8 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
     _C_XXL      = 18 + _off
     _C_TOTAL    = 19 + _off
     _C_EXFTY    = 20 + _off
-    _FAB_START  = 21 + _off
+    _C_RETLBL   = 21 + _off
+    _FAB_START  = 22 + _off
 
     _IMG_PX = 60   # small thumbnail — this sheet is one row per item, potentially
     _ROW_PT = 46   # far more rows than the style-level Index sheet
@@ -1042,6 +1044,7 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
         ov_ws.cell(ri, _C_XXL, value=row.get("xxl", 0))
         ov_ws.cell(ri, _C_TOTAL, value=row.get("total", 0))
         ov_ws.cell(ri, _C_EXFTY, value=row.get("ex_fty", ""))
+        ov_ws.cell(ri, _C_RETLBL, value=row.get("return_label", "NA"))
 
         if has_photos and _C_IMG:
             img_bytes = row.get("photo")
@@ -1065,7 +1068,7 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
         ov_ws.row_dimensions[ri].height = _ROW_PT if has_photos else 18
 
     # ── Alignment ─────────────────────────────────────────────────────────
-    _center_cols = {_C_NO, _C_XS, _C_S, _C_M, _C_L, _C_XL, _C_XXL, _C_TOTAL}
+    _center_cols = {_C_NO, _C_XS, _C_S, _C_M, _C_L, _C_XL, _C_XXL, _C_TOTAL, _C_RETLBL}
     for rn in range(2, ov_ws.max_row + 1):
         for cn in range(1, len(headers) + 1):
             c = ov_ws.cell(rn, cn)
@@ -1079,7 +1082,7 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
         _C_NO: 6, _C_CONTRACT: 16, _C_PCNO: 14, _C_STYLE: 20, _C_COLOR_EN: 14, _C_COLOR_CN: 12,
         _C_CODE: 10, _C_LABEL: 10, _C_BRAND: 14, _C_PO: 16, _C_CONFIG: 16, _C_ARTICLE: 22,
         _C_XS: 6, _C_S: 6, _C_M: 6, _C_L: 6, _C_XL: 6, _C_XXL: 6,
-        _C_TOTAL: 10, _C_EXFTY: 12,
+        _C_TOTAL: 10, _C_EXFTY: 12, _C_RETLBL: 12,
     }
     if has_photos and _C_IMG:
         _fixed_widths[_C_IMG] = 10
