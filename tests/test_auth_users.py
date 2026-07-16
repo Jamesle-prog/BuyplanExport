@@ -82,3 +82,19 @@ def test_create_user_with_explicit_role_still_overrides_existing(tmp_path, monke
     users.create_user("bob", "pw", role=users.ROLE_USER)
     users.create_user("bob", "pw2", role=users.ROLE_ADMIN)  # deliberate promotion
     assert users.get_user("bob")["role"] == users.ROLE_ADMIN
+
+
+def test_corrupted_users_file_raises_clear_error_not_json_decode_error(tmp_path, monkeypatch):
+    """A corrupted users.json (e.g. interrupted write) must fail loudly with
+    a message pointing at the file, not raise a bare JSONDecodeError (which
+    every caller would see as an unexplained crash) and must not silently
+    return {} (which would make every login look like "wrong password" with
+    no clue the real file is broken)."""
+    users_file = tmp_path / "users.json"
+    users_file.write_text("{not valid json", encoding="utf-8")
+    monkeypatch.setattr(users, "_USERS_FILE", str(users_file))
+    try:
+        users._load()
+        assert False, "expected RuntimeError"
+    except RuntimeError as e:
+        assert "users.json" in str(e)

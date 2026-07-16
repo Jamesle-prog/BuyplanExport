@@ -68,7 +68,13 @@ def _load() -> dict[str, dict]:
         _save(data)
         return data
     with open(_COMPANIES_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        try:
+            return json.load(f)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"{_COMPANIES_FILE} is corrupted and could not be parsed as JSON: {e}. "
+                "Restore it from a backup."
+            ) from e
 
 
 def _save(data: dict[str, dict]) -> None:

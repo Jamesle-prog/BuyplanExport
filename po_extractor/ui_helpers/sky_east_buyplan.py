@@ -31,7 +31,8 @@ def se_items_to_buyplan_dfs(df_items: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
         style = str(row.get("style", "") or "")
         color = str(row.get("color_name", "") or "")
         for lc, uc in present:
-            qty = int(row.get(lc, 0) or 0)
+            raw_qty = row.get(lc, 0)
+            qty = int(raw_qty) if pd.notna(raw_qty) else 0
             if qty > 0:
                 size_rows.append({
                     "PO Number": po, "Style": style,

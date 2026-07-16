@@ -47,7 +47,16 @@ def _load() -> dict:
     if not os.path.exists(_USERS_FILE):
         return {}
     with open(_USERS_FILE, "r", encoding="utf-8") as f:
-        raw = json.load(f)
+        try:
+            raw = json.load(f)
+        except json.JSONDecodeError as e:
+            # Fail loudly rather than silently returning {} -- that would make
+            # every login "wrong password" with no clue the real problem is a
+            # corrupted users.json (e.g. an interrupted write).
+            raise RuntimeError(
+                f"{_USERS_FILE} is corrupted and could not be parsed as JSON: {e}. "
+                "Restore it from a backup before logging in."
+            ) from e
     # Migrate flat {username: hash_str} → {username: {password, role, companies}}
     migrated = False
     for k, v in raw.items():

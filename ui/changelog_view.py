@@ -10,6 +10,16 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.75.5",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "fix", "text": "**AI colour-enhance and price-masking would silently stop working if an admin ever selected the \"deepseek-v4-pro\" model.** Ran a DeepSeek-pro-assisted review of the codebase and, in the course of it, hit the same bug live: deepseek-v4-pro is a hidden-reasoning model whose reasoning trace can run into the thousands of tokens, but this app's reasoning-model detection only recognised the older \"deepseek-reasoner\" name, so v4-pro's small max_tokens budgets (64–128, sized for a short colour/price answer) were silently consumed entirely by invisible reasoning, returning empty responses with no error. It's tracked separately from the temperature-rejection check (v4-pro accepts temperature fine, unlike deepseek-reasoner) with its own larger token floor."},
+            {"type": "fix", "text": "**Infor Nexus row-major size-grid parser could over-capture past the intended stop label.** The row-major fallback (used when a PDF linearises the size table row-first) looked for the next section via a regex ending in `\\b` right after stop words like \"Qty:\" — but `\\b` can never match immediately after a colon, so the lookahead silently failed and the non-greedy match ran to the end of the block instead of stopping cleanly. In the current data shape (Qty is always the last section) this happened to be masked by the existing length-based row alignment, but the regex itself was wrong and would misbehave for any other section ordering."},
+            {"type": "fix", "text": "**Sky East buy-plan generation could crash on a blank size cell.** `int(value or 0)` doesn't treat NaN as falsy (NaN is truthy in Python), so a missing/empty cell in a size column raised `ValueError: cannot convert float NaN to integer` instead of being treated as zero."},
+            {"type": "fix", "text": "**A corrupted users.json or companies.json now fails with a clear error instead of a bare crash or silent lockout.** Both files were read via plain `json.load()` with no error handling — a corrupted file (e.g. from an interrupted write) previously raised an unguarded `JSONDecodeError`; now it raises a clear message naming the file so it's obvious what to restore from backup, rather than every login looking like \"wrong password\" with no explanation."},
+        ],
+    },
+    {
         "version": "2.75.4",
         "date": "2026-07-16",
         "entries": [

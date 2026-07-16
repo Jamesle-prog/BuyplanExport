@@ -75,6 +75,23 @@ def test_missing_size_columns_handled_gracefully():
     assert df_size["Units"].iloc[0] == 5
 
 
+def test_nan_size_cell_does_not_crash():
+    """A missing/blank cell in one size column becomes NaN in the DataFrame
+    (not 0) -- `NaN or 0` evaluates to NaN (NaN is truthy), so int(NaN) used
+    to raise ValueError and crash the whole buy-plan export. NaN cells must
+    be treated as 0, not crash.
+    """
+    df_items = pd.DataFrame([
+        {"zalando_po": "PO1", "style": "S1", "color_name": "Red",
+         "brand": "Z", "ex_fty_date": "",
+         "xs": float("nan"), "s": 2, "m": 0, "l": 0, "xl": 0, "xxl": 0},
+    ])
+    df_size, _ = se_items_to_buyplan_dfs(df_items)
+    assert len(df_size) == 1
+    assert df_size["Size"].iloc[0] == "S"
+    assert df_size["Units"].iloc[0] == 2
+
+
 def test_se_size_cols_constant_unchanged():
     """Lock the size column ordering — downstream exporters depend on it."""
     assert SE_SIZE_COLS == [

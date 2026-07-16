@@ -302,8 +302,14 @@ def _parse_size_grid_rowmajor(block: str) -> list[tuple]:
     nothing (some PDFs linearise the table row-first)."""
 
     def _section(name: str, stops: list[str]) -> list[str]:
+        # NOTE: several stop words already end in ":" (e.g. "Qty:") -- a
+        # trailing \b right after a non-word colon character never matches
+        # (colon -> whitespace/newline is not a word boundary), which used to
+        # make the lookahead fail silently and let the non-greedy match run
+        # past the intended stop label. No \b needed: the alternation text
+        # itself (colon or not) is the boundary.
         stop_re = "|".join(stops)
-        m = re.search(rf'{name}:\s*\n(.*?)(?=\n(?:{stop_re})\b|$)',
+        m = re.search(rf'{name}:\s*\n(.*?)(?=\n(?:{stop_re})|$)',
                       block, re.DOTALL)
         if not m:
             return []

@@ -57,3 +57,21 @@ def test_max_tokens_for_keeps_base_when_already_above_floor():
 def test_max_tokens_for_leaves_chat_model_base_unchanged():
     assert max_tokens_for("deepseek-chat", 64) == 64
     assert max_tokens_for("deepseek-chat", 128) == 128
+
+
+def test_deepseek_v4_pro_not_treated_as_temperature_rejecting():
+    """Unlike deepseek-reasoner, deepseek-v4-pro accepts temperature fine
+    (confirmed live) -- it must not be folded into is_reasoning_model()."""
+    assert is_reasoning_model("deepseek-v4-pro") is False
+    assert chat_kwargs("deepseek-v4-pro") == {"temperature": 0}
+
+
+def test_max_tokens_for_raises_higher_floor_for_deepseek_v4_pro():
+    """Regression: deepseek-v4-pro's hidden reasoning trace is far heavier
+    than deepseek-reasoner's (confirmed live: 96/100 tokens spent on a
+    trivial prompt, 12235 on one real moderately-complex prompt) -- the
+    existing 1024 floor silently produced empty responses for every
+    price-mask / AI-colour-enhance call once an admin selected this model."""
+    assert max_tokens_for("deepseek-v4-pro", 64) == 8192
+    assert max_tokens_for("deepseek-v4-pro", 128) == 8192
+    assert max_tokens_for("deepseek-v4-pro", 20000) == 20000

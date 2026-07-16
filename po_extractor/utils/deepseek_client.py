@@ -40,14 +40,26 @@ def chat_kwargs(model: str, *, temperature: float = 0) -> dict:
 # for the same request to finish normally.
 _REASONING_MIN_MAX_TOKENS = 1024
 
+# Newer DeepSeek model line whose hidden reasoning trace runs far heavier
+# than deepseek-reasoner's -- confirmed live: deepseek-v4-pro spent 96/100
+# tokens on a trivial "say hello" prompt (vs 13/16 for deepseek-v4-flash),
+# and 12235 reasoning tokens on one real, moderately complex prompt. Unlike
+# deepseek-reasoner it does NOT reject the ``temperature`` param (see
+# is_reasoning_model), so it's tracked separately with its own, larger floor
+# rather than folded into _REASONING_MODEL_PREFIXES.
+_HIGH_REASONING_MODEL_PREFIXES = ("deepseek-v4-pro",)
+_HIGH_REASONING_MIN_MAX_TOKENS = 8192
+
 
 def max_tokens_for(model: str, base: int) -> int:
     """Return a ``max_tokens`` value safe for *model*, at least *base*.
 
-    Reasoning models get a floor of :data:`_REASONING_MIN_MAX_TOKENS` so the
-    hidden reasoning trace has room to finish before the visible answer is
-    written; chat models get *base* unchanged.
+    Reasoning models get a floor so the hidden reasoning trace has room to
+    finish before the visible answer is written; chat models get *base*
+    unchanged.
     """
+    if bool(model) and model.startswith(_HIGH_REASONING_MODEL_PREFIXES):
+        return max(base, _HIGH_REASONING_MIN_MAX_TOKENS)
     if is_reasoning_model(model):
         return max(base, _REASONING_MIN_MAX_TOKENS)
     return base
