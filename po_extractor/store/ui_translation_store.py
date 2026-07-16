@@ -1366,6 +1366,20 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Short rate cannot be negative', '粘衬率不能为负数', 'label', 'fabric_db'),
     ('Short rate {shr}% is unusually high (expected ≤ {short_max}%)',
      '粘衬率 {shr}% 异常偏高（应 ≤ {short_max}%）', 'label', 'fabric_db'),
+
+    # Sky East — Return Label conflict review (v2.76.4)
+    # ("PC No.", "Style", "Color", "Apply" already seeded above under module="shared" -- reused as-is.
+    ('PO', 'PO号', 'label', 'sky_east'),
+    ('Current', '当前值', 'label', 'sky_east'),
+    ('Replace', '替换', 'label', 'sky_east'),
+    ('replaced', '已替换', 'label', 'sky_east'),
+    ('kept as recorded', '保留原记录', 'label', 'sky_east'),
+    ('Keep all as recorded (dismiss)', '全部保留原记录（关闭）', 'label', 'sky_east'),
+    ('Return Label conflicts', 'Return Label 冲突', 'label', 'sky_east'),
+    ('item(s) have a different Return Label than what\'s already on file. '
+     'Review below before these are saved:',
+     '个项目的 Return Label 与已存档的记录不同。请在下方确认后再保存：',
+     'label', 'sky_east'),
 ]
 # fmt: on
 

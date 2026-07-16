@@ -82,10 +82,9 @@ def test_duplicate_key_within_same_contract_both_updates_applied(tmp_path):
     )
 
 
-def test_return_label_persists_through_insert_and_update(tmp_path):
-    """The Return Label value (Yes/No/NA from the client's PO) must round-trip
-    through insert, update, and archive -- same column added alongside the
-    other item fields."""
+def test_return_label_persists_through_insert(tmp_path):
+    """The Return Label value (Yes/No/NA from the client's PO) is written on
+    insert, same as the other item fields."""
     from po_extractor.store.sky_east_store import SkyEastStore
 
     store = SkyEastStore(str(tmp_path / "se.db"))
@@ -98,18 +97,114 @@ def test_return_label_persists_through_insert_and_update(tmp_path):
     row = items[items["style"] == "RL1"].iloc[0]
     assert row["return_label"] == "Yes"
 
-    # Update: same key, changed quantity AND return_label -- confirm the
-    # UPDATE path (not just INSERT) writes the new value.
+
+def test_return_label_change_alone_is_held_back_not_silently_dropped(tmp_path):
+    """A Return Label change with sizes/qty/FOB otherwise identical used to
+    be treated as a plain duplicate (skipped) -- the new value was silently
+    discarded. It must now be surfaced as a pending confirmation instead."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+
+    store = SkyEastStore(str(tmp_path / "se.db"))
     store.save_contract_checked(_make_contract([
-        _make_item(style="RL1", color_name="Blue", zalando_po="PO1",
+        _make_item(style="RL2", color_name="Blue", zalando_po="PO1", return_label="Yes"),
+    ]))
+
+    result = store.save_contract_checked(_make_contract([
+        _make_item(style="RL2", color_name="Blue", zalando_po="PO1", return_label="No"),
+    ]))
+
+    assert result["duplicate_items"] == []
+    assert len(result["pending_return_label"]) == 1
+    pending = result["pending_return_label"][0]
+    assert pending["old_return_label"] == "Yes"
+    assert pending["new_return_label"] == "No"
+
+    # Not written yet -- DB still shows the original value.
+    items = store.list_items(["PC1"])
+    assert items[items["style"] == "RL2"].iloc[0]["return_label"] == "Yes"
+
+
+def test_return_label_change_with_other_changes_holds_back_the_whole_record(tmp_path):
+    """When Return Label AND sizes/qty both differ, the whole item is held
+    back -- not just the label -- so a size change never sneaks in
+    unconfirmed alongside a Return Label change the user hasn't approved."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+
+    store = SkyEastStore(str(tmp_path / "se.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="RL3", color_name="Blue", zalando_po="PO1",
+                   sizes={"S": 1}, total_qty=1, return_label="Yes"),
+    ]))
+
+    result = store.save_contract_checked(_make_contract([
+        _make_item(style="RL3", color_name="Blue", zalando_po="PO1",
                    sizes={"S": 9}, total_qty=9, return_label="No"),
     ]))
-    items = store.list_items(["PC1"])
-    row = items[items["style"] == "RL1"].iloc[0]
-    assert row["return_label"] == "No"
 
-    history = store.list_item_history("PC1", style="RL1")
+    assert result["updated_items"] == []
+    assert len(result["pending_return_label"]) == 1
+    pending = result["pending_return_label"][0]
+    assert pending["changed"]["return_label"] == ("Yes", "No")
+    assert pending["changed"]["total_qty"] == (1, 9)
+
+    items = store.list_items(["PC1"])
+    row = items[items["style"] == "RL3"].iloc[0]
+    assert row["return_label"] == "Yes"
+    assert int(row["total_qty"]) == 1
+
+
+def test_return_label_unchanged_other_fields_still_auto_update(tmp_path):
+    """Regression guard: when Return Label is unchanged, size/qty/FOB changes
+    must keep auto-updating exactly as before this feature -- only a Return
+    Label change itself requires confirmation."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+
+    store = SkyEastStore(str(tmp_path / "se.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="RL4", color_name="Blue", zalando_po="PO1",
+                   sizes={"S": 1}, total_qty=1, return_label="Yes"),
+    ]))
+
+    result = store.save_contract_checked(_make_contract([
+        _make_item(style="RL4", color_name="Blue", zalando_po="PO1",
+                   sizes={"S": 9}, total_qty=9, return_label="Yes"),
+    ]))
+
+    assert result["pending_return_label"] == []
+    assert len(result["updated_items"]) == 1
+
+    items = store.list_items(["PC1"])
+    row = items[items["style"] == "RL4"].iloc[0]
+    assert int(row["total_qty"]) == 9
+    assert row["return_label"] == "Yes"
+
+
+def test_apply_pending_item_writes_the_confirmed_replacement(tmp_path):
+    from po_extractor.store.sky_east_store import SkyEastStore
+
+    store = SkyEastStore(str(tmp_path / "se.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="RL5", color_name="Blue", zalando_po="PO1",
+                   sizes={"S": 1}, total_qty=1, return_label="Yes"),
+    ]))
+    result = store.save_contract_checked(_make_contract([
+        _make_item(style="RL5", color_name="Blue", zalando_po="PO1",
+                   sizes={"S": 9}, total_qty=9, return_label="No"),
+    ]))
+    pending = result["pending_return_label"][0]
+
+    outcome = store.apply_pending_item(pending["item"])
+    assert outcome == "updated"
+
+    items = store.list_items(["PC1"])
+    row = items[items["style"] == "RL5"].iloc[0]
+    assert row["return_label"] == "No"
+    assert int(row["total_qty"]) == 9
+
+    # The pre-confirmation state (qty=1, return_label=Yes) must be archived.
+    history = store.list_item_history("PC1", style="RL5")
     assert history.iloc[0]["return_label"] == "Yes"
+    assert int(history.iloc[0]["total_qty"]) == 1
 
 
 def test_return_label_defaults_to_na_when_not_set(tmp_path):

@@ -140,6 +140,60 @@ def _show_se_results(results: list, image_cache: dict):
                                                           use_container_width=True)
 
 
+def _show_return_label_conflicts(pending: list[dict]) -> None:
+    """Review table for items whose Return Label differs from what's already
+    on file. Unlike sizes/qty/FOB (which auto-update), a Return Label change
+    is never applied silently -- it's a business decision recorded on a
+    previous upload, so each conflicting item needs an explicit Replace/Keep
+    choice before anything is written.
+
+    *pending* is a list of dicts from SkyEastStore.save_contract_checked's
+    ``pending_return_label`` (pc_no, style, color_name, zalando_po,
+    old_return_label, new_return_label, changed, item).
+    """
+    st.warning(
+        f"⚠️ {len(pending)} " +
+        t("item(s) have a different Return Label than what's already on file. "
+          "Review below before these are saved:")
+    )
+    with st.expander(t("Return Label conflicts"), expanded=True):
+        col_pc, col_style, col_color, col_po, col_cur, col_new, col_rep = (
+            _th("PC No."), _th("Style"), _th("Color"), _th("PO"),
+            _th("Current"), _th("New"), _th("Replace"),
+        )
+        df = pd.DataFrame([{
+            col_pc: p["pc_no"], col_style: p["style"], col_color: p["color_name"],
+            col_po: p["zalando_po"], col_cur: p["old_return_label"],
+            col_new: p["new_return_label"], col_rep: False,
+        } for p in pending])
+        edited = st.data_editor(
+            df, hide_index=True, use_container_width=True, num_rows="fixed",
+            disabled=[col_pc, col_style, col_color, col_po, col_cur, col_new],
+            key="se_rl_pending_editor",
+        )
+
+        col1, col2 = st.columns(2)
+        if col1.button(t("Apply"), type="primary", use_container_width=True,
+                       key="se_rl_pending_apply"):
+            store = get_sky_east_store()
+            n_replaced = n_kept = 0
+            for i, row in edited.iterrows():
+                if row[col_rep]:
+                    store.apply_pending_item(pending[i]["item"])
+                    n_replaced += 1
+                else:
+                    n_kept += 1
+            st.session_state[SK.SE_RL_PENDING] = []
+            st.success(
+                f"✅ {n_replaced} {t('replaced')}, {n_kept} {t('kept as recorded')}."
+            )
+            st.rerun()
+        if col2.button(t("Keep all as recorded (dismiss)"), use_container_width=True,
+                       key="se_rl_pending_dismiss"):
+            st.session_state[SK.SE_RL_PENDING] = []
+            st.rerun()
+
+
 # ---------------------------------------------------------------------------
 # Fabric master helpers
 # ---------------------------------------------------------------------------

@@ -392,14 +392,30 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             total_new  = sum(len(r["new_items"])       for r in results)
             total_upd  = sum(len(r["updated_items"])   for r in results)
             total_dup  = sum(len(r["duplicate_items"]) for r in results)
+            total_pend = sum(len(r["pending_return_label"]) for r in results)
             st.write(
                 f"  {total_new} new, {total_upd} updated, "
                 f"{total_dup} duplicate(s) skipped"
+                + (f", {total_pend} Return Label conflict(s) held for review" if total_pend else "")
             )
             log.append(
                 f"Stored: {total_new} new, {total_upd} updated, "
                 f"{total_dup} duplicates skipped"
+                + (f", {total_pend} Return Label conflict(s) held for review" if total_pend else "")
             )
+
+            if total_pend:
+                # Dedupe by (pc_no, style, color, po) -- a newer parse of the
+                # same item replaces an older still-unresolved pending entry
+                # rather than piling up a duplicate review row for it.
+                pending = {
+                    (p["pc_no"], p["style"], p["color_name"], p["zalando_po"]): p
+                    for p in st.session_state.get(SK.SE_RL_PENDING, [])
+                }
+                for r in results:
+                    for p in r["pending_return_label"]:
+                        pending[(p["pc_no"], p["style"], p["color_name"], p["zalando_po"])] = p
+                st.session_state[SK.SE_RL_PENDING] = list(pending.values())
 
             _se_save_fabric_parts_universal(contracts, fabric_lookup, log)
             _se_patch_contract_numbers(store, contracts, progress_lookup, log)

@@ -6,7 +6,9 @@ from ui.session_keys import SK, COLOR_SOURCE_DB, COLOR_SOURCE_PROGRESS
 from ui.shared import ZIP_MIME, show_image_folder_expander, show_processing_log
 from ui.sky_east._shared import live_label, show_color_source_radio
 from ui.sky_east.processing import _run_sky_east_processing, _compute_se_missing_df
-from ui.sky_east.items_view import _show_se_results, _show_se_missing_fields_section
+from ui.sky_east.items_view import (
+    _show_se_results, _show_se_missing_fields_section, _show_return_label_conflicts,
+)
 from ui.sky_east.history import _show_se_history_section
 from ui.sky_east.reports_tab import PIN_BUYPLAN, _show_se_reports_tab
 
@@ -107,6 +109,10 @@ def _show_se_upload_section():
 
     if st.session_state.se_log:
         show_processing_log(st.session_state.se_log)
+
+    _rl_pending = st.session_state.get(SK.SE_RL_PENDING)
+    if _rl_pending:
+        _show_return_label_conflicts(_rl_pending)
 
     if st.session_state.get(SK.SE_MASKED_ZIP):
         st.download_button(

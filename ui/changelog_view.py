@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.76.4",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "feat", "text": "**Sky East upload now checks the Return Label field on re-upload, and asks before replacing.** Previously, re-uploading an existing PO only compared sizes/qty/FOB — if those matched but the client's PO had a different Return Label than what was already on file, the item was treated as a plain duplicate and the new value was silently discarded. Now: a Return Label change (alone, or alongside other changes) is held back — never applied automatically — and shown in a review table (PC No./Style/Color/PO, current vs. new value) with a per-item Replace/Keep choice and an Apply button. Everything else in the upload (new items, and updates where the Return Label is unchanged) still saves immediately, same as before."},
+        ],
+    },
+    {
         "version": "2.76.3",
         "date": "2026-07-16",
         "entries": [

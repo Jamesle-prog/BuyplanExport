@@ -169,8 +169,14 @@ class SkyEastStore(BaseSQLiteStore):
         """
         Upsert a contract, merging items intelligently:
           - New item (not found by pc_no+style+color+po) → INSERT
-          - Existing item, same size quantities → duplicate, skip
-          - Existing item, different quantities → archive old, UPDATE
+          - Existing item, same size quantities, FOB, and Return Label → duplicate, skip
+          - Existing item, Return Label unchanged but sizes/qty/FOB differ → archive old, UPDATE
+          - Existing item, Return Label differs from what's on file → held back for
+            confirmation, NOT written here (see ``pending_return_label`` below and
+            :meth:`apply_pending_item`). A Return Label change always needs an
+            explicit decision, regardless of whether sizes/qty/FOB also changed —
+            unlike those fields, silently overwriting it risks losing a real
+            business decision recorded on a previous upload.
 
         Returns:
           {
@@ -178,6 +184,10 @@ class SkyEastStore(BaseSQLiteStore):
             "new_items":      [(style, color, po), ...],
             "updated_items":  [(style, color, po, old_sizes, new_sizes), ...],
             "duplicate_items": [(style, color, po), ...],
+            "pending_return_label": [
+                {"pc_no", "style", "color_name", "zalando_po",
+                 "old_return_label", "new_return_label", "changed", "item"}, ...
+            ],
           }
         """
         result: dict = {
@@ -185,6 +195,7 @@ class SkyEastStore(BaseSQLiteStore):
             "new_items": [],
             "updated_items": [],
             "duplicate_items": [],
+            "pending_return_label": [],
         }
 
         with self._conn() as conn:
@@ -232,8 +243,11 @@ class SkyEastStore(BaseSQLiteStore):
                     new_fob  = item.fob_usd or 0.0
                     qty_same = old_qty == new_qty
                     fob_same = abs(old_fob - new_fob) < 0.001
+                    old_label = existing.get("return_label") or "NA"
+                    new_label = item.return_label or "NA"
+                    label_same = old_label == new_label
 
-                    if sizes_same and qty_same and fob_same:
+                    if sizes_same and qty_same and fob_same and label_same:
                         result["duplicate_items"].append(
                             (item.style, item.color_name, item.zalando_po)
                         )
@@ -246,6 +260,20 @@ class SkyEastStore(BaseSQLiteStore):
                         changed["total_qty"] = (old_qty, new_qty)
                     if not fob_same:
                         changed["fob_usd"] = (round(old_fob, 4), round(new_fob, 4))
+
+                    if not label_same:
+                        # Held back -- NOT written in this pass. The caller
+                        # (UI) shows old_return_label/new_return_label for
+                        # review and calls apply_pending_item() once the
+                        # user explicitly confirms replacing this record.
+                        changed["return_label"] = (old_label, new_label)
+                        result["pending_return_label"].append({
+                            "pc_no": item.pc_no, "style": item.style,
+                            "color_name": item.color_name, "zalando_po": item.zalando_po,
+                            "old_return_label": old_label, "new_return_label": new_label,
+                            "changed": changed, "item": item,
+                        })
+                        continue
 
                     self._archive_item(conn, existing)
                     self._update_item(conn, item, revision_reason="updated")
@@ -264,6 +292,30 @@ class SkyEastStore(BaseSQLiteStore):
                     ).fetchone())
 
         return result
+
+    def apply_pending_item(self, item: SkyEastItem) -> str:
+        """Apply a user-confirmed replacement for an item that was held back
+        by ``save_contract_checked`` for a Return Label conflict.
+
+        Re-reads the current DB row at apply time (rather than trusting the
+        snapshot the review table was built from) — archives it if present,
+        then writes *item* in full (sizes/qty/FOB/Return Label together, not
+        just the label) exactly as the automatic update path would have.
+
+        Returns "inserted" or "updated" for caller-side reporting.
+        """
+        with self._conn() as conn:
+            existing = conn.execute(
+                "SELECT * FROM sky_east_items "
+                "WHERE pc_no=? AND style=? AND color_name=? AND zalando_po=?",
+                (item.pc_no, item.style, item.color_name, item.zalando_po),
+            ).fetchone()
+            if existing is None:
+                self._insert_item(conn, item, revision_reason=None)
+                return "inserted"
+            self._archive_item(conn, dict(existing))
+            self._update_item(conn, item, revision_reason="updated (return label confirmed)")
+            return "updated"
 
     def save_many_contracts_checked(self, contracts: list) -> list:
         """
@@ -285,12 +337,14 @@ class SkyEastStore(BaseSQLiteStore):
                 "new_items": [],
                 "updated_items": [],
                 "duplicate_items": [],
+                "pending_return_label": [],
             }
             for contract in group:
                 r = self.save_contract_checked(contract)
                 merged_result["new_items"].extend(r["new_items"])
                 merged_result["updated_items"].extend(r["updated_items"])
                 merged_result["duplicate_items"].extend(r["duplicate_items"])
+                merged_result["pending_return_label"].extend(r["pending_return_label"])
             results.append(merged_result)
 
         return results

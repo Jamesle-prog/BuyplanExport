@@ -31,6 +31,7 @@ class SK:
     SE_PROGRESS_LKUP = "se_progress_lookup"
     SE_MASKED_ZIP    = "se_masked_zip"
     SE_IMAGES_DIR    = "se_images_dir"
+    SE_RL_PENDING    = "se_return_label_pending"   # Return Label conflicts awaiting confirmation
 
     # ── Sky East — item download ───────────────────────────────────────────────
     SE_DL_BYTES      = "se_dl_bytes"
