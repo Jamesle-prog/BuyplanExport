@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.76.7",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "feat", "text": "**Return Label now also shows in the Sky East buy plan's Index sheet** — the other summary tab in the Excel workbook, alongside the Overview sheet fixed earlier. Since Index has one row per style-sheet (which can span several colours/POs), it shows that sheet's first item's Return Label as the representative value, same convention already used there for Brand and Ex-Fty; the per-style and Overview sheets remain the exact per-item source of truth."},
+        ],
+    },
+    {
         "version": "2.76.6",
         "date": "2026-07-16",
         "entries": [

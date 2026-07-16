@@ -1386,6 +1386,12 @@ def export_sky_east_buyplan(
                 "display_key": _idx_dk,
                 "ex_fty_date": str(first.get("ex_fty_date", "") or ""),
                 "pc_no":       str(first.get("pc_no",       "") or ""),
+                # Representative value for this sheet -- same "first" convention
+                # already used for brand/ex_fty_date/etc above. A sheet can carry
+                # multiple colours/POs whose Return Label could differ; the
+                # per-style and Overview sheets remain the source of truth for
+                # the exact per-item value.
+                "return_label": str(first.get("return_label", "") or "").strip() or "NA",
             })
 
     # ── Remove master template sheet ─────────────────────────────────────

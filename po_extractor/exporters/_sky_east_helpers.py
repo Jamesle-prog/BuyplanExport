@@ -737,6 +737,9 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                                "hhn_no":      str,   # HHN fabric code
                                "ex_fty_date": str,
                                "pc_no":       str,   # 客人PC NO — optional
+                               "return_label": str,  # "Yes"/"No"/"NA" — optional,
+                                                      # representative (first) value
+                                                      # for this sheet's colours/POs
                            }
 
                        When supplied this is used directly (one Index row per
@@ -757,7 +760,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
     # (i.e. the body-part identity is encoded in the header itself).
     _base_headers = [
         "No.", "款号", "客人PC NO", "客户品牌", "面料_大身_编号",
-        "订单数合计", "离厂时间", "生产工厂", "工厂交期",
+        "订单数合计", "离厂时间", "Return Label", "生产工厂", "工厂交期",
         "面料（计划）到厂时间", "辅料（计划）到厂时间", "样衣（计划）确认时间",
         "大货版（计划）完成时间", "全码版（计划）完成时间",
         "裁剪计划（计划）完成时间", "裁剪（计划）完成时间",
@@ -789,6 +792,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
     _C_FABNO = 5 + _off
     _C_QTY   = 6 + _off
     _C_EXFTY = 7 + _off
+    _C_RETLBL = 8 + _off
 
     from openpyxl.utils import get_column_letter as _gcl
     _IMG_PX  = 160  # thumbnail size in pixels (larger = sharper rendering)
@@ -808,6 +812,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                 meta.get("display_key") or meta.get("hhn_no", ""),
                 meta.get("ex_fty_date", ""),
                 meta.get("pc_no",       ""),
+                meta.get("return_label", "NA"),
             )
             for meta in sheet_meta_list
         ]
@@ -821,6 +826,8 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
         )
         if "pc_no" in df_items.columns:
             _agg_kwargs["pc_no"] = ("pc_no", "first")
+        if "return_label" in df_items.columns:
+            _agg_kwargs["return_label"] = ("return_label", "first")
         agg = (
             df_items.groupby("style", sort=False)
             .agg(**_agg_kwargs)
@@ -835,11 +842,12 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                 str(row.fabric_item_no or ""),
                 str(row.ex_fty_date    or ""),
                 str(getattr(row, "pc_no", "") or ""),
+                str(getattr(row, "return_label", "") or "").strip() or "NA",
             )
             for row in agg.itertuples(index=False)
         ]
 
-    for ri, (style_name, sheet_name, brand, body_part, fab_key, ex_fty_date, pc_no) in \
+    for ri, (style_name, sheet_name, brand, body_part, fab_key, ex_fty_date, pc_no, return_label) in \
             enumerate(rows_iter, start=2):
 
         idx_ws.cell(ri, _C_NO).value = ri - 1
@@ -870,13 +878,14 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
         if sheet_name in wb.sheetnames:
             idx_ws.cell(ri, _C_QTY).value = f"='{sheet_name}'!{total_anchor}"
         idx_ws.cell(ri, _C_EXFTY).value = ex_fty_date
+        idx_ws.cell(ri, _C_RETLBL).value = return_label
 
     # ── Align data cells ─────────────────────────────────────────────────────
-    # No. and Qty: centre; hyperlinked style: left; all others: left.
+    # No., Qty, Return Label: centre; hyperlinked style: left; all others: left.
     for rn in range(2, idx_ws.max_row + 1):
         for cn in range(1, len(headers) + 1):
             c = idx_ws.cell(rn, cn)
-            if cn == _C_NO or cn == _C_QTY:
+            if cn == _C_NO or cn == _C_QTY or cn == _C_RETLBL:
                 c.alignment = Alignment(horizontal="center", vertical="center")
             else:
                 c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
@@ -892,6 +901,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
         _C_FABNO: 44,   # 面料_大身_编号  综合标识Key e.g. "HHN-JA-01715|100%POLYESTER|280|150"
         _C_QTY:   12,   # 订单数合计
         _C_EXFTY: 14,   # 离厂时间
+        _C_RETLBL: 14,  # Return Label
     }
     if has_images and _C_IMG:
         _idx_fixed_widths[_C_IMG] = 26   # 图片 thumbnail — 160 px image ≈ 26 col units
