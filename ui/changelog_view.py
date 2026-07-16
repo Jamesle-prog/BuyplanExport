@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.76.1",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "feat", "text": "**Installer now provisions 4 standard, role-scoped accounts.** `setup_users.py` (run by `installer/Install.ps1` on a fresh machine) previously created up to 3 arbitrary accounts with only the very first one auto-promoted to admin. It now walks through exactly 4 fixed slots — **admin** (full access), **skyeast** (Sky East tab only), **giii** (GIII tab only), and **fabric** (Fabric DB tab only) — each with a suggested default username you can override, and a password you can leave blank to skip that account. Re-running the script resets a password without touching that account's role/module scope. The existing update mechanism (`installer/Update.ps1`) already excludes `auth/users.json` from every update, so these accounts persist across updates unchanged."},
+        ],
+    },
+    {
         "version": "2.76.0",
         "date": "2026-07-16",
         "entries": [

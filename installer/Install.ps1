@@ -121,11 +121,13 @@ if ($LASTEXITCODE -ne 0) {
 Write-Ok "License registered."
 
 # ---------------------------------------------------------------------------
-# 5. Create the first login account(s) (interactive)
+# 5. Create the 4 standard login accounts (interactive)
 # ---------------------------------------------------------------------------
-Write-Step "Create your login account(s) now"
-Write-Host "    (The first account you create here becomes an admin automatically.)" -ForegroundColor DarkGray
-Write-Host "    (You can add or reset accounts later by re-running setup_users.py)" -ForegroundColor DarkGray
+Write-Step "Create your login accounts now"
+Write-Host "    (4 accounts: admin (full access), skyeast, giii, fabric -- each" -ForegroundColor DarkGray
+Write-Host "     scoped to just its own tab except admin. Press Enter to accept the" -ForegroundColor DarkGray
+Write-Host "     default username, or leave a password blank to skip that account.)" -ForegroundColor DarkGray
+Write-Host "    (Re-run setup_users.py any time to reset a password later.)" -ForegroundColor DarkGray
 & $venvPython setup_users.py
 Pop-Location
 

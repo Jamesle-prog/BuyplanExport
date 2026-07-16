@@ -8,7 +8,7 @@
 ## Installation
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.lock
 ```
 
 ## First-time setup: create user accounts
@@ -19,10 +19,13 @@ Run the setup script once before starting the app:
 python setup_users.py
 ```
 
-Follow the prompts to create up to 3 user accounts (username + password).  
+Follow the prompts to create the 4 standard accounts: an unrestricted
+**admin**, plus **skyeast**, **giii**, and **fabric** — each scoped to just
+its own tab. Press Enter to accept the suggested username, or leave a
+password blank to skip an account you don't need.  
 Accounts are stored in `auth/users.json` with bcrypt-hashed passwords.
 
-You can re-run `setup_users.py` at any time to add or reset a user.
+You can re-run `setup_users.py` at any time to reset a password.
 
 ## Running the app
 
