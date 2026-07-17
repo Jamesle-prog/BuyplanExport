@@ -32,6 +32,10 @@ def _fabric_db_version_history(store) -> None:
             st.info(t("No uploads recorded yet."))
             return
 
+        latest_id = versions[0]["version_id"]
+        from po_extractor.store._fabric_version_schema import _SNAPSHOT_KEEP_VERSIONS
+        _restorable_min = latest_id - _SNAPSHOT_KEEP_VERSIONS + 1
+
         for v in versions:
             summary = store.get_diff_summary(v["version_id"])
             badge = (f"+{summary['added']} / -{summary['removed']} / "
@@ -40,12 +44,53 @@ def _fabric_db_version_history(store) -> None:
             label = (f"v{v['version_id']} · {when} · {t('by')} {v['uploaded_by']} "
                      f"· {v['source_file'] or '—'} · {badge}")
             with st.expander(label, expanded=False):
+                _review_note = ""
+                if v.get("approved_by"):
+                    _review_note = f" · {t('approved by')} {v['approved_by']}"
+                    if v.get("review_comment"):
+                        _review_note += f" ({v['review_comment']})"
                 st.caption(
                     f"{t('Rows')}: {v['row_count']:,} · "
                     f"{t('inserted')} {v['inserted']} / "
                     f"{t('updated')} {v['updated']} / "
                     f"{t('skipped')} {v['skipped']}"
+                    + _review_note
                 )
+                # Rollback: stage this version's snapshot as a full-replacement
+                # proposal through the same review gate as any upload.
+                if v["version_id"] != latest_id and v["version_id"] >= _restorable_min:
+                    if st.button(
+                        f"↩ {t('Restore this version (submits for review)')}",
+                        key=f"fabric_db_restore_{v['version_id']}",
+                    ):
+                        from ui.session_keys import SK
+                        from ui.fabric_db.import_section import _current_user
+                        try:
+                            r = store.propose_restore(v["version_id"],
+                                                      proposed_by=_current_user())
+                        except ValueError as exc:
+                            st.error(str(exc))
+                        else:
+                            if r.get("blocked_by_pending"):
+                                st.error(t(
+                                    "Another proposal is already awaiting review — "
+                                    "resolve it first."
+                                ))
+                            elif r.get("unchanged"):
+                                st.info(t(
+                                    "This version matches the current data — "
+                                    "nothing to restore."
+                                ))
+                            else:
+                                st.session_state[SK.FABRIC_DB_FLASH] = {
+                                    "kind": "info",
+                                    "text": (
+                                        f"📋 Restore of v{v['version_id']} submitted "
+                                        f"for review — an admin must approve before "
+                                        f"it takes effect."
+                                    ),
+                                }
+                                st.rerun()
                 diff_rows = store.get_version_diff(v["version_id"])
                 if not diff_rows:
                     st.caption(t(

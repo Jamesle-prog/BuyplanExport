@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.79.0",
+        "date": "2026-07-16",
+        "entries": [
+            {"type": "feat", "text": "**Fabric list uploads now go through peer review.** An upload no longer changes the fabric database directly — it is parsed, quality-checked (composition sums, unknown fibers, out-of-range weights/widths), diffed against the current version, and held as a **pending proposal**. A review panel at the top of the Fabric DB tab shows who proposed it, the full field-level diff, and any data-quality warnings; an **admin** approves (applying it and minting the new version, with the approver + comment recorded in Version History) or rejects with a mandatory reason. Two-person rule: approving your own upload requires a justification comment. Bulk changes (>10 removals or >20% of the table) are flagged high-risk and need an explicit acknowledgment. Buy plans keep using the current approved version until a proposal is approved. Single-record deletes stay immediate (they're already fully versioned)."},
+            {"type": "feat", "text": "**Restore a previous fabric-list version** — each version in Version History (within the browsable window) gains a \"Restore this version\" button. The rollback goes through the same review gate as any upload: staged as a full-replacement proposal, applied only on admin approval."},
+        ],
+    },
+    {
         "version": "2.78.1",
         "date": "2026-07-16",
         "entries": [

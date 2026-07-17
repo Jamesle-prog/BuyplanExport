@@ -1,8 +1,10 @@
 """Regression test for ui/fabric_db/import_section.py (Fix 5).
 
-The temp file written for the uploaded .xlsx must be removed even when
-store.import_from_xlsx() raises — previously os.unlink() sat after the call
-with no try/finally, so a raising import leaked the temp file forever.
+The temp file written for the uploaded .xlsx must be removed even when the
+store call raises — previously os.unlink() sat after the call with no
+try/finally, so a raising import leaked the temp file forever. (The UI now
+stages uploads for review via store.propose_import rather than importing
+directly; the temp-file guarantee is the same.)
 """
 from __future__ import annotations
 
@@ -23,13 +25,18 @@ class _FakeUpload:
 
 
 class _RaisingStore:
-    def import_from_xlsx(self, path, source_file_name=None):
-        raise RuntimeError("boom — simulated import failure")
+    def propose_import(self, path, source_file_name=None,
+                       proposed_by=None, clear_first=False):
+        raise RuntimeError("boom — simulated parse failure")
 
 
 class _OkStore:
-    def import_from_xlsx(self, path, source_file_name=None):
-        return {"inserted": 1, "updated": 0, "skipped": 0, "total": 1}
+    def propose_import(self, path, source_file_name=None,
+                       proposed_by=None, clear_first=False):
+        return {"pending_id": 1, "row_count": 1, "skipped": 0,
+                "diff_added": 1, "diff_removed": 0, "diff_changed": 0,
+                "warnings": [], "high_risk": False,
+                "unmatched_headers": [], "col_map": {}}
 
 
 def _track_created_paths(monkeypatch):
@@ -45,22 +52,22 @@ def _track_created_paths(monkeypatch):
     return created
 
 
-def test_temp_file_removed_when_import_raises(monkeypatch):
+def test_temp_file_removed_when_propose_raises(monkeypatch):
     created = _track_created_paths(monkeypatch)
 
-    # _fabric_db_do_import catches everything internally (calls st.error) —
+    # _fabric_db_do_propose catches everything internally (calls st.error) —
     # it must not raise, and the temp file must still be gone afterwards.
-    isec._fabric_db_do_import(_RaisingStore(), _FakeUpload())
+    isec._fabric_db_do_propose(_RaisingStore(), _FakeUpload())
 
     assert len(created) == 1
     assert not os.path.exists(created[0]), f"leaked temp file: {created[0]}"
 
 
-def test_temp_file_removed_on_successful_import(monkeypatch):
+def test_temp_file_removed_on_successful_propose(monkeypatch):
     created = _track_created_paths(monkeypatch)
     monkeypatch.setattr(isec.st, "rerun", lambda: None)  # avoid bare-mode no-op surprises
 
-    isec._fabric_db_do_import(_OkStore(), _FakeUpload())
+    isec._fabric_db_do_propose(_OkStore(), _FakeUpload())
 
     assert len(created) == 1
     assert not os.path.exists(created[0]), f"leaked temp file: {created[0]}"

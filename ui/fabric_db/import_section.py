@@ -9,8 +9,13 @@ import time
 import pandas as pd
 import streamlit as st
 
+from auth.users import is_admin
 from ui.fabric_db._shared import FABRIC_DB_LIST_RENAME
 from ui.session_keys import SK
+
+
+def _current_user() -> str:
+    return str(st.session_state.get(SK.USERNAME) or "system").strip() or "system"
 
 
 def _col_letter(n: int) -> str:
@@ -52,60 +57,212 @@ def _fabric_db_show_flash() -> None:
                 )
 
 
-def _fabric_db_do_import(store, uploaded, clear_first: bool = False) -> None:
-    """Write *uploaded* to a temp file, call import_from_xlsx, show result.
+def _fabric_db_do_propose(store, uploaded, clear_first: bool = False) -> None:
+    """Write *uploaded* to a temp file and SUBMIT it for review.
 
-    *clear_first*=True is the "Delete All & Reimport" flow -- the wipe and
-    the import run in ONE store transaction, so a bad file rolls the wipe
-    back too (previously delete_all() committed first and a failed import
-    left the table empty).
+    Nothing touches the live fabric table here -- the file is parsed,
+    quality-checked, diffed against the latest version, and staged as a
+    pending proposal that a reviewer must approve (see
+    _fabric_db_pending_review_section).
     """
-    with st.spinner("Importing fabric data…"):
+    with st.spinner("Checking fabric data…"):
         try:
             t0 = time.time()
             with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
                 tmp.write(uploaded.getbuffer())
                 tmp_path = tmp.name
             try:
-                result = store.import_from_xlsx(tmp_path, source_file_name=uploaded.name,
-                                                clear_first=clear_first)
+                result = store.propose_import(
+                    tmp_path, source_file_name=uploaded.name,
+                    proposed_by=_current_user(), clear_first=clear_first,
+                )
             finally:
                 os.unlink(tmp_path)
             m, s = divmod(int(time.time() - t0), 60)
-            cleared_note = (
-                f"{result.get('cleared', 0):,} existing record(s) replaced. "
-                if clear_first else ""
-            )
+
+            if result.get("blocked_by_pending"):
+                st.error(
+                    f"Another proposal by **{result['pending_proposed_by']}** is "
+                    f"already awaiting review — approve, reject, or cancel it "
+                    f"first (see the Pending Review panel above)."
+                )
+                return
             if result.get("unchanged"):
-                text = (
-                    f"ℹ️ Import complete in {m}:{s:02d} — the file matches the "
-                    f"latest fabric list exactly (v{result['version_id']}), so no "
-                    f"new version was created. {result['total']} fabrics checked."
-                )
-                kind = "info"
-            else:
-                text = (
-                    f"✅ Import complete in {m}:{s:02d} — {cleared_note}"
-                    f"**{result['inserted']}** new, "
-                    f"**{result['updated']}** updated, "
-                    f"**{result['skipped']}** skipped "
-                    f"(total: {result['total']} fabrics, now v{result['version_id']})"
-                )
-                kind = "success"
+                st.session_state[SK.FABRIC_DB_FLASH] = {
+                    "kind": "info",
+                    "text": (
+                        f"ℹ️ Checked in {m}:{s:02d} — the file matches the latest "
+                        f"fabric list exactly (v{result['version_id']}); there is "
+                        f"nothing to review."
+                    ),
+                }
+                st.rerun()
+                return
+
+            n_warn = len(result.get("warnings") or [])
+            risk_note = " ⚠️ **Bulk change — flagged high-risk.**" if result.get("high_risk") else ""
             st.session_state[SK.FABRIC_DB_FLASH] = {
-                "kind": kind, "text": text,
+                "kind": "info",
+                "text": (
+                    f"📋 Submitted for review in {m}:{s:02d} — "
+                    f"**+{result['diff_added']}** new / "
+                    f"**-{result['diff_removed']}** removed / "
+                    f"**~{result['diff_changed']}** changed across "
+                    f"{result['row_count']} row(s)"
+                    + (f", {n_warn} data-quality warning(s)" if n_warn else "")
+                    + f".{risk_note} An admin must approve before this takes effect."
+                ),
                 "col_map": result.get("col_map", {}),
                 "unmatched": result.get("unmatched_headers", []),
             }
             st.rerun()
         except Exception as exc:
-            st.error(f"Import failed: {exc}")
+            st.error(f"Upload check failed: {exc}")
+
+
+def _fabric_db_pending_review_section(store) -> None:
+    """Review panel for the pending fabric-list proposal (if any): metadata,
+    data-quality warnings, the full prospective diff, and — for admins —
+    Approve / Reject controls (two-person rule: the proposer needs a
+    justification comment to self-approve; high-risk bulk changes need an
+    explicit acknowledgment). The proposer (or an admin) can withdraw."""
+    pending = store.get_pending()
+    if not pending:
+        return
+
+    user = _current_user()
+    admin = is_admin(user)
+    mode = "Full replacement (Delete All & Reimport)" if pending["clear_first"] else "Update / Add"
+    when = str(pending["created_at"])[:19].replace("T", " ")
+
+    st.warning(
+        f"📋 **Fabric list change awaiting review** — proposed by "
+        f"**{pending['proposed_by']}** at {when} · `{pending['source_file'] or '—'}` "
+        f"· {mode}"
+    )
+    with st.expander("Review pending fabric list change", expanded=True):
+        st.markdown(
+            f"**+{pending['diff_added']}** new / "
+            f"**-{pending['diff_removed']}** removed / "
+            f"**~{pending['diff_changed']}** changed "
+            f"· {pending['row_count']} row(s) in file"
+            + (f" · {pending['skipped']} skipped (no 公司面料编号)" if pending["skipped"] else "")
+        )
+
+        warnings = pending.get("warnings") or []
+        if warnings:
+            with st.expander(f"⚠️ {len(warnings)} data-quality warning(s)", expanded=False):
+                for w in warnings:
+                    st.markdown(f"- {w}")
+
+        diff_rows = store.get_pending_diff(pending["id"])
+        if diff_rows:
+            df = pd.DataFrame([{
+                "Quality No.": d["quality_no"],
+                "Change":      d["change_type"],
+                "Field":       d["field"] or "",
+                "Old":         d["old_value"] or "",
+                "New":         d["new_value"] or "",
+            } for d in diff_rows])
+            st.dataframe(df, width="stretch", hide_index=True, height=300)
+        else:
+            st.info(
+                "No differences against the current data any more (the table "
+                "may have changed since this was proposed) — approving will "
+                "not create a new version."
+            )
+
+        if pending["high_risk"]:
+            st.error(
+                "⚠️ **High-risk bulk change** — this proposal removes more than "
+                "10 records or touches over 20% of the table."
+            )
+
+        if admin:
+            comment = st.text_input(
+                "Review comment"
+                + (" (required to reject; required to approve your own proposal)"),
+                key="fabric_db_review_comment",
+            )
+            ack_ok = True
+            if pending["high_risk"]:
+                ack_ok = st.checkbox(
+                    "I understand this is a bulk change and have checked the diff above",
+                    key="fabric_db_review_risk_ack",
+                )
+            col_a, col_r, col_c = st.columns(3)
+            if col_a.button("✅ Approve & apply", type="primary",
+                            use_container_width=True, disabled=not ack_ok,
+                            key="fabric_db_review_approve"):
+                try:
+                    outcome = store.approve_pending(pending["id"], reviewed_by=user,
+                                                    comment=comment)
+                    st.session_state[SK.FABRIC_DB_FLASH] = {
+                        "kind": "success",
+                        "text": (
+                            f"✅ Approved by {user} — "
+                            + (f"no data change (still v{outcome['version_id']})."
+                               if outcome["unchanged"] else
+                               f"**{outcome['inserted']}** new, "
+                               f"**{outcome['updated']}** updated — now "
+                               f"v{outcome['version_id']}.")
+                        ),
+                    }
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+            if col_r.button("❌ Reject", use_container_width=True,
+                            key="fabric_db_review_reject"):
+                try:
+                    store.reject_pending(pending["id"], reviewed_by=user,
+                                         comment=comment)
+                    st.session_state[SK.FABRIC_DB_FLASH] = {
+                        "kind": "info",
+                        "text": f"❌ Proposal rejected by {user}: {comment.strip()}",
+                    }
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+            if (user == pending["proposed_by"] or admin) and \
+                    col_c.button("↩ Withdraw proposal", use_container_width=True,
+                                 key="fabric_db_review_cancel"):
+                store.cancel_pending(pending["id"], by=user)
+                st.session_state[SK.FABRIC_DB_FLASH] = {
+                    "kind": "info", "text": "↩ Proposal withdrawn.",
+                }
+                st.rerun()
+        else:
+            st.info("Waiting for an admin to review this change.")
+            if user == pending["proposed_by"]:
+                if st.button("↩ Withdraw my proposal", key="fabric_db_review_cancel_own"):
+                    store.cancel_pending(pending["id"], by=user)
+                    st.session_state[SK.FABRIC_DB_FLASH] = {
+                        "kind": "info", "text": "↩ Proposal withdrawn.",
+                    }
+                    st.rerun()
 
 
 def _fabric_db_upload_section(store, count: int) -> None:
-    """Single expander with radio-button toggle: Update/Add  vs  Clear All & Reimport."""
+    """Single expander with radio-button toggle: Update/Add  vs  Clear All & Reimport.
+
+    Uploads are STAGED for peer review, never applied directly -- and a new
+    upload is blocked while another proposal is still awaiting review."""
     with st.expander("📂 Import Fabric Table (面料统计表.xlsx)",
                      expanded=(count == 0)):
+
+        if store.get_pending():
+            st.info(
+                "A fabric list change is already awaiting review — approve, "
+                "reject, or withdraw it (panel above) before submitting "
+                "another upload."
+            )
+            return
+
+        st.caption(
+            "🔒 Uploads are submitted for review — an admin must approve the "
+            "change before it takes effect. Buy plans keep using the current "
+            "approved version until then."
+        )
 
         mode = st.radio(
             "Import mode",
@@ -126,15 +283,15 @@ def _fabric_db_upload_section(store, count: int) -> None:
                 key="fabric_db_uploader",
                 label_visibility="collapsed",
             )
-            if uploaded and st.button("▶  Import Fabric Data", type="primary",
+            if uploaded and st.button("📋  Submit for Review", type="primary",
                                        key="fabric_db_import"):
-                _fabric_db_do_import(store, uploaded)
+                _fabric_db_do_propose(store, uploaded)
 
         else:  # Clear All & Reimport
             st.warning(
-                "**Every existing record will be deleted** before importing the new file. "
-                "Use this when the column layout has changed or you need a clean slate. "
-                "This action cannot be undone."
+                "**Every existing record will be replaced** by the new file "
+                "once the proposal is approved. Use this when the column "
+                "layout has changed or you need a clean slate."
             )
             reimport_file = st.file_uploader(
                 "面料统计表.xlsx (full replacement)",
@@ -143,16 +300,13 @@ def _fabric_db_upload_section(store, count: int) -> None:
                 label_visibility="collapsed",
             )
             confirmed = st.checkbox(
-                "I understand all existing fabric records will be permanently deleted",
+                "I understand approval of this proposal will replace ALL existing fabric records",
                 key="fabric_db_clear_confirm",
             )
             if reimport_file and confirmed:
-                if st.button("🗑  Delete All & Reimport", type="primary",
+                if st.button("📋  Submit Full Replacement for Review", type="primary",
                              key="fabric_db_clear_reimport"):
-                    # Wipe + import happen in ONE store transaction (clear_first)
-                    # -- a bad file rolls the wipe back instead of leaving an
-                    # emptied table behind.
-                    _fabric_db_do_import(store, reimport_file, clear_first=True)
+                    _fabric_db_do_propose(store, reimport_file, clear_first=True)
             elif reimport_file and not confirmed:
                 st.caption("☝️ Tick the checkbox above to enable the button.")
 
