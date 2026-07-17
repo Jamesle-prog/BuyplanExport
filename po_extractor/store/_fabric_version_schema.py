@@ -12,14 +12,16 @@ from __future__ import annotations
 
 _VERSION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS fabric_versions (
-    version_id   INTEGER PRIMARY KEY,
-    created_at   TEXT NOT NULL,
-    uploaded_by  TEXT NOT NULL DEFAULT 'system',
-    source_file  TEXT,
-    row_count    INTEGER NOT NULL DEFAULT 0,
-    inserted     INTEGER NOT NULL DEFAULT 0,
-    updated      INTEGER NOT NULL DEFAULT 0,
-    skipped      INTEGER NOT NULL DEFAULT 0
+    version_id     INTEGER PRIMARY KEY,
+    created_at     TEXT NOT NULL,
+    uploaded_by    TEXT NOT NULL DEFAULT 'system',
+    source_file    TEXT,
+    row_count      INTEGER NOT NULL DEFAULT 0,
+    inserted       INTEGER NOT NULL DEFAULT 0,
+    updated        INTEGER NOT NULL DEFAULT 0,
+    skipped        INTEGER NOT NULL DEFAULT 0,
+    approved_by    TEXT,      -- reviewer who approved the pending upload (NULL for direct/manual-delete versions)
+    review_comment TEXT
 );
 
 CREATE TABLE IF NOT EXISTS fabric_master_snapshot (
@@ -72,7 +74,76 @@ CREATE TABLE IF NOT EXISTS fabric_version_diff (
     diffed_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_fvd_version ON fabric_version_diff(version_id, quality_no);
+
+-- Peer-review staging for fabric-list uploads: a proposed upload's parsed
+-- rows sit here (NOT in fabric_master) until a reviewer approves. One
+-- pending proposal at a time (enforced in the store, not the schema).
+CREATE TABLE IF NOT EXISTS fabric_pending_import (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at     TEXT NOT NULL,
+    proposed_by    TEXT NOT NULL DEFAULT 'system',
+    source_file    TEXT,
+    clear_first    INTEGER NOT NULL DEFAULT 0,   -- 1 = full replacement (Delete All & Reimport / restore)
+    status         TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected | cancelled
+    row_count      INTEGER NOT NULL DEFAULT 0,
+    skipped        INTEGER NOT NULL DEFAULT 0,   -- source rows dropped for missing quality_no
+    diff_added     INTEGER NOT NULL DEFAULT 0,   -- prospective diff counts at proposal time
+    diff_removed   INTEGER NOT NULL DEFAULT 0,
+    diff_changed   INTEGER NOT NULL DEFAULT 0,
+    warnings_json  TEXT NOT NULL DEFAULT '[]',   -- data-quality warnings (composition/range checks)
+    high_risk      INTEGER NOT NULL DEFAULT 0,   -- bulk change: needs explicit acknowledgment
+    fields_json    TEXT NOT NULL DEFAULT '[]',   -- which fabric fields the source file mapped
+    col_map_json   TEXT NOT NULL DEFAULT '{}',   -- detected header layout, for the review panel
+    reviewed_by    TEXT,
+    reviewed_at    TEXT,
+    review_comment TEXT,
+    version_id     INTEGER                       -- the version minted on approval
+);
+
+CREATE TABLE IF NOT EXISTS fabric_pending_rows (
+    pending_id        INTEGER NOT NULL,
+    quality_no        TEXT NOT NULL,
+    erp_code          TEXT,
+    supplier_no       TEXT,
+    supplier          TEXT,
+    composition_en    TEXT,
+    composition_cn    TEXT,
+    yarn_count        TEXT,
+    structure_en      TEXT,
+    structure_cn      TEXT,
+    weight_gsm        REAL,
+    full_width_cm     REAL,
+    cuttable_width_cm REAL,
+    full_width_in     REAL,
+    cuttable_width_in REAL,
+    dyeing_process    TEXT,
+    moq_y             REAL,
+    moq_setup_fee     REAL,
+    mcq_y             REAL,
+    mcq_small_fee     REAL,
+    is_in_stock       TEXT,
+    spot_price_kg     REAL,
+    spot_price_m      REAL,
+    cost_per_kg       REAL,
+    cost_per_m        REAL,
+    quote_date        TEXT,
+    shrinkage_rate    REAL,
+    short_rate        REAL,
+    notes_cn          TEXT,
+    notes_en          TEXT,
+    quote_history     TEXT,
+    display_key       TEXT,
+    imported_at       TEXT,
+    source_file       TEXT,
+    PRIMARY KEY (pending_id, quality_no)
+);
 """
+
+# High-risk thresholds for a proposed upload: flag for explicit reviewer
+# acknowledgment when the prospective diff removes more than this many rows,
+# or touches (adds+removes+changes) more than this fraction of the table.
+_HIGH_RISK_REMOVED_ROWS = 10
+_HIGH_RISK_TOUCHED_PCT  = 0.20
 
 # fabric_master columns snapshotted verbatim -- matches fabric_master_snapshot's
 # column order above (quality_no first, matching _fabric_master_schema._SCHEMA).
