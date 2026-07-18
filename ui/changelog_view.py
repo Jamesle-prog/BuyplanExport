@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.80.0",
+        "date": "2026-07-18",
+        "entries": [
+            {"type": "feat", "text": "**🏭 Tracking tab: Dashboard cards + Overview table — track a PO's progress by style.** The Dashboard now shows one card per tracked PO/style with overall progress (N/22 stages), a per-group breakdown (A/B/C/D), status badges (🔴 Delayed / ⏳ Blocked / 🔔 QC due / ✅ On Track), the next stage due, and an Edit shortcut. The Overview tab shows the same records as a sortable table (progress %, current stage, status, last updated) for a flat at-a-glance view. Both share Company/Factory/\"Only at-risk\" filters."},
+            {"type": "feat", "text": "**Sky East buy plan: Index sheet's schedule columns are now filled in.** 生产工厂, 工厂交期, and the planned dates for fabric/trim arrival, sample confirmation, pattern completion, cutting, and sewing were template headers that stayed blank forever — they're now populated (best-effort) from the matching 🏭 Tracking record for that PO + style, when one exists. Untracked styles simply show blank, same as before. 裁剪数/出货数 (quantities) and 裁剪计划完成时间 have no matching Tracking field and remain manual-entry."},
+        ],
+    },
+    {
         "version": "2.79.0",
         "date": "2026-07-16",
         "entries": [

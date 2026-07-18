@@ -133,6 +133,67 @@ def _brand_keyed_get(
     return lookup.get((company, brand, norm_en)) or default
 
 
+# Index-sheet milestone field -> production_tracking source column.
+#   kind "base"  -> record[source] verbatim (e.g. factory name)
+#   kind "stage" -> record[f"{source}_planned"] (every Index milestone header
+#                   is itself labelled "（计划）" = "(planned)", so the PLANNED
+#                   date is what these columns are asking for, not "actual")
+#
+# These are best-judgment garment-flow mappings, not exact name matches --
+# production_tracking's 22 stages don't have a 1:1 counterpart for every
+# Index column. Two columns have NO home at all and stay manual-entry:
+# 裁剪数/出货数 (cut/shipped quantities -- no quantity field exists per stage),
+# and 裁剪计划（计划）完成时间 (cut-plan/marker completion -- distinct from the
+# "cutting" stage itself, no separate tracking stage for it today).
+# Single place to fix if a mapping turns out wrong in practice.
+_INDEX_MILESTONE_MAP: dict[str, tuple[str, str]] = {
+    "factory":            ("factory",           "base"),
+    "factory_delivery":   ("shipping",           "stage"),  # 工厂交期 = when factory ships/delivers
+    "fabric_arrival":     ("fabric_purchase",    "stage"),  # 面料到厂 = fabric procurement stage
+    "trim_arrival":       ("trim_purchase",      "stage"),  # 辅料到厂 = trim procurement stage
+    "sample_confirm":     ("pp_sample",          "stage"),  # 样衣确认 = PP Sample, the standard
+                                                              # pre-bulk sample-confirmation milestone
+    "bulk_pattern":       ("base_size_pattern",  "stage"),  # 大货版 = base/bulk pattern
+    "full_pattern":       ("full_sized_pattern", "stage"),  # 全码版 = full size-run pattern
+    "cutting_complete":   ("cutting",            "stage"),  # 裁剪完成 = cutting stage
+    "sewing_complete":    ("sewing",             "stage"),  # 车位完成 = sewing line
+    "finishing_complete": ("packing",            "stage"),  # 后道完成 = post-sewing finishing/packing prep
+}
+
+
+def _enrich_sheet_meta_with_progress(sheet_meta_list: list[dict]) -> None:
+    """Best-effort: fill each *sheet_meta_list* entry's schedule columns
+    (factory, factory_delivery, fabric_arrival, ...) from the 🏭 Tracking
+    tab's production_tracking table, joined on (Zalando PO, style).
+
+    Mutates the dicts in place. A style with no tracking record yet (or any
+    store failure) simply gets blank values for these fields -- same as
+    before this feature existed. Never raises: these columns are
+    informational, not required for the buy plan to be usable.
+    """
+    for meta in sheet_meta_list:
+        for field in _INDEX_MILESTONE_MAP:
+            meta.setdefault(field, "")
+
+    try:
+        from ..store import get_production_tracking_store
+        pt_store = get_production_tracking_store()
+        pairs = [(m.get("po_no", ""), m.get("style", "")) for m in sheet_meta_list]
+        batch = pt_store.get_batch_by_po_styles(pairs)
+    except Exception:
+        return
+
+    for meta in sheet_meta_list:
+        record = batch.get((meta.get("po_no", ""), meta.get("style", "")))
+        if not record:
+            continue
+        for field, (source, kind) in _INDEX_MILESTONE_MAP.items():
+            if kind == "base":
+                meta[field] = str(record.get(source) or "")
+            else:
+                meta[field] = str(record.get(f"{source}_planned") or "")
+
+
 def _progress_brand(brand_by_pc: dict | None, pc_no, sty_norm: str,
                     fallback: str) -> str:
     """品牌 from 大货进度表: try ``(pc_no_norm, style_norm)`` then ``style_norm``
@@ -1397,11 +1458,18 @@ def export_sky_east_buyplan(
                 # per-style and Overview sheets remain the source of truth for
                 # the exact per-item value.
                 "return_label": str(first.get("return_label", "") or "").strip() or "NA",
+                # Join key for the 🏭 Tracking enrichment below -- production_tracking's
+                # po_number is populated from Sky East's zalando_po (see
+                # ProductionTrackingStore.list_untracked_pos's Sky East branch).
+                "po_no":       str(first.get("zalando_po",  "") or ""),
             })
 
     # ── Remove master template sheet ─────────────────────────────────────
     if tpl_ws in tpl_wb.worksheets:
         tpl_wb.remove(tpl_ws)
+
+    # ── 🏭 Tracking enrichment — fill the Index sheet's schedule columns ────
+    _enrich_sheet_meta_with_progress(_sheet_meta_list)
 
     # ── Index sheet (VBA CreateIndexSheet) ───────────────────────────────
     # Carries a discreet single-cell footer noting which fabric-list version

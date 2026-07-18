@@ -742,6 +742,19 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                                "return_label": str,  # "Yes"/"No"/"NA" — optional,
                                                       # representative (first) value
                                                       # for this sheet's colours/POs
+                               # Optional -- best-effort 🏭 Tracking enrichment
+                               # (see sky_east_buyplan_export._enrich_sheet_meta_with_progress).
+                               # Blank/absent when the style isn't tracked yet.
+                               "factory":            str,
+                               "factory_delivery":   str,
+                               "fabric_arrival":      str,
+                               "trim_arrival":        str,
+                               "sample_confirm":      str,
+                               "bulk_pattern":        str,
+                               "full_pattern":        str,
+                               "cutting_complete":    str,
+                               "sewing_complete":     str,
+                               "finishing_complete":  str,
                            }
 
                        When supplied this is used directly (one Index row per
@@ -795,6 +808,22 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
     _C_QTY   = 6 + _off
     _C_EXFTY = 7 + _off
     _C_RETLBL = 8 + _off
+    # Best-effort 🏭 Tracking enrichment columns (see docstring) — populated
+    # only when sheet_meta_list carries the corresponding key; otherwise the
+    # cell is left blank exactly as before this feature existed.
+    _C_FACTORY   = 9 + _off
+    _C_FACTDLV   = 10 + _off
+    _C_FABARR    = 11 + _off
+    _C_TRIMARR   = 12 + _off
+    _C_SAMPCONF  = 13 + _off
+    _C_BULKPAT   = 14 + _off
+    _C_FULLPAT   = 15 + _off
+    # _C_CUTPLAN = 16 + _off  -- 裁剪计划完成时间: no matching stage, stays manual
+    _C_CUTTING   = 17 + _off
+    # _C_CUTQTY  = 18 + _off  -- 裁剪数: no quantity column in production_tracking, stays manual
+    _C_SEWING    = 19 + _off
+    _C_FINISH    = 20 + _off
+    # _C_SHIPQTY = 21 + _off  -- 出货数: no quantity column in production_tracking, stays manual
 
     from openpyxl.utils import get_column_letter as _gcl
     _IMG_PX  = 160  # thumbnail size in pixels (larger = sharper rendering)
@@ -815,6 +844,16 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                 meta.get("ex_fty_date", ""),
                 meta.get("pc_no",       ""),
                 meta.get("return_label", "NA"),
+                meta.get("factory",            ""),
+                meta.get("factory_delivery",   ""),
+                meta.get("fabric_arrival",     ""),
+                meta.get("trim_arrival",       ""),
+                meta.get("sample_confirm",     ""),
+                meta.get("bulk_pattern",       ""),
+                meta.get("full_pattern",       ""),
+                meta.get("cutting_complete",   ""),
+                meta.get("sewing_complete",    ""),
+                meta.get("finishing_complete", ""),
             )
             for meta in sheet_meta_list
         ]
@@ -845,11 +884,18 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                 str(row.ex_fty_date    or ""),
                 str(getattr(row, "pc_no", "") or ""),
                 str(getattr(row, "return_label", "") or "").strip() or "NA",
+                # Legacy aggregation path has no per-sheet 🏭 Tracking lookup
+                # (that enrichment is computed against sheet_meta_list entries
+                # in the exporter) -- these columns stay blank here, same as
+                # before this feature existed.
+                "", "", "", "", "", "", "", "", "", "",
             )
             for row in agg.itertuples(index=False)
         ]
 
-    for ri, (style_name, sheet_name, brand, body_part, fab_key, ex_fty_date, pc_no, return_label) in \
+    for ri, (style_name, sheet_name, brand, body_part, fab_key, ex_fty_date, pc_no, return_label,
+             factory, factory_delivery, fabric_arrival, trim_arrival, sample_confirm,
+             bulk_pattern, full_pattern, cutting_complete, sewing_complete, finishing_complete) in \
             enumerate(rows_iter, start=2):
 
         idx_ws.cell(ri, _C_NO).value = ri - 1
@@ -881,6 +927,16 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
             idx_ws.cell(ri, _C_QTY).value = f"='{sheet_name}'!{total_anchor}"
         idx_ws.cell(ri, _C_EXFTY).value = ex_fty_date
         idx_ws.cell(ri, _C_RETLBL).value = return_label
+        idx_ws.cell(ri, _C_FACTORY).value  = factory
+        idx_ws.cell(ri, _C_FACTDLV).value  = factory_delivery
+        idx_ws.cell(ri, _C_FABARR).value   = fabric_arrival
+        idx_ws.cell(ri, _C_TRIMARR).value  = trim_arrival
+        idx_ws.cell(ri, _C_SAMPCONF).value = sample_confirm
+        idx_ws.cell(ri, _C_BULKPAT).value  = bulk_pattern
+        idx_ws.cell(ri, _C_FULLPAT).value  = full_pattern
+        idx_ws.cell(ri, _C_CUTTING).value  = cutting_complete
+        idx_ws.cell(ri, _C_SEWING).value   = sewing_complete
+        idx_ws.cell(ri, _C_FINISH).value   = finishing_complete
 
     # ── Align data cells ─────────────────────────────────────────────────────
     # No., Qty, Return Label: centre; hyperlinked style: left; all others: left.
