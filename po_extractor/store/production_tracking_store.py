@@ -205,6 +205,34 @@ class ProductionTrackingStore(BaseSQLiteStore):
             ).fetchone()
         return dict(row) if row else None
 
+    def get_batch_by_po_styles(
+        self, pairs: list[tuple[str, str]]
+    ) -> dict[tuple[str, str], dict]:
+        """Return ``{(po_number, style): record}`` for a batch of pairs in
+        one query -- avoids an N+1 lookup loop when a caller (e.g. the buy
+        plan exporter) needs progress for many rows at once. Mirrors the
+        batch-prefetch convention used by ``FabricMasterStore.get_batch_enrichment``
+        and ``BoatSampleStore.get_batch``.
+
+        Blank/whitespace-only po_number entries are dropped (style may be
+        blank -- that's a valid natural-key value, matching ``upsert``/``get``).
+        """
+        keys = list({
+            (str(po or "").strip(), str(sty or "").strip())
+            for po, sty in pairs
+        })
+        keys = [k for k in keys if k[0]]
+        if not keys:
+            return {}
+
+        clauses = " OR ".join(["(po_number=? AND style=?)"] * len(keys))
+        params = [v for pair in keys for v in pair]
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM production_tracking WHERE {clauses}", params
+            ).fetchall()
+        return {(r["po_number"], r["style"]): dict(r) for r in rows}
+
     def list_untracked_pos(
         self,
         po_store,
@@ -314,6 +342,43 @@ class ProductionTrackingStore(BaseSQLiteStore):
         return [dict(r) for r in rows]
 
     # ── Compute helpers (pure-Python, no DB) ────────────────────────────────
+
+    @staticmethod
+    def overall_progress(record: dict) -> tuple[int, int]:
+        """Return ``(done, total)`` across every APPLICABLE stage.
+
+        Excludes toggled-off optional sample stages, matching the
+        applicable-stage rule the Delayed/Completed-Today metrics already
+        use (``_render_metrics`` in the UI). Used by the Dashboard cards and
+        Overview table for one consistent "N/22" progress figure per record.
+        """
+        applicable = [
+            s for s in STAGES
+            if s not in OPTIONAL_SAMPLE_STAGES or record.get(f"{s}_applicable", 0)
+        ]
+        done = sum(
+            1 for s in applicable
+            if (record.get(f"{s}_status") or "Not Started") == "Done"
+        )
+        return done, len(applicable)
+
+    @staticmethod
+    def current_stage(record: dict) -> str | None:
+        """Return the first not-yet-Done, applicable stage in ``STAGES``
+        order, or ``None`` when every applicable stage is Done.
+
+        This is the record's "what's next" pointer -- used by the Overview
+        table's Current Stage column and the buy plan exporter's
+        best-effort milestone enrichment. Order-based, not date-based: a
+        stage counts as current even if its planned date is in the past
+        (that's what "Delayed" status already communicates separately).
+        """
+        for stage in STAGES:
+            if stage in OPTIONAL_SAMPLE_STAGES and not record.get(f"{stage}_applicable", 0):
+                continue
+            if (record.get(f"{stage}_status") or "Not Started") != "Done":
+                return stage
+        return None
 
     @staticmethod
     def _auto_prereqs_for_sample(record: dict) -> list[str]:

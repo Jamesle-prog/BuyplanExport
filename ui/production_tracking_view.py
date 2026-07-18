@@ -3,9 +3,13 @@
 This module is built incrementally:
   - **Stage 4**: navigation shell, access-control gate, metrics row,
     placeholder panels.
-  - **Stage 5 (current)**: Add New workflow.
-  - **Stage 6 (current)**: Edit Record workflow.
-  - Stage 7: Dashboard cards + Overview table.
+  - **Stage 5**: Add New workflow.
+  - **Stage 6**: Edit Record workflow.
+  - **Stage 7 (current)**: Dashboard cards + Overview table — the "track a
+    PO's progress by style" view. Company/factory/at-risk filters shared by
+    both; status badges/current-stage logic centralized (_status_badges,
+    ProductionTrackingStore.current_stage) so Dashboard, Overview, and Edit
+    never disagree about a record's state.
   - Stage 8: Plan tab.
   - Stage 9: QC inspection plumbing in the Edit form.
 
@@ -44,6 +48,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+import pandas as pd
 import streamlit as st
 
 from ui.i18n import t
@@ -736,33 +741,265 @@ def _render_metrics(records, readiness_map, reminder_map, today) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Dashboard tab — Stage 7 placeholder
+# Shared Dashboard/Overview helpers — filters, at-risk, status badges
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _all_companies(records: list[dict]) -> list[str]:
+    return sorted({r.get("company") or "" for r in records if r.get("company")})
+
+
+def _all_factories(records: list[dict]) -> list[str]:
+    return sorted({r.get("factory") or "" for r in records if r.get("factory")})
+
+
+def _is_delayed(record: dict) -> bool:
+    """True if any APPLICABLE stage is status='Delayed' — same applicable
+    rule used by the top metrics row's Delayed count."""
+    return any(
+        (record.get(f"{s}_status") or "") == "Delayed"
+        for s in STAGES
+        if s not in OPTIONAL_SAMPLE_STAGES or record.get(f"{s}_applicable", 0)
+    )
+
+
+def _is_blocked(readiness: dict[str, str]) -> bool:
+    """True if PP Sample or Cutting is waiting on a prerequisite — same rule
+    the top metrics row's Blocked count uses."""
+    return any(readiness.get(tgt, "").startswith("waiting") for tgt in ("pp_sample", "cutting"))
+
+
+def _is_at_risk(record: dict, readiness: dict[str, str]) -> bool:
+    return _is_delayed(record) or _is_blocked(readiness)
+
+
+def _group_b_stages_for(record: dict) -> list[str]:
+    """Group B stages applicable to *record* — pp_sample plus whichever
+    optional samples are currently toggled on. Mirrors the Edit form's own
+    Group B section (_render_pp_sample_section) so a card's/row's "B x/y"
+    figure always matches what the Edit tab shows for the same record."""
+    return ["pp_sample"] + [
+        s for s in STAGES_GROUP_B_OPTIONAL if record.get(f"{s}_applicable", 0)
+    ]
+
+
+def _status_badges(record: dict, readiness: dict[str, str], reminders: list[dict]) -> list[str]:
+    """Return the badge strings that apply to one record, most severe first.
+    Shared by the Dashboard cards and the Overview table so the two views
+    never disagree about a record's state (Stage 7 exit criterion)."""
+    badges: list[str] = []
+    if _is_delayed(record):
+        badges.append(f"🔴 {t('Delayed')}")
+    if _is_blocked(readiness):
+        badges.append(f"⏳ {t('Blocked')}")
+    if reminders:
+        overdue = any(r["overdue"] for r in reminders)
+        badges.append(f"🔔 {t('QC overdue') if overdue else t('QC due')}")
+    if not badges:
+        badges.append(f"✅ {t('On Track')}")
+    return badges
+
+
+def _jump_to_edit(rid: int) -> None:
+    """Navigate to the Edit tab with *rid* pre-selected — same mechanism as
+    the Add New → Edit handoff (see show_production_tracking_tab's note on
+    why the radio's own widget key must be popped, not overwritten)."""
+    st.session_state[SK.PT_SELECTED_EDIT] = rid
+    st.session_state[SK.PT_ACTIVE_TAB]    = TAB_EDIT
+    st.session_state.pop("pt_tab_radio", None)
+    st.rerun()
+
+
+def _render_progress_filters(
+    records: list[dict], readiness_map: dict, key_prefix: str,
+) -> list[dict]:
+    """Company / factory / at-risk filter row, applied to *records*.
+
+    *key_prefix* scopes widget keys per caller (Dashboard vs. Overview) so
+    the two sub-tabs keep independent filter selections rather than fighting
+    over one shared widget key.
+    """
+    companies = _all_companies(records)
+    factories = _all_factories(records)
+
+    c1, c2, c3 = st.columns([2, 2, 1])
+    with c1:
+        wkey = f"{key_prefix}_filter_company"
+        guard_multiselect_state(wkey, companies)
+        sel_companies = st.multiselect(
+            t("Company"), options=companies, key=wkey,
+            placeholder=t("All companies"),
+        )
+    with c2:
+        wkey = f"{key_prefix}_filter_factory"
+        guard_multiselect_state(wkey, factories)
+        sel_factories = st.multiselect(
+            t("Factory"), options=factories, key=wkey,
+            placeholder=t("All factories"),
+        )
+    with c3:
+        st.markdown("&nbsp;")  # align checkbox with the multiselect boxes
+        only_at_risk = st.checkbox(
+            f"⚠️ {t('Only at-risk')}", key=f"{key_prefix}_filter_at_risk",
+        )
+
+    out = []
+    for r in records:
+        if sel_companies and (r.get("company") or "") not in sel_companies:
+            continue
+        if sel_factories and (r.get("factory") or "") not in sel_factories:
+            continue
+        if only_at_risk and not _is_at_risk(r, readiness_map[r["id"]]):
+            continue
+        out.append(r)
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dashboard tab — Stage 7
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_dashboard_tab(records, readiness_map, reminder_map, today) -> None:
-    """Stage 7 will render the per-PO progress cards.  For now: count summary."""
+    """Card grid: one card per tracked PO/style with overall + per-group
+    progress, status badges, a QC alert line, and an Edit shortcut."""
+    from po_extractor.store.production_tracking_store import ProductionTrackingStore
+
     if not records:
         st.info(t("No tracked records yet. Use **➕ Add New** to start tracking a PO/style."))
         return
-    st.caption(
-        f"📊 {t('Dashboard placeholder')} — {len(records)} "
-        + t("record(s) loaded. Card grid lands in Stage 7.")
-    )
+
+    filtered = _render_progress_filters(records, readiness_map, key_prefix="pt_dash")
+    if not filtered:
+        st.warning(t("No records match the current filters."))
+        return
+    st.caption(f"{len(filtered)} / {len(records)} {t('record(s) shown')}")
+
+    cols_per_row = 3
+    for row_start in range(0, len(filtered), cols_per_row):
+        cols = st.columns(cols_per_row)
+        for col, record in zip(cols, filtered[row_start:row_start + cols_per_row]):
+            with col:
+                rid = record["id"]
+                readiness = readiness_map[rid]
+                reminders = reminder_map[rid]
+                with st.container(border=True):
+                    st.markdown(f"**{record['po_number']}** — {record.get('style') or '—'}")
+                    st.caption(
+                        f"{record.get('company') or '—'} · "
+                        f"{record.get('factory') or t('No factory set')}"
+                    )
+
+                    done, total = ProductionTrackingStore.overall_progress(record)
+                    st.progress(
+                        (done / total) if total else 0.0,
+                        text=f"{done}/{total} {t('stages done')}",
+                    )
+
+                    group_bits = []
+                    for label, stages in (
+                        ("A", STAGES_GROUP_A), ("B", _group_b_stages_for(record)),
+                        ("C", STAGES_GROUP_C), ("D", STAGES_GROUP_D),
+                    ):
+                        gd, gt = _group_progress(record, stages)
+                        group_bits.append(f"{label} {gd}/{gt}")
+                    st.caption(" · ".join(group_bits))
+
+                    st.markdown(" ".join(_status_badges(record, readiness, reminders)))
+
+                    cur = ProductionTrackingStore.current_stage(record)
+                    st.caption(
+                        f"➡️ {t('Next')}: {STAGE_LABELS.get(cur, cur)}" if cur
+                        else f"🏁 {t('All stages complete')}"
+                    )
+
+                    if reminders:
+                        names = ", ".join(r["label"] for r in reminders)
+                        st.caption(f"🔔 {t('QC booking due')}: {names}")
+
+                    if st.button(f"✏️ {t('Edit')}", key=f"pt_dash_edit_{rid}",
+                                 use_container_width=True):
+                        _jump_to_edit(rid)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Overview table — Stage 7 placeholder
+# Overview table — Stage 7
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_overview_table(records, readiness_map, reminder_map, today) -> None:
-    """Stage 7 will render the wide emoji-badge table."""
+    """One row per tracked PO/style: overall progress, per-group progress,
+    current stage, and status badges — the flat "track a PO's progress by
+    style" view. Consistent readiness/status logic with the Dashboard cards
+    and the Edit form (Stage 7 exit criterion)."""
+    from po_extractor.store.production_tracking_store import ProductionTrackingStore
+
     if not records:
         st.info(t("No tracked records yet."))
         return
-    st.caption(
-        f"📋 {t('Overview placeholder')} — {len(records)} "
-        + t("record(s) loaded. Full table lands in Stage 7.")
+
+    filtered = _render_progress_filters(records, readiness_map, key_prefix="pt_ovw")
+    if not filtered:
+        st.warning(t("No records match the current filters."))
+        return
+
+    rows = []
+    for record in filtered:
+        rid = record["id"]
+        readiness = readiness_map[rid]
+        reminders = reminder_map[rid]
+        done, total = ProductionTrackingStore.overall_progress(record)
+        cur = ProductionTrackingStore.current_stage(record)
+        rows.append({
+            "id":            rid,
+            "PO Number":     record["po_number"],
+            "Style":         record.get("style") or "—",
+            "Company":       record.get("company") or "—",
+            "Factory":       record.get("factory") or "—",
+            "Progress":      (done / total) if total else 0.0,
+            "Progress text": f"{done}/{total}",
+            "Current Stage": STAGE_LABELS.get(cur, cur) if cur else t("Complete"),
+            "Status":        " ".join(_status_badges(record, readiness, reminders)),
+            "Updated":       (record.get("updated_at") or "")[:19].replace("T", " "),
+            "Updated by":    record.get("updated_by") or "—",
+        })
+    df = pd.DataFrame(rows)
+
+    st.dataframe(
+        df.drop(columns=["id", "Progress text"]),
+        width="stretch", hide_index=True, height=min(60 + 36 * len(df), 600),
+        column_config={
+            "PO Number":     st.column_config.TextColumn(t("PO Number"), width="medium"),
+            "Style":         st.column_config.TextColumn(t("Style"), width="small"),
+            "Company":       st.column_config.TextColumn(t("Company"), width="small"),
+            "Factory":       st.column_config.TextColumn(t("Factory"), width="medium"),
+            "Progress":      st.column_config.ProgressColumn(
+                t("Progress"), min_value=0.0, max_value=1.0, format="%.0f%%",
+            ),
+            "Current Stage": st.column_config.TextColumn(t("Current Stage"), width="medium"),
+            "Status":        st.column_config.TextColumn(t("Status"), width="medium"),
+            "Updated":       st.column_config.TextColumn(t("Updated"), width="medium"),
+            "Updated by":    st.column_config.TextColumn(t("Updated by"), width="small"),
+        },
     )
+    st.caption(f"{len(filtered)} / {len(records)} {t('record(s) shown')}")
+
+    # ── Jump to Edit — same selectbox+button pattern as the Edit tab itself.
+    def _fmt_ovw(rid: int) -> str:
+        rec = next((r for r in filtered if r["id"] == rid), None)
+        if rec is None:
+            return str(rid)
+        return f"{rec['po_number']} — {rec.get('style') or '—'}"
+
+    col_sel, col_btn = st.columns([4, 1])
+    with col_sel:
+        chosen_id = st.selectbox(
+            t("Jump to record"),
+            options=[r["id"] for r in filtered],
+            format_func=_fmt_ovw,
+            key="pt_ovw_jump_select",
+            label_visibility="collapsed",
+        )
+    with col_btn:
+        if st.button(f"✏️ {t('Edit')}", key="pt_ovw_jump_edit", use_container_width=True):
+            _jump_to_edit(chosen_id)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

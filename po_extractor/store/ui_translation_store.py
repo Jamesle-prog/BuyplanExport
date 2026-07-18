@@ -1199,6 +1199,27 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('All clients', '全部客户', 'label', 'tracking'),
     ('Select PO / Style to start tracking', '选择要开始跟踪的订单/款式', 'label', 'tracking'),
 
+    # Tracking → Dashboard/Overview (Stage 7 — PO progress by style).
+    ('All companies', '全部公司', 'label', 'tracking'),
+    ('All factories', '全部工厂', 'label', 'tracking'),
+    ('Only at-risk', '仅显示风险项', 'label', 'tracking'),
+    ('record(s) shown', '条记录', 'label', 'tracking'),
+    ('No records match the current filters.', '没有符合当前筛选条件的记录。', 'label', 'tracking'),
+    ('stages done', '个阶段已完成', 'label', 'tracking'),
+    ('Next', '下一步', 'label', 'tracking'),
+    ('All stages complete', '全部阶段已完成', 'label', 'tracking'),
+    ('QC booking due', 'QC 预约到期', 'label', 'tracking'),
+    ('Delayed', '已延误', 'label', 'tracking'),
+    ('QC overdue', 'QC 已逾期', 'label', 'tracking'),
+    ('QC due', 'QC 待预约', 'label', 'tracking'),
+    ('On Track', '进度正常', 'label', 'tracking'),
+    ('Complete', '已完成', 'label', 'tracking'),
+    ('Progress', '进度', 'label', 'tracking'),
+    ('Current Stage', '当前阶段', 'label', 'tracking'),
+    ('Updated by', '更新人', 'label', 'tracking'),
+    ('Jump to record', '跳转到记录', 'label', 'tracking'),
+    ('No factory set', '未设置工厂', 'label', 'tracking'),
+
     # Summary → All Orders (v2.28.0 — combined cross-client PO table with
     # standardized headers).
     ('All Orders', '全部订单', 'header', 'summary'),
