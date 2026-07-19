@@ -32,6 +32,7 @@ from po_extractor.store import (
     UITranslationStore,
     AppSettingsStore,
     ProductionTrackingStore,
+    FactoryProgressStore,
     get_po_store as _get_po_store,
     get_sky_east_store as _get_sky_east_store,
     get_fabric_master_store as _get_fabric_master_store,
@@ -40,6 +41,7 @@ from po_extractor.store import (
     get_ui_translation_store as _get_ui_translation_store,
     get_app_settings_store as _get_app_settings_store,
     get_production_tracking_store as _get_production_tracking_store,
+    get_factory_progress_store as _get_factory_progress_store,
     list_all_brands as _list_all_brands,
 )
 from po_extractor.config import DATA_DIR, DB_PATH   # canonical path constants
@@ -128,6 +130,13 @@ def get_production_tracking_store() -> ProductionTrackingStore:
     of instance caching.
     """
     return _get_production_tracking_store()
+
+
+@functools.cache
+def get_factory_progress_store() -> FactoryProgressStore:
+    """Return the cached FactoryProgressStore (same ``functools.cache``
+    rationale as get_production_tracking_store above)."""
+    return _get_factory_progress_store()
 
 
 # ── Convenience helpers exported for UI code ────────────────────────────────

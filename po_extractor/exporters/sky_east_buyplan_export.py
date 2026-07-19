@@ -164,7 +164,8 @@ _INDEX_MILESTONE_MAP: dict[str, tuple[str, str]] = {
 def _enrich_sheet_meta_with_progress(sheet_meta_list: list[dict]) -> None:
     """Best-effort: fill each *sheet_meta_list* entry's schedule columns
     (factory, factory_delivery, fabric_arrival, ...) from the 🏭 Tracking
-    tab's production_tracking table, joined on (Zalando PO, style).
+    tab's production_tracking table, and 裁剪数 (cut_qty) from the factory
+    progress-report log, joined on (Zalando PO, style).
 
     Mutates the dicts in place. A style with no tracking record yet (or any
     store failure) simply gets blank values for these fields -- same as
@@ -174,24 +175,37 @@ def _enrich_sheet_meta_with_progress(sheet_meta_list: list[dict]) -> None:
     for meta in sheet_meta_list:
         for field in _INDEX_MILESTONE_MAP:
             meta.setdefault(field, "")
+        meta.setdefault("cut_qty", "")
+
+    pairs = [(m.get("po_no", ""), m.get("style", "")) for m in sheet_meta_list]
 
     try:
         from ..store import get_production_tracking_store
-        pt_store = get_production_tracking_store()
-        pairs = [(m.get("po_no", ""), m.get("style", "")) for m in sheet_meta_list]
-        batch = pt_store.get_batch_by_po_styles(pairs)
+        batch = get_production_tracking_store().get_batch_by_po_styles(pairs)
     except Exception:
-        return
+        batch = {}
+
+    # 裁剪数 from the factory quantity-report log (sum of dated cutting
+    # reports). 出货数 stays manual -- "packed" is not "shipped", and no
+    # shipping quantity is reported today.
+    try:
+        from ..store import get_factory_progress_store
+        qty_totals = get_factory_progress_store().totals_for_pairs(pairs)
+    except Exception:
+        qty_totals = {}
 
     for meta in sheet_meta_list:
-        record = batch.get((meta.get("po_no", ""), meta.get("style", "")))
-        if not record:
-            continue
-        for field, (source, kind) in _INDEX_MILESTONE_MAP.items():
-            if kind == "base":
-                meta[field] = str(record.get(source) or "")
-            else:
-                meta[field] = str(record.get(f"{source}_planned") or "")
+        key = (meta.get("po_no", ""), meta.get("style", ""))
+        record = batch.get(key)
+        if record:
+            for field, (source, kind) in _INDEX_MILESTONE_MAP.items():
+                if kind == "base":
+                    meta[field] = str(record.get(source) or "")
+                else:
+                    meta[field] = str(record.get(f"{source}_planned") or "")
+        cut = (qty_totals.get(key) or {}).get("cutting", 0)
+        if cut:
+            meta["cut_qty"] = cut
 
 
 def _progress_brand(brand_by_pc: dict | None, pc_no, sty_norm: str,

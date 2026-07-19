@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.81.0",
+        "date": "2026-07-19",
+        "entries": [
+            {"type": "feat", "text": "**🏭 Tracking → 📨 Factory Updates: factories report units cut / sewn / packed.** New sub-tab with the full round-trip: generate a pre-filled Excel request form for one factory (their PO/styles, ordered qty, and already-reported totals listed; only the yellow \"new since last report\" columns to fill), import the returned file with a validated preview (non-numeric/negative/missing-date rows flagged, untracked PO warnings), or key in reports manually. Every report is a dated log entry — full history kept, totals derived by summing — with an over-report warning when cumulative quantities exceed the ordered qty, a per-PO/style progress table (ordered vs cut/sewn/packed, packed-% bar, last report date), and admin-only correction deletes."},
+            {"type": "feat", "text": "**Sky East buy plan: 裁剪数 now fills from factory cutting reports.** The Index sheet's cut-quantity column (previously always manual) populates with the summed cutting reports for that PO + style. 出货数 stays manual — \"packed\" is not \"shipped\"."},
+        ],
+    },
+    {
         "version": "2.80.0",
         "date": "2026-07-18",
         "entries": [

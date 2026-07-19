@@ -88,6 +88,7 @@ _TAB_LABELS: list[str] = [
     "✏️ Edit Record",
     "➕ Add New",
     "📅 Plan",
+    "📨 Factory Updates",
 ]
 
 # Indexes used by the dashboard Edit shortcut and similar cross-panel jumps.
@@ -96,6 +97,7 @@ TAB_OVERVIEW  = 1
 TAB_EDIT      = 2
 TAB_ADD       = 3
 TAB_PLAN      = 4
+TAB_FACTORY   = 5
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -691,6 +693,8 @@ def show_production_tracking_tab(
         _render_add_tab(store, po_store, username, user_cos=user_cos, admin_mode=admin_mode)
     elif active_label == _TAB_LABELS[TAB_PLAN]:
         _render_plan_tab(records, store)
+    elif active_label == _TAB_LABELS[TAB_FACTORY]:
+        _render_factory_updates_tab(records, username, admin_mode)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1282,3 +1286,249 @@ def _render_plan_tab(records, store) -> None:
         f"📅 {t('Plan placeholder')} — {len(records)} "
         + t("record(s) available. Schedule calculator lands in Stage 8.")
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Factory Updates tab — quantity reports from factories (units cut/sewn/packed)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _render_factory_updates_tab(records, username, admin_mode) -> None:
+    """Excel round-trip + manual entry for factory quantity reports.
+
+    Flow: generate a request form for one factory (their tracked PO/styles
+    pre-filled) → factory fills the New-quantities columns → upload the
+    returned file (validated preview → import) → per-PO/style totals table.
+    Each report is a dated log entry (history kept); totals are derived.
+    A future factory-login phase reuses the same store writes unchanged.
+    """
+    from ui.stores import get_factory_progress_store
+    from po_extractor.store._factory_progress_schema import (
+        REPORT_STAGES, REPORT_STAGE_LABELS,
+    )
+    from po_extractor.exporters.factory_progress_form import (
+        build_progress_request_xlsx, parse_progress_report_xlsx,
+    )
+
+    fp_store = get_factory_progress_store()
+
+    if not records:
+        st.info(t(
+            "No tracked records yet. Use **➕ Add New** to start tracking a "
+            "PO/style first — factory progress reports attach to tracked records."
+        ))
+        return
+
+    pairs = [(r["po_number"], r.get("style") or "") for r in records]
+    totals    = fp_store.totals_for_pairs(pairs)
+    order_qty = fp_store.order_qty_for_pairs(pairs)
+    last_date = fp_store.last_report_dates(pairs)
+
+    # ── 1. Progress summary — units cut/sewn/packed vs ordered ──────────────
+    st.subheader(f"📈 {t('Quantity progress')}")
+    rows = []
+    for r in records:
+        key = (r["po_number"], r.get("style") or "")
+        tot = totals.get(key, {s: 0 for s in REPORT_STAGES})
+        oq = order_qty.get(key, 0)
+        rows.append({
+            "PO Number": key[0],
+            "Style":     key[1] or "—",
+            "Factory":   r.get("factory") or "—",
+            "Ordered":   oq,
+            "Cut":       tot["cutting"],
+            "Sewn":      tot["sewing"],
+            "Packed":    tot["packing"],
+            "Packed %":  (tot["packing"] / oq) if oq else 0.0,
+            "Last report": last_date.get(key, "") or "—",
+        })
+    df = pd.DataFrame(rows)
+    st.dataframe(
+        df, width="stretch", hide_index=True,
+        height=min(60 + 36 * len(df), 460),
+        column_config={
+            "PO Number": st.column_config.TextColumn(t("PO Number"), width="medium"),
+            "Style":     st.column_config.TextColumn(t("Style"), width="small"),
+            "Factory":   st.column_config.TextColumn(t("Factory"), width="medium"),
+            "Ordered":   st.column_config.NumberColumn(t("Ordered"), format="%d"),
+            "Cut":       st.column_config.NumberColumn(t("Cut"), format="%d"),
+            "Sewn":      st.column_config.NumberColumn(t("Sewn"), format="%d"),
+            "Packed":    st.column_config.NumberColumn(t("Packed"), format="%d"),
+            "Packed %":  st.column_config.ProgressColumn(
+                t("Packed %"), min_value=0.0, max_value=1.0, format="%.0f%%"),
+            "Last report": st.column_config.TextColumn(t("Last report"), width="small"),
+        },
+    )
+    # Over-report guard: cumulative beyond ordered qty is suspicious.
+    for row in rows:
+        over = [c for c in ("Cut", "Sewn", "Packed")
+                if row["Ordered"] and row[c] > row["Ordered"]]
+        if over:
+            st.warning(
+                f"⚠️ {row['PO Number']} / {row['Style']}: "
+                + ", ".join(f"{c} {row[c]:,} > {t('ordered')} {row['Ordered']:,}"
+                            for c in over)
+                + " — " + t("check for a duplicate or cumulative-instead-of-new report.")
+            )
+
+    st.divider()
+
+    # ── 2. Generate request form for one factory ────────────────────────────
+    with st.expander(f"📤 {t('Generate request form for a factory')}", expanded=False):
+        factories = sorted({r.get("factory") or "" for r in records if r.get("factory")})
+        if not factories:
+            st.info(t("No tracked record has a factory set — fill the Factory "
+                      "field in ✏️ Edit Record first."))
+        else:
+            sel_factory = st.selectbox(t("Factory"), options=factories,
+                                       key="pt_fu_form_factory")
+            fac_rows = [
+                {
+                    "po_number": r["po_number"],
+                    "style":     r.get("style") or "",
+                    "order_qty": order_qty.get((r["po_number"], r.get("style") or ""), 0),
+                    **{
+                        {"cutting": "cut", "sewing": "sewn", "packing": "packed"}[s]:
+                            totals.get((r["po_number"], r.get("style") or ""),
+                                       {}).get(s, 0)
+                        for s in REPORT_STAGES
+                    },
+                }
+                for r in records if (r.get("factory") or "") == sel_factory
+            ]
+            st.caption(f"{len(fac_rows)} {t('PO/style row(s) for this factory')}")
+            from datetime import date as _date
+            st.download_button(
+                f"⬇️ {t('Download request form')}",
+                data=build_progress_request_xlsx(sel_factory, fac_rows),
+                file_name=f"进度回报表_{sel_factory}_{_date.today().isoformat()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="pt_fu_form_download",
+            )
+
+    # ── 3. Import a returned form ───────────────────────────────────────────
+    with st.expander(f"📥 {t('Import a returned form')}", expanded=False):
+        up_factory = st.text_input(
+            t("Factory this file came from"), key="pt_fu_import_factory",
+            help=t("Stamped on every imported report row for the audit trail."),
+        )
+        uploaded = st.file_uploader(
+            t("Returned progress form (.xlsx)"), type=["xlsx", "xlsm"],
+            key="pt_fu_import_file", label_visibility="collapsed",
+        )
+        if uploaded is not None:
+            try:
+                parsed = parse_progress_report_xlsx(uploaded.getvalue(),
+                                                    factory=up_factory.strip())
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                reports = parsed["reports"]
+                for issue in parsed["issues"]:
+                    st.warning(f"⚠️ {issue}")
+                if not reports:
+                    st.info(t("No new quantities found in this file."))
+                else:
+                    prev = pd.DataFrame([{
+                        "PO Number": rp["po_number"], "Style": rp["style"],
+                        "Stage": REPORT_STAGE_LABELS.get(rp["stage"], rp["stage"]),
+                        "Units": rp["units"], "Date": rp["report_date"],
+                        "Notes": rp["notes"],
+                    } for rp in reports])
+                    st.dataframe(prev, width="stretch", hide_index=True)
+                    # Warn on rows for PO/styles that aren't tracked (typo guard).
+                    tracked = {(r["po_number"], r.get("style") or "") for r in records}
+                    unknown = {(rp["po_number"], rp["style"]) for rp in reports} - tracked
+                    for po, sty in sorted(unknown):
+                        st.warning(f"⚠️ {po} / {sty or '—'} — "
+                                   + t("not a tracked PO/style (import anyway if intentional)."))
+                    if st.button(
+                        f"✅ {t('Import')} {len(reports)} {t('report(s)')}",
+                        type="primary", key="pt_fu_import_go",
+                    ):
+                        n = 0
+                        for rp in reports:
+                            try:
+                                fp_store.add_report(
+                                    rp["po_number"], rp["style"], rp["stage"],
+                                    rp["report_date"], rp["units"],
+                                    factory=rp["factory"], source="excel",
+                                    notes=rp["notes"], created_by=username,
+                                )
+                                n += 1
+                            except ValueError as exc:
+                                st.error(f"{rp['po_number']} / {rp['style']}: {exc}")
+                        st.success(f"✅ {n} {t('report(s) imported.')}")
+                        st.rerun()
+
+    # ── 4. Manual entry (phone/WeChat reports keyed in by your own staff) ───
+    with st.expander(f"✍️ {t('Manual entry')}", expanded=False):
+        def _fmt_rec(idx: int) -> str:
+            r = records[idx]
+            return f"{r['po_number']} — {r.get('style') or '—'}"
+
+        idx = st.selectbox(
+            t("PO / Style"), options=range(len(records)),
+            format_func=_fmt_rec, key="pt_fu_manual_rec",
+        )
+        rec = records[idx]
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            stage = st.selectbox(
+                t("Stage"), options=REPORT_STAGES,
+                format_func=lambda s: REPORT_STAGE_LABELS.get(s, s),
+                key="pt_fu_manual_stage",
+            )
+        with c2:
+            units = st.number_input(t("Units (new since last report)"),
+                                    min_value=1, step=1, value=1,
+                                    key="pt_fu_manual_units")
+        with c3:
+            rdate = st.date_input(t("Report date"), key="pt_fu_manual_date")
+        note = st.text_input(t("Notes"), key="pt_fu_manual_note")
+        if st.button(f"➕ {t('Add report')}", type="primary", key="pt_fu_manual_add"):
+            fp_store.add_report(
+                rec["po_number"], rec.get("style") or "", stage,
+                rdate.isoformat(), int(units),
+                factory=rec.get("factory") or "", source="manual",
+                notes=note, created_by=username,
+            )
+            st.success(f"✅ {t('Report added.')}")
+            st.rerun()
+
+    # ── 5. Recent reports + correction (delete) ─────────────────────────────
+    with st.expander(f"🗂 {t('Recent reports')}", expanded=False):
+        recent = fp_store.list_reports(limit=200)
+        if not recent:
+            st.info(t("No reports yet."))
+        else:
+            rec_df = pd.DataFrame([{
+                "id":        rp["id"],
+                "PO Number": rp["po_number"],
+                "Style":     rp["style"] or "—",
+                "Factory":   rp["factory"] or "—",
+                "Stage":     REPORT_STAGE_LABELS.get(rp["stage"], rp["stage"]),
+                "Units":     rp["units"],
+                "Date":      rp["report_date"],
+                "Source":    rp["source"],
+                "By":        rp["created_by"] or "—",
+                "Notes":     rp["notes"] or "",
+            } for rp in recent])
+            st.dataframe(rec_df.drop(columns=["id"]), width="stretch",
+                         hide_index=True, height=min(60 + 36 * len(rec_df), 400))
+            if admin_mode:
+                guard_multiselect_state("pt_fu_del_sel", rec_df["id"].tolist())
+                del_ids = st.multiselect(
+                    t("Delete report(s) — corrections only"),
+                    options=rec_df["id"].tolist(),
+                    format_func=lambda i: (
+                        lambda row: f"#{i} · {row['PO Number']} {row['Style']} "
+                                    f"{row['Stage']} {row['Units']} ({row['Date']})"
+                    )(rec_df[rec_df["id"] == i].iloc[0]),
+                    key="pt_fu_del_sel",
+                )
+                if del_ids and st.button(
+                    f"🗑 {t('Delete')} {len(del_ids)}", key="pt_fu_del_go",
+                ):
+                    fp_store.delete_reports(del_ids)
+                    st.session_state.pop("pt_fu_del_sel", None)
+                    st.rerun()

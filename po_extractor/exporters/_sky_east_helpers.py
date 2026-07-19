@@ -755,6 +755,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                                "cutting_complete":    str,
                                "sewing_complete":     str,
                                "finishing_complete":  str,
+                               "cut_qty":             int | str,  # 裁剪数, from factory reports
                            }
 
                        When supplied this is used directly (one Index row per
@@ -820,10 +821,11 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
     _C_FULLPAT   = 15 + _off
     # _C_CUTPLAN = 16 + _off  -- 裁剪计划完成时间: no matching stage, stays manual
     _C_CUTTING   = 17 + _off
-    # _C_CUTQTY  = 18 + _off  -- 裁剪数: no quantity column in production_tracking, stays manual
+    _C_CUTQTY    = 18 + _off  # 裁剪数: sum of dated factory cutting reports
     _C_SEWING    = 19 + _off
     _C_FINISH    = 20 + _off
-    # _C_SHIPQTY = 21 + _off  -- 出货数: no quantity column in production_tracking, stays manual
+    # _C_SHIPQTY = 21 + _off  -- 出货数: "packed" is not "shipped" and no shipping
+    #                            quantity is reported today -- stays manual
 
     from openpyxl.utils import get_column_letter as _gcl
     _IMG_PX  = 160  # thumbnail size in pixels (larger = sharper rendering)
@@ -854,6 +856,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                 meta.get("cutting_complete",   ""),
                 meta.get("sewing_complete",    ""),
                 meta.get("finishing_complete", ""),
+                meta.get("cut_qty",            ""),
             )
             for meta in sheet_meta_list
         ]
@@ -888,14 +891,15 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                 # (that enrichment is computed against sheet_meta_list entries
                 # in the exporter) -- these columns stay blank here, same as
                 # before this feature existed.
-                "", "", "", "", "", "", "", "", "", "",
+                "", "", "", "", "", "", "", "", "", "", "",
             )
             for row in agg.itertuples(index=False)
         ]
 
     for ri, (style_name, sheet_name, brand, body_part, fab_key, ex_fty_date, pc_no, return_label,
              factory, factory_delivery, fabric_arrival, trim_arrival, sample_confirm,
-             bulk_pattern, full_pattern, cutting_complete, sewing_complete, finishing_complete) in \
+             bulk_pattern, full_pattern, cutting_complete, sewing_complete, finishing_complete,
+             cut_qty) in \
             enumerate(rows_iter, start=2):
 
         idx_ws.cell(ri, _C_NO).value = ri - 1
@@ -935,6 +939,7 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
         idx_ws.cell(ri, _C_BULKPAT).value  = bulk_pattern
         idx_ws.cell(ri, _C_FULLPAT).value  = full_pattern
         idx_ws.cell(ri, _C_CUTTING).value  = cutting_complete
+        idx_ws.cell(ri, _C_CUTQTY).value   = cut_qty
         idx_ws.cell(ri, _C_SEWING).value   = sewing_complete
         idx_ws.cell(ri, _C_FINISH).value   = finishing_complete
 
