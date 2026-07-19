@@ -33,6 +33,7 @@ from po_extractor.store import (
     AppSettingsStore,
     ProductionTrackingStore,
     FactoryProgressStore,
+    CmptContractStore,
     get_po_store as _get_po_store,
     get_sky_east_store as _get_sky_east_store,
     get_fabric_master_store as _get_fabric_master_store,
@@ -42,6 +43,7 @@ from po_extractor.store import (
     get_app_settings_store as _get_app_settings_store,
     get_production_tracking_store as _get_production_tracking_store,
     get_factory_progress_store as _get_factory_progress_store,
+    get_cmpt_contract_store as _get_cmpt_contract_store,
     list_all_brands as _list_all_brands,
 )
 from po_extractor.config import DATA_DIR, DB_PATH   # canonical path constants
@@ -137,6 +139,13 @@ def get_factory_progress_store() -> FactoryProgressStore:
     """Return the cached FactoryProgressStore (same ``functools.cache``
     rationale as get_production_tracking_store above)."""
     return _get_factory_progress_store()
+
+
+@functools.cache
+def get_cmpt_contract_store() -> CmptContractStore:
+    """Return the cached CmptContractStore (same ``functools.cache``
+    rationale as get_production_tracking_store above)."""
+    return _get_cmpt_contract_store()
 
 
 # ── Convenience helpers exported for UI code ────────────────────────────────

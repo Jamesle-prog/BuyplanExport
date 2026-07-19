@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.82.0",
+        "date": "2026-07-19",
+        "entries": [
+            {"type": "feat", "text": "**New 📄 CMPT Contracts tab — 加工合同 with factories + price ledger.** Create contracts (contract no., factory, date) with PO/style price lines — optionally prefilled from tracked PO/styles with ordered quantities — and generate the signed-ready document from **your own Excel template**: upload it once (admin section, with a placeholder guide), put `{{tokens}}` like `{{contract_no}}`, `{{factory}}`, `{{total_amount_cn}}` (自动大写金额) where the data goes, and one prototype line row that duplicates per contract line. Price tracking: agreed value = Σ(qty × unit price), a dated payment log (amount/method/note, refunds as negatives), and computed outstanding balance per contract and in total — all derived, never stored, so they can't drift. Tab access is controlled by the new \"📄 CMPT Contracts\" module in user management."},
+        ],
+    },
+    {
         "version": "2.81.0",
         "date": "2026-07-19",
         "entries": [
