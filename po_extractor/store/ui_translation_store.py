@@ -1212,6 +1212,8 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('contract(s)', '份合同', 'label', 'cmpt'),
     ('outstanding balance total', '未付余额合计', 'label', 'cmpt'),
     ('New contract', '新建合同', 'label', 'cmpt'),
+    ('Auto-generated — edit if you use your own numbering.',
+     '自动生成——如使用自己的编号规则可直接修改。', 'label', 'cmpt'),
     ('Contract date', '合同日期', 'label', 'cmpt'),
     ('Client company (optional)', '客户公司（可选）', 'label', 'cmpt'),
     # 'Currency' already seeded (sky_east scope, same zh value)

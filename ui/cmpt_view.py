@@ -166,9 +166,17 @@ def _editor_lines(df: pd.DataFrame) -> list[dict]:
 
 def _new_contract_section(store, username: str) -> None:
     with st.expander(f"➕ {t('New contract')}", expanded=False):
+        # Auto-suggest the next number in the CMPT-YYYY-NNN series (seeded
+        # once per form; re-seeded after each successful create). The field
+        # stays editable for houses with their own numbering.
+        if "cmpt_new_no" not in st.session_state:
+            st.session_state["cmpt_new_no"] = store.next_contract_no()
         c1, c2, c3 = st.columns(3)
         with c1:
-            contract_no = st.text_input(t("Contract No."), key="cmpt_new_no")
+            contract_no = st.text_input(
+                t("Contract No."), key="cmpt_new_no",
+                help=t("Auto-generated — edit if you use your own numbering."),
+            )
         with c2:
             factory = st.text_input(t("Factory"), key="cmpt_new_factory")
         with c3:
@@ -228,6 +236,7 @@ def _new_contract_section(store, username: str) -> None:
                     st.error(str(exc))
                 else:
                     st.session_state.pop("cmpt_new_lines_df", None)
+                    st.session_state.pop("cmpt_new_no", None)   # re-seed next number
                     st.success(f"✅ {t('Contract created.')}")
                     st.rerun()
 

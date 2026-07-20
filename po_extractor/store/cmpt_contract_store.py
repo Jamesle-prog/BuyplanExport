@@ -228,6 +228,28 @@ class CmptContractStore(BaseSQLiteStore):
             ).fetchall()
         return [r["factory"] for r in rows if r["factory"]]
 
+    def next_contract_no(self, prefix: str = "CMPT") -> str:
+        """Suggest the next contract number: ``{prefix}-{YYYY}-{NNN}``.
+
+        Sequence restarts each year and is derived from the highest existing
+        number in that year's series (gaps are not refilled). Contract numbers
+        in other formats are ignored -- the suggestion is only a convenience
+        default, the field stays editable and uniqueness is still enforced by
+        ``create_contract``.
+        """
+        year_pat = f"{prefix}-{datetime.now().strftime('%Y')}-"
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT contract_no FROM cmpt_contracts WHERE contract_no LIKE ?",
+                (year_pat + "%",),
+            ).fetchall()
+        max_seq = 0
+        for r in rows:
+            tail = r["contract_no"][len(year_pat):]
+            if tail.isdigit():
+                max_seq = max(max_seq, int(tail))
+        return f"{year_pat}{max_seq + 1:03d}"
+
     # ── Internals ───────────────────────────────────────────────────────────
 
     @staticmethod

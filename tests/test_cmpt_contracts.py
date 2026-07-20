@@ -110,6 +110,23 @@ def test_list_contracts_filters(store):
     assert store.list_factories() == ["F1", "F2"]
 
 
+def test_next_contract_no_sequence(store):
+    from datetime import datetime
+    year = datetime.now().strftime("%Y")
+
+    assert store.next_contract_no() == f"CMPT-{year}-001"
+
+    store.create_contract(f"CMPT-{year}-001", "F1")
+    store.create_contract(f"CMPT-{year}-002", "F1")
+    assert store.next_contract_no() == f"CMPT-{year}-003"
+
+    # Gaps are not refilled; other formats and other years are ignored.
+    store.create_contract(f"CMPT-{year}-010", "F1")
+    store.create_contract("HT-CUSTOM-99", "F1")
+    store.create_contract("CMPT-1999-500", "F1")
+    assert store.next_contract_no() == f"CMPT-{year}-011"
+
+
 # ── RMB capital amounts ─────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("amount,expected", [

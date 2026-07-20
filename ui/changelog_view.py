@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.82.1",
+        "date": "2026-07-19",
+        "entries": [
+            {"type": "feat", "text": "**CMPT contract numbers auto-generate.** The New Contract form pre-fills the next number in the `CMPT-YYYY-NNN` series (sequence per year, derived from the highest existing number; gaps are not refilled). The field stays editable for your own numbering, and uniqueness is still enforced on create. After each created contract the form re-seeds with the next number."},
+        ],
+    },
+    {
         "version": "2.82.0",
         "date": "2026-07-19",
         "entries": [
