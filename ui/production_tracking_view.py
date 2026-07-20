@@ -1077,19 +1077,38 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
 
     st.divider()
 
-    # ── Stage sections ───────────────────────────────────────────────────────
+    # ── Stage sections — ONE group rendered at a time ────────────────────────
+    # Perf: rendering all 4 groups + QC mounts ~120 widgets (44 date pickers,
+    # ~30 selectboxes...) and EVERY interaction re-mounts them all, making
+    # each click feel seconds-slow. Rendering only the selected group cuts
+    # that ~4-5x. Saving stays correct: the _read/_MISSING mechanism falls
+    # back to the record's DB value for any widget not rendered this run
+    # (the same contract the Optional Samples toggle already relies on).
+    _PANES = [
+        "🧵 A · Pre-Production",
+        "🧪 B · Samples",
+        "🏭 C · Production",
+        "📦 D · Post-Production",
+        "🔍 QC",
+    ]
+    pane = st.radio(
+        "Stage group", _PANES, horizontal=True, key="pt_edit_pane",
+        format_func=t, label_visibility="collapsed",
+    )
     st.caption(t(
-        "Stage groups: 🧵 **A** pre-production prep (parallel) · 🧪 **B** samples · "
-        "🏭 **C** production (sequential) · 📦 **D** post-production/shipping. "
-        "Fully-completed groups are collapsed — open them to review."
+        "💾 Save before switching sections — unsaved edits in a section "
+        "disappear when it is hidden."
     ))
-    _render_group_a_section(record, rid, readiness)
-    _render_pp_sample_section(record, rid, readiness["pp_sample"])
-    _render_group_c_section(record, rid, readiness["cutting"])
-    _render_group_d_section(record, rid)
-
-    # ── QC section ───────────────────────────────────────────────────────────
-    _render_qc_section(record, rid, reminders)
+    if pane == _PANES[0]:
+        _render_group_a_section(record, rid, readiness)
+    elif pane == _PANES[1]:
+        _render_pp_sample_section(record, rid, readiness["pp_sample"])
+    elif pane == _PANES[2]:
+        _render_group_c_section(record, rid, readiness["cutting"])
+    elif pane == _PANES[3]:
+        _render_group_d_section(record, rid)
+    else:
+        _render_qc_section(record, rid, reminders)
 
     st.divider()
 

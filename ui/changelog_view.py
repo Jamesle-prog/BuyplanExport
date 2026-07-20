@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.82.2",
+        "date": "2026-07-19",
+        "entries": [
+            {"type": "perf", "text": "**Tracking → Edit Record is much faster to interact with.** The form used to mount all ~120 widgets (4 stage groups + QC: 44 date pickers, ~30 dropdowns…) on every single click, making each selection feel seconds-slow. Stage groups are now shown one at a time via an A/B/C/D/QC selector, cutting the widget count ~4-5×. Saving is unchanged and still safe — fields in sections not currently shown keep their saved values (the same mechanism the Optional Samples toggle always used). Note: save before switching sections; unsaved edits in a hidden section are discarded."},
+        ],
+    },
+    {
         "version": "2.82.1",
         "date": "2026-07-19",
         "entries": [

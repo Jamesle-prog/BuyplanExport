@@ -1250,6 +1250,15 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Upload template (.xlsx with {{placeholders}})', '上传模板（含 {{占位符}} 的 .xlsx）', 'label', 'cmpt'),
     # 'Save template' / 'Template saved.' already seeded (admin scope, same zh values)
 
+    # Tracking → Edit Record stage-group panes (perf: one group at a time, v2.82.2).
+    ('🧵 A · Pre-Production', '🧵 A · 产前准备', 'label', 'tracking'),
+    ('🧪 B · Samples', '🧪 B · 样品', 'label', 'tracking'),
+    ('🏭 C · Production', '🏭 C · 生产', 'label', 'tracking'),
+    ('📦 D · Post-Production', '📦 D · 后道/出运', 'label', 'tracking'),
+    ('🔍 QC', '🔍 质检', 'label', 'tracking'),
+    ('💾 Save before switching sections — unsaved edits in a section disappear when it is hidden.',
+     '💾 切换分区前请先保存——隐藏分区中未保存的修改会丢失。', 'label', 'tracking'),
+
     # Tracking → Factory Updates (factory quantity reports, v2.81.0).
     ('📨 Factory Updates', '📨 工厂回报', 'header', 'tracking'),
     ('Quantity progress', '数量进度', 'header', 'tracking'),
