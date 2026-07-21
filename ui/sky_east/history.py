@@ -1013,6 +1013,22 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
     )
     _fabric_version_id = _fm_choice[1] if _fm_choice else None
 
+    # ── Optional output folder ──────────────────────────────────────────────
+    # When set, the generated buy plan + 核料 workbooks are ALSO copied
+    # there (in addition to the download buttons). Last-used folders persist
+    # across sessions via the same history file the image folder uses.
+    from ui.shared import _load_history as _dir_history, _push_history as _push_dir
+    if SK.SE_OUTPUT_DIR not in st.session_state:
+        _hist = _dir_history("se_output_dir")
+        st.session_state[SK.SE_OUTPUT_DIR] = _hist[0] if _hist else ""
+    st.text_input(
+        t("Output folder (optional)"),
+        key=SK.SE_OUTPUT_DIR,
+        placeholder=r"e.g. D:\BuyPlans or a network folder — blank = downloads only",
+        help=t("When set, the generated files are also saved directly to this "
+               "folder (downloads below still work either way)."),
+    )
+
     # Button is always enabled when contracts exist.  Validating selection inside
     # the handler (rather than via disabled=) avoids the Streamlit 1.57.0 bug
     # where a multiselect's session-state desync keeps the button permanently
@@ -1215,6 +1231,21 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             _pc_tag = "_".join(_effective_sel) if len(_effective_sel) <= 4 else f"{len(_effective_sel)}PCs"
                             st.session_state[SK.SE_BP_NAME] = f"SkyEast_{_pc_tag}_BuyPlan_{_ts}.xlsx"
                             st.write(f"✔ Buy plan done in {time.time() - _t_bp:.1f}s")
+                            _out_folder = (st.session_state.get(SK.SE_OUTPUT_DIR) or "").strip()
+                            if _out_folder:
+                                # Best-effort direct save -- an unreachable
+                                # folder must never fail the generation (the
+                                # download buttons still have the bytes).
+                                try:
+                                    os.makedirs(_out_folder, exist_ok=True)
+                                    _dst = os.path.join(
+                                        _out_folder, st.session_state[SK.SE_BP_NAME])
+                                    _shutil.copy2(bp_path, _dst)
+                                    st.write(f"💾 {t('Saved to')} {_dst}")
+                                    _push_dir("se_output_dir", _out_folder)
+                                except OSError as _exc:
+                                    st.warning(
+                                        f"⚠️ {t('Could not save to output folder')}: {_exc}")
                         except Exception as exc:
                             st.error(f"Buy plan failed: {exc}")
                             style_totals = {}
@@ -1240,6 +1271,19 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 st.session_state[SK.SE_NK_COUNT] = 0
                                 st.session_state[SK.SE_NK_REASON] = check_nukuryou_ready(df_items)
                             st.write(f"✔ 核料 done in {time.time() - _t_nk:.1f}s")
+                            _out_folder = (st.session_state.get(SK.SE_OUTPUT_DIR) or "").strip()
+                            if _out_folder and nk_paths:
+                                try:
+                                    os.makedirs(_out_folder, exist_ok=True)
+                                    for _p in nk_paths:
+                                        _shutil.copy2(
+                                            _p, os.path.join(_out_folder, os.path.basename(_p)))
+                                    st.write(
+                                        f"💾 {len(nk_paths)} {t('核料 workbook(s) saved to')} "
+                                        f"{_out_folder}")
+                                except OSError as _exc:
+                                    st.warning(
+                                        f"⚠️ {t('Could not save to output folder')}: {_exc}")
                         except Exception as exc:
                             st.warning(f"核料 workbooks skipped: {exc}")
                             st.session_state[SK.SE_NK_BYTES] = None

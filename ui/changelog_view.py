@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.84.1",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "feat", "text": "**Choose where the buy plan and 核料 save.** New \"Output folder (optional)\" field on the Generate screen: when set, the generated buy plan and every 核料 workbook are also written directly to that folder (local or network path) with their timestamped names — no more downloading and moving files by hand. The download buttons keep working either way, an unreachable folder just warns without failing the generation, and the last-used folder is remembered across sessions."},
+        ],
+    },
+    {
         "version": "2.84.0",
         "date": "2026-07-21",
         "entries": [

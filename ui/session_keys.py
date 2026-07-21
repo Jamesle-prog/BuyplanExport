@@ -35,6 +35,7 @@ class SK:
     SE_NEW_BRAND_PENDING = "se_new_brand_pending"   # brand names awaiting a 船样要求 entry
 
     SE_PHOTO_CACHE   = "se_photo_cache"    # {"key": (folder, styles), "map": style→[front,back]} per session
+    SE_OUTPUT_DIR    = "se_output_dir"     # optional folder to save generated buy plan / 核料 into
 
     # ── Fabric DB ─────────────────────────────────────────────────────────────
     FABRIC_DB_FLASH  = "fabric_db_flash"   # import/delete outcome shown after the post-action rerun

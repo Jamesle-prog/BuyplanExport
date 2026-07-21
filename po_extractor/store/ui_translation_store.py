@@ -1518,6 +1518,12 @@ _SEED: list[tuple[str, str, str, str]] = [
     ("Remind me later (don't save)", '稍后提醒（暂不保存）', 'button', 'sky_east'),
     ('Apply selected', '应用所选', 'button', 'sky_east'),
     ('Apply all new', '全部采用新值', 'button', 'sky_east'),
+    # 'Saved to' already seeded (admin scope, same zh value)
+    ('Output folder (optional)', '输出文件夹（可选）', 'label', 'sky_east'),
+    ('When set, the generated files are also saved directly to this folder (downloads below still work either way).',
+     '设置后，生成的文件会同时直接保存到该文件夹（下方的下载按钮仍然可用）。', 'label', 'sky_east'),
+    ('Could not save to output folder', '无法保存到输出文件夹', 'label', 'sky_east'),
+    ('核料 workbook(s) saved to', '个核料工作簿已保存到', 'label', 'sky_east'),
 
     # Fabric DB — version history review/restore additions (v2.79.0)
     ('approved by', '审批人', 'label', 'admin'),
