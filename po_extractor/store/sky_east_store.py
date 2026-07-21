@@ -566,3 +566,40 @@ class SkyEastStore(BaseSQLiteStore):
             n = conn.execute("SELECT COUNT(*) FROM sky_east_color_misses").fetchone()[0]
             conn.execute("DELETE FROM sky_east_color_misses")
         return n
+
+    # ── Photo-issue log (missing pictures + unreadable files) ────────────────
+
+    def replace_photo_issues(self, rows: list[dict]) -> None:
+        """Replace the photo-issue log with the CURRENT generation's issues.
+
+        *rows*: dicts with ``style``, ``issue`` ('missing' | 'error') and
+        optional ``detail`` (source path for errors). Wholesale replace (one
+        transaction) — a fixed photo disappears from the log on the next
+        generation without manual clearing; see the schema note.
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self._conn() as conn:
+            conn.execute("DELETE FROM sky_east_photo_issues")
+            if rows:
+                conn.executemany(
+                    "INSERT INTO sky_east_photo_issues (style, issue, detail, logged_at) "
+                    "VALUES (?,?,?,?)",
+                    [(r.get("style", ""), r.get("issue", "missing"),
+                      r.get("detail", "") or "", now) for r in rows],
+                )
+
+    def list_photo_issues(self) -> list[dict]:
+        """Photo issues from the most recent generation, missing first."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT style, issue, detail, logged_at FROM sky_east_photo_issues "
+                "ORDER BY issue DESC, style"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def clear_photo_issues(self) -> int:
+        """Delete the photo-issue log. Returns rows removed."""
+        with self._conn() as conn:
+            n = conn.execute("SELECT COUNT(*) FROM sky_east_photo_issues").fetchone()[0]
+            conn.execute("DELETE FROM sky_east_photo_issues")
+        return n

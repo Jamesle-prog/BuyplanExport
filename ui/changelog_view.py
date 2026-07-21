@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.86.0",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "feat", "text": "**New 🖼 Photo issues log on the Generate screen.** One reviewable table showing every picture problem from the most recent generation: styles with **no photo anywhere** (image folder, extracted-images backup, or the upload’s embedded pictures) and source files that **failed to read** (e.g. a corrupt file on the network share), with the exact file path to fix. The log is refreshed on every generation — fix a photo and its row disappears on the next run automatically. Session-cached photo runs keep their error entries truthful too."},
+        ],
+    },
+    {
         "version": "2.85.1",
         "date": "2026-07-21",
         "entries": [

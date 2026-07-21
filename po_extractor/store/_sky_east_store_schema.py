@@ -92,6 +92,20 @@ CREATE TABLE IF NOT EXISTS sky_east_color_misses (
 CREATE INDEX IF NOT EXISTS idx_sei_pc_no  ON sky_east_items(pc_no);
 CREATE INDEX IF NOT EXISTS idx_seih_pc_no ON sky_east_item_history(pc_no);
 CREATE INDEX IF NOT EXISTS idx_secm_pc_no ON sky_east_color_misses(pc_no);
+
+-- Photo issues from the most recent buy-plan generation: styles with no
+-- picture anywhere, and source files that failed to read (broken files on a
+-- network share). REPLACED wholesale on every generation (unlike the
+-- append-only colour-miss log) -- for pictures the CURRENT state is what
+-- matters, not history: a fixed photo should disappear from the log on the
+-- next run without manual clearing.
+CREATE TABLE IF NOT EXISTS sky_east_photo_issues (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    style     TEXT NOT NULL,
+    issue     TEXT NOT NULL,        -- 'missing' | 'error'
+    detail    TEXT DEFAULT '',      -- source file path for 'error', '' for 'missing'
+    logged_at TEXT NOT NULL
+);
 """
 
 

@@ -1161,6 +1161,9 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                     _photo_cached = st.session_state.get(SK.SE_PHOTO_CACHE) or {}
                     if _photo_cached.get("key") == _photo_key:
                         style_image_map: dict = _photo_cached["map"]
+                        # Replay the load's read errors so the photo-issue log
+                        # stays truthful on cached runs too.
+                        _bad_photos = _photo_cached.get("errors") or []
                         st.caption(
                             f"🖼 {len(style_image_map)}/{len(styles)} style "
                             f"photo(s) reused from this session (no re-read)"
@@ -1171,8 +1174,11 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                         _t_photos = time.time()
                         style_image_map = load_style_photo_map(styles, _img_folder)
                         _photos_secs = time.time() - _t_photos
+                        from ui.shared import get_last_photo_errors
+                        _bad_photos = get_last_photo_errors()
                         st.session_state[SK.SE_PHOTO_CACHE] = {
                             "key": _photo_key, "map": style_image_map,
+                            "errors": _bad_photos,
                         }
                         st.caption(
                             f"🖼 {len(style_image_map)}/{len(styles)} style photo(s) "
@@ -1180,8 +1186,6 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             + (f" — folder: {_img_folder}" if _photos_secs > 5 else "")
                         )
                         _step_times.append(("Style photos (load)", _photos_secs))
-                        from ui.shared import get_last_photo_errors
-                        _bad_photos = get_last_photo_errors()
                         if _bad_photos:
                             st.warning(
                                 f"⚠️ {len(_bad_photos)} " + t(
@@ -1215,6 +1219,23 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                         if str(s).strip() and str(s).strip() not in style_image_map
                     )
                     st.session_state[SK.SE_BP_NOPHOTO] = _styles_no_photo
+
+                    # ── Persist the photo-issue log (replaced per generation) ──
+                    # One reviewable table: missing pictures + unreadable files
+                    # (see 🖼 Photo issues panel below the downloads).
+                    try:
+                        _issue_rows = [
+                            {"style": _s, "issue": "missing", "detail": ""}
+                            for _s in _styles_no_photo
+                        ]
+                        for _p in (_bad_photos or []):
+                            _base = os.path.basename(_p)
+                            _sty = _base.replace("_front.png", "").replace("_back.png", "")
+                            _issue_rows.append(
+                                {"style": _sty, "issue": "error", "detail": _p})
+                        store.replace_photo_issues(_issue_rows)
+                    except Exception:
+                        pass   # the log is diagnostics — never block generation
 
                     # Timestamp the output filenames so regenerating doesn't
                     # silently overwrite the previous download.
@@ -1514,6 +1535,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
 
     if st.session_state.get(SK.SE_BP_BYTES):
         _se_color_miss_log_section(_misses_df)
+        _se_photo_issue_log_section()
 
     _se_hist_email_section()
 
@@ -1536,6 +1558,59 @@ def _dedupe_color_misses(df):
     return (df.sort_values("logged_at", ascending=False)
               .drop_duplicates(subset=_key, keep="first")
               .reset_index(drop=True))
+
+
+def _se_photo_issue_log_section() -> None:
+    """Reviewable log of picture problems from the most recent buy-plan
+    generation: styles with NO photo anywhere ('missing') and source files
+    that failed to read ('error', e.g. a corrupt file on the network share).
+    The table is REPLACED on every generation, so fixing a photo makes its
+    row disappear on the next run — no manual clearing needed (the Clear
+    button just empties it early)."""
+    from ui.stores import get_sky_east_store
+
+    store = get_sky_east_store()
+    issues = store.list_photo_issues()
+    if not issues:
+        return
+
+    n_missing = sum(1 for i in issues if i["issue"] == "missing")
+    n_error = len(issues) - n_missing
+    st.warning(
+        "🖼 " + t("Photo issues in the last generation:") + " "
+        + f"{n_missing} " + t("missing picture(s)")
+        + (f", {n_error} " + t("unreadable file(s)") if n_error else "") + ".",
+        icon="🖼",
+    )
+    with st.expander(f"🖼 {t('Photo issues')} ({len(issues)})", expanded=False):
+        st.caption(t(
+            "'missing' = no {style}_front.png in the image folder, the "
+            "extracted-images fallback, or the upload's embedded pictures — "
+            "the buy plan has no photo for that style. 'error' = the source "
+            "file exists but could not be read (often a corrupt file on the "
+            "network share; it is skipped fast and retried automatically "
+            "after a few hours). This list is refreshed on every generation."
+        ))
+        df = pd.DataFrame([{
+            "Style":  i["style"],
+            "Issue":  ("缺少照片 missing" if i["issue"] == "missing"
+                       else "读取失败 error"),
+            "File":   i["detail"] or "—",
+            "Logged": i["logged_at"],
+        } for i in issues])
+        st.dataframe(
+            df, width="stretch", hide_index=True,
+            height=min(60 + 36 * len(df), 400),
+            column_config={
+                "Style":  st.column_config.TextColumn(t("Style"), width="small"),
+                "Issue":  st.column_config.TextColumn(t("Issue"), width="small"),
+                "File":   st.column_config.TextColumn(t("File"), width="large"),
+                "Logged": st.column_config.TextColumn(t("Logged At"), width="small"),
+            },
+        )
+        if st.button(f"🗑️ {t('Clear photo issue log')}", key="se_clear_photo_issues"):
+            store.clear_photo_issues()
+            fragment_rerun()
 
 
 def _se_color_miss_log_section(misses_df=None) -> None:

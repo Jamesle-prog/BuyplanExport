@@ -207,3 +207,35 @@ def test_dedupe_color_misses_empty_passthrough():
     from ui.sky_east.history import _dedupe_color_misses
 
     assert _dedupe_color_misses(pd.DataFrame()).empty
+
+
+# ---------------------------------------------------------------------------
+# Photo-issue log (missing pictures + unreadable files) — replace-per-run
+# ---------------------------------------------------------------------------
+
+def test_photo_issue_log_replace_semantics(tmp_path):
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "se.db"))
+
+    store.replace_photo_issues([
+        {"style": "TP3274", "issue": "error", "detail": r"\share\TP3274_front.png"},
+        {"style": "DR5001", "issue": "missing"},
+    ])
+    issues = store.list_photo_issues()
+    assert len(issues) == 2
+    assert {i["issue"] for i in issues} == {"error", "missing"}
+    assert any("TP3274_front.png" in i["detail"] for i in issues)
+
+    # Next generation: DR5001's photo was added, TP3274 fixed -> new state
+    # fully REPLACES the old (a fixed photo disappears without clearing).
+    store.replace_photo_issues([{"style": "JK9000", "issue": "missing"}])
+    issues = store.list_photo_issues()
+    assert len(issues) == 1 and issues[0]["style"] == "JK9000"
+
+    # Empty state clears the table entirely.
+    store.replace_photo_issues([])
+    assert store.list_photo_issues() == []
+
+    store.replace_photo_issues([{"style": "A", "issue": "missing"}])
+    assert store.clear_photo_issues() == 1
+    assert store.list_photo_issues() == []
