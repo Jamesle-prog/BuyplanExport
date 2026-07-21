@@ -22,12 +22,70 @@ from po_extractor.lookups import color_ai_enhance
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache():
+def _clear_cache(monkeypatch):
+    # Persistence off by default: these tests stub the API and must neither
+    # read real cached answers from the canonical DB nor write to it.
+    monkeypatch.setattr(color_ai_enhance, "_persist_enabled", False)
     color_ai_enhance._cache.clear()
     color_ai_enhance._match_cache.clear()
     yield
     color_ai_enhance._cache.clear()
     color_ai_enhance._match_cache.clear()
+
+
+def test_persistent_cache_round_trip(monkeypatch, tmp_path):
+    """A genuine result survives a simulated process restart (in-memory
+    caches cleared) via the SQLite layer; failures are never persisted."""
+    import po_extractor.config as cfg
+    monkeypatch.setattr(cfg, "DB_PATH", str(tmp_path / "cache.db"))
+    monkeypatch.setattr(color_ai_enhance, "_persist_enabled", True)
+    monkeypatch.setattr(color_ai_enhance, "_persist_ready", False)
+
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(1)
+        return _FakeResponse('{"colors": ["Dark Blue"]}')
+    _install_fake_openai(monkeypatch, _create)
+
+    assert color_ai_enhance.recognize_colors("daek blue", "k", "m1") == ("Dark Blue",)
+    assert len(calls) == 1
+
+    # Simulated restart: memory gone, DB remains -> no second API call.
+    color_ai_enhance._cache.clear()
+    assert color_ai_enhance.recognize_colors("daek blue", "k", "m1") == ("Dark Blue",)
+    assert len(calls) == 1
+
+    # A different model re-asks (model is part of the PERSISTENT key; the
+    # in-memory cache is keyed by raw string only, so clear it first).
+    color_ai_enhance._cache.clear()
+    assert color_ai_enhance.recognize_colors("daek blue", "k", "m2") == ("Dark Blue",)
+    assert len(calls) == 2
+
+
+def test_persistent_cache_match_round_trip(monkeypatch, tmp_path):
+    import po_extractor.config as cfg
+    monkeypatch.setattr(cfg, "DB_PATH", str(tmp_path / "cache.db"))
+    monkeypatch.setattr(color_ai_enhance, "_persist_enabled", True)
+    monkeypatch.setattr(color_ai_enhance, "_persist_ready", False)
+
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(1)
+        return _FakeResponse('{"match": "Daek Blue"}')
+    _install_fake_openai(monkeypatch, _create)
+
+    assert color_ai_enhance.match_color_to_candidates(
+        "dark blue", ["Daek Blue"], "k", "m1") == "Daek Blue"
+    color_ai_enhance._match_cache.clear()
+    assert color_ai_enhance.match_color_to_candidates(
+        "dark blue", ["Daek Blue"], "k", "m1") == "Daek Blue"
+    assert len(calls) == 1
+    # Stored pick no longer among candidates -> ignored, fresh call made.
+    assert color_ai_enhance.match_color_to_candidates(
+        "dark blue", ["Navy"], "k", "m1") == ""
+    assert len(calls) == 2
 
 
 def test_recognize_colors_returns_empty_without_api_key():

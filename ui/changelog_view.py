@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.83.4",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "perf", "text": "**Buy Plan + 核料 generation is dramatically faster.** Profiled with real data (13 PCs · 60 styles · 40 photos): the buy plan itself takes ~4s, but the 核料 export was spending 12.5s of its 12.6s making one **blocking AI colour call per unresolved colour, one at a time** — with many unresolved colours that meant minutes. Two fixes: (1) 核料 now pre-warms all AI colour lookups in parallel before writing sheets, the same optimization the main buy plan already had; (2) AI colour answers are now **saved permanently in the database** — previously they were forgotten on every server restart and re-purchased from the API on the next generation. Measured result: 核料 export 12.6s → 0.2s once colours are known; brand-new colour names pay the API once, ever."},
+        ],
+    },
+    {
         "version": "2.83.3",
         "date": "2026-07-21",
         "entries": [

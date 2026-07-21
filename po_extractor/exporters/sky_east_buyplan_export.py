@@ -1655,6 +1655,15 @@ def export_sky_east_nukuryou(
         ai_enhance, ai_api_key, ai_model,
     )
 
+    # Parallel pre-warm of the AI colour cache — the same fix the main buy
+    # plan got: without it, every unresolved colour cost one BLOCKING DeepSeek
+    # round-trip inline in the sheet-writing loop (profiled: 12.5s of a 12.6s
+    # 核料 export was serial API waiting; dozens of misses = minutes).
+    _prefetch_ai_color_cache(
+        df_items, cn_lookup, cn_code_lookup, cn_by_pc_lookup,
+        ai_enhance, ai_api_key, ai_model,
+    )
+
     # Colour-miss diagnostic log — best-effort, never blocks export.  Mirrors
     # export_sky_east_buyplan so a colour that fails to resolve is logged (and
     # commented) here too, not just in the main buy plan.

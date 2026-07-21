@@ -33,6 +33,74 @@ _cache: dict[str, tuple[str, ...]] = {}
 # question is only ever asked once.
 _match_cache: dict[tuple, str] = {}
 
+# ── Persistent cache (SQLite) ────────────────────────────────────────────────
+# The in-memory caches die with the process, so every server restart re-paid
+# an API round-trip per unresolved colour on the next export. Genuine results
+# are additionally persisted to the canonical DB, keyed by (kind, key, model)
+# — model included so switching models re-asks. Best-effort in both
+# directions: any DB problem silently degrades to memory-only behaviour.
+# Tests disable it via ``_persist_enabled`` (they stub the API and must not
+# read real cached answers or write to the real DB).
+_persist_enabled = True
+_persist_ready = False
+
+
+def _persist_conn():
+    import sqlite3
+    from ..config import DB_PATH
+    global _persist_ready
+    conn = sqlite3.connect(DB_PATH, timeout=5)
+    if not _persist_ready:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS ai_color_cache (
+                   kind      TEXT NOT NULL,
+                   key       TEXT NOT NULL,
+                   model     TEXT NOT NULL,
+                   result    TEXT NOT NULL,
+                   cached_at TEXT,
+                   PRIMARY KEY (kind, key, model)
+               )"""
+        )
+        conn.commit()
+        _persist_ready = True
+    return conn
+
+
+def _persist_get(kind: str, key: str, model: str) -> str | None:
+    if not _persist_enabled:
+        return None
+    try:
+        conn = _persist_conn()
+        try:
+            row = conn.execute(
+                "SELECT result FROM ai_color_cache WHERE kind=? AND key=? AND model=?",
+                (kind, key, model),
+            ).fetchone()
+            return row[0] if row else None
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
+def _persist_put(kind: str, key: str, model: str, result: str) -> None:
+    if not _persist_enabled:
+        return
+    try:
+        conn = _persist_conn()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO ai_color_cache "
+                "(kind, key, model, result, cached_at) "
+                "VALUES (?,?,?,?,datetime('now'))",
+                (kind, key, model, result),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
 _SYSTEM_PROMPT = """\
 You identify colour names in short garment colour description strings.
 Return ONLY a JSON object: {"colors": ["<name1>", "<name2>", ...]}
@@ -105,6 +173,15 @@ def recognize_colors(
     if raw_color in _cache:
         return _cache[raw_color]
 
+    stored = _persist_get("recognize", raw_color, model)
+    if stored is not None:
+        try:
+            colors = tuple(str(c) for c in json.loads(stored))
+            _cache[raw_color] = colors
+            return colors
+        except Exception:
+            pass   # corrupt row -> fall through to a fresh API call
+
     try:
         from openai import OpenAI
         client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
@@ -128,6 +205,7 @@ def recognize_colors(
 
     if colors:
         _cache[raw_color] = colors
+        _persist_put("recognize", raw_color, model, json.dumps(list(colors)))
     return colors
 
 
@@ -166,6 +244,14 @@ def match_color_to_candidates(
     if cache_key in _match_cache:
         return _match_cache[cache_key]
 
+    persist_key = client_color + "\x1f" + "\x1f".join(sorted(candidates))
+    stored = _persist_get("match", persist_key, model)
+    # A stored pick is only valid if it's still one of the current candidates
+    # (the candidate set is part of the key, so this is belt-and-braces).
+    if stored and stored in candidates:
+        _match_cache[cache_key] = stored
+        return stored
+
     try:
         from openai import OpenAI
         client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
@@ -193,4 +279,5 @@ def match_color_to_candidates(
 
     if picked:
         _match_cache[cache_key] = picked
+        _persist_put("match", persist_key, model, picked)
     return picked
