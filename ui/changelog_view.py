@@ -10,6 +10,17 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.91.0",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "feat", "text": "**📧 Email — the system can now receive as well as send.** A new tab reads a mailbox you point it at, lists what arrived, and recognises the four spreadsheets it already understands **by their contents, not their filename** (factories rename files constantly): the 进度回报表 progress form, a returned buy plan's Index tab, the 大货进度表, and a 面料统计表. Each attachment shows what importing it would change — how many quantity reports, how many milestone dates, which PO/styles — and an **Apply** button writes it in. Nothing is ever applied automatically."},
+            {"type": "security", "text": "**Only senders you list are trusted.** Mail from an address that isn't on the allow-list is still shown — so you can see someone wrote in — but its attachments are locked and cannot be applied until you add that address. An empty list trusts nobody, so forgetting to configure it can never be the thing that lets data in. Add the sender later and their waiting files unlock without re-fetching the mailbox. Fabric lists are the one file type email will never apply: those keep going through the 🧵 Fabric DB approval queue, which is the stronger gate."},
+            {"type": "feat", "text": "**Notifications for five events** — missing fabric information, a buy plan generated, milestones overdue, factory data received, and a fabric list waiting for approval. Each has its own recipient list on the Notifications tab; leave a row empty and that notification is simply off. A notification that fails to send never disturbs the work that triggered it — a buy plan that generated correctly stays generated even if the mail server is down."},
+            {"type": "feat", "text": "**Compose** sends ad-hoc mail with attachments using the SMTP settings already in Admin → Email, and the mailbox itself is configured in an admin-only **⚙️ Mailbox** panel with a Test-connection button that reports what actually went wrong."},
+            {"type": "feat", "text": "Mail is checked when you press the button and once when the tab first opens in a session — there is no background poller, so an unreachable mail server can never stall the rest of the app. Reading the mailbox never deletes or moves anything: messages stay where they are, and a mis-read file can always be applied again from the original."},
+        ],
+    },
+    {
         "version": "2.90.0",
         "date": "2026-07-21",
         "entries": [

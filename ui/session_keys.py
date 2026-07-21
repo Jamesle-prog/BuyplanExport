@@ -75,6 +75,12 @@ class SK:
     PT_GRID_MODE      = "pt_grid_mode"       # str — grid date mode: planned | actual
     PT_GRID_SEARCH    = "pt_grid_search"     # str — grid PO/style search box
 
+    # ── Email (📧 inbox review + notifications) ───────────────────────────────
+    EMAIL_ACTIVE_TAB   = "email_active_tab"    # int — active sub-tab index
+    EMAIL_FETCH_FLASH  = "email_fetch_flash"   # str — one-shot result of the last check
+    EMAIL_LAST_FETCH   = "email_last_fetch"    # str — timestamp of last mailbox check
+    EMAIL_AUTO_CHECKED = "email_auto_checked"  # bool — auto-check already ran this session
+
     # ── GIII — upload auto-detection cache ────────────────────────────────────
     GIII_DETECTIONS   = "giii_detections"     # list[DetectionResult] for current upload set
     GIII_DETECT_SIG   = "giii_detect_sig"     # files_signature the detections were built from

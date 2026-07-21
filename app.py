@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.90.0"
+APP_VERSION = "2.91.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -408,6 +408,7 @@ def show_main():
         ("tracking",       f"🏭 {t('Tracking')}",       lambda: _show_production_tracking_tab(
             user_cos=get_user_companies(st.session_state.username), admin_mode=admin_mode)),
         ("cmpt",           f"📄 {t('CMPT')}",           lambda: _show_cmpt_tab(admin_mode=admin_mode)),
+        ("email",          f"📧 {t('Email')}",          lambda: _show_email_tab(admin_mode=admin_mode)),
         ("releases",       f"🔖 {t('Releases')}",       lambda: _show_changelog_tab()),
     ]
     _visible_tabs = [(label, fn) for key, label, fn in _all_tabs if _allowed(key)]
@@ -447,6 +448,12 @@ def _show_production_tracking_tab(user_cos: list[str], admin_mode: bool) -> None
 def _show_cmpt_tab(admin_mode: bool) -> None:
     from ui.cmpt_view import show_cmpt_tab
     show_cmpt_tab(username=st.session_state.username, admin_mode=admin_mode)
+
+
+@st.fragment
+def _show_email_tab(admin_mode: bool) -> None:
+    from ui.email_view import show_email_tab
+    show_email_tab(username=st.session_state.username, admin_mode=admin_mode)
 
 
 def _show_admin_panel():

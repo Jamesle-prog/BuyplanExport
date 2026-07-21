@@ -23,12 +23,13 @@ MODULE_COLORS           = "colors"
 MODULE_SUMMARY          = "summary"
 MODULE_TRACKING         = "tracking"
 MODULE_CMPT             = "cmpt"               # CMPT (加工) contracts + price ledger
+MODULE_EMAIL            = "email"              # inbox review + notifications
 MODULE_RELEASES         = "releases"
 
 ALL_MODULES = [
     MODULE_GIII, MODULE_SKY_EAST, MODULE_SKY_EAST_BUYPLAN, MODULE_FABRIC_DB,
     MODULE_REFERENCE_DATA, MODULE_COLORS, MODULE_SUMMARY, MODULE_TRACKING,
-    MODULE_CMPT, MODULE_RELEASES,
+    MODULE_CMPT, MODULE_EMAIL, MODULE_RELEASES,
 ]
 
 MODULE_LABELS = {
@@ -41,6 +42,7 @@ MODULE_LABELS = {
     MODULE_SUMMARY: "📊 Summary",
     MODULE_TRACKING: "🏭 Tracking",
     MODULE_CMPT: "📄 CMPT Contracts",
+    MODULE_EMAIL: "📧 Email",
     MODULE_RELEASES: "🔖 Releases",
 }
 

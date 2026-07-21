@@ -117,6 +117,12 @@ def _fabric_db_do_propose(store, uploaded, clear_first: bool = False) -> None:
                 "col_map": result.get("col_map", {}),
                 "unmatched": result.get("unmatched_headers", []),
             }
+            from po_extractor.utils.notifications import notify_fabric_pending
+            notify_fabric_pending(
+                _current_user(), result.get("row_count", 0),
+                note=(f"+{result['diff_added']} / -{result['diff_removed']} / "
+                      f"~{result['diff_changed']}"),
+            )
             fragment_rerun()
         except Exception as exc:
             st.error(f"Upload check failed: {exc}")

@@ -710,17 +710,28 @@ def _render_metrics(records, today) -> None:
         if (r.get(f"{s}_actual") or "").strip()
     )
     today_iso = today.isoformat()
-    overdue = sum(
-        1 for r in records for s, _ in MILESTONE_STAGES
+    overdue_rows = [
+        f"{r.get('po_number', '')} · {r.get('style', '')} — "
+        f"{MILESTONE_LABELS.get(s, s)} "
+        f"({t('planned')} {(r.get(f'{s}_planned') or '').strip()})"
+        for r in records for s, _ in MILESTONE_STAGES
         if (r.get(f"{s}_planned") or "").strip()
         and not (r.get(f"{s}_actual") or "").strip()
         and (r.get(f"{s}_planned") or "").strip() < today_iso
-    )
+    ]
+    overdue = len(overdue_rows)
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
     c1.metric(t("Tracked"),         f"{total:,}")
     c2.metric(t("Milestones done"), f"{done:,}")
     c3.metric(t("Overdue"),         f"{overdue:,}")
+    # Overdue mail is sent on request, not on a timer: an automatic daily
+    # digest would arrive whether or not anyone was looking at the plan.
+    with c4:
+        if overdue and st.button(f"📧 {t('Email the overdue list')}",
+                                 key="pt_notify_overdue"):
+            from po_extractor.utils.notifications import notify_milestones_overdue
+            st.caption(notify_milestones_overdue(overdue_rows))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -69,3 +69,4 @@ auth/users.db
 auth/users.db-*
 auth/users.json
 auth/smtp_settings.json
+auth/imap_settings.json

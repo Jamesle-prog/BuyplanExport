@@ -1393,6 +1393,24 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             if str(w.message).startswith("[sky_east")
                         ]
 
+                        # ── Notify subscribers (best-effort, never blocking) ──
+                        from po_extractor.utils.notifications import (
+                            notify_buyplan_generated, notify_fabric_missing,
+                        )
+                        _pc_tag_txt = ", ".join(_effective_sel[:5]) + (
+                            f" +{len(_effective_sel) - 5}"
+                            if len(_effective_sel) > 5 else "")
+                        notify_buyplan_generated(
+                            "Sky East", _pc_tag_txt, _distinct_styles,
+                            [st.session_state.get(SK.SE_BP_NAME, "")],
+                        )
+                        if _uncovered:
+                            notify_fabric_missing(
+                                "Sky East", _pc_tag_txt,
+                                [f"{s} — no 面料编号 (HHN No.) on file"
+                                 for s in _uncovered],
+                            )
+
                         # ── Per-step timing summary ──────────────────────────
                         if _step_times:
                             _total = sum(sec for _, sec in _step_times)
