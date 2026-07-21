@@ -1323,6 +1323,7 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
     from ui.stores import get_factory_progress_store
     from po_extractor.store._factory_progress_schema import (
         REPORT_STAGES, REPORT_STAGE_LABELS,
+        MILESTONE_STAGES, MILESTONE_LABELS,
     )
     from po_extractor.exporters.factory_progress_form import (
         build_progress_request_xlsx, parse_progress_report_xlsx,
@@ -1415,10 +1416,27 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                 for r in records if (r.get("factory") or "") == sel_factory
             ]
             st.caption(f"{len(fac_rows)} {t('PO/style row(s) for this factory')}")
+            # Milestone rows: current expected/notes/completed per stage, so
+            # the factory sees the plan and updates it on sheet 2.
+            _fac_recs = [r for r in records
+                         if (r.get("factory") or "") == sel_factory]
+            _ms_rows = [
+                {
+                    "po_number": r["po_number"],
+                    "style":     r.get("style") or "",
+                    "stage":     _stage,
+                    "expected":  r.get(f"{_stage}_planned") or "",
+                    "note":      r.get(f"{_stage}_notes") or "",
+                    "completed": r.get(f"{_stage}_actual") or "",
+                }
+                for r in _fac_recs
+                for _stage, _lbl in MILESTONE_STAGES
+            ]
             from datetime import date as _date
             st.download_button(
                 f"⬇️ {t('Download request form')}",
-                data=build_progress_request_xlsx(sel_factory, fac_rows),
+                data=build_progress_request_xlsx(sel_factory, fac_rows,
+                                                 milestones=_ms_rows),
                 file_name=f"进度回报表_{sel_factory}_{_date.today().isoformat()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="pt_fu_form_download",
@@ -1442,9 +1460,21 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                 st.error(str(exc))
             else:
                 reports = parsed["reports"]
+                milestones = parsed.get("milestones") or []
                 for issue in parsed["issues"]:
                     st.warning(f"⚠️ {issue}")
-                if not reports:
+                if milestones:
+                    st.markdown(f"**{t('Milestone updates in this file')}** ({len(milestones)})")
+                    ms_prev = pd.DataFrame([{
+                        "PO Number": m["po_number"], "Style": m["style"],
+                        "Milestone": MILESTONE_LABELS.get(m["stage"], m["stage"]),
+                        "Expected": m["expected"] or "—",
+                        "Note": m["note"] or "—",
+                        "Completed": m["completed"] or "—",
+                    } for m in milestones])
+                    st.dataframe(ms_prev, width="stretch", hide_index=True,
+                                 height=min(60 + 36 * len(ms_prev), 350))
+                if not reports and not milestones:
                     st.info(t("No new quantities found in this file."))
                 else:
                     prev = pd.DataFrame([{
@@ -1460,10 +1490,12 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                     for po, sty in sorted(unknown):
                         st.warning(f"⚠️ {po} / {sty or '—'} — "
                                    + t("not a tracked PO/style (import anyway if intentional)."))
-                    if st.button(
-                        f"✅ {t('Import')} {len(reports)} {t('report(s)')}",
-                        type="primary", key="pt_fu_import_go",
-                    ):
+                    _btn_label = (
+                        f"✅ {t('Import')} {len(reports)} {t('report(s)')}"
+                        + (f" + {len(milestones)} {t('milestone update(s)')}"
+                           if milestones else "")
+                    )
+                    if st.button(_btn_label, type="primary", key="pt_fu_import_go"):
                         n = 0
                         for rp in reports:
                             try:
@@ -1476,8 +1508,110 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                                 n += 1
                             except ValueError as exc:
                                 st.error(f"{rp['po_number']} / {rp['style']}: {exc}")
-                        st.success(f"✅ {n} {t('report(s) imported.')}")
+                        # Milestone updates -> production_tracking stage fields.
+                        # Completing a milestone (完成日期 filled) marks the
+                        # stage Done with that actual date.
+                        pt_store = get_production_tracking_store()
+                        n_ms = 0
+                        for m in milestones:
+                            fields: dict = {}
+                            if m["expected"]:
+                                fields[f"{m['stage']}_planned"] = m["expected"]
+                            if m["note"]:
+                                fields[f"{m['stage']}_notes"] = m["note"]
+                            if m["completed"]:
+                                fields[f"{m['stage']}_actual"] = m["completed"]
+                                fields[f"{m['stage']}_status"] = "Done"
+                            try:
+                                if pt_store.update_stage_fields(
+                                    m["po_number"], m["style"], fields,
+                                    updated_by=username,
+                                ):
+                                    n_ms += 1
+                                else:
+                                    st.warning(
+                                        f"⚠️ {m['po_number']} / {m['style']} — "
+                                        + t("not tracked; milestone update skipped."))
+                            except ValueError as exc:
+                                st.error(f"{m['po_number']} / {m['style']}: {exc}")
+                        st.success(
+                            f"✅ {n} {t('report(s) imported.')}"
+                            + (f" {n_ms} {t('milestone update(s) applied.')}"
+                               if milestones else "")
+                        )
                         fragment_rerun()
+
+    # ── 3.5 Milestones editor — the buy plan Index tab's tracking fields ────
+    # Expected completion date + status note per milestone, and marking a
+    # milestone complete/arrived (fills the actual date, status -> Done).
+    # Written to production_tracking, so populated values flow straight into
+    # the Sky East buy plan's Index columns on the next generation.
+    with st.expander(f"📋 {t('Milestones (buy plan tracking fields)')}", expanded=False):
+        def _fmt_ms_rec(idx: int) -> str:
+            r = records[idx]
+            return f"{r['po_number']} — {r.get('style') or '—'}"
+
+        ms_idx = st.selectbox(
+            t("PO / Style"), options=range(len(records)),
+            format_func=_fmt_ms_rec, key="pt_fu_ms_rec",
+        )
+        ms_rec = records[ms_idx]
+        _rid_key = f"{ms_rec['po_number']}|{ms_rec.get('style') or ''}"
+
+        def _to_date(v):
+            s = str(v or "").strip()
+            try:
+                return date.fromisoformat(s) if s else None
+            except ValueError:
+                return None
+
+        ms_df = pd.DataFrame([{
+            "milestone": _lbl,
+            "expected":  _to_date(ms_rec.get(f"{_stage}_planned")),
+            "note":      ms_rec.get(f"{_stage}_notes") or "",
+            "completed": _to_date(ms_rec.get(f"{_stage}_actual")),
+        } for _stage, _lbl in MILESTONE_STAGES])
+        edited_ms = st.data_editor(
+            ms_df, hide_index=True, width="stretch", num_rows="fixed",
+            disabled=["milestone"],
+            key=f"pt_fu_ms_editor_{_rid_key}",
+            column_config={
+                "milestone": st.column_config.TextColumn(t("Milestone"), width="medium"),
+                "expected":  st.column_config.DateColumn(t("Expected date")),
+                "note":      st.column_config.TextColumn(t("Status note"), width="large"),
+                "completed": st.column_config.DateColumn(t("Completed (arrived)")),
+            },
+        )
+        st.caption(t(
+            "Fill **Completed** to mark a milestone done/arrived — its stage "
+            "is set to Done. These fields appear in the buy plan's Index tab "
+            "and in the factory request form's 里程碑 sheet."
+        ))
+        if st.button(f"💾 {t('Save milestones')}", type="primary",
+                     key=f"pt_fu_ms_save_{_rid_key}"):
+            fields: dict = {}
+            for i, (_stage, _lbl) in enumerate(MILESTONE_STAGES):
+                row = edited_ms.iloc[i]
+                exp, comp = row["expected"], row["completed"]
+                fields[f"{_stage}_planned"] = (
+                    exp.isoformat() if hasattr(exp, "isoformat") and pd.notna(exp) else "")
+                fields[f"{_stage}_notes"] = str(row["note"] or "")
+                if pd.notna(comp) and comp is not None:
+                    fields[f"{_stage}_actual"] = comp.isoformat()
+                    fields[f"{_stage}_status"] = "Done"
+                else:
+                    fields[f"{_stage}_actual"] = ""
+                    # Un-completing a previously Done milestone downgrades it,
+                    # so the status can't claim Done with no completion date.
+                    if (ms_rec.get(f"{_stage}_status") or "") == "Done":
+                        fields[f"{_stage}_status"] = "In Progress"
+            pt_store = get_production_tracking_store()
+            pt_store.update_stage_fields(
+                ms_rec["po_number"], ms_rec.get("style") or "", fields,
+                updated_by=username,
+            )
+            st.success(f"✅ {t('Milestones saved.')}")
+            fragment_rerun()
 
     # ── 4. Manual entry (phone/WeChat reports keyed in by your own staff) ───
     with st.expander(f"✍️ {t('Manual entry')}", expanded=False):

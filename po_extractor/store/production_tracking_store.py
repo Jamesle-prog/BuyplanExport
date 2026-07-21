@@ -233,6 +233,47 @@ class ProductionTrackingStore(BaseSQLiteStore):
             ).fetchall()
         return {(r["po_number"], r["style"]): dict(r) for r in rows}
 
+    def update_stage_fields(self, po_number: str, style: str,
+                            stage_fields: dict[str, Any],
+                            updated_by: str = "") -> bool:
+        """Partial update of stage columns on an EXISTING record — the
+        milestone editor / factory round-trip path, which touches only a few
+        ``{stage}_planned`` / ``{stage}_notes`` / ``{stage}_actual`` /
+        ``{stage}_status`` columns and must not need the full upsert payload.
+
+        Column names are validated against the real schema (guards against a
+        typo'd stage silently becoming SQL). Returns False when no record
+        exists for (po_number, style) — callers decide whether that's a
+        warning (factory import for an untracked PO) or an error.
+        """
+        po_number = (po_number or "").strip()
+        style = (style or "").strip()
+        if not stage_fields:
+            return True
+        with self._conn() as conn:
+            valid_cols = {
+                r[1] for r in conn.execute(
+                    "PRAGMA table_info(production_tracking)").fetchall()
+            }
+            bad = [c for c in stage_fields if c not in valid_cols]
+            if bad:
+                raise ValueError(f"Unknown production_tracking columns: {bad}")
+            row = conn.execute(
+                "SELECT id FROM production_tracking WHERE po_number=? AND style=?",
+                (po_number, style),
+            ).fetchone()
+            if row is None:
+                return False
+            sets = ", ".join(f"{c}=?" for c in stage_fields)
+            conn.execute(
+                f"UPDATE production_tracking SET {sets}, "
+                f"updated_at=?, updated_by=? WHERE id=?",
+                [*stage_fields.values(),
+                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                 updated_by or "", row["id"]],
+            )
+        return True
+
     def list_untracked_pos(
         self,
         po_store,

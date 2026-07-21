@@ -20,6 +20,25 @@ REPORT_STAGE_LABELS: dict[str, str] = {
     "packing": "包装 Packing",
 }
 
+# The buy plan Index tab's tracking columns, in display order — each maps to
+# a production_tracking stage whose *_planned (expected completion),
+# *_notes (status note) and *_actual (marked complete) columns drive both
+# the in-house Milestones editor and the factory Excel round-trip. Mirrors
+# _INDEX_MILESTONE_MAP in sky_east_buyplan_export.py (the buy plan reads
+# the same stages), so populated values flow into the Index sheet.
+MILESTONE_STAGES: list[tuple[str, str]] = [
+    ("fabric_purchase",    "面料到厂 Fabric arrival"),
+    ("trim_purchase",      "辅料到厂 Trims arrival"),
+    ("pp_sample",          "样衣确认 Sample confirmation"),
+    ("base_size_pattern",  "大货版 Bulk pattern"),
+    ("full_sized_pattern", "全码版 Full-size pattern"),
+    ("cutting",            "裁剪完成 Cutting complete"),
+    ("sewing",             "车位完成 Sewing complete"),
+    ("packing",            "后道完成 Finishing complete"),
+    ("shipping",           "工厂交期 Factory delivery"),
+]
+MILESTONE_LABELS: dict[str, str] = dict(MILESTONE_STAGES)
+
 _FACTORY_PROGRESS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS factory_progress_reports (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

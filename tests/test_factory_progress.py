@@ -193,3 +193,81 @@ def test_index_cut_qty_enrichment(tmp_path, monkeypatch):
     _enrich_sheet_meta_with_progress(meta)
     assert meta[0]["cut_qty"] == 550
     assert meta[1]["cut_qty"] == ""     # no reports -> blank cell
+
+
+# ── Milestone round-trip (form sheet 2 + production_tracking updates) ────────
+
+def test_form_milestone_sheet_round_trip(tmp_path):
+    from po_extractor.store._factory_progress_schema import MILESTONE_STAGES
+    ms_in = [
+        {"po_number": "PO1", "style": "STY1", "stage": "fabric_purchase",
+         "expected": "2026-08-01", "note": "on order", "completed": ""},
+        {"po_number": "PO1", "style": "STY1", "stage": "shipping",
+         "expected": "", "note": "", "completed": ""},
+    ]
+    content = build_progress_request_xlsx("F", _form_rows(), milestones=ms_in)
+
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(content))
+    assert "里程碑 Milestones" in wb.sheetnames
+    ms = wb["里程碑 Milestones"]
+    # Header at row 3 -> data rows 4+. Factory fills row 4's completed date
+    # and row 5's expected date + note.
+    ms.cell(4, 7, value="2026-08-03")            # fabric arrived
+    ms.cell(5, 5, value="2026-09-15")            # delivery expected
+    ms.cell(5, 6, value="rush order")
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    parsed = parse_progress_report_xlsx(buf.getvalue())
+    got = {(m["stage"]): m for m in parsed["milestones"]}
+    assert got["fabric_purchase"]["completed"] == "2026-08-03"
+    assert got["fabric_purchase"]["expected"] == "2026-08-01"   # pre-fill kept
+    assert got["shipping"]["expected"] == "2026-09-15"
+    assert got["shipping"]["note"] == "rush order"
+
+
+def test_form_milestone_unknown_stage_is_an_issue_not_a_crash(tmp_path):
+    ms_in = [{"po_number": "PO1", "style": "S", "stage": "fabric_purchase",
+              "expected": "2026-08-01", "note": "", "completed": ""}]
+    content = build_progress_request_xlsx("F", _form_rows(), milestones=ms_in)
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(content))
+    ms = wb["里程碑 Milestones"]
+    ms.cell(4, 4, value="bogus_stage")           # factory mangled the code col
+    buf = io.BytesIO()
+    wb.save(buf)
+    parsed = parse_progress_report_xlsx(buf.getvalue())
+    assert parsed["milestones"] == []
+    assert any("unknown stage" in i for i in parsed["issues"])
+
+
+def test_update_stage_fields_partial_and_done(tmp_path):
+    from po_extractor.store.production_tracking_store import ProductionTrackingStore
+    store = ProductionTrackingStore(str(tmp_path / "pt.db"))
+    store.upsert(
+        po_number="PO1", style="STY1", factory="F1", company="sky_east",
+        updated_by="t", overall_notes="", use_substitute_materials=1,
+        stage_fields={}, dep_fields={}, qc_fields={},
+    )
+    ok = store.update_stage_fields("PO1", "STY1", {
+        "fabric_purchase_planned": "2026-08-01",
+        "fabric_purchase_notes": "on order",
+        "fabric_purchase_actual": "2026-08-03",
+        "fabric_purchase_status": "Done",
+    }, updated_by="factory")
+    assert ok is True
+    rec = store.get_batch_by_po_styles([("PO1", "STY1")])[("PO1", "STY1")]
+    assert rec["fabric_purchase_planned"] == "2026-08-01"
+    assert rec["fabric_purchase_actual"] == "2026-08-03"
+    assert rec["fabric_purchase_status"] == "Done"
+    assert rec["fabric_purchase_notes"] == "on order"
+
+    # Untracked pair -> False, nothing raised.
+    assert store.update_stage_fields("NOPE", "X", {"cutting_notes": "hi"}) is False
+    # Bogus column -> hard error (guards SQL injection via stage names).
+    import pytest as _pytest
+    with _pytest.raises(ValueError):
+        store.update_stage_fields("PO1", "STY1", {"evil; DROP": "x"})
