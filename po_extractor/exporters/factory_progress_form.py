@@ -290,3 +290,87 @@ def parse_progress_report_xlsx(content: bytes, factory: str = "") -> dict:
                 "issues": issues, "rows_seen": rows_seen}
     finally:
         wb.close()
+
+
+# ── Returned BUY PLAN import — the Index tab as the round-trip form ─────────
+#
+# The intended loop: the buy plan generates with its tracking columns empty
+# (they only fill once tracking data exists), the factory/merchandiser fills
+# the expected dates directly in the Index tab, the returned file is imported
+# here, and the NEXT buy plan reflects reality. Header text → tracking field:
+_BP_INDEX_HEADER_MAP: dict[str, tuple[str, str]] = {
+    "生产工厂":               ("factory",            "base"),
+    "工厂交期":               ("shipping",           "stage"),
+    "面料（计划）到厂时间":    ("fabric_purchase",    "stage"),
+    "辅料（计划）到厂时间":    ("trim_purchase",      "stage"),
+    "样衣（计划）确认时间":    ("pp_sample",          "stage"),
+    "大货版（计划）完成时间":  ("base_size_pattern",  "stage"),
+    "全码版（计划）完成时间":  ("full_sized_pattern", "stage"),
+    "裁剪（计划）完成时间":    ("cutting",            "stage"),
+    "车位（计划）完成时间":    ("sewing",             "stage"),
+    "后道（计划）完成时间":    ("packing",            "stage"),
+    # 裁剪计划（计划）完成时间 has no tracking stage; 裁剪数/出货数 are
+    # quantities (reported via the progress form's dated log, not here).
+}
+
+
+def parse_buyplan_index_tracking(content: bytes) -> dict:
+    """Parse the tracking columns of a returned Sky East buy plan's Index tab.
+
+    Returns ``{"rows": [{style, pc_no, factory, planned: {stage: date}}],
+    "issues": [...]}`` — one row per (style, PC No.) with at least one filled
+    tracking cell; repeated Index rows for the same pair (multi-fabric
+    styles) are merged, last non-empty value winning. Only EXPECTED (计划)
+    dates travel on this form — completion marking stays online or on the
+    progress form's 里程碑 sheet. Raises ValueError when the file has no
+    recognisable Index sheet.
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    try:
+        ws = wb["Index"] if "Index" in wb.sheetnames else None
+        if ws is None:
+            raise ValueError("No 'Index' sheet — is this a generated buy plan?")
+
+        headers = {str(c.value or "").strip(): c.column for c in ws[1] if c.value}
+        if "款号" not in headers or "客人PC NO" not in headers:
+            raise ValueError(
+                "Index sheet is missing the 款号 / 客人PC NO columns — "
+                "is this a generated buy plan?"
+            )
+        col_style, col_pc = headers["款号"], headers["客人PC NO"]
+        field_cols = {
+            h: (headers[h], spec) for h, spec in _BP_INDEX_HEADER_MAP.items()
+            if h in headers
+        }
+
+        def _cell_date(v) -> str:
+            if hasattr(v, "isoformat"):
+                return (v.date().isoformat() if hasattr(v, "date")
+                        else v.isoformat())
+            return str(v or "").strip()
+
+        merged: dict[tuple[str, str], dict] = {}
+        issues: list[str] = []
+        for r in range(2, ws.max_row + 1):
+            style = str(ws.cell(r, col_style).value or "").strip()
+            pc_no = str(ws.cell(r, col_pc).value or "").strip()
+            if not style or not pc_no:
+                continue
+            row = merged.setdefault(
+                (pc_no, style),
+                {"style": style, "pc_no": pc_no, "factory": "", "planned": {}},
+            )
+            for _h, (col, (field, kind)) in field_cols.items():
+                raw = ws.cell(r, col).value
+                if raw in (None, ""):
+                    continue
+                if kind == "base":
+                    row["factory"] = str(raw).strip()
+                else:
+                    row["planned"][field] = _cell_date(raw)
+
+        rows = [row for row in merged.values()
+                if row["factory"] or row["planned"]]
+        return {"rows": rows, "issues": issues}
+    finally:
+        wb.close()

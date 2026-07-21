@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.88.0",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "feat", "text": "**The buy plan itself is now the tracking round-trip form.** Import a returned buy plan (🏭 Tracking → 📨 Factory Updates → 📥 Import a returned form) and the system reads the tracking columns the merchandiser or factory filled into the Index tab — 生产工厂 plus every （计划） expected date — matches each row to its PO by 客人PC NO + 款号, and applies them to tracking. The next buy plan then prints those dates. The importer auto-detects which file you dropped (progress form or buy plan), previews every change with a per-row status, and flags rows whose PO can't be resolved or that aren't tracked — blanks never erase existing plans. Completion marking stays online or on the progress form's 里程碑 sheet, so an expected-date sweep can't accidentally close milestones."},
+        ],
+    },
+    {
         "version": "2.87.0",
         "date": "2026-07-21",
         "entries": [

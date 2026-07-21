@@ -1311,6 +1311,81 @@ def _render_plan_tab(records, store) -> None:
 # Factory Updates tab — quantity reports from factories (units cut/sewn/packed)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _render_buyplan_tracking_import(bp: dict, records, username) -> None:
+    """Preview + apply the tracking columns of a returned BUY PLAN Index tab.
+
+    The Index identifies rows by (客人PC NO, 款号); the tracking key is
+    (Zalando PO, style), so PC+style resolve to the PO via sky_east_items.
+    Only EXPECTED (计划) dates and 生产工厂 travel on this form — non-empty
+    cells overwrite the stored plan; blanks never erase anything.
+    """
+    from ui.stores import get_sky_east_store
+    from po_extractor.store._factory_progress_schema import MILESTONE_LABELS
+
+    rows = bp.get("rows") or []
+    st.markdown(f"**{t('Returned buy plan detected')}** — "
+                f"{len(rows)} {t('row(s) with tracking data')}")
+    if not rows:
+        st.info(t("No filled tracking cells found in this buy plan's Index tab."))
+        return
+
+    try:
+        items = get_sky_east_store().list_items()
+        po_map: dict = {}
+        for _, r in items.iterrows():
+            k = (str(r.get("pc_no") or "").strip(),
+                 str(r.get("style") or "").strip())
+            po = str(r.get("zalando_po") or "").strip()
+            if k[0] and k[1] and po and k not in po_map:
+                po_map[k] = po
+    except Exception:
+        po_map = {}
+
+    tracked = {(r["po_number"], r.get("style") or "") for r in records}
+    prev_rows, apply_jobs = [], []
+    for row in rows:
+        po = po_map.get((row["pc_no"], row["style"]), "")
+        changes = ", ".join(
+            f"{MILESTONE_LABELS.get(k, k).split(' ')[0]}: {v}"
+            for k, v in row["planned"].items()
+        )
+        if row["factory"]:
+            changes = (f"{t('Factory')}: {row['factory']}"
+                       + (f", {changes}" if changes else ""))
+        if not po:
+            status = "❓ " + t("PO not found for this PC/style")
+        elif (po, row["style"]) not in tracked:
+            status = "⚠ " + t("not tracked; skipped")
+        else:
+            status = "✓"
+            fields = {f"{k}_planned": v for k, v in row["planned"].items()}
+            if row["factory"]:
+                fields["factory"] = row["factory"]
+            apply_jobs.append((po, row["style"], fields))
+        prev_rows.append({
+            "PC No.": row["pc_no"], "Style": row["style"],
+            "Updates": changes, "Status": status,
+        })
+
+    st.dataframe(pd.DataFrame(prev_rows), width="stretch", hide_index=True,
+                 height=min(60 + 36 * len(prev_rows), 350))
+    if apply_jobs and st.button(
+        f"✅ {t('Apply')} {len(apply_jobs)} {t('tracking update(s) from buy plan')}",
+        type="primary", key="pt_fu_bp_apply",
+    ):
+        pt_store = get_production_tracking_store()
+        n = 0
+        for po, sty, fields in apply_jobs:
+            try:
+                if pt_store.update_stage_fields(po, sty, fields,
+                                                updated_by=username):
+                    n += 1
+            except ValueError as exc:
+                st.error(f"{po} / {sty}: {exc}")
+        st.success(f"✅ {n} {t('tracking update(s) applied.')}")
+        fragment_rerun()
+
+
 def _render_factory_updates_tab(records, username, admin_mode) -> None:
     """Excel round-trip + manual entry for factory quantity reports.
 
@@ -1327,6 +1402,7 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
     )
     from po_extractor.exporters.factory_progress_form import (
         build_progress_request_xlsx, parse_progress_report_xlsx,
+        parse_buyplan_index_tracking,
     )
 
     fp_store = get_factory_progress_store()
@@ -1442,8 +1518,13 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                 key="pt_fu_form_download",
             )
 
-    # ── 3. Import a returned form ───────────────────────────────────────────
+    # ── 3. Import a returned form (progress form OR returned buy plan) ──────
     with st.expander(f"📥 {t('Import a returned form')}", expanded=False):
+        st.caption(t(
+            "Accepts either the 进度回报 progress form or a returned BUY PLAN "
+            "whose Index tab tracking columns were filled in by the "
+            "merchandiser/factory."
+        ))
         up_factory = st.text_input(
             t("Factory this file came from"), key="pt_fu_import_factory",
             help=t("Stamped on every imported report row for the audit trail."),
@@ -1453,12 +1534,21 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
             key="pt_fu_import_file", label_visibility="collapsed",
         )
         if uploaded is not None:
+            parsed = None
             try:
                 parsed = parse_progress_report_xlsx(uploaded.getvalue(),
                                                     factory=up_factory.strip())
-            except ValueError as exc:
-                st.error(str(exc))
-            else:
+            except ValueError:
+                # Not the progress form — maybe a returned buy plan.
+                try:
+                    _bp = parse_buyplan_index_tracking(uploaded.getvalue())
+                except ValueError as exc2:
+                    st.error(
+                        t("Not a recognisable progress form or buy plan:")
+                        + f" {exc2}")
+                else:
+                    _render_buyplan_tracking_import(_bp, records, username)
+            if parsed is not None:
                 reports = parsed["reports"]
                 milestones = parsed.get("milestones") or []
                 for issue in parsed["issues"]:

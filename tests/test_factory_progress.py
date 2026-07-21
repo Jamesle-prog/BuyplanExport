@@ -271,3 +271,59 @@ def test_update_stage_fields_partial_and_done(tmp_path):
     import pytest as _pytest
     with _pytest.raises(ValueError):
         store.update_stage_fields("PO1", "STY1", {"evil; DROP": "x"})
+
+
+# ── Returned buy plan Index import ──────────────────────────────────────────
+
+def test_parse_buyplan_index_tracking_round_trip(tmp_path):
+    """The full intended loop: generate a real buy plan (tracking columns
+    empty), fill some Index tracking cells the way a factory would, and
+    parse them back."""
+    import io
+    import openpyxl
+    import pandas as pd
+    from po_extractor.exporters.sky_east_buyplan_export import export_sky_east_buyplan
+    from po_extractor.exporters.factory_progress_form import parse_buyplan_index_tracking
+
+    df = pd.DataFrame([
+        {"style": "DR5124", "brand": "Anna Field", "zalando_po": "PO1",
+         "pc_no": "HHPPC048", "config_sku": "C1", "color_name": "black",
+         "contract_no": "K1", "article_name": "LACE",
+         "xs": 1, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0},
+    ])
+    path, _ = export_sky_east_buyplan(
+        df, cn_lookup={}, output_dir=str(tmp_path),
+        label_lookup={}, cn_code_lookup={},
+    )
+
+    wb = openpyxl.load_workbook(path)
+    ws = wb["Index"]
+    headers = {str(c.value or "").strip(): c.column for c in ws[1] if c.value}
+    # Tracking columns start EMPTY (no tracking data in this test DB).
+    assert ws.cell(2, headers["面料（计划）到厂时间"]).value in (None, "")
+    ws.cell(2, headers["生产工厂"], value="Factory Alpha")
+    ws.cell(2, headers["面料（计划）到厂时间"], value="2026-08-01")
+    ws.cell(2, headers["工厂交期"], value="2026-09-20")
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    out = parse_buyplan_index_tracking(buf.getvalue())
+    assert len(out["rows"]) == 1
+    row = out["rows"][0]
+    assert (row["pc_no"], row["style"]) == ("HHPPC048", "DR5124")
+    assert row["factory"] == "Factory Alpha"
+    assert row["planned"]["fabric_purchase"] == "2026-08-01"
+    assert row["planned"]["shipping"] == "2026-09-20"
+
+
+def test_parse_buyplan_index_rejects_non_buyplan():
+    import io
+    import openpyxl
+    import pytest as _pytest
+    from po_extractor.exporters.factory_progress_form import parse_buyplan_index_tracking
+    wb = openpyxl.Workbook()
+    wb.active.append(["random"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    with _pytest.raises(ValueError):
+        parse_buyplan_index_tracking(buf.getvalue())
