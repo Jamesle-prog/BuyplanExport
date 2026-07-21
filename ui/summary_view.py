@@ -124,11 +124,36 @@ def _build_tracker_excel(df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
-def _show_po_tracker(user_cos: list[str], admin_mode: bool) -> None:
+@st.cache_data(max_entries=8, show_spinner=False)
+def _build_all_orders_excel(df: pd.DataFrame) -> bytes:
+    """Pure function (DataFrame in → xlsx bytes out) — cached like
+    ``_build_tracker_excel`` so the export isn't rebuilt on every rerun."""
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as wr:
+        df.to_excel(wr, sheet_name="All Orders", index=False)
+    return buf.getvalue()
+
+
+@st.cache_data(max_entries=8, show_spinner=False)
+def _build_overview_excel(summary_df: pd.DataFrame,
+                          giii_df: pd.DataFrame | None,
+                          se_df: pd.DataFrame | None) -> bytes:
+    """Pure function (DataFrames in → xlsx bytes out) — cached like
+    ``_build_tracker_excel``.  ``giii_df`` / ``se_df`` are the pre-renamed
+    detail sheets, or None to omit that sheet."""
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as wr:
+        summary_df.to_excel(wr, sheet_name="Summary", index=False)
+        if giii_df is not None:
+            giii_df.to_excel(wr, sheet_name="GIII POs", index=False)
+        if se_df is not None:
+            se_df.to_excel(wr, sheet_name="Sky East Items", index=False)
+    return buf.getvalue()
+
+
+def _show_po_tracker(df: pd.DataFrame) -> None:
     st.subheader(f"📋 {t('PO Tracker')}")
     st.caption(t("One row per PO — all commercial fields for comparison and tracking."))
-
-    df = get_store().list_pos(companies=user_cos if user_cos and not admin_mode else None)
 
     if df.empty:
         st.info(t("No POs stored yet. Upload PDFs via the GIII tab to populate."))
@@ -203,39 +228,70 @@ def show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
         ))
         return
 
+    # ── Shared data — fetched ONCE per rerun ─────────────────────────────────
+    # st.tabs renders every sub-tab body on each rerun, so per-sub-tab store
+    # reads used to run 2–4x per interaction.  The two company-filter shapes
+    # are kept distinct on purpose: Tracker/All Orders treat an admin as
+    # unrestricted, Overview scopes an admin to their assigned companies.
+    tracker_cos  = user_cos if user_cos and not admin_mode else None
+    overview_cos = user_cos if user_cos else None
+    unrestricted = admin_mode or not user_cos
+    can_see_giii    = unrestricted or bool(user_cos)
+    can_see_zalando = unrestricted or COMPANY_SKY_EAST in [c.strip() for c in user_cos]
+
+    po_store = get_store()
+    se_store = get_sky_east_store()
+    tracker_df = po_store.list_pos(companies=tracker_cos)
+    overview_giii_df = (tracker_df if overview_cos == tracker_cos
+                        else po_store.list_pos(companies=overview_cos))
+    se_items = se_store.list_items() if can_see_zalando else pd.DataFrame()
+
+    std_all_df = load_standard_orders(
+        po_store, se_store,
+        companies=tracker_cos,
+        include_giii=can_see_giii,
+        include_sky_east=can_see_zalando,
+        sky_east_company=COMPANY_SKY_EAST,
+        giii_df=tracker_df,
+        se_items=se_items if can_see_zalando else None,
+    )
+    std_overview_df = (std_all_df if overview_cos == tracker_cos
+                       else load_standard_orders(
+                           po_store, se_store,
+                           companies=overview_cos,
+                           include_giii=can_see_giii,
+                           include_sky_east=can_see_zalando,
+                           sky_east_company=COMPANY_SKY_EAST,
+                           giii_df=overview_giii_df,
+                           se_items=se_items if can_see_zalando else None,
+                       ))
+
     tab_overview, tab_tracker, tab_all = st.tabs([
         f"📊 {t('Overview')}", f"📋 {t('PO Tracker')}", f"🧾 {t('All Orders')}",
     ])
 
     with tab_tracker:
-        _show_po_tracker(user_cos, admin_mode)
+        _show_po_tracker(tracker_df)
 
     with tab_overview:
-        _show_overview(user_cos, admin_mode)
+        _show_overview(user_cos, admin_mode, overview_giii_df, se_items,
+                       std_overview_df)
 
     with tab_all:
-        _show_all_orders(user_cos, admin_mode)
+        _show_all_orders(std_all_df)
 
 
-def _show_all_orders(user_cos: list[str], admin_mode: bool) -> None:
-    """One combined table of every client's orders in the standard column set."""
+def _show_all_orders(df: pd.DataFrame) -> None:
+    """One combined table of every client's orders in the standard column set.
+
+    *df* is the standard-shape frame loaded once in ``show_summary_tab``.
+    """
     st.subheader(f"🧾 {t('All Orders')}")
     st.caption(t(
         "Every client's orders in one table with standardized columns — "
         "GIII POs and Sky East contract items side by side."
     ))
 
-    unrestricted = admin_mode or not user_cos
-    can_see_giii    = unrestricted or bool(user_cos)
-    can_see_zalando = unrestricted or COMPANY_SKY_EAST in [c.strip() for c in user_cos]
-
-    df = load_standard_orders(
-        get_store(), get_sky_east_store(),
-        companies=user_cos if user_cos and not admin_mode else None,
-        include_giii=can_see_giii,
-        include_sky_east=can_see_zalando,
-        sky_east_company=COMPANY_SKY_EAST,
-    )
     if df.empty:
         st.info(t("No order data available for your permitted companies."))
         return
@@ -283,21 +339,24 @@ def _show_all_orders(user_cos: list[str], admin_mode: bool) -> None:
     st.dataframe(display, use_container_width=True, hide_index=True)
 
     # ── Download (English standard headers, language-independent) ───────────
-    buf = io.BytesIO()
-    export = df[show].rename(columns=STANDARD_LABELS)
-    with pd.ExcelWriter(buf, engine="openpyxl") as wr:
-        export.to_excel(wr, sheet_name="All Orders", index=False)
+    xlsx = _build_all_orders_excel(df[show].rename(columns=STANDARD_LABELS))
     st.download_button(
         "⬇️ " + t("Download All Orders (.xlsx)"),
-        data=buf.getvalue(),
+        data=xlsx,
         file_name="all_orders.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="sum_all_dl",
     )
 
 
-def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
-    """Original cross-company overview content."""
+def _show_overview(user_cos: list[str], admin_mode: bool,
+                   giii_df: pd.DataFrame, se_items: pd.DataFrame,
+                   std_df: pd.DataFrame) -> None:
+    """Original cross-company overview content.
+
+    *giii_df* / *se_items* / *std_df* are loaded once in ``show_summary_tab``
+    (Overview-scoped company filtering) and passed in.
+    """
     st.subheader(f"📊 {t('Order Summary')}")
     st.caption(t("Aggregated view of all orders across clients, filtered to your permitted companies."))
 
@@ -308,28 +367,15 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
     can_see_giii    = unrestricted or bool(user_cos)          # any company assigned includes GIII-type data
     can_see_zalando = unrestricted or COMPANY_SKY_EAST in [c.strip() for c in user_cos]
 
-    # Load data
-    giii_df = pd.DataFrame()
-    se_df   = pd.DataFrame()
+    # Copies: the expanders below add virtual columns in place, and the
+    # frames are shared with the other sub-tabs.
+    giii_df = giii_df.copy() if can_see_giii else pd.DataFrame()
+    se_df = (se_items.copy()
+             if can_see_zalando and not se_items.empty else pd.DataFrame())
 
-    if can_see_giii:
-        giii_df = get_store().list_pos(companies=user_cos if user_cos else None)
-
-    if can_see_zalando:
-        se_items = get_sky_east_store().list_items()
-        if not se_items.empty:
-            se_df = se_items
-
-    # Build unified summary rows (one row per Company) from the standard
-    # cross-pipeline shape — no per-pipeline branching here anymore.
+    # Unified summary rows (one row per Company) come from the standard
+    # cross-pipeline shape (std_df) — no per-pipeline branching here.
     # Columns: Company | POs | Styles | Units | Latest Ex-Fty | Factory | COO | Source
-    std_df = load_standard_orders(
-        get_store(), get_sky_east_store(),
-        companies=user_cos if user_cos else None,
-        include_giii=can_see_giii,
-        include_sky_east=can_see_zalando,
-        sky_east_company=COMPANY_SKY_EAST,
-    )
 
     def _mode_nonblank(series: pd.Series) -> str:
         vals = series.replace("", pd.NA).dropna()
@@ -469,16 +515,14 @@ def _show_overview(user_cos: list[str], admin_mode: bool) -> None:
 
     # Download
     if summary_rows:
-        buf = io.BytesIO()
-        with pd.ExcelWriter(buf, engine="openpyxl") as wr:
-            summary_df.to_excel(wr, sheet_name="Summary", index=False)
-            if can_see_giii and not giii_df.empty and show_cols:
-                giii_df[show_cols].rename(columns=labels).to_excel(
-                    wr, sheet_name="GIII POs", index=False)
-            if can_see_zalando and not se_df.empty and se_show:
-                se_df[se_show].rename(columns=se_labels).to_excel(
-                    wr, sheet_name="Sky East Items", index=False)
-        st.download_button("⬇️ " + t("Download Full Summary"), buf.getvalue(),
+        giii_export = (giii_df[show_cols].rename(columns=labels)
+                       if can_see_giii and not giii_df.empty and show_cols
+                       else None)
+        se_export = (se_df[se_show].rename(columns=se_labels)
+                     if can_see_zalando and not se_df.empty and se_show
+                     else None)
+        xlsx = _build_overview_excel(summary_df, giii_export, se_export)
+        st.download_button("⬇️ " + t("Download Full Summary"), xlsx,
                            "order_summary.xlsx", key="sum_dl_all")
 
     if not can_see_giii and not can_see_zalando:

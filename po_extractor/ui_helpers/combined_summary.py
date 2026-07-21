@@ -194,17 +194,26 @@ def load_standard_orders(po_store, sky_east_store,
                          companies: list[str] | None = None,
                          include_giii: bool = True,
                          include_sky_east: bool = True,
-                         sky_east_company: str = "Sky East") -> pd.DataFrame:
+                         sky_east_company: str = "Sky East",
+                         giii_df: pd.DataFrame | None = None,
+                         se_items: pd.DataFrame | None = None) -> pd.DataFrame:
     """Load every pipeline's orders as ONE standard-shape DataFrame.
 
     ``po_store`` / ``sky_east_store`` are the canonical store objects (from
     the store factories); ``companies`` filters the GIII side like
     ``list_pos(companies=...)`` does.  GIII contract numbers are resolved
     from each company's stored 大货进度表 progress records automatically.
+
+    ``giii_df`` / ``se_items`` are optional pre-fetched frames — the exact
+    ``list_pos(companies=...)`` / ``list_items()`` results.  Pass them when
+    the caller already loaded that data, so it isn't re-read from the stores
+    (Streamlit re-renders every sub-tab per rerun; redundant full-table
+    reads add up).
     """
     frames = []
     if include_giii:
-        giii_df = po_store.list_pos(companies=companies)
+        if giii_df is None:
+            giii_df = po_store.list_pos(companies=companies)
         progress_records: list[dict] = []
         if not giii_df.empty and "company" in giii_df.columns:
             for comp in giii_df["company"].dropna().unique():
@@ -217,7 +226,8 @@ def load_standard_orders(po_store, sky_east_store,
         frames.append(giii_pos_to_standard(
             giii_df, contract_by_po=by_po, contract_by_style=by_style))
     if include_sky_east:
-        se_items = sky_east_store.list_items()
+        if se_items is None:
+            se_items = sky_east_store.list_items()
         contracts = sky_east_store.list_contracts()
         pc_dates = (dict(zip(contracts["pc_no"], contracts["pc_date"].fillna("")))
                     if not contracts.empty else {})

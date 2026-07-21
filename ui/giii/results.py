@@ -44,10 +44,14 @@ def _generate_kl_format_excel_bytes(
     return _generate_kl_format_excel_impl(df_meta, df_sizes)
 
 
-def _show_master_po_table():
-    """Admin-only interactive table: all POs across all clients, with style photos."""
-    st.subheader("🗂 Master PO View — All Clients")
+@st.cache_data(ttl=60, show_spinner=False)
+def _build_master_display_df() -> pd.DataFrame:
+    """Master PO rows (all clients, unfiltered) with the base64 Photo column.
 
+    Cached with a short TTL: st.tabs re-renders this admin table on every
+    rerun, and re-reading both full tables plus re-encoding every photo to
+    base64 each time dominated the Contract History render cost.
+    """
     po_store = get_store()
     se_store = get_sky_east_store()
 
@@ -85,11 +89,9 @@ def _show_master_po_table():
             })
 
     if not rows:
-        st.info("No POs saved yet.")
-        return
+        return pd.DataFrame()
 
     df = pd.DataFrame(rows)
-    st.caption(f"{len(df):,} row(s) across all clients")
 
     # ── Load photos from disk / session cache ─────────────────────────────────
     all_pids = [p for p in df["_pid"].unique() if p]
@@ -102,11 +104,24 @@ def _show_master_po_table():
     display_df = df[["Company", "Style", "COO", "X-Fty Date", "Total Units"]].copy()
     photo_col  = df["_pid"].map(lambda p: pid_to_b64.get(p, None))
     display_df.insert(2, "Photo", photo_col)
+    return display_df
+
+
+def _show_master_po_table():
+    """Admin-only interactive table: all POs across all clients, with style photos."""
+    st.subheader("🗂 Master PO View — All Clients")
+
+    display_df = _build_master_display_df()
+    if display_df.empty:
+        st.info("No POs saved yet.")
+        return
+
+    st.caption(f"{len(display_df):,} row(s) across all clients")
 
     col_cfg = {"Photo": st.column_config.ImageColumn("Photo", width="small")}
 
     # Optional company filter
-    companies = sorted(df["Company"].dropna().unique().tolist())
+    companies = sorted(display_df["Company"].dropna().unique().tolist())
     sel_cos = st.multiselect("Filter by Company:", companies, key="master_co_filter")
     if sel_cos:
         mask = display_df["Company"].isin(sel_cos)

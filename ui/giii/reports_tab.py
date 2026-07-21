@@ -26,8 +26,13 @@ from ui.summary_view import _build_tracker_excel, _TRACKER_COLS, _DEFAULT_COLS
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def _show_reports_tab() -> None:
-    """Reports tab: generate Excel outputs + PO Tracker."""
+def _show_reports_tab(pos_df: pd.DataFrame | None = None) -> None:
+    """Reports tab: generate Excel outputs + PO Tracker.
+
+    *pos_df* is the company-scoped list_pos frame fetched once per rerun in
+    show_smart_upload_tab; a direct read remains as fallback for other
+    callers.
+    """
     store    = get_store()
     username = st.session_state.get(SK.USERNAME, "")
     user_cos = get_user_companies(username)
@@ -40,7 +45,8 @@ def _show_reports_tab() -> None:
             "Contact an administrator to be granted access."
         ))
         return
-    df       = store.list_pos(companies=user_cos if user_cos else None)
+    df = (pos_df if pos_df is not None
+          else store.list_pos(companies=user_cos if user_cos else None))
 
     sub_gen, sub_tracker = st.tabs([f"📥 {t('Generate Outputs')}", f"📋 {t('PO Tracker')}"])
 

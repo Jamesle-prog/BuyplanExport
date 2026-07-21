@@ -378,8 +378,14 @@ def show_smart_upload_tab():
     _user_cos = get_user_companies(st.session_state.username)
     if _user_cos or is_admin(st.session_state.username):
         _exc_df = _store.list_exceptions(companies=_user_cos if _user_cos else None)
+        # ONE full-table list_pos per rerun for the whole GIII tab — the
+        # missing-fields badge, Contract History, and Generate/Export
+        # sub-tabs all consume this same frame (st.tabs renders every
+        # sub-tab body on each rerun).
+        _pos_df = _store.list_pos(companies=_user_cos if _user_cos else None)
     else:
         _exc_df = pd.DataFrame()
+        _pos_df = pd.DataFrame()
     _exc_count = (len(_exc_df[_exc_df["status"] == "pending"])
                   if not _exc_df.empty and "status" in _exc_df.columns else 0)
     # Tab bar mirrors the Sky East tab exactly — same order AND the same
@@ -390,12 +396,9 @@ def show_smart_upload_tab():
     # it stays.
     history_label = t("Contract History") + (f"  🔴 {_exc_count}" if _exc_count else "")
 
-    # Scope to the user's companies (admin → all); an unassigned non-admin
-    # gets an empty frame, never every company's POs.
-    if _user_cos or is_admin(st.session_state.username):
-        _missing_df = _compute_giii_missing_df(companies=_user_cos or None)
-    else:
-        _missing_df = pd.DataFrame()
+    # Scoped to the user's companies via _pos_df (admin → all); an unassigned
+    # non-admin gets an empty frame, never every company's POs.
+    _missing_df = _compute_giii_missing_df(_pos_df)
     _missing_count = len(_missing_df)
     _mf = t("Missing Fields")
     missing_label  = (f"{_mf}  {_missing_count}" if _missing_count else _mf)
@@ -446,10 +449,10 @@ def show_smart_upload_tab():
                     renderer(files=subset)
 
     with tab_history:
-        _show_history(exc_df=_exc_df)
+        _show_history(exc_df=_exc_df, pos_df=_pos_df)
 
     with tab_reports:
-        _show_reports_tab()
+        _show_reports_tab(pos_df=_pos_df)
 
     with tab_missing:
         _show_giii_missing_fields_section(_missing_df)

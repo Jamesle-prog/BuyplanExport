@@ -11,7 +11,7 @@ from ui.giii._shared import _XLSX_MIME, live_label
 from ui.giii.results import _show_master_po_table
 
 
-def _show_history(exc_df=None):
+def _show_history(exc_df=None, pos_df=None):
     store = get_store()
     user_cos = get_user_companies(st.session_state.username)
     # Non-admin with no assigned companies must see nothing — an empty list
@@ -22,7 +22,10 @@ def _show_history(exc_df=None):
             "Contact an administrator to be granted access."
         )
         return
-    df = store.list_pos(companies=user_cos if user_cos else None)
+    # *pos_df* is the company-scoped list_pos frame fetched once per rerun in
+    # show_smart_upload_tab; fall back to a direct read for other callers.
+    df = (pos_df if pos_df is not None
+          else store.list_pos(companies=user_cos if user_cos else None))
 
     # ── Summary metrics ───────────────────────────────────────────────────────
     total_pos    = len(df)

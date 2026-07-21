@@ -14,9 +14,23 @@ DB_PATH_DEFAULT = Path(__file__).parent.parent.parent / "data" / "po_history.db"
 
 
 class SkyEastStore(BaseSQLiteStore):
+    # Class-level set of db_paths that have already been schema-checked in
+    # this process (same pattern as ProductionTrackingStore._checked_paths).
+    # This store is constructed fresh on every Streamlit render, so without
+    # the guard the executescript + PRAGMA table_info migration probes ran
+    # on each construction instead of once per db_path.
+    _checked_paths: set[str] = set()
+
     def __init__(self, db_path: str | Path = DB_PATH_DEFAULT):
         self.db_path = str(db_path)
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_schema()
+
+    def _ensure_schema(self) -> None:
+        """Create tables / run column migrations — fast no-op after the first
+        call per db_path within a process lifetime."""
+        if self.db_path in SkyEastStore._checked_paths:
+            return
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
             # Migrate: add contract_no if missing (existing DBs)
@@ -36,6 +50,7 @@ class SkyEastStore(BaseSQLiteStore):
                 cols = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})")}
                 if "return_label" not in cols:
                     self._add_column_if_missing(conn, tbl, "return_label", "TEXT DEFAULT 'NA'")
+        SkyEastStore._checked_paths.add(self.db_path)
 
     # ------------------------------------------------------------------ #
     # Internal helpers                                                     #

@@ -34,6 +34,25 @@ def live_label(db_col: str, fallback: str | None = None) -> str:
 # Progress lookup (大货进度表) — session upload with a persisted-DB fallback
 # ---------------------------------------------------------------------------
 
+@st.cache_data(ttl=30, show_spinner=False)
+def _db_progress_lookup(source: str):
+    """DB-fallback ``ProgressLookup`` build, or ``None``.
+
+    Cached per *source*: several panels call ``get_progress_lookup`` in the
+    same rerun, and each uncached call re-ran the full ``load_progress_records``
+    read + index build.  Short TTL as a safety net; the progress-import
+    handler (ui/progress_mapping_view.py) clears this cache explicitly after
+    every save so a fresh import is visible immediately.
+    """
+    from po_extractor.lookups.progress_lookup import ProgressLookup
+    from ui.stores import get_store
+    try:
+        db_records = get_store().load_progress_records(source)
+    except Exception:
+        return None
+    return ProgressLookup.from_records(db_records) if db_records else None
+
+
 def get_progress_lookup(source: str = "sky_east"):
     """Return the effective ``ProgressLookup`` for *source*, or ``None``.
 
@@ -42,17 +61,13 @@ def get_progress_lookup(source: str = "sky_east"):
     committing it. When nothing was uploaded this session, falls back to the
     persistent progress-records DB (saved once via Fabric Mapping → HHN
     Contract Progress), so 大货进度表 doesn't need re-uploading for every run.
+    The session-upload branch stays uncached (it reads session state); only
+    the DB fallback is cached.
     """
     session_lkup = st.session_state.get(SK.SE_PROGRESS_LKUP)
     if session_lkup is not None:
         return session_lkup
-    from po_extractor.lookups.progress_lookup import ProgressLookup
-    from ui.stores import get_store
-    try:
-        db_records = get_store().load_progress_records(source)
-    except Exception:
-        return None
-    return ProgressLookup.from_records(db_records) if db_records else None
+    return _db_progress_lookup(source)
 
 
 # ---------------------------------------------------------------------------

@@ -52,6 +52,14 @@ class FabricMasterStore(BaseSQLiteStore):
         "shrinkage_rate", "short_rate", "notes_cn", "display_key",
     )
 
+    # Class-level set of db_paths that have already been schema-checked in
+    # this process (same pattern as ProductionTrackingStore._checked_paths).
+    # The store is constructed fresh on every Streamlit render, so without
+    # the guard the two executescripts + ALTER-throw-catch probes ran per
+    # construction.  Keyed by db_path: an admin-changed FABRIC_DB_PATH gets
+    # its own first-time ensure.
+    _checked_paths: set[str] = set()
+
     def __init__(self, db_path: str):
         self.db_path = db_path
         self._ensure_schema()
@@ -59,6 +67,8 @@ class FabricMasterStore(BaseSQLiteStore):
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _ensure_schema(self):
+        if self.db_path in FabricMasterStore._checked_paths:
+            return
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
             conn.executescript(_VERSION_SCHEMA)
@@ -71,6 +81,7 @@ class FabricMasterStore(BaseSQLiteStore):
             for col, col_def in (("fields_json", "TEXT NOT NULL DEFAULT '[]'"),
                                  ("col_map_json", "TEXT NOT NULL DEFAULT '{}'")):
                 self._add_column_if_missing(conn, "fabric_pending_import", col, col_def)
+        FabricMasterStore._checked_paths.add(self.db_path)
 
     @staticmethod
     def _migrate_add_spot_price_cols(conn: sqlite3.Connection) -> None:

@@ -60,12 +60,25 @@ def get_store() -> POStore:
 
 
 def get_sky_east_store() -> SkyEastStore:
-    """Return a fresh SkyEastStore (not cached — lightweight wrapper)."""
+    """Return a fresh SkyEastStore.
+
+    Deliberately uncached: construction is cheap because the class-level
+    ``SkyEastStore._checked_paths`` guard runs schema-ensure only once per
+    db_path per process (see the store).  Do NOT ``functools.cache`` this
+    wrapper — a fresh instance per call avoids the stale-class hot-reload
+    issue entirely.
+    """
     return _get_sky_east_store()
 
 
 def get_fabric_master_store() -> FabricMasterStore:
-    """Return a fresh FabricMasterStore (not cached — lightweight wrapper)."""
+    """Return a fresh FabricMasterStore.
+
+    Deliberately uncached: the fabric DB path is admin-changeable at
+    runtime, and the class-level ``FabricMasterStore._checked_paths`` guard
+    already makes repeated construction cheap (schema-ensure once per
+    db_path per process, so a newly configured path still gets its ensure).
+    """
     return _get_fabric_master_store()
 
 

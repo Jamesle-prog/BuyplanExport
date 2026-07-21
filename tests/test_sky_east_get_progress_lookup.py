@@ -9,7 +9,19 @@ upload-file branch a few lines above it that already has its own try/except.
 """
 from __future__ import annotations
 
+import pytest
 import streamlit as st
+
+
+@pytest.fixture(autouse=True)
+def _clear_db_lookup_cache():
+    """The DB fallback is now cached (@st.cache_data, ttl=30) — clear it
+    around every test so one test's cached result (e.g. None from the
+    empty-store case) can't leak into the next."""
+    from ui.sky_east._shared import _db_progress_lookup
+    _db_progress_lookup.clear()
+    yield
+    _db_progress_lookup.clear()
 
 
 def test_get_progress_lookup_returns_none_when_store_raises(monkeypatch):
