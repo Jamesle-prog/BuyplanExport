@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.84.3",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "feat", "text": "**Generation now shows a time-per-step table.** Every phase of Generate Buy Plan + 核料 is timed — load order data, build colour lookups, register new brands, fabric parts + auto-fill, style photos, buy plan export, save to output folder, 核料 export, save 核料, cross-comparison — and a summary table with a TOTAL row appears at the end of the progress box. Any slow run now shows exactly which step is responsible instead of feeling uniformly slow."},
+        ],
+    },
+    {
         "version": "2.84.2",
         "date": "2026-07-21",
         "entries": [

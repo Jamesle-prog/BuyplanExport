@@ -1037,14 +1037,26 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         if not _effective_sel:
             st.error(t("Please select at least one PC No. above before generating."))
         else:
+            # Per-step timing collector — summarised in a table at the end of
+            # the status box so any slowness names its own step.
+            _step_times: list[tuple[str, float]] = []
+
+            def _mark(label: str, t0: float) -> None:
+                _step_times.append((label, time.time() - t0))
+
+            _t0 = time.time()
             df_items = store.list_items(pc_nos=_effective_sel)
+            _mark("Load order data (DB)", _t0)
             if df_items.empty:
                 st.warning(t("No data found for the selected contracts."))
             else:
+                _t0 = time.time()
                 color_lookups = _build_buyplan_color_lookups()
+                _mark("Build colour lookups", _t0)
                 import shutil as _shutil
                 out_dir = tempfile.mkdtemp()
                 try:
+                    _t0 = time.time()
 
                     # ── Auto-register new brands in 船样要求 admin ──────────────────────
                     # Any brand that appears in the loaded data but isn't yet in the
@@ -1074,6 +1086,9 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                     icon="🚢",
                                 )
 
+                    _mark("Register new brands", _t0)
+
+                    _t0 = time.time()
                     styles = (
                         df_items["style"].dropna().unique().tolist()
                         if "style" in df_items.columns else []
@@ -1110,6 +1125,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             .fillna(_existing)
                         )
                         df_items["fabric_item_no"] = _existing.where(~_is_blank, _filled)
+                    _mark("Fabric parts + auto-fill", _t0)
 
                     # ── Build style → [front_bytes, back_bytes] image map ────────────
                     # Used for: Index sheet thumbnail (front) + Photo1/Photo2 in each
@@ -1135,6 +1151,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             f"🖼 {len(style_image_map)}/{len(styles)} style "
                             f"photo(s) reused from this session (no re-read)"
                         )
+                        _step_times.append(("Style photos (session cache)", 0.0))
                     else:
                         _t_photos = time.time()
                         style_image_map = load_style_photo_map(styles, _img_folder)
@@ -1147,6 +1164,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             f"loaded in {_photos_secs:.1f}s"
                             + (f" — folder: {_img_folder}" if _photos_secs > 5 else "")
                         )
+                        _step_times.append(("Style photos (load)", _photos_secs))
 
                     # Fallback: session / extracted picture_id cache (front only) for
                     # styles whose {style}_front.png files were not found.
@@ -1231,6 +1249,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             _pc_tag = "_".join(_effective_sel) if len(_effective_sel) <= 4 else f"{len(_effective_sel)}PCs"
                             st.session_state[SK.SE_BP_NAME] = f"SkyEast_{_pc_tag}_BuyPlan_{_ts}.xlsx"
                             st.write(f"✔ Buy plan done in {time.time() - _t_bp:.1f}s")
+                            _step_times.append(("Buy plan export", time.time() - _t_bp))
                             _out_folder = (st.session_state.get(SK.SE_OUTPUT_DIR) or "").strip()
                             if _out_folder:
                                 # Best-effort direct save -- an unreachable
@@ -1248,6 +1267,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                         f"({_mb:.1f} MB in {time.time() - _t_save:.1f}s"
                                         f" — {t('network folder speed, not generation')})"
                                     )
+                                    _step_times.append(("Save buy plan to output folder", time.time() - _t_save))
                                     _push_dir("se_output_dir", _out_folder)
                                 except OSError as _exc:
                                     st.warning(
@@ -1277,6 +1297,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 st.session_state[SK.SE_NK_COUNT] = 0
                                 st.session_state[SK.SE_NK_REASON] = check_nukuryou_ready(df_items)
                             st.write(f"✔ 核料 done in {time.time() - _t_nk:.1f}s")
+                            _step_times.append(("核料 export", time.time() - _t_nk))
                             _out_folder = (st.session_state.get(SK.SE_OUTPUT_DIR) or "").strip()
                             if _out_folder and nk_paths:
                                 try:
@@ -1288,6 +1309,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                     st.write(
                                         f"💾 {len(nk_paths)} {t('核料 workbook(s) saved to')} "
                                         f"{_out_folder} ({time.time() - _t_save:.1f}s)")
+                                    _step_times.append(("Save 核料 to output folder", time.time() - _t_save))
                                 except OSError as _exc:
                                     st.warning(
                                         f"⚠️ {t('Could not save to output folder')}: {_exc}")
@@ -1299,6 +1321,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
 
                         if style_totals:
                             st.write("Running cross-comparison...")
+                            _t_cmp = time.time()
                             try:
                                 cmp_df = build_cross_comparison(style_totals, df_items)
                                 st.session_state[SK.SE_BP_CMP] = cmp_df
@@ -1306,6 +1329,9 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 st.session_state[SK.SE_BP_CMP] = None
                         else:
                             st.session_state[SK.SE_BP_CMP] = None
+
+                        if style_totals:
+                            _step_times.append(("Cross-comparison", time.time() - _t_cmp))
 
                         _warn_missing_color_translations(df_items, cn_map=color_lookups.cn)
 
@@ -1315,6 +1341,17 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             str(w.message) for w in _wrec
                             if str(w.message).startswith("[sky_east")
                         ]
+
+                        # ── Per-step timing summary ──────────────────────────
+                        if _step_times:
+                            _total = sum(sec for _, sec in _step_times)
+                            _tdf = pd.DataFrame(
+                                [(lbl, round(sec, 1)) for lbl, sec in _step_times]
+                                + [("TOTAL", round(_total, 1))],
+                                columns=[t("Step"), t("Seconds")],
+                            )
+                            st.write(f"⏱ {t('Time per step')}:")
+                            st.dataframe(_tdf, hide_index=True, width="content")
 
                         _status.update(label="Done!", state="complete")
 
