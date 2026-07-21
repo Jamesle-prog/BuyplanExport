@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.88.1",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "fix", "text": "**Switching stage sections in Edit Record no longer throws the view around.** The A/B/C/D/QC selector sat below the read-only fields and notes, so you had to scroll down to reach it — and because the groups differ hugely in height (Pre-Production has 8 stages, Samples has one), switching shrank the page and the browser dumped your scroll position somewhere else. The selector now sits directly under the record picker, near the top, where there is nothing to jump away from."},
+        ],
+    },
+    {
         "version": "2.88.0",
         "date": "2026-07-21",
         "entries": [

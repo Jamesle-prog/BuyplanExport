@@ -1059,6 +1059,35 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
     readiness = readiness_map[rid]
     reminders = store.compute_inspection_reminders(record, today)
 
+    # ── Stage-group selector — ONE group rendered at a time ──────────────────
+    # Perf: rendering all 4 groups + QC mounts ~120 widgets (44 date pickers,
+    # ~30 selectboxes...) and EVERY interaction re-mounts them all, making
+    # each click feel seconds-slow. Rendering only the selected group cuts
+    # that ~4-5x. Saving stays correct: the _read/_MISSING mechanism falls
+    # back to the record's DB value for any widget not rendered this run
+    # (the same contract the Optional Samples toggle already relies on).
+    #
+    # Placed HIGH (directly under the record picker, above the read-only meta
+    # and notes): the groups differ hugely in height (A has 8 stages, B has
+    # ~1), so switching shrinks the page — with the selector low down the
+    # browser clamped the scroll position and threw the user somewhere else
+    # ("it jumps out"). Near the top there is nothing to clamp.
+    _PANES = [
+        "🧵 A · Pre-Production",
+        "🧪 B · Samples",
+        "🏭 C · Production",
+        "📦 D · Post-Production",
+        "🔍 QC",
+    ]
+    pane = st.radio(
+        "Stage group", _PANES, horizontal=True, key="pt_edit_pane",
+        format_func=t, label_visibility="collapsed",
+    )
+    st.caption(t(
+        "💾 Save before switching sections — unsaved edits in a section "
+        "disappear when it is hidden."
+    ))
+
     st.divider()
 
     # ── Factory / Company (read-only display) ────────────────────────────────
@@ -1077,28 +1106,6 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
 
     st.divider()
 
-    # ── Stage sections — ONE group rendered at a time ────────────────────────
-    # Perf: rendering all 4 groups + QC mounts ~120 widgets (44 date pickers,
-    # ~30 selectboxes...) and EVERY interaction re-mounts them all, making
-    # each click feel seconds-slow. Rendering only the selected group cuts
-    # that ~4-5x. Saving stays correct: the _read/_MISSING mechanism falls
-    # back to the record's DB value for any widget not rendered this run
-    # (the same contract the Optional Samples toggle already relies on).
-    _PANES = [
-        "🧵 A · Pre-Production",
-        "🧪 B · Samples",
-        "🏭 C · Production",
-        "📦 D · Post-Production",
-        "🔍 QC",
-    ]
-    pane = st.radio(
-        "Stage group", _PANES, horizontal=True, key="pt_edit_pane",
-        format_func=t, label_visibility="collapsed",
-    )
-    st.caption(t(
-        "💾 Save before switching sections — unsaved edits in a section "
-        "disappear when it is hidden."
-    ))
     if pane == _PANES[0]:
         _render_group_a_section(record, rid, readiness)
     elif pane == _PANES[1]:
