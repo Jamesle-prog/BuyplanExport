@@ -10,7 +10,7 @@ import streamlit as st
 from auth.companies import COMPANY_SKY_EAST
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import XLSX_MIME, CSV_MIME, _th, _tr, build_image_cache_for_ids, persisted_download
+from ui.shared import XLSX_MIME, CSV_MIME, _th, _tr, build_image_cache_for_ids, fragment_rerun, persisted_download
 from ui.stores import get_store, get_sky_east_store, get_fabric_master_store, get_boat_sample_store
 from ui.sky_east._shared import live_label, _get_dual_header, _write_dual_header_excel, _write_wash_label_excel
 from ui.sky_east._missing import _show_se_missing_fields_section  # re-export
@@ -192,7 +192,7 @@ def _show_return_label_conflicts(pending: list[dict]) -> None:
         if col2.button(t("Keep all as recorded (dismiss)"), use_container_width=True,
                        key="se_rl_pending_dismiss"):
             st.session_state[SK.SE_RL_PENDING] = []
-            st.rerun()
+            fragment_rerun()
 
 
 def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
@@ -225,14 +225,14 @@ def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
                 f"✅ {t('Saved shipping sample requirement for')} "
                 f"{len(pending_brands)} {t('brand(s)')}."
             )
-            st.rerun()
+            fragment_rerun()
         # Escape hatch: nothing is written or registered -- the same brands
         # will be prompted again on the next upload (unlike Save-with-blank,
         # which registers the brand as "known, no requirement").
         if col2.button(t("Remind me later (don't save)"), use_container_width=True,
                        key="se_new_brand_later"):
             st.session_state[SK.SE_NEW_BRAND_PENDING] = []
-            st.rerun()
+            fragment_rerun()
 
 
 # ---------------------------------------------------------------------------

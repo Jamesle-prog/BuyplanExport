@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.83.0",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "perf", "text": "**Whole-app efficiency release — every layer reviewed and the confirmed waste removed.** Summary and GIII tabs now load their order data once per interaction instead of 2-4×, and their Excel exports build on demand instead of on every click. The admin Master PO photo table and the Colors tab's export no longer rebuild per interaction. Photo-heavy Sky East buy plans generate dramatically faster (the same style photo was being re-encoded once per Overview row — now once per photo) and produce smaller files. Sky East uploads are protected against WPS files with thousands of phantom empty rows (parse now stops after 20 consecutive blanks). Large 大货进度表/EAN/fabric reference files load seconds faster. Plus: schema checks now run once per process instead of on every store construction, ~18 more in-tab actions refresh only their own tab, the Releases tab renders as a handful of elements instead of ~925, and a dead quadratic parser module was deleted."},
+            {"type": "feat", "text": "**HHN Contract Progress import review, refined:** the differences table now shows the 中文颜色 (Color CN) alongside the English colour on every row, and no longer flags routine churn (离厂日期, Qty, 测试, 色汇总, Launch Date, 备注) for review — those fields still update on import, they just don't need eyes on them. The uploaded file is also parsed once instead of on every widget interaction."},
+        ],
+    },
+    {
         "version": "2.82.3",
         "date": "2026-07-21",
         "entries": [
@@ -1937,6 +1945,38 @@ _TYPE_CONFIG = {
 }
 
 
+# How many of the newest versions render outside the "Older versions"
+# expander.  Everything is still just markdown -- but concatenated into ONE
+# st.markdown call per group instead of ~4 elements per version, which at
+# 200+ versions was ~900 DOM-mounted Streamlit elements on every rerun.
+_RECENT_VERSION_COUNT = 20
+
+_VERSION_SEPARATOR = (
+    "<hr style='margin:0.9rem 0; border:none; "
+    "border-top:1px solid rgba(128,128,128,0.35);'>"
+)
+
+
+def _version_card_html(entry: dict) -> str:
+    """Build one version's card (header + typed entry lines) as an HTML string."""
+    parts = [
+        f"<div style='display:flex; align-items:baseline; gap:0.75rem;'>"
+        f"<span style='font-size:1.15rem; font-weight:700;'>v{entry['version']}</span>"
+        f"<span style='color:#888; font-size:0.85rem;'>{entry['date']}</span>"
+        f"</div>"
+    ]
+    for item in entry["entries"]:
+        ttype = item.get("type", "feat")
+        icon, color, label = _TYPE_CONFIG.get(ttype, ("•", "#333", ttype))
+        parts.append(
+            f"<div style='margin: 0.15rem 0 0.15rem 1rem; font-size:0.92rem;'>"
+            f"<span style='color:{color}; font-weight:600; margin-right:0.4rem'>{icon}</span>"
+            f"{item['text']}"
+            f"</div>"
+        )
+    return "".join(parts)
+
+
 def show_changelog_tab() -> None:
     """Render the Releases / Changelog tab."""
     st.markdown("## 🔖 Release History")
@@ -1953,31 +1993,22 @@ def show_changelog_tab() -> None:
     st.divider()
 
     # ── Version cards ─────────────────────────────────────────────────────────
-    for entry in _CHANGELOG:
-        ver   = entry["version"]
-        date  = entry["date"]
-        items = entry["entries"]
+    recent = _CHANGELOG[:_RECENT_VERSION_COUNT]
+    older  = _CHANGELOG[_RECENT_VERSION_COUNT:]
 
-        # Header row
-        st.markdown(
-            f"<div style='display:flex; align-items:baseline; gap:0.75rem;'>"
-            f"<span style='font-size:1.15rem; font-weight:700;'>v{ver}</span>"
-            f"<span style='color:#888; font-size:0.85rem;'>{date}</span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        _VERSION_SEPARATOR.join(_version_card_html(e) for e in recent),
+        unsafe_allow_html=True,
+    )
 
-        # Change items
-        for item in items:
-            ttype = item.get("type", "feat")
-            icon, color, label = _TYPE_CONFIG.get(ttype, ("•", "#333", ttype))
+    if older:
+        st.divider()
+        with st.expander(
+            f"📦 Older versions (v{older[-1]['version']} – v{older[0]['version']} · "
+            f"{len(older)} releases)",
+            expanded=False,
+        ):
             st.markdown(
-                f"<div style='margin: 0.15rem 0 0.15rem 1rem; font-size:0.92rem;'>"
-                f"<span style='color:{color}; font-weight:600; margin-right:0.4rem'>{icon}</span>"
-                f"{item['text']}"
-                f"</div>",
+                _VERSION_SEPARATOR.join(_version_card_html(e) for e in older),
                 unsafe_allow_html=True,
             )
-
-        st.markdown("<div style='margin-bottom:0.75rem'></div>", unsafe_allow_html=True)
-        st.divider()

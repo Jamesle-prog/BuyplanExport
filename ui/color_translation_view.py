@@ -10,7 +10,7 @@ import streamlit as st
 
 from ui.i18n import t
 from auth.companies import COMPANY_GIII, COMPANY_SKY_EAST
-from ui.shared import XLSX_MIME
+from ui.shared import XLSX_MIME, fragment_rerun
 from ui.stores import get_color_translation_store
 
 # ---------------------------------------------------------------------------
@@ -62,8 +62,13 @@ _CT_DISPLAY_COLS = ["Delete", "Client", "Brand", "English Color", "Chinese Color
 # Helpers
 # ---------------------------------------------------------------------------
 
+@st.cache_data(show_spinner=False)
 def _ct_excel_template() -> bytes:
-    """Return a blank Excel template for bulk color upload."""
+    """Return a blank Excel template for bulk color upload.
+
+    Cached: the output is constant, so the workbook is built once per
+    process instead of on every rerun of the tab.
+    """
     buf = io.BytesIO()
     cols = ["client", "brand", "en_color", "cn_color", "color_code",
             "light_or_dark", "label_color", "notes"]
@@ -85,6 +90,29 @@ def _ct_excel_template() -> bytes:
             for ci, val in enumerate(row, start=1):
                 ws.cell(row=ri, column=ci, value=val)
     return buf.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def _ct_export_bytes(count: int, nonce: int) -> bytes:
+    """Full-table Excel export for the download button.
+
+    Cached so the whole-table query + workbook build only reruns when the
+    data actually changes — keyed by the row *count* plus a session *nonce*
+    that every save/delete/import handler bumps (via :func:`_bump_ct_nonce`),
+    instead of rebuilding on every widget interaction in the tab.
+    """
+    df_exp = get_color_translation_store().to_dataframe()
+    if "_id" in df_exp.columns:
+        df_exp = df_exp.drop(columns=["_id"])
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        df_exp.to_excel(w, sheet_name="Color Translations", index=False)
+    return buf.getvalue()
+
+
+def _bump_ct_nonce() -> None:
+    """Invalidate the cached export after any data mutation."""
+    st.session_state["_ct_data_nonce"] = st.session_state.get("_ct_data_nonce", 0) + 1
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +161,8 @@ def show_color_translation_tab() -> None:
                 f"{src['giii']} {t('from')} {COMPANY_GIII} {t('POs,')} {src['sky_east']} {t('from')} {COMPANY_SKY_EAST}. "
                 f"{skp} {t('already existed (preserved).')}"
             )
-            st.rerun()
+            _bump_ct_nonce()
+            fragment_rerun()
         else:
             st.info(f"{t('No new colors found — all')} {skp} {t('color(s) were already in the table.')}")
 
@@ -172,7 +201,8 @@ def show_color_translation_tab() -> None:
                     f"**{result['updated']}** {t('updated')} · "
                     f"**{result['skipped']}** {t('skipped (blank colour)')}"
                 )
-                st.rerun()
+                _bump_ct_nonce()
+                fragment_rerun()
             except Exception as exc:
                 st.error(f"{t('Import failed:')} {exc}")
             finally:
@@ -197,15 +227,9 @@ def show_color_translation_tab() -> None:
 
         # Export current data
         if count > 0:
-            xl_buf = io.BytesIO()
-            df_exp = store.to_dataframe()
-            if "_id" in df_exp.columns:
-                df_exp = df_exp.drop(columns=["_id"])
-            with pd.ExcelWriter(xl_buf, engine="openpyxl") as w:
-                df_exp.to_excel(w, sheet_name="Color Translations", index=False)
             exp_col.download_button(
                 f"⬇ {t('Export all (.xlsx)')}",
-                data=xl_buf.getvalue(),
+                data=_ct_export_bytes(count, st.session_state.get("_ct_data_nonce", 0)),
                 file_name="color_translations.xlsx",
                 mime=XLSX_MIME,
                 use_container_width=True,
@@ -245,7 +269,8 @@ def show_color_translation_tab() -> None:
                         f"**{result['updated']}** {t('updated')} · "
                         f"**{result['skipped']}** {t('skipped')}"
                     )
-                    st.rerun()
+                    _bump_ct_nonce()
+                    fragment_rerun()
                 except Exception as exc:
                     st.error(f"{t('Import failed:')} {exc}")
                 finally:
@@ -262,8 +287,8 @@ def show_color_translation_tab() -> None:
                                key="ct_client_filter")
     active_client = "" if sel_client == "All clients" else sel_client
 
-    # Cascading brand filter
-    brand_opts_raw = store.list_brands(active_client) if active_client else store.list_brands()
+    # Cascading brand filter (reuse the unfiltered list fetched for the stats bar)
+    brand_opts_raw = store.list_brands(active_client) if active_client else brands_all
     brand_opts = ["All brands"] + brand_opts_raw
     sel_brand = fc2.selectbox(t("Filter by brand"), brand_opts,
                               format_func=lambda o: t(o) if o == "All brands" else o,
@@ -317,7 +342,8 @@ def show_color_translation_tab() -> None:
             save_df = save_df.drop(columns=["_id"])
         saved = store.upsert_from_df(save_df)
         st.success(f"{t('Saved')} {saved} {t('row(s).')}")
-        st.rerun()
+        _bump_ct_nonce()
+        fragment_rerun()
 
     # ── Delete selected (checkbox-driven) ──────────────────────────────────
     # Ids come from the row's own hidden _id — immune to inline row
@@ -338,7 +364,8 @@ def show_color_translation_tab() -> None:
     ):
         n = store.delete_ids(selected_ids)
         st.success(f"{t('Deleted')} {n} {t('selected row(s).')}")
-        st.rerun()
+        _bump_ct_nonce()
+        fragment_rerun()
 
     # ── Delete filtered (legacy bulk-by-client/brand) ──────────────────────
     del_ctx = " / ".join(filter(None, [active_client, active_brand])) or None
@@ -352,7 +379,8 @@ def show_color_translation_tab() -> None:
     ):
         deleted = store.delete_by_client_brand(active_client, active_brand)
         st.success(f"{t('Deleted')} {deleted} {t('entries for')} '{del_ctx}'.")
-        st.rerun()
+        _bump_ct_nonce()
+        fragment_rerun()
 
     if count > 0:
         st.caption(
@@ -382,7 +410,7 @@ def show_color_translation_tab() -> None:
         )
         a_client_v = "" if a_client == "All clients" else a_client
         a_brand_opts = (store.list_brands(a_client_v) if a_client_v else
-                        store.list_brands())
+                        brands_all)
         a_brand = f2.selectbox(
             t("Brand"), ["All brands"] + a_brand_opts,
             format_func=lambda o: t(o) if o == "All brands" else o,
@@ -460,10 +488,10 @@ def show_color_translation_tab() -> None:
                     n = store.clear_audit_log()
                     st.session_state.pop("_ct_audit_confirm", None)
                     st.success(f"{t('Cleared')} {n} {t('audit entries.')}")
-                    st.rerun()
+                    fragment_rerun()
                 else:
                     st.session_state["_ct_audit_confirm"] = True
-                    st.rerun()
+                    fragment_rerun()
             if _armed and cclr2.button(t("Cancel"), key="ct_audit_clear_cancel"):
                 st.session_state.pop("_ct_audit_confirm", None)
-                st.rerun()
+                fragment_rerun()

@@ -353,7 +353,7 @@ def show_image_folder_expander(session_key: str, apply_key: str) -> None:
             if chosen == CLEAR_LABEL:
                 st.session_state[hist_key] = []
                 _save_history(session_key, [])
-                st.rerun()
+                fragment_rerun()
             else:
                 # Selecting from dropdown pre-fills the text input
                 prefill = chosen

@@ -8,6 +8,7 @@ import streamlit as st
 
 from auth.companies import list_company_names, COMPANY_SKY_EAST
 from ui.i18n import t
+from ui.shared import fragment_rerun
 from ui.sky_east._shared import _parse_fabric_mapping_bytes
 from ui.sky_east.processing import _enrich_fabric_parts_from_cache
 from ui.stores import get_store
@@ -220,7 +221,7 @@ def _show_fabric_mapping_section() -> None:
                             )
                     st.success(f"{t('Removed')} {n_deleted} {t('duplicate fabric part row(s).')}")
                     st.session_state["fm_tab_dup_results"] = None
-                    st.rerun()
+                    fragment_rerun()
 
     st.divider()
 

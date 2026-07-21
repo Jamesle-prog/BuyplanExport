@@ -23,6 +23,7 @@ from ui.shared import (
     DEFAULT_XLSX_EXT as _DEFAULT_XLSX_EXT,
     _th, _tr,
     build_image_cache_for_ids,
+    fragment_rerun,
     load_style_photo_pair,
     persisted_download,
     guard_multiselect_state,
@@ -527,7 +528,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str],
                         "label":          safe_label,
                         "errors":         val_errors,
                     }
-                    st.rerun()
+                    fragment_rerun()
                 else:
                     wl_bytes = _write_wash_label_excel(
                         df_wl_enriched, wl_img_cache,
@@ -706,7 +707,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
                 st.session_state[SK.SE_WL_BYTES]   = wl_bytes
                 st.session_state[SK.SE_WL_FNAME]   = f"WashLabel_{pending['label']}.xlsx"
                 st.session_state[SK.SE_WL_PENDING] = None
-                st.rerun()
+                fragment_rerun()
 
     with c_skip:
         if st.button("⚠️ Generate anyway (keep errors)", key="se_wl_val_skip",
@@ -721,12 +722,12 @@ def _show_wl_validation_ui(pending: dict) -> None:
             st.session_state[SK.SE_WL_BYTES]   = wl_bytes
             st.session_state[SK.SE_WL_FNAME]   = f"WashLabel_{pending['label']}.xlsx"
             st.session_state[SK.SE_WL_PENDING] = None
-            st.rerun()
+            fragment_rerun()
 
     with c_cancel:
         if st.button("❌ Cancel", key="se_wl_val_cancel", use_container_width=True):
             st.session_state[SK.SE_WL_PENDING] = None
-            st.rerun()
+            fragment_rerun()
 
     # Show the previously generated file (if any) below the correction panel
     persisted_download("se_wl", default_fname="WashLabel.xlsx", fixed_mime=XLSX_MIME)
@@ -1268,17 +1269,21 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             icon="🖼",
         )
 
+    _misses_df = None   # deduped colour-miss log, shared with the log section below
     if st.session_state.get(SK.SE_BP_BYTES) or st.session_state.get(SK.SE_NK_BYTES):
         st.divider()
         dl_cols = st.columns(2)
 
         # Unresolved-colour count (distinct, de-duplicated across re-runs) —
         # reflected in the buy-plan caption so a green download button doesn't
-        # hide misses.
+        # hide misses.  Fetched once here and reused by
+        # _se_color_miss_log_section so the log isn't queried + deduped twice
+        # per rerun.
         try:
-            _miss_n = len(_dedupe_color_misses(get_sky_east_store().list_color_misses()))
+            _misses_df = _dedupe_color_misses(get_sky_east_store().list_color_misses())
+            _miss_n = len(_misses_df)
         except Exception:
-            _miss_n = 0
+            _misses_df, _miss_n = None, 0
 
         with dl_cols[0]:
             if st.session_state.get(SK.SE_BP_BYTES):
@@ -1361,7 +1366,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             st.dataframe(cmp_df, width="stretch", hide_index=True)
 
     if st.session_state.get(SK.SE_BP_BYTES):
-        _se_color_miss_log_section()
+        _se_color_miss_log_section(_misses_df)
 
     _se_hist_email_section()
 
@@ -1386,17 +1391,21 @@ def _dedupe_color_misses(df):
               .reset_index(drop=True))
 
 
-def _se_color_miss_log_section() -> None:
+def _se_color_miss_log_section(misses_df=None) -> None:
     """Show colours that failed to resolve during the most recent buy plan
     generation -- mirrors the "Client's PO colour" comment attached to the
     未找到 cells in the Overview sheet, but as a reviewable table so the
     user doesn't have to hunt through every sheet for them.
+
+    ``misses_df`` — already-deduped log from the caller (avoids re-querying
+    the store on the same rerun); ``None`` fetches it here.
     """
     from ui.stores import get_sky_east_store
 
     store = get_sky_east_store()
-    misses_df = _dedupe_color_misses(store.list_color_misses())
-    if misses_df.empty:
+    if misses_df is None:
+        misses_df = _dedupe_color_misses(store.list_color_misses())
+    if misses_df is None or misses_df.empty:
         return
 
     st.warning(
@@ -1424,7 +1433,7 @@ def _se_color_miss_log_section() -> None:
         if st.button("🗑️ Clear colour resolution log", key="se_clear_color_miss_log"):
             n = store.clear_color_misses()
             st.success(f"Cleared {n} logged issue(s).")
-            st.rerun()
+            fragment_rerun()
 
 
 def _se_hist_email_section() -> None:
