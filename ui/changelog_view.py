@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.85.1",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "fix", "text": "**Found the real photo-step stall: one corrupt file.** Per-file timing revealed a single broken PNG on the network share (TP3274_front.png) that hung for the mount’s full 60-second timeout and then failed — on every single generation, since a failed read never entered any cache. Broken source photos now get a local “bad file” marker: they are skipped instantly on later runs (retried automatically after 6 hours in case the file gets fixed), and the generate screen lists exactly which files to fix or delete on the share. Measured on the real folder: photo step 60.6s → 0.01s from the second run on."},
+        ],
+    },
+    {
         "version": "2.85.0",
         "date": "2026-07-21",
         "entries": [

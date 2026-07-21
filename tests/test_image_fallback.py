@@ -114,21 +114,25 @@ def test_photo_map_unlistable_primary_degrades_fast_not_per_file(tmp_path, monke
     monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(extracted))
     (extracted / "DR9_front.png").write_bytes(_png())
 
-    scandir_calls = []
-    real_scandir = shared.os.scandir
+    listdir_calls = []
+    real_listdir = shared.os.listdir
 
-    def _scandir(folder):
-        scandir_calls.append(folder)
+    def _listdir(folder):
+        listdir_calls.append(str(folder))
         if "unreachable" in str(folder):
             raise OSError(1326, "Logon failure")
-        return real_scandir(folder)
-    monkeypatch.setattr(shared.os, "scandir", _scandir)
+        return real_listdir(folder)
+    monkeypatch.setattr(shared.os, "listdir", _listdir)
 
     out = shared.load_style_photo_map(
         [f"DR{i}" for i in range(50)], str(tmp_path / "unreachable"),
     )
     assert set(out) == {"DR9"}
-    assert len(scandir_calls) == 2       # one per folder, regardless of 50 styles
+    # One enumeration per PHOTO folder regardless of 50 styles (the local
+    # photo_cache dir listing is separate bookkeeping, not a folder probe).
+    photo_folder_lists = [c for c in listdir_calls
+                          if "unreachable" in c or "extracted" in c]
+    assert len(photo_folder_lists) == 2
 
 
 def test_photo_map_caches_external_folder_reads(tmp_path, monkeypatch):

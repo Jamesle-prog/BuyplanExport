@@ -479,30 +479,87 @@ def _is_app_local_dir(folder: str) -> bool:
         return False
 
 
-def _read_photo_cached(folder: str, fname: str, size: int, mtime: float) -> bytes | None:
+# How long a broken source photo is skipped before being retried. A corrupt
+# file on a network mount can HANG for the mount's full timeout (measured:
+# one bad PNG on a Mountain Duck share stalled 60.5s then failed EINVAL --
+# every single generation, since a failed read never enters the byte cache).
+_BAD_PHOTO_RETRY_SECONDS = 6 * 3600
+
+# Files skipped by the most recent load_style_photo_map call (full paths) --
+# surfaced by the UI so the user knows exactly which file to fix on the share.
+_last_photo_errors: list[str] = []
+
+
+def get_last_photo_errors() -> list[str]:
+    """Source photos the last :func:`load_style_photo_map` call could not
+    read (broken/hanging files, skipped via the bad-file marker)."""
+    return list(_last_photo_errors)
+
+
+def _read_photo_cached(folder: str, fname: str,
+                       cached_names: set[str] | None = None,
+                       errors: list | None = None) -> bytes | None:
     """Read ``folder/fname``, mirroring it locally so later runs skip the
-    network. The cache key embeds size+mtime: a source edit yields a
-    different key (miss → re-read), so the cache can never serve stale bytes.
-    Cache failures are non-fatal — worst case we just re-read the source.
+    network. Stats the SOURCE file (one metadata round-trip) to build a
+    size+mtime cache key — a source edit yields a different key (miss →
+    re-read), so the cache can never serve stale bytes. *cached_names* is an
+    optional pre-fetched listing of PHOTO_CACHE_DIR so the hit check is a
+    set lookup instead of a filesystem probe. Failures are non-fatal.
+
+    A file whose stat/read FAILS gets a local ``.bad`` marker and is skipped
+    without touching the source for ``_BAD_PHOTO_RETRY_SECONDS`` — one
+    corrupt file on a network mount otherwise stalls the mount's full
+    timeout on EVERY run. A later successful read clears the marker.
     """
     import hashlib
+    import time as _t
     key = hashlib.sha1(f"{folder}|{fname}".encode("utf-8", "replace")).hexdigest()[:16]
-    cache_path = os.path.join(PHOTO_CACHE_DIR, f"{key}_{size}_{int(mtime)}.bin")
+
+    bad_marker = os.path.join(PHOTO_CACHE_DIR, f"{key}.bad")
+    _marker_known = cached_names is None or f"{key}.bad" in cached_names
+    if _marker_known:
+        try:
+            if _t.time() - os.path.getmtime(bad_marker) < _BAD_PHOTO_RETRY_SECONDS:
+                if errors is not None:
+                    errors.append(os.path.join(folder, fname))
+                return None            # known-bad, retry window not elapsed
+        except OSError:
+            pass                       # no marker -> proceed normally
+
+    def _mark_bad() -> None:
+        try:
+            os.makedirs(PHOTO_CACHE_DIR, exist_ok=True)
+            with open(bad_marker, "w") as fh:
+                fh.write(fname)
+        except OSError:
+            pass
+        if errors is not None:
+            errors.append(os.path.join(folder, fname))
+
     try:
-        with open(cache_path, "rb") as fh:
-            return fh.read()                      # hit — no network read
+        st_ = os.stat(os.path.join(folder, fname))
     except OSError:
-        pass
+        _mark_bad()
+        return None
+    cache_name = f"{key}_{st_.st_size}_{int(st_.st_mtime)}.bin"
+    cache_path = os.path.join(PHOTO_CACHE_DIR, cache_name)
+    if cached_names is None or cache_name in cached_names:
+        try:
+            with open(cache_path, "rb") as fh:
+                return fh.read()                  # hit — no network content read
+        except OSError:
+            pass
     try:
         with open(os.path.join(folder, fname), "rb") as fh:
             data = fh.read()                      # miss — pay the source read
     except OSError:
+        _mark_bad()
         return None
     try:
         os.makedirs(PHOTO_CACHE_DIR, exist_ok=True)
-        # Drop superseded versions of this same source file.
+        # Drop superseded versions of this same source file + any bad marker.
         for old in os.listdir(PHOTO_CACHE_DIR):
-            if old.startswith(key + "_"):
+            if old.startswith(key + "_") or old == f"{key}.bad":
                 try:
                     os.remove(os.path.join(PHOTO_CACHE_DIR, old))
                 except OSError:
@@ -519,15 +576,18 @@ def load_style_photo_map(styles, primary_dir: str | None = None) -> dict[str, li
     ``{style: [front_bytes|None, back_bytes|None]}`` (styles with no photo at
     all are omitted).
 
-    Built for network-mounted image folders (Mountain Duck / SMB), where the
-    naive per-style approach was minutes-slow:
+    Built for network-mounted image folders (Mountain Duck / SMB), where
+    naive approaches were minutes-slow. Hard-won rules, each measured on a
+    real Mountain Duck mount:
 
-    1. ONE ``os.scandir`` per folder — names AND size/mtime in a single
-       enumeration — instead of per-style ``os.path.exists`` round-trips.
-    2. Reads run CONCURRENTLY (mount latency dominates per-file cost, so
-       parallelism is close to a linear win on the first run).
-    3. Bytes from an external folder are mirrored into a local cache keyed by
-       size+mtime, so later runs read locally and never touch the network.
+    1. Enumerate NAMES ONLY (``os.listdir``, one call, ~0s for 384 files).
+       Never stat the whole folder — per-entry stat on the mount was ~150ms
+       × every file in the folder (60s), swamping everything else.
+    2. Stat/read ONLY the wanted files (≤ 2 per style), CONCURRENTLY —
+       mount latency dominates per-file cost, so 12 workers ≈ 12× faster.
+    3. Bytes from an external folder are mirrored into a local cache keyed
+       by size+mtime; warm runs cost one parallel stat per wanted file plus
+       local reads — no content ever crosses the network twice.
 
     A folder that cannot be listed contributes nothing (one fast failure
     instead of a hang per file).
@@ -536,24 +596,15 @@ def load_style_photo_map(styles, primary_dir: str | None = None) -> dict[str, li
     from concurrent.futures import ThreadPoolExecutor
 
     primary = primary_dir if primary_dir is not None else images_dir()
-    # folder -> {filename: (size, mtime)}
-    listings: list[tuple[str, dict[str, tuple[int, float]]]] = []
+    listings: list[tuple[str, set[str]]] = []
     for folder in (primary, EXTRACTED_IMAGES_DIR):
-        entries: dict[str, tuple[int, float]] = {}
         try:
-            with os.scandir(folder) as it:
-                for e in it:
-                    try:
-                        st_ = e.stat()            # free from the enumeration on Windows
-                        entries[e.name] = (st_.st_size, st_.st_mtime)
-                    except OSError:
-                        entries[e.name] = (0, 0.0)
+            listings.append((folder, set(os.listdir(folder))))
         except OSError:
-            pass
-        listings.append((folder, entries))
+            listings.append((folder, set()))
 
     # Resolve which (folder, filename) each style/position should read from.
-    wanted: list[tuple[str, int, str, str, tuple[int, float]]] = []
+    wanted: list[tuple[str, int, str, str]] = []
     for style in styles:
         s = str(style or "").strip()
         if not s:
@@ -561,23 +612,31 @@ def load_style_photo_map(styles, primary_dir: str | None = None) -> dict[str, li
         safe = _re.sub(r'[\\/:*?"<>|]', '_', s)
         for idx, pos in enumerate(("front", "back")):
             fname = f"{safe}_{pos}.png"
-            for folder, entries in listings:
-                if fname in entries:
-                    wanted.append((s, idx, folder, fname, entries[fname]))
+            for folder, names in listings:
+                if fname in names:
+                    wanted.append((s, idx, folder, fname))
                     break
 
     if not wanted:
         return {}
 
+    try:
+        cached_names = set(os.listdir(PHOTO_CACHE_DIR))
+    except OSError:
+        cached_names = set()
+
+    _last_photo_errors.clear()
+    _errors = _last_photo_errors
+
     def _fetch(job):
-        _s, _idx, folder, fname, (size, mtime) = job
+        _s, _idx, folder, fname = job
         if _is_app_local_dir(folder):
             try:
                 with open(os.path.join(folder, fname), "rb") as fh:
                     return _s, _idx, fh.read()
             except OSError:
                 return _s, _idx, None
-        return _s, _idx, _read_photo_cached(folder, fname, size, mtime)
+        return _s, _idx, _read_photo_cached(folder, fname, cached_names, _errors)
 
     out: dict[str, list] = {}
     with ThreadPoolExecutor(max_workers=min(12, len(wanted))) as ex:

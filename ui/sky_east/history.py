@@ -1180,6 +1180,20 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             + (f" — folder: {_img_folder}" if _photos_secs > 5 else "")
                         )
                         _step_times.append(("Style photos (load)", _photos_secs))
+                        from ui.shared import get_last_photo_errors
+                        _bad_photos = get_last_photo_errors()
+                        if _bad_photos:
+                            st.warning(
+                                f"⚠️ {len(_bad_photos)} " + t(
+                                    "photo file(s) could not be read and were "
+                                    "skipped (a broken file on a network share "
+                                    "can stall a whole minute — it will be "
+                                    "retried automatically later). Fix or "
+                                    "delete these on the share:"
+                                ) + "\n\n"
+                                + "\n".join(f"- `{p}`" for p in _bad_photos[:10]),
+                                icon="⚠️",
+                            )
 
                     # Fallback: session / extracted picture_id cache (front only) for
                     # styles whose {style}_front.png files were not found.
