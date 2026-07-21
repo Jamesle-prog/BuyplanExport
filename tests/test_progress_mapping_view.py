@@ -66,10 +66,25 @@ def test_diff_progress_record_detects_multiple_field_changes():
         "qty": "300", "zalando_po": "", "brand": "Anna Field", "fabric_detail": "",
         "test_note": "", "color_summary": "", "launch_date": "", "remarks": "",
     }
-    new_record = _make_record(ex_fty="2026-09-01", qty="500")
+    new_record = _make_record(color_code="53#", brand="Even&Odd")
     diff = _diff_progress_record(old_db_row, new_record)
     fields_changed = {d["Field"] for d in diff}
-    assert fields_changed == {"Ex-Fty", "Qty"}
+    assert fields_changed == {"Color Code", "Brand"}
+
+
+def test_diff_progress_record_ignores_routine_churn_fields():
+    """Per review policy, ex_fty / qty / test_note / color_summary /
+    launch_date / remarks are NOT flagged for review (they still get
+    overwritten on import) -- a record differing only in them is 'unchanged'."""
+    old_db_row = {
+        "contract_no": "26302-ZA7148", "color_en": "NAVY", "color_cn": "藏青",
+        "color_code": "52#", "label_color": "黑色", "ex_fty_date": "2026-08-11",
+        "qty": "300", "zalando_po": "", "brand": "Anna Field", "fabric_detail": "",
+        "test_note": "", "color_summary": "", "launch_date": "", "remarks": "",
+    }
+    new_record = _make_record(ex_fty="2026-09-01", qty="500",
+                              test_note="passed", remarks="rush order")
+    assert _diff_progress_record(old_db_row, new_record) == []
 
 
 def test_diff_progress_record_empty_old_row_treated_as_all_blank():

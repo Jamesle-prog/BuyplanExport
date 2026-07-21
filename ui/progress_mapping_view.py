@@ -38,21 +38,22 @@ def _record_key(rec: dict) -> tuple[str, str, str]:
 # Fields compared between the stored DB row and the incoming record, in
 # display order. Keys are the parser's record-shape names (see
 # progress_lookup.parse_progress_rows / po_store_progress._DB_TO_RECORD).
+#
+# Deliberately NOT compared (per review policy): ex_fty, qty, test_note,
+# color_summary, launch_date, remarks — routine per-revision churn that
+# doesn't need human review. NOTE: they are still OVERWRITTEN on import
+# like every other field (matched rows are replaced field-by-field
+# unconditionally); a record differing only in these shows as
+# "Already up to date" in the preview but still takes the file's values.
 _DIFF_FIELDS = [
     ("contract_no", "Contract No."),
     ("color",       "Color (EN)"),
     ("cn_color",    "Color (CN)"),
     ("color_code",  "Color Code"),
     ("label_color", "Label Color"),
-    ("ex_fty",      "Ex-Fty"),
-    ("qty",         "Qty"),
     ("zalando_po",  "PO#"),
     ("brand",       "Brand"),
     ("fabric",      "Fabric Detail"),
-    ("test_note",       "测试"),
-    ("color_summary",   "色汇总"),
-    ("launch_date",     "Launch Date"),
-    ("remarks",         "备注"),
 ]
 
 
@@ -237,7 +238,8 @@ def show_progress_mapping_section() -> None:
     elif changed_rows or unchanged_rows:
         diff_rows = [
             {t("PC No."): rec.get("pc_no", ""), t("Style"): rec.get("style_display", ""),
-             t("Color (EN)"): rec.get("color", ""), **d}
+             t("Color (EN)"): rec.get("color", ""),
+             t("Color (CN)"): rec.get("cn_color", "") or "—", **d}
             for rec, key in existing_in_file
             if key in diff_by_key
             for d in diff_by_key[key]
@@ -302,6 +304,10 @@ def show_progress_mapping_section() -> None:
                         f"✅ {t('Saved')} **{n_saved}** {t('progress record(s) for')} **{pm_company}**."
                     )
                     _cached_parse_progress.clear()
+                    # The cached DB-fallback ProgressLookup must not serve
+                    # pre-import data (its TTL is only a safety net).
+                    from ui.sky_east._shared import _db_progress_lookup
+                    _db_progress_lookup.clear()
 
             except Exception as exc:
                 st.error(f"{t('Import failed:')} {exc}")
