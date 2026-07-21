@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.83.3",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "perf", "text": "**Faster login page on a fresh server start.** app.py imported the heavy data stack (pandas/numpy/openpyxl/PIL) at module level just to define a post-login schema helper — the login form paid that cost (multi-second on cold starts with antivirus scanning) before it could render. The import is now deferred until after login. Also, the sidebar's CPRS health probe timeout dropped 3s → 1.5s, halving the worst-case render stall while the CPRS server is unreachable."},
+        ],
+    },
+    {
         "version": "2.83.2",
         "date": "2026-07-21",
         "entries": [

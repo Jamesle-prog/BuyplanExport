@@ -17,7 +17,10 @@ import streamlit as st
 from ui.i18n import t
 
 _TTL = 20            # seconds a health result is trusted before re-probing
-_PROBE_TIMEOUT = 3.0  # keep the sidebar snappy when CPRS is unreachable
+# 1.5s is plenty for a LAN health endpoint; an UNREACHABLE host (SYN
+# dropped, e.g. server off) blocks the sidebar for the full timeout once
+# per TTL window, so this directly bounds the worst-case render stall.
+_PROBE_TIMEOUT = 1.5
 
 
 @st.cache_data(ttl=_TTL, show_spinner=False)

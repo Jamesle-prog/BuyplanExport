@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.83.2"
+APP_VERSION = "2.83.3"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -15,7 +15,6 @@ from auth.users import (
     change_password, get_user_companies, get_user_modules, is_admin,
     user_exists, verify_password,
 )
-from po_extractor.ui_helpers import load_live_schema as _load_live_schema_impl
 from po_extractor.config import SCHEMA_PATH as _SCHEMA_PATH_CFG, CACHE_TTL_SECONDS
 from ui.session_keys import SK
 from ui.i18n import t
@@ -28,9 +27,14 @@ _SCHEMA_PATH = _SCHEMA_PATH_CFG
 
 # ── Live output schema (editable via Admin UI) ────────────────────────────────
 
-# Live schema helpers — implementation in po_extractor.ui_helpers.schema
+# Live schema helpers — implementation in po_extractor.ui_helpers.schema.
+# Imported lazily: po_extractor.ui_helpers transitively pulls pandas + numpy
+# + openpyxl + PIL (~0.7s warm, multi-second on a cold start with AV
+# scanning), and nothing pre-login needs it — a module-level import made the
+# LOGIN page pay that cost on every fresh server start.
 def _load_live_schema() -> list[dict]:
-    return _load_live_schema_impl(_SCHEMA_PATH)
+    from po_extractor.ui_helpers import load_live_schema as _impl
+    return _impl(_SCHEMA_PATH)
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS)
