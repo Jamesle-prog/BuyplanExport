@@ -1525,6 +1525,11 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Could not save to output folder', '无法保存到输出文件夹', 'label', 'sky_east'),
     ('network folder speed, not generation', '受网络文件夹速度影响，非生成耗时', 'label', 'sky_east'),
     ('Time per step', '各步骤耗时', 'label', 'sky_east'),
+    ('Loading order data…', '正在加载订单数据…', 'label', 'sky_east'),
+    ('Building colour lookups…', '正在构建颜色对照…', 'label', 'sky_east'),
+    ('Checking brands…', '正在检查品牌…', 'label', 'sky_east'),
+    ('Loading fabric parts…', '正在加载面料信息…', 'label', 'sky_east'),
+    ('Reading style photos from', '正在读取款式照片，来源', 'label', 'sky_east'),
     ('Seconds', '秒', 'label', 'sky_east'),
     ('核料 workbook(s) saved to', '个核料工作簿已保存到', 'label', 'sky_east'),
 

@@ -1044,18 +1044,31 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             def _mark(label: str, t0: float) -> None:
                 _step_times.append((label, time.time() - t0))
 
+            # Live progress from the FIRST moment of the click. Everything
+            # below (DB read, colour lookups, brand registration, fabric
+            # parts, and especially the photo read from a possibly-network
+            # folder) runs BEFORE the st.status box opens -- without this
+            # the app looked frozen for that whole stretch.
+            _prep = st.empty()
+
+            def _say(msg: str) -> None:
+                _prep.info(f"⏳ {msg}")
+
+            _say(t("Loading order data…"))
             _t0 = time.time()
             df_items = store.list_items(pc_nos=_effective_sel)
             _mark("Load order data (DB)", _t0)
             if df_items.empty:
                 st.warning(t("No data found for the selected contracts."))
             else:
+                _say(t("Building colour lookups…"))
                 _t0 = time.time()
                 color_lookups = _build_buyplan_color_lookups()
                 _mark("Build colour lookups", _t0)
                 import shutil as _shutil
                 out_dir = tempfile.mkdtemp()
                 try:
+                    _say(t("Checking brands…"))
                     _t0 = time.time()
 
                     # ── Auto-register new brands in 船样要求 admin ──────────────────────
@@ -1088,6 +1101,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
 
                     _mark("Register new brands", _t0)
 
+                    _say(t("Loading fabric parts…"))
                     _t0 = time.time()
                     styles = (
                         df_items["style"].dropna().unique().tolist()
@@ -1153,6 +1167,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                         )
                         _step_times.append(("Style photos (session cache)", 0.0))
                     else:
+                        _say(t("Reading style photos from") + f" {_img_folder} …")
                         _t_photos = time.time()
                         style_image_map = load_style_photo_map(styles, _img_folder)
                         _photos_secs = time.time() - _t_photos
@@ -1194,6 +1209,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                     # Capture the exporters' diagnostic warnings (missing HHN
                     # codes, 主标颜色 mismatch/missing, …) — otherwise they only
                     # reach the server log.  Surfaced to the user below.
+                    _prep.empty()
                     with st.status("Generating...", expanded=True) as _status, \
                             _warnings.catch_warnings(record=True) as _wrec:
                         _warnings.simplefilter("always")

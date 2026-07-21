@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.84.4",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "feat", "text": "**No more frozen-looking wait after clicking Generate.** The first ~160 lines of work (order data, colour lookups, brand check, fabric parts, and the style-photo read) ran BEFORE the \"Generating...\" box opened, so the app looked stuck for that whole stretch with no indication anything was happening. Each of those steps now announces itself live (\"⏳ Reading style photos from …\", naming the folder), so progress is visible from the instant you click."},
+        ],
+    },
+    {
         "version": "2.84.3",
         "date": "2026-07-21",
         "entries": [
