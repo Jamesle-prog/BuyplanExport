@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.i18n import t
+from ui.shared import fragment_rerun
 
 
 def _fabric_db_version_history(store) -> None:
@@ -90,7 +91,7 @@ def _fabric_db_version_history(store) -> None:
                                         f"it takes effect."
                                     ),
                                 }
-                                st.rerun()
+                                fragment_rerun()
                 diff_rows = store.get_version_diff(v["version_id"])
                 if not diff_rows:
                     st.caption(t(

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.82.3",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "perf", "text": "**Save/import/delete actions no longer reload the whole app.** Every button action inside the Tracking, CMPT, and Fabric DB tabs used to trigger a full-app rerun — re-executing all 11 tab bodies plus the sidebar and re-mounting the entire page in the browser. These 26 action sites now refresh only their own tab (fragment-scoped rerun, with automatic fallback to a full rerun outside a fragment). GIII/Sky East upload flows deliberately keep the full refresh — their results feed the Summary and Tracking tabs' displays, which would otherwise show stale data."},
+        ],
+    },
+    {
         "version": "2.82.2",
         "date": "2026-07-19",
         "entries": [

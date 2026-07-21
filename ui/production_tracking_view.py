@@ -53,7 +53,7 @@ import streamlit as st
 
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import guard_multiselect_state
+from ui.shared import fragment_rerun, guard_multiselect_state
 from ui.stores import get_production_tracking_store, get_store
 
 # ── Schema constants — imported once at module load, not on every render ──────
@@ -810,7 +810,7 @@ def _jump_to_edit(rid: int) -> None:
     st.session_state[SK.PT_SELECTED_EDIT] = rid
     st.session_state[SK.PT_ACTIVE_TAB]    = TAB_EDIT
     st.session_state.pop("pt_tab_radio", None)
-    st.rerun()
+    fragment_rerun()
 
 
 def _render_progress_filters(
@@ -1118,7 +1118,7 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
     with col_save:
         if st.button("💾 Save", type="primary", use_container_width=True):
             _do_save(record, store, username, rid)
-            st.rerun()
+            fragment_rerun()
 
     with col_del:
         if st.button("🗑️ Delete", use_container_width=True):
@@ -1141,10 +1141,10 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
             # success message and rerun never happened).  After the rerun
             # the stale id reconciles to the first option automatically.
             st.session_state[SK.PT_DELETE_FLASH] = t("Record deleted.")
-            st.rerun()
+            fragment_rerun()
         if st.button(t("Cancel")):
             st.session_state[SK.PT_DELETE_CONFIRM] = False
-            st.rerun()
+            fragment_rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1289,7 +1289,7 @@ def _render_add_tab(
         # index=PT_ACTIVE_TAB.  Writing it directly after instantiation raises
         # StreamlitAPIException ("cannot be modified after widget instantiated").
         st.session_state.pop("pt_tab_radio", None)
-        st.rerun()
+        fragment_rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1477,7 +1477,7 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                             except ValueError as exc:
                                 st.error(f"{rp['po_number']} / {rp['style']}: {exc}")
                         st.success(f"✅ {n} {t('report(s) imported.')}")
-                        st.rerun()
+                        fragment_rerun()
 
     # ── 4. Manual entry (phone/WeChat reports keyed in by your own staff) ───
     with st.expander(f"✍️ {t('Manual entry')}", expanded=False):
@@ -1512,7 +1512,7 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                 notes=note, created_by=username,
             )
             st.success(f"✅ {t('Report added.')}")
-            st.rerun()
+            fragment_rerun()
 
     # ── 5. Recent reports + correction (delete) ─────────────────────────────
     with st.expander(f"🗂 {t('Recent reports')}", expanded=False):
@@ -1550,4 +1550,4 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                 ):
                     fp_store.delete_reports(del_ids)
                     st.session_state.pop("pt_fu_del_sel", None)
-                    st.rerun()
+                    fragment_rerun()

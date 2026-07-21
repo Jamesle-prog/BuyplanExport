@@ -9,6 +9,8 @@ import time
 import pandas as pd
 import streamlit as st
 
+from ui.shared import fragment_rerun
+
 from auth.users import is_admin
 from ui.fabric_db._shared import FABRIC_DB_LIST_RENAME
 from ui.session_keys import SK
@@ -96,7 +98,7 @@ def _fabric_db_do_propose(store, uploaded, clear_first: bool = False) -> None:
                         f"nothing to review."
                     ),
                 }
-                st.rerun()
+                fragment_rerun()
                 return
 
             n_warn = len(result.get("warnings") or [])
@@ -115,7 +117,7 @@ def _fabric_db_do_propose(store, uploaded, clear_first: bool = False) -> None:
                 "col_map": result.get("col_map", {}),
                 "unmatched": result.get("unmatched_headers", []),
             }
-            st.rerun()
+            fragment_rerun()
         except Exception as exc:
             st.error(f"Upload check failed: {exc}")
 
@@ -208,7 +210,7 @@ def _fabric_db_pending_review_section(store) -> None:
                                f"v{outcome['version_id']}.")
                         ),
                     }
-                    st.rerun()
+                    fragment_rerun()
                 except ValueError as exc:
                     st.error(str(exc))
             if col_r.button("❌ Reject", use_container_width=True,
@@ -220,7 +222,7 @@ def _fabric_db_pending_review_section(store) -> None:
                         "kind": "info",
                         "text": f"❌ Proposal rejected by {user}: {comment.strip()}",
                     }
-                    st.rerun()
+                    fragment_rerun()
                 except ValueError as exc:
                     st.error(str(exc))
             if (user == pending["proposed_by"] or admin) and \
@@ -230,7 +232,7 @@ def _fabric_db_pending_review_section(store) -> None:
                 st.session_state[SK.FABRIC_DB_FLASH] = {
                     "kind": "info", "text": "↩ Proposal withdrawn.",
                 }
-                st.rerun()
+                fragment_rerun()
         else:
             st.info("Waiting for an admin to review this change.")
             if user == pending["proposed_by"]:
@@ -239,7 +241,7 @@ def _fabric_db_pending_review_section(store) -> None:
                     st.session_state[SK.FABRIC_DB_FLASH] = {
                         "kind": "info", "text": "↩ Proposal withdrawn.",
                     }
-                    st.rerun()
+                    fragment_rerun()
 
 
 def _fabric_db_upload_section(store, count: int) -> None:
@@ -376,4 +378,4 @@ def _fabric_db_delete_section(store) -> None:
             }
             # Clear selection and rerun
             st.session_state.pop("fabric_db_del_sel", None)
-            st.rerun()
+            fragment_rerun()

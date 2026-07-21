@@ -17,6 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.i18n import t
+from ui.shared import fragment_rerun
 from ui.stores import (
     get_cmpt_contract_store,
     get_factory_progress_store,
@@ -238,7 +239,7 @@ def _new_contract_section(store, username: str) -> None:
                     st.session_state.pop("cmpt_new_lines_df", None)
                     st.session_state.pop("cmpt_new_no", None)   # re-seed next number
                     st.success(f"✅ {t('Contract created.')}")
-                    st.rerun()
+                    fragment_rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -286,7 +287,7 @@ def _contract_detail_section(store, username: str, admin_mode: bool) -> None:
             store.update_contract(cid, status=new_status, notes=new_notes,
                                   updated_by=username)
             st.success(f"✅ {t('Saved.')}")
-            st.rerun()
+            fragment_rerun()
 
         # ── Lines editor ────────────────────────────────────────────────────
         st.markdown(f"**{t('Lines')}**")
@@ -296,7 +297,7 @@ def _contract_detail_section(store, username: str, admin_mode: bool) -> None:
         if st.button(t("Save lines"), key=f"cmpt_detail_savelines_{cid}"):
             store.replace_lines(cid, _editor_lines(edited), updated_by=username)
             st.success(f"✅ {t('Saved.')}")
-            st.rerun()
+            fragment_rerun()
 
         # ── Payments ────────────────────────────────────────────────────────
         st.markdown(f"**{t('Payments')}**")
@@ -334,7 +335,7 @@ def _contract_detail_section(store, username: str, admin_mode: bool) -> None:
                 st.error(str(exc))
             else:
                 st.success(f"✅ {t('Payment recorded.')}")
-                st.rerun()
+                fragment_rerun()
 
         if admin_mode and contract["payments"]:
             from ui.shared import guard_multiselect_state
@@ -352,7 +353,7 @@ def _contract_detail_section(store, username: str, admin_mode: bool) -> None:
                                      key=f"cmpt_pay_del_go_{cid}"):
                 store.delete_payments(del_ids)
                 st.session_state.pop(f"cmpt_pay_del_{cid}", None)
-                st.rerun()
+                fragment_rerun()
 
         # ── Document generation ─────────────────────────────────────────────
         st.markdown(f"**{t('Contract document')}**")
@@ -384,7 +385,7 @@ def _contract_detail_section(store, username: str, admin_mode: bool) -> None:
                          key=f"cmpt_detail_del_{cid}"):
                 store.delete_contract(cid)
                 st.session_state.pop("cmpt_detail_sel", None)
-                st.rerun()
+                fragment_rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -414,4 +415,4 @@ def _template_section() -> None:
             with open(_TEMPLATE_PATH, "wb") as fh:
                 fh.write(up.getvalue())
             st.success(f"✅ {t('Template saved.')}")
-            st.rerun()
+            fragment_rerun()

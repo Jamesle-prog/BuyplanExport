@@ -6,6 +6,8 @@ import io
 import pandas as pd
 import streamlit as st
 
+from ui.shared import fragment_rerun
+
 from ui.fabric_db._shared import XLSX_MIME
 
 
@@ -93,7 +95,7 @@ def _fabric_db_fiber_manager() -> None:
                         f"({len(merged)} total custom fibers). "
                         "Re-run the composition check to see updated results."
                     )
-                    st.rerun()
+                    fragment_rerun()
             except Exception as exc:
                 st.error(f"Failed to read Excel: {exc}")
 
@@ -139,13 +141,13 @@ def _fabric_db_fiber_manager() -> None:
             save_custom_fibers(new_custom)
             st.success(f"Saved {len(new_custom)} custom fiber(s). "
                        "Re-run the composition check to see updated results.")
-            st.rerun()
+            fragment_rerun()
 
         if reset_col.button("🗑 Clear all custom", key="fiber_manager_clear",
                             use_container_width=True):
             save_custom_fibers({})
             st.success("Custom fibers cleared.")
-            st.rerun()
+            fragment_rerun()
 
         # Built-in fibers (read-only reference)
         with st.expander(f"📖 View built-in fiber list ({len(KNOWN_FIBERS)} entries)",

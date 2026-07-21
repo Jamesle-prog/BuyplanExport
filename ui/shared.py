@@ -197,6 +197,29 @@ class ProgressTracker:
 # Download helper
 # ---------------------------------------------------------------------------
 
+def fragment_rerun() -> None:
+    """Rerun only the enclosing ``@st.fragment`` (the current tab), falling
+    back to a full-app rerun when called outside a fragment.
+
+    Perf: a plain ``st.rerun()`` from inside a tab fragment is APP-scoped --
+    it re-executes every tab body plus the sidebar and re-mounts the whole
+    page in the browser, so each save/import/delete paid the full-app cost.
+    Use this for actions whose effects are contained in the current tab.
+    Keep plain ``st.rerun()`` for actions other tabs passively display
+    (e.g. PO uploads feeding the Summary tab) -- with client-side tab
+    switching, a fragment-scoped rerun would leave those views stale.
+
+    The except clause is safe: ``st.rerun`` raises ``StreamlitAPIException``
+    at CALL time when no fragment is active; the ``RerunException`` it
+    raises as control flow on success is a sibling class and propagates.
+    """
+    from streamlit.errors import StreamlitAPIException
+    try:
+        st.rerun(scope="fragment")
+    except StreamlitAPIException:
+        st.rerun()
+
+
 def guard_multiselect_state(key: str, options) -> None:
     """Drop stale values from a multiselect's session state before rendering.
 
