@@ -576,7 +576,10 @@ def _prefetch_ai_color_cache(
             pass
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    with ThreadPoolExecutor(max_workers=min(6, total)) as ex:
+    # 16 workers: these are I/O-bound ~1-3s API calls; with negative answers
+    # now cached the pool only matters on the first-ever sight of a colour
+    # set, where wall-clock = ceil(misses/workers) x latency.
+    with ThreadPoolExecutor(max_workers=min(16, total)) as ex:
         futs = [ex.submit(job) for job in jobs]
         for f in as_completed(futs):
             try:

@@ -411,11 +411,12 @@ def test_match_color_to_candidates_does_not_cache_failures(monkeypatch):
     assert len(calls) == 2   # second call actually retried, not served from cache
 
 
-def test_match_color_to_candidates_does_not_cache_no_match(monkeypatch):
-    """A genuine "no candidate applies" answer is also a miss -- must be
-    retried next time too, since the candidate set (or the API's judgement)
-    could differ on a later call.
-    """
+def test_match_color_to_candidates_caches_genuine_no_match(monkeypatch):
+    """POLICY (v2.84.0): a genuine "no candidate applies" answer IS cached --
+    the same honest miss re-asked on every generation was the dominant
+    recurring cost on datasets with many unresolvable colours. The candidate
+    set is part of the cache key, so a changed set still re-asks; only
+    transport/parse failures stay uncached (previous two tests)."""
     calls = []
 
     def _create(**kwargs):
@@ -423,6 +424,45 @@ def test_match_color_to_candidates_does_not_cache_no_match(monkeypatch):
         return _FakeResponse(json.dumps({"match": ""}))
 
     _install_fake_openai(monkeypatch, _create)
-    color_ai_enhance.match_color_to_candidates("Chartreuse", ["Navy"], "sk-fake")
-    color_ai_enhance.match_color_to_candidates("Chartreuse", ["Navy"], "sk-fake")
+    assert color_ai_enhance.match_color_to_candidates("Chartreuse", ["Navy"], "sk-fake") == ""
+    assert color_ai_enhance.match_color_to_candidates("Chartreuse", ["Navy"], "sk-fake") == ""
+    assert len(calls) == 1                      # served from cache
+    # A DIFFERENT candidate set is a different question -> re-asked.
+    color_ai_enhance.match_color_to_candidates("Chartreuse", ["Green"], "sk-fake")
     assert len(calls) == 2
+
+
+def test_recognize_colors_caches_genuine_empty_answer(monkeypatch):
+    """POLICY (v2.84.0): a successful "no colour identified" answer is cached
+    (memory + persistent) -- see test above for rationale."""
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(kwargs)
+        return _FakeResponse(json.dumps({"colors": []}))
+
+    _install_fake_openai(monkeypatch, _create)
+    assert color_ai_enhance.recognize_colors("fabric code XJ-99", "sk-fake") == ()
+    assert color_ai_enhance.recognize_colors("fabric code XJ-99", "sk-fake") == ()
+    assert len(calls) == 1
+
+
+def test_persistent_cache_stores_negative_answers(monkeypatch, tmp_path):
+    """Negative answers survive a simulated restart too -- that's the point:
+    an unresolvable colour must never be re-purchased from the API."""
+    import po_extractor.config as cfg
+    monkeypatch.setattr(cfg, "DB_PATH", str(tmp_path / "cache.db"))
+    monkeypatch.setattr(color_ai_enhance, "_persist_enabled", True)
+    monkeypatch.setattr(color_ai_enhance, "_persist_ready", False)
+
+    calls = []
+
+    def _create(**kwargs):
+        calls.append(1)
+        return _FakeResponse(json.dumps({"match": ""}))
+    _install_fake_openai(monkeypatch, _create)
+
+    assert color_ai_enhance.match_color_to_candidates("Puce", ["Navy"], "k", "m1") == ""
+    color_ai_enhance._match_cache.clear()       # simulated restart
+    assert color_ai_enhance.match_color_to_candidates("Puce", ["Navy"], "k", "m1") == ""
+    assert len(calls) == 1

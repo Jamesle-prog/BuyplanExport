@@ -162,11 +162,12 @@ def recognize_colors(
     API/parse error — callers must treat that as "no enhancement available"
     and keep their existing not-found result. This function never raises.
 
-    Only a genuine (non-empty) result is cached — a failure (API error,
-    malformed response, no colour recognised) is never cached, so a
-    transient problem (network blip, a since-fixed config issue) doesn't
-    permanently block every future attempt for the same string within this
-    process's lifetime.
+    Caching policy: any SUCCESSFUL answer is cached (memory + persistent),
+    INCLUDING a genuine "no colour identified" empty answer — a stable
+    non-answer re-asked on every generation was the dominant recurring cost
+    on datasets with many unresolvable colours. Transport/parse failures
+    (API error, malformed response) are still never cached, so a transient
+    problem doesn't permanently block future attempts.
     """
     if not raw_color or not api_key:
         return ()
@@ -200,10 +201,11 @@ def recognize_colors(
         colors = tuple(
             str(c).strip() for c in (data.get("colors") or []) if str(c).strip()
         )
+        ok = True
     except Exception:
-        colors = ()
+        colors, ok = (), False
 
-    if colors:
+    if ok:
         _cache[raw_color] = colors
         _persist_put("recognize", raw_color, model, json.dumps(list(colors)))
     return colors
@@ -233,10 +235,11 @@ def match_color_to_candidates(
     a wrong pick can at worst surface the wrong *existing* row's colour, never
     fabricate data. Never raises.
 
-    Only a genuine match is cached — a miss (no candidate applies, an API
-    error, a malformed response) is never cached, so a transient problem
-    doesn't permanently block every future attempt for the same
-    (colour, candidate-set) pair within this process's lifetime.
+    Caching policy: any SUCCESSFUL answer is cached (memory + persistent),
+    INCLUDING a genuine "no candidate matches" empty answer — the same
+    honest miss re-asked on every generation was the dominant recurring
+    cost on datasets with many unresolvable colours. Transport/parse
+    failures (API error, malformed response) are still never cached.
     """
     if not client_color or not candidates or not api_key:
         return ""
@@ -246,9 +249,10 @@ def match_color_to_candidates(
 
     persist_key = client_color + "\x1f" + "\x1f".join(sorted(candidates))
     stored = _persist_get("match", persist_key, model)
-    # A stored pick is only valid if it's still one of the current candidates
-    # (the candidate set is part of the key, so this is belt-and-braces).
-    if stored and stored in candidates:
+    # "" is a valid stored answer (genuine no-match); a non-empty stored pick
+    # must still be one of the current candidates (the candidate set is part
+    # of the key, so this is belt-and-braces).
+    if stored is not None and (stored == "" or stored in candidates):
         _match_cache[cache_key] = stored
         return stored
 
@@ -274,10 +278,11 @@ def match_color_to_candidates(
         # Only accept an answer that is exactly one of the candidates — guards
         # against the model inventing a colour that isn't on file.
         picked = picked if picked in candidates else ""
+        ok = True
     except Exception:
-        picked = ""
+        picked, ok = "", False
 
-    if picked:
+    if ok:
         _match_cache[cache_key] = picked
         _persist_put("match", persist_key, model, picked)
     return picked

@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.84.0",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "perf", "text": "**AI colour resolution redesigned: unresolvable colours are now asked once, ever.** The AI layer only cached successful answers — but a colour with no 大货进度表 coverage produces a genuine \"no answer\", which was re-purchased from the API on every single generation (serially in the 核料 pass). With ~176 such colours that was the dominant recurring cost. Genuine negative answers (\"no colour identified\", \"no candidate matches\") are now cached in memory AND permanently in the database, exactly like positive ones; only transport errors stay uncached so transient network problems still retry. The AI pre-warm pool also grew 6 → 16 workers, so even a first-ever encounter with many new colours resolves in a few parallel waves."},
+            {"type": "perf", "text": "**Style photos are reused within a session.** Regenerating with the same folder and styles no longer re-reads ~20 MB of photos (painful on a network/Mountain Duck folder) — the map is kept for the session and invalidated automatically by a new upload run, a folder change, or a different style selection."},
+            {"type": "feat", "text": "**Generation now reports per-phase timings** in the progress box (photo load, buy plan, 核料) — any future slowness names its own culprit."},
+        ],
+    },
+    {
         "version": "2.83.5",
         "date": "2026-07-21",
         "entries": [

@@ -34,6 +34,8 @@ class SK:
     SE_RL_PENDING    = "se_return_label_pending"   # Return Label conflicts awaiting confirmation
     SE_NEW_BRAND_PENDING = "se_new_brand_pending"   # brand names awaiting a 船样要求 entry
 
+    SE_PHOTO_CACHE   = "se_photo_cache"    # {"key": (folder, styles), "map": style→[front,back]} per session
+
     # ── Fabric DB ─────────────────────────────────────────────────────────────
     FABRIC_DB_FLASH  = "fabric_db_flash"   # import/delete outcome shown after the post-action rerun
 

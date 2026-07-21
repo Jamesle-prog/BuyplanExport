@@ -103,6 +103,8 @@ def _show_se_upload_section():
         st.session_state.se_log = []
         st.session_state.se_contracts = None
         st.session_state.se_image_cache = {}
+        # New upload run → freshly extracted photos may supersede cached ones
+        st.session_state.pop(SK.SE_PHOTO_CACHE, None)
         st.session_state.se_masked_zip = None
         _run_sky_east_processing(order_files, ean_file, progress_file,
                                  mask_prices=se_mask)

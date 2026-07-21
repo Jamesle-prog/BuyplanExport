@@ -1105,14 +1105,32 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                     # picture_id cache below.
                     _img_folder = (st.session_state.get(SK.SE_IMAGES_DIR) or "").strip() \
                                   or IMAGES_DIR_DEFAULT
-                    _t_photos = time.time()
-                    style_image_map: dict = load_style_photo_map(styles, _img_folder)
-                    _photos_secs = time.time() - _t_photos
-                    st.caption(
-                        f"🖼 {len(style_image_map)}/{len(styles)} style photo(s) "
-                        f"loaded in {_photos_secs:.1f}s"
-                        + (f" — folder: {_img_folder}" if _photos_secs > 5 else "")
-                    )
+                    # Session-level photo reuse: regenerating with the same
+                    # folder + styles skips re-reading the bytes entirely —
+                    # on a network/Mountain Duck image folder that's ~20 MB
+                    # of transfer per regeneration. Invalidated by a new
+                    # upload run (sky_east_view resets it) or any change of
+                    # folder / style selection (part of the key).
+                    _photo_key = (_img_folder, tuple(sorted(styles)))
+                    _photo_cached = st.session_state.get(SK.SE_PHOTO_CACHE) or {}
+                    if _photo_cached.get("key") == _photo_key:
+                        style_image_map: dict = _photo_cached["map"]
+                        st.caption(
+                            f"🖼 {len(style_image_map)}/{len(styles)} style "
+                            f"photo(s) reused from this session (no re-read)"
+                        )
+                    else:
+                        _t_photos = time.time()
+                        style_image_map = load_style_photo_map(styles, _img_folder)
+                        _photos_secs = time.time() - _t_photos
+                        st.session_state[SK.SE_PHOTO_CACHE] = {
+                            "key": _photo_key, "map": style_image_map,
+                        }
+                        st.caption(
+                            f"🖼 {len(style_image_map)}/{len(styles)} style photo(s) "
+                            f"loaded in {_photos_secs:.1f}s"
+                            + (f" — folder: {_img_folder}" if _photos_secs > 5 else "")
+                        )
 
                     # Fallback: session / extracted picture_id cache (front only) for
                     # styles whose {style}_front.png files were not found.
@@ -1170,6 +1188,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                         )
 
                         st.write("Building main buy plan (Template)...")
+                        _t_bp = time.time()
                         _bp_progress = st.progress(0, text="Starting…")
 
                         def _bp_on_progress(frac: float, label: str) -> None:
@@ -1195,11 +1214,13 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             # Filename: SkyEast_HHPPC040_HHPPC041_BuyPlan_20260702-1530.xlsx
                             _pc_tag = "_".join(_effective_sel) if len(_effective_sel) <= 4 else f"{len(_effective_sel)}PCs"
                             st.session_state[SK.SE_BP_NAME] = f"SkyEast_{_pc_tag}_BuyPlan_{_ts}.xlsx"
+                            st.write(f"✔ Buy plan done in {time.time() - _t_bp:.1f}s")
                         except Exception as exc:
                             st.error(f"Buy plan failed: {exc}")
                             style_totals = {}
 
                         st.write("Building 核料 workbooks (Template_P)...")
+                        _t_nk = time.time()
                         try:
                             nk_paths = export_sky_east_nukuryou(
                                 df_items, color_lookups.cn, out_dir,
@@ -1218,6 +1239,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 st.session_state[SK.SE_NK_BYTES] = None
                                 st.session_state[SK.SE_NK_COUNT] = 0
                                 st.session_state[SK.SE_NK_REASON] = check_nukuryou_ready(df_items)
+                            st.write(f"✔ 核料 done in {time.time() - _t_nk:.1f}s")
                         except Exception as exc:
                             st.warning(f"核料 workbooks skipped: {exc}")
                             st.session_state[SK.SE_NK_BYTES] = None
