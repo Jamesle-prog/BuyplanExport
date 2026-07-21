@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.83.2",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "fix", "text": "**AI colour matching no longer fails at random on deepseek-v4-flash.** The typo-bridging candidate match (e.g. client \"dark blue\" vs 大货进度表 \"Daek Blue\") intermittently returned nothing: v4-flash spends hidden reasoning tokens inside the same max_tokens budget, and the call's 64-token cap sometimes truncated the response before the answer was written. The v4-pro reasoning-headroom floor now applies to the whole deepseek-v4 line — verified live: the same match now succeeds consistently."},
+        ],
+    },
+    {
         "version": "2.83.1",
         "date": "2026-07-21",
         "entries": [

@@ -42,12 +42,20 @@ _REASONING_MIN_MAX_TOKENS = 1024
 
 # Newer DeepSeek model line whose hidden reasoning trace runs far heavier
 # than deepseek-reasoner's -- confirmed live: deepseek-v4-pro spent 96/100
-# tokens on a trivial "say hello" prompt (vs 13/16 for deepseek-v4-flash),
-# and 12235 reasoning tokens on one real, moderately complex prompt. Unlike
-# deepseek-reasoner it does NOT reject the ``temperature`` param (see
-# is_reasoning_model), so it's tracked separately with its own, larger floor
-# rather than folded into _REASONING_MODEL_PREFIXES.
-_HIGH_REASONING_MODEL_PREFIXES = ("deepseek-v4-pro",)
+# tokens on a trivial "say hello" prompt, and 12235 reasoning tokens on one
+# real, moderately complex prompt. Unlike deepseek-reasoner it does NOT
+# reject the ``temperature`` param (see is_reasoning_model), so it's tracked
+# separately with its own, larger floor rather than folded into
+# _REASONING_MODEL_PREFIXES.
+#
+# The prefix covers the WHOLE v4 line, not just -pro: deepseek-v4-flash also
+# reasons invisibly (confirmed live on the colour candidate-match prompt: 44
+# reasoning tokens inside a 64-token budget, and intermittently MORE -- the
+# same call nondeterministically truncated to an empty answer whenever the
+# trace outgrew the cap, so AI colour matches randomly failed). max_tokens is
+# a cap, not a spend -- a generous floor costs nothing when the answer is
+# short, so one floor for every v4 variant is the safe default.
+_HIGH_REASONING_MODEL_PREFIXES = ("deepseek-v4",)
 _HIGH_REASONING_MIN_MAX_TOKENS = 8192
 
 
