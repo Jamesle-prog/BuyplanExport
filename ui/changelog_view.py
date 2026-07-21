@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.83.5",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "perf", "text": "**Buy plan generation no longer hangs on network image folders.** Style photos were located with up to 240 individual file checks (60 styles × front/back × 2 folders) — on a network / Mountain Duck mounted image folder every check is a network round-trip, which dominated the entire generation (minutes). Photos are now found with ONE directory listing per folder; an unreachable folder costs a single fast failure instead of hanging per file, with the local extracted-images fallback still working. The generate screen also now shows how many photos loaded and how long that took (with the folder path called out when it's slow), so any future slowness identifies itself."},
+        ],
+    },
+    {
         "version": "2.83.4",
         "date": "2026-07-21",
         "entries": [

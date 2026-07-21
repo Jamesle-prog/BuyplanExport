@@ -463,6 +463,52 @@ def load_style_photo_pair(style: str, primary_dir: str | None = None) -> list:
     return pair
 
 
+def load_style_photo_map(styles, primary_dir: str | None = None) -> dict[str, list]:
+    """Batch version of :func:`load_style_photo_pair` for many styles at once:
+    ``{style: [front_bytes|None, back_bytes|None]}`` (styles with no photo at
+    all are omitted).
+
+    ONE ``os.listdir`` per folder instead of per-style ``os.path.exists``
+    probes. This matters enormously when the configured image folder is a
+    network / Mountain Duck mount: each probe is a network round-trip, so 60
+    styles × front/back × 2 folders = up to 240 round-trips — measured in
+    MINUTES on a slow mount, and a hang per file on an unreachable one. A
+    folder that cannot be listed simply contributes nothing (one fast
+    failure), and only files that actually exist are opened.
+    """
+    import re as _re
+    primary = primary_dir if primary_dir is not None else images_dir()
+    listings: list[tuple[str, set[str]]] = []
+    for folder in (primary, EXTRACTED_IMAGES_DIR):
+        try:
+            listings.append((folder, set(os.listdir(folder))))
+        except OSError:
+            listings.append((folder, set()))
+
+    out: dict[str, list] = {}
+    for style in styles:
+        s = str(style or "").strip()
+        if not s:
+            continue
+        safe = _re.sub(r'[\\/:*?"<>|]', '_', s)
+        pair: list = []
+        for pos in ("front", "back"):
+            fname = f"{safe}_{pos}.png"
+            data = None
+            for folder, names in listings:
+                if fname in names:
+                    try:
+                        with open(os.path.join(folder, fname), "rb") as fh:
+                            data = fh.read()
+                        break
+                    except OSError:
+                        pass
+            pair.append(data)
+        if any(pair):
+            out[s] = pair
+    return out
+
+
 def save_images_to_disk(image_dict: dict,
                         style_pid_map: dict[str, list[str]] | None = None,
                         img_dir: str | None = None) -> None:

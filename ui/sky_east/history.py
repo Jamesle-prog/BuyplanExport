@@ -4,6 +4,7 @@ import base64
 import io
 import os
 import tempfile
+import time
 import warnings as _warnings
 import zipfile
 from datetime import datetime
@@ -25,6 +26,7 @@ from ui.shared import (
     build_image_cache_for_ids,
     fragment_rerun,
     load_style_photo_pair,
+    load_style_photo_map,
     persisted_download,
     guard_multiselect_state,
 )
@@ -1095,17 +1097,22 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
 
                     # ── Build style → [front_bytes, back_bytes] image map ────────────
                     # Used for: Index sheet thumbnail (front) + Photo1/Photo2 in each
-                    # style sheet.  For each style: {style}_front.png / _back.png in
-                    # the configured folder, else the persistent extracted-images
-                    # fallback (load_style_photo_pair handles both), else the session
-                    # picture_id cache (which also falls back to the extracted folder).
+                    # style sheet.  Batch loader: ONE directory listing per folder
+                    # instead of per-style existence probes — on a network/Mountain
+                    # Duck image folder the per-style probes were network round-trips
+                    # and dominated the whole generation (minutes). Falls back to the
+                    # persistent extracted-images folder, then the session
+                    # picture_id cache below.
                     _img_folder = (st.session_state.get(SK.SE_IMAGES_DIR) or "").strip() \
                                   or IMAGES_DIR_DEFAULT
-                    style_image_map: dict = {}
-                    for _style in styles:
-                        _pair = load_style_photo_pair(_style, _img_folder)
-                        if any(_pair):
-                            style_image_map[_style] = _pair
+                    _t_photos = time.time()
+                    style_image_map: dict = load_style_photo_map(styles, _img_folder)
+                    _photos_secs = time.time() - _t_photos
+                    st.caption(
+                        f"🖼 {len(style_image_map)}/{len(styles)} style photo(s) "
+                        f"loaded in {_photos_secs:.1f}s"
+                        + (f" — folder: {_img_folder}" if _photos_secs > 5 else "")
+                    )
 
                     # Fallback: session / extracted picture_id cache (front only) for
                     # styles whose {style}_front.png files were not found.

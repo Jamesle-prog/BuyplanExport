@@ -84,3 +84,56 @@ def test_save_images_to_disk_still_writes_to_a_valid_folder(tmp_path):
     )
     assert (folder / "ID_1.png").exists()
     assert (folder / "DR1_front.png").exists()
+
+
+# ---------------------------------------------------------------------------
+# load_style_photo_map — batch loader (one listing per folder, no per-style
+# probes; critical on network/Mountain Duck image folders)
+# ---------------------------------------------------------------------------
+
+def test_photo_map_batch_loads_from_primary_and_fallback(tmp_path, monkeypatch):
+    primary = tmp_path / "primary"; primary.mkdir()
+    extracted = tmp_path / "extracted"; extracted.mkdir()
+    monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(extracted))
+
+    (primary / "DR1_front.png").write_bytes(_png())
+    (primary / "DR1_back.png").write_bytes(_png())
+    (extracted / "DR2_front.png").write_bytes(_png())   # only in fallback
+
+    out = shared.load_style_photo_map(["DR1", "DR2", "DR3"], str(primary))
+    assert set(out) == {"DR1", "DR2"}                    # DR3 photo-less -> omitted
+    assert out["DR1"][0] is not None and out["DR1"][1] is not None
+    assert out["DR2"][0] is not None and out["DR2"][1] is None
+
+
+def test_photo_map_unlistable_primary_degrades_fast_not_per_file(tmp_path, monkeypatch):
+    """An unreachable primary folder must cost exactly ONE failed listdir --
+    never a per-style probe -- and the extracted fallback must still work."""
+    extracted = tmp_path / "extracted"; extracted.mkdir()
+    monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(extracted))
+    (extracted / "DR9_front.png").write_bytes(_png())
+
+    listdir_calls = []
+    real_listdir = shared.os.listdir
+
+    def _listdir(folder):
+        listdir_calls.append(folder)
+        if "unreachable" in str(folder):
+            raise OSError(1326, "Logon failure")
+        return real_listdir(folder)
+    monkeypatch.setattr(shared.os, "listdir", _listdir)
+
+    out = shared.load_style_photo_map(
+        [f"DR{i}" for i in range(50)], str(tmp_path / "unreachable"),
+    )
+    assert set(out) == {"DR9"}
+    assert len(listdir_calls) == 2       # one per folder, regardless of 50 styles
+
+
+def test_photo_map_sanitizes_style_names_like_pair_loader(tmp_path, monkeypatch):
+    extracted = tmp_path / "extracted"; extracted.mkdir()
+    monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(extracted))
+    (extracted / "DR_5_A_front.png").write_bytes(_png())
+
+    out = shared.load_style_photo_map(["DR/5:A"], str(tmp_path / "missing"))
+    assert out["DR/5:A"][0] is not None
