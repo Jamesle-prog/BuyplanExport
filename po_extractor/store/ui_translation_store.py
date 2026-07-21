@@ -1523,6 +1523,7 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('When set, the generated files are also saved directly to this folder (downloads below still work either way).',
      '设置后，生成的文件会同时直接保存到该文件夹（下方的下载按钮仍然可用）。', 'label', 'sky_east'),
     ('Could not save to output folder', '无法保存到输出文件夹', 'label', 'sky_east'),
+    ('network folder speed, not generation', '受网络文件夹速度影响，非生成耗时', 'label', 'sky_east'),
     ('核料 workbook(s) saved to', '个核料工作簿已保存到', 'label', 'sky_east'),
 
     # Fabric DB — version history review/restore additions (v2.79.0)

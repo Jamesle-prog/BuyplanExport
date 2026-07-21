@@ -1237,11 +1237,17 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 # folder must never fail the generation (the
                                 # download buttons still have the bytes).
                                 try:
+                                    _t_save = time.time()
                                     os.makedirs(_out_folder, exist_ok=True)
                                     _dst = os.path.join(
                                         _out_folder, st.session_state[SK.SE_BP_NAME])
                                     _shutil.copy2(bp_path, _dst)
-                                    st.write(f"💾 {t('Saved to')} {_dst}")
+                                    _mb = os.path.getsize(bp_path) / 1e6
+                                    st.write(
+                                        f"💾 {t('Saved to')} {_dst} "
+                                        f"({_mb:.1f} MB in {time.time() - _t_save:.1f}s"
+                                        f" — {t('network folder speed, not generation')})"
+                                    )
                                     _push_dir("se_output_dir", _out_folder)
                                 except OSError as _exc:
                                     st.warning(
@@ -1274,13 +1280,14 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             _out_folder = (st.session_state.get(SK.SE_OUTPUT_DIR) or "").strip()
                             if _out_folder and nk_paths:
                                 try:
+                                    _t_save = time.time()
                                     os.makedirs(_out_folder, exist_ok=True)
                                     for _p in nk_paths:
                                         _shutil.copy2(
                                             _p, os.path.join(_out_folder, os.path.basename(_p)))
                                     st.write(
                                         f"💾 {len(nk_paths)} {t('核料 workbook(s) saved to')} "
-                                        f"{_out_folder}")
+                                        f"{_out_folder} ({time.time() - _t_save:.1f}s)")
                                 except OSError as _exc:
                                     st.warning(
                                         f"⚠️ {t('Could not save to output folder')}: {_exc}")

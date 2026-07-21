@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.84.2",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "docs", "text": "**Output-folder saves now show size and duration** (e.g. \"5.2 MB in 18.3s — network folder speed, not generation\") so a slow save to a Mountain Duck / network folder is clearly attributed to the folder's upload speed rather than the generation itself. Tip: a local output folder saves instantly; the download buttons are always instant either way."},
+        ],
+    },
+    {
         "version": "2.84.1",
         "date": "2026-07-21",
         "entries": [
