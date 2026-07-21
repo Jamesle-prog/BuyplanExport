@@ -59,6 +59,9 @@ from ui.stores import get_production_tracking_store, get_store
 # ── Schema constants — imported once at module load, not on every render ──────
 # Keeping these at module level avoids repeated sys.modules lookups inside the
 # many small render functions that previously used local `from … import` calls.
+from po_extractor.store._factory_progress_schema import (
+    MILESTONE_STAGES, MILESTONE_LABELS,
+)
 from po_extractor.store._production_tracking_schema import (
     STAGES,
     STAGES_GROUP_A,
@@ -83,21 +86,19 @@ _MISSING = object()
 
 # Order matters — the index in this list is what PT_ACTIVE_TAB stores.
 _TAB_LABELS: list[str] = [
-    "📊 Dashboard",
-    "📋 Overview",
-    "✏️ Edit Record",
-    "➕ Add New",
-    "📅 Plan",
+    "📅 Tracking Grid",
+    "➕ Add / Remove",
     "📨 Factory Updates",
 ]
 
-# Indexes used by the dashboard Edit shortcut and similar cross-panel jumps.
-TAB_DASHBOARD = 0
-TAB_OVERVIEW  = 1
-TAB_EDIT      = 2
-TAB_ADD       = 3
-TAB_PLAN      = 4
-TAB_FACTORY   = 5
+# Indexes used for cross-panel jumps (e.g. Add → back to the grid).
+TAB_GRID    = 0
+TAB_ADD     = 1
+TAB_FACTORY = 2
+
+# Grid date modes — which per-stage column the 9 date columns bind to.
+GRID_PLANNED = "planned"
+GRID_ACTUAL  = "actual"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -653,27 +654,27 @@ def show_production_tracking_tab(
         companies=user_cos if not admin_mode else None,
         allow_all=admin_mode,
     )
-    readiness_map = {r["id"]: store.compute_readiness(r) for r in records}
-    reminder_map  = {
-        r["id"]: store.compute_inspection_reminders(r, today)
-        for r in records
-    }
+    # NOTE: readiness / QC reminders are computed LAZILY inside the Advanced
+    # editor only — they are pure per-record loops over 22 stages and the
+    # simplified surface never shows them.
 
     # ── Top metrics row ────────────────────────────────────────────────────
-    _render_metrics(records, readiness_map, reminder_map, today)
+    _render_metrics(records, today)
 
     # ── Sub-tab navigation (st.radio with session-state-controlled index) ──
-    # The dashboard Edit shortcut works by setting BOTH PT_ACTIVE_TAB AND
-    # the radio's own session-state key ("pt_tab_radio") before st.rerun().
     # Setting only PT_ACTIVE_TAB would silently fail because Streamlit
-    # ignores `index=` once the widget key has a value in session_state.
+    # ignores `index=` once the widget key has a value in session_state —
+    # cross-tab jumps must pop "pt_tab_radio" as well (see _render_add_tab).
     # NOTE: options stay English (stable widget/session values, index math);
     # format_func translates at render time so language switches apply live.
+    _stored_tab = st.session_state.get(SK.PT_ACTIVE_TAB, TAB_GRID)
+    if not isinstance(_stored_tab, int) or not 0 <= _stored_tab < len(_TAB_LABELS):
+        _stored_tab = TAB_GRID          # stale index from the old 6-tab layout
     active_label = st.radio(
         "Sub-section",
         _TAB_LABELS,
         horizontal=True,
-        index=st.session_state.get(SK.PT_ACTIVE_TAB, TAB_DASHBOARD),
+        index=_stored_tab,
         key="pt_tab_radio",
         format_func=t,
         label_visibility="collapsed",
@@ -683,16 +684,11 @@ def show_production_tracking_tab(
     st.divider()
 
     # ── Dispatch ───────────────────────────────────────────────────────────
-    if active_label == _TAB_LABELS[TAB_DASHBOARD]:
-        _render_dashboard_tab(records, readiness_map, reminder_map, today)
-    elif active_label == _TAB_LABELS[TAB_OVERVIEW]:
-        _render_overview_table(records, readiness_map, reminder_map, today)
-    elif active_label == _TAB_LABELS[TAB_EDIT]:
-        _render_edit_tab(records, readiness_map, store, username, today)
+    if active_label == _TAB_LABELS[TAB_GRID]:
+        _render_grid_tab(records, store, username, today, admin_mode)
     elif active_label == _TAB_LABELS[TAB_ADD]:
-        _render_add_tab(store, po_store, username, user_cos=user_cos, admin_mode=admin_mode)
-    elif active_label == _TAB_LABELS[TAB_PLAN]:
-        _render_plan_tab(records, store)
+        _render_add_tab(store, po_store, username, user_cos=user_cos,
+                        admin_mode=admin_mode, records=records)
     elif active_label == _TAB_LABELS[TAB_FACTORY]:
         _render_factory_updates_tab(records, username, admin_mode)
 
@@ -701,47 +697,30 @@ def show_production_tracking_tab(
 # Metrics row
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_metrics(records, readiness_map, reminder_map, today) -> None:
-    """Five summary metrics at the top of the Tracking tab."""
+def _render_metrics(records, today) -> None:
+    """Three summary metrics, all about the 9 tracked milestones.
+
+    Deliberately NOT about the 22-stage model: the simplified surface only
+    surfaces what the buy plan's Index tab shows, so counts must agree with
+    what the user sees in the grid.
+    """
     total = len(records)
-
-    # Only count stages that are applicable — inapplicable optional samples
-    # (applicable=0) must be excluded from Delayed to match the module rule
-    # that inapplicable stages are invisible to all metrics.
-    delayed_stages = sum(
-        1
-        for r in records
-        for s in STAGES
-        if (r.get(f"{s}_status") or "") == "Delayed"
-        and (s not in OPTIONAL_SAMPLE_STAGES or r.get(f"{s}_applicable", 0))
+    done = sum(
+        1 for r in records for s, _ in MILESTONE_STAGES
+        if (r.get(f"{s}_actual") or "").strip()
     )
-
-    blocked = sum(
-        1
-        for r in records
-        if any(
-            readiness_map[r["id"]][t].startswith("waiting")
-            for t in ("pp_sample", "cutting")
-        )
-    )
-
     today_iso = today.isoformat()
-    completed_today = sum(
-        1
-        for r in records
-        for s in STAGES
-        if (r.get(f"{s}_actual") or "") == today_iso
-        and (s not in OPTIONAL_SAMPLE_STAGES or r.get(f"{s}_applicable", 0))
+    overdue = sum(
+        1 for r in records for s, _ in MILESTONE_STAGES
+        if (r.get(f"{s}_planned") or "").strip()
+        and not (r.get(f"{s}_actual") or "").strip()
+        and (r.get(f"{s}_planned") or "").strip() < today_iso
     )
 
-    qc_due = sum(1 for r in records if reminder_map[r["id"]])
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric(t("Total Tracked"),   f"{total:,}")
-    c2.metric(t("Delayed Stages"),  f"{delayed_stages:,}")
-    c3.metric(t("Blocked"),         f"{blocked:,}")
-    c4.metric(t("Completed Today"), f"{completed_today:,}")
-    c5.metric(t("QC Bookings Due"), f"{qc_due:,}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric(t("Tracked"),         f"{total:,}")
+    c2.metric(t("Milestones done"), f"{done:,}")
+    c3.metric(t("Overdue"),         f"{overdue:,}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -803,29 +782,28 @@ def _status_badges(record: dict, readiness: dict[str, str], reminders: list[dict
     return badges
 
 
-def _jump_to_edit(rid: int) -> None:
-    """Navigate to the Edit tab with *rid* pre-selected — same mechanism as
-    the Add New → Edit handoff (see show_production_tracking_tab's note on
-    why the radio's own widget key must be popped, not overwritten)."""
+def _jump_to_advanced(rid: int) -> None:
+    """Navigate to the grid tab with *rid* pre-selected in the Advanced
+    editor — the radio's own widget key must be POPPED, not overwritten
+    (Streamlit ignores `index=` once the key holds a value)."""
     st.session_state[SK.PT_SELECTED_EDIT] = rid
-    st.session_state[SK.PT_ACTIVE_TAB]    = TAB_EDIT
+    st.session_state[SK.PT_ACTIVE_TAB]    = TAB_GRID
     st.session_state.pop("pt_tab_radio", None)
     fragment_rerun()
 
 
 def _render_progress_filters(
-    records: list[dict], readiness_map: dict, key_prefix: str,
+    records: list[dict], key_prefix: str,
 ) -> list[dict]:
-    """Company / factory / at-risk filter row, applied to *records*.
+    """Company / factory / search filter row, applied to *records*.
 
-    *key_prefix* scopes widget keys per caller (Dashboard vs. Overview) so
-    the two sub-tabs keep independent filter selections rather than fighting
-    over one shared widget key.
+    *key_prefix* scopes widget keys per caller so separate panels keep
+    independent selections rather than fighting over one shared key.
     """
     companies = _all_companies(records)
     factories = _all_factories(records)
 
-    c1, c2, c3 = st.columns([2, 2, 1])
+    c1, c2, c3 = st.columns([2, 2, 3])
     with c1:
         wkey = f"{key_prefix}_filter_company"
         guard_multiselect_state(wkey, companies)
@@ -841,10 +819,10 @@ def _render_progress_filters(
             placeholder=t("All factories"),
         )
     with c3:
-        st.markdown("&nbsp;")  # align checkbox with the multiselect boxes
-        only_at_risk = st.checkbox(
-            f"⚠️ {t('Only at-risk')}", key=f"{key_prefix}_filter_at_risk",
-        )
+        search = st.text_input(
+            t("Search PO / style"), key=SK.PT_GRID_SEARCH,
+            placeholder=t("type to filter…"),
+        ).strip().lower()
 
     out = []
     for r in records:
@@ -852,158 +830,216 @@ def _render_progress_filters(
             continue
         if sel_factories and (r.get("factory") or "") not in sel_factories:
             continue
-        if only_at_risk and not _is_at_risk(r, readiness_map[r["id"]]):
+        if search and search not in (
+            f"{r.get('po_number', '')} {r.get('style') or ''}".lower()
+        ):
             continue
         out.append(r)
     return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Dashboard tab — Stage 7
+# Tracking Grid — the one-page view (mirrors the buy plan's Index tab)
 # ─────────────────────────────────────────────────────────────────────────────
+#
+# Rows = tracked PO/styles, columns = the 9 MILESTONE_STAGES, i.e. exactly the
+# milestone block of the Sky East buy plan Index sheet. One date column per
+# milestone bound to EITHER {stage}_planned or {stage}_actual via a mode
+# toggle -- 18 columns (both at once) does not fit a screen, and a single
+# merged column would make "is this a plan or a fact?" ambiguous.
 
-def _render_dashboard_tab(records, readiness_map, reminder_map, today) -> None:
-    """Card grid: one card per tracked PO/style with overall + per-group
-    progress, status badges, a QC alert line, and an Edit shortcut."""
-    from po_extractor.store.production_tracking_store import ProductionTrackingStore
-
-    if not records:
-        st.info(t("No tracked records yet. Use **➕ Add New** to start tracking a PO/style."))
-        return
-
-    filtered = _render_progress_filters(records, readiness_map, key_prefix="pt_dash")
-    if not filtered:
-        st.warning(t("No records match the current filters."))
-        return
-    st.caption(f"{len(filtered)} / {len(records)} {t('record(s) shown')}")
-
-    cols_per_row = 3
-    for row_start in range(0, len(filtered), cols_per_row):
-        cols = st.columns(cols_per_row)
-        for col, record in zip(cols, filtered[row_start:row_start + cols_per_row]):
-            with col:
-                rid = record["id"]
-                readiness = readiness_map[rid]
-                reminders = reminder_map[rid]
-                with st.container(border=True):
-                    st.markdown(f"**{record['po_number']}** — {record.get('style') or '—'}")
-                    st.caption(
-                        f"{record.get('company') or '—'} · "
-                        f"{record.get('factory') or t('No factory set')}"
-                    )
-
-                    done, total = ProductionTrackingStore.overall_progress(record)
-                    st.progress(
-                        (done / total) if total else 0.0,
-                        text=f"{done}/{total} {t('stages done')}",
-                    )
-
-                    group_bits = []
-                    for label, stages in (
-                        ("A", STAGES_GROUP_A), ("B", _group_b_stages_for(record)),
-                        ("C", STAGES_GROUP_C), ("D", STAGES_GROUP_D),
-                    ):
-                        gd, gt = _group_progress(record, stages)
-                        group_bits.append(f"{label} {gd}/{gt}")
-                    st.caption(" · ".join(group_bits))
-
-                    st.markdown(" ".join(_status_badges(record, readiness, reminders)))
-
-                    cur = ProductionTrackingStore.current_stage(record)
-                    st.caption(
-                        f"➡️ {t('Next')}: {STAGE_LABELS.get(cur, cur)}" if cur
-                        else f"🏁 {t('All stages complete')}"
-                    )
-
-                    if reminders:
-                        names = ", ".join(r["label"] for r in reminders)
-                        st.caption(f"🔔 {t('QC booking due')}: {names}")
-
-                    if st.button(f"✏️ {t('Edit')}", key=f"pt_dash_edit_{rid}",
-                                 use_container_width=True):
-                        _jump_to_edit(rid)
+_GRID_META_COLS = ["PO Number", "Style", "Factory"]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Overview table — Stage 7
-# ─────────────────────────────────────────────────────────────────────────────
+def _grid_dataframe(records: list[dict], mode: str) -> pd.DataFrame:
+    """Build the editable grid frame: meta columns + one date column per
+    milestone (bound to *mode*) + a read-only done-count.
 
-def _render_overview_table(records, readiness_map, reminder_map, today) -> None:
-    """One row per tracked PO/style: overall progress, per-group progress,
-    current stage, and status badges — the flat "track a PO's progress by
-    style" view. Consistent readiness/status logic with the Dashboard cards
-    and the Edit form (Stage 7 exit criterion)."""
-    from po_extractor.store.production_tracking_store import ProductionTrackingStore
-
-    if not records:
-        st.info(t("No tracked records yet."))
-        return
-
-    filtered = _render_progress_filters(records, readiness_map, key_prefix="pt_ovw")
-    if not filtered:
-        st.warning(t("No records match the current filters."))
-        return
-
+    Pure — no Streamlit — so the column contract is unit-testable.
+    """
     rows = []
-    for record in filtered:
-        rid = record["id"]
-        readiness = readiness_map[rid]
-        reminders = reminder_map[rid]
-        done, total = ProductionTrackingStore.overall_progress(record)
-        cur = ProductionTrackingStore.current_stage(record)
-        rows.append({
-            "id":            rid,
-            "PO Number":     record["po_number"],
-            "Style":         record.get("style") or "—",
-            "Company":       record.get("company") or "—",
-            "Factory":       record.get("factory") or "—",
-            "Progress":      (done / total) if total else 0.0,
-            "Progress text": f"{done}/{total}",
-            "Current Stage": STAGE_LABELS.get(cur, cur) if cur else t("Complete"),
-            "Status":        " ".join(_status_badges(record, readiness, reminders)),
-            "Updated":       (record.get("updated_at") or "")[:19].replace("T", " "),
-            "Updated by":    record.get("updated_by") or "—",
-        })
-    df = pd.DataFrame(rows)
+    for r in records:
+        row = {
+            "PO Number": r.get("po_number", ""),
+            "Style":     r.get("style") or "",
+            "Factory":   r.get("factory") or "",
+        }
+        done = 0
+        for stage, label in MILESTONE_STAGES:
+            row[label] = _parse_date(r.get(f"{stage}_{mode}"))
+            if (r.get(f"{stage}_actual") or "").strip():
+                done += 1
+        row["Done"] = f"{done}/{len(MILESTONE_STAGES)}"
+        rows.append(row)
+    cols = _GRID_META_COLS + [lbl for _, lbl in MILESTONE_STAGES] + ["Done"]
+    return pd.DataFrame(rows, columns=cols)
 
-    st.dataframe(
-        df.drop(columns=["id", "Progress text"]),
-        width="stretch", hide_index=True, height=min(60 + 36 * len(df), 600),
-        column_config={
-            "PO Number":     st.column_config.TextColumn(t("PO Number"), width="medium"),
-            "Style":         st.column_config.TextColumn(t("Style"), width="small"),
-            "Company":       st.column_config.TextColumn(t("Company"), width="small"),
-            "Factory":       st.column_config.TextColumn(t("Factory"), width="medium"),
-            "Progress":      st.column_config.ProgressColumn(
-                t("Progress"), min_value=0.0, max_value=1.0, format="%.0f%%",
-            ),
-            "Current Stage": st.column_config.TextColumn(t("Current Stage"), width="medium"),
-            "Status":        st.column_config.TextColumn(t("Status"), width="medium"),
-            "Updated":       st.column_config.TextColumn(t("Updated"), width="medium"),
-            "Updated by":    st.column_config.TextColumn(t("Updated by"), width="small"),
-        },
+
+def _status_strip_df(records: list[dict]) -> pd.DataFrame:
+    """Read-only completion strip: ✅ done / 📅 planned / ⬜ nothing, per
+    milestone. Lets the user see completion while the editor shows dates."""
+    rows = []
+    for r in records:
+        row = {"PO Number": r.get("po_number", ""), "Style": r.get("style") or ""}
+        for stage, label in MILESTONE_STAGES:
+            if (r.get(f"{stage}_actual") or "").strip():
+                row[label] = "✅"
+            elif (r.get(f"{stage}_planned") or "").strip():
+                row[label] = "📅"
+            else:
+                row[label] = "⬜"
+        rows.append(row)
+    return pd.DataFrame(
+        rows, columns=["PO Number", "Style"] + [lbl for _, lbl in MILESTONE_STAGES]
     )
-    st.caption(f"{len(filtered)} / {len(records)} {t('record(s) shown')}")
 
-    # ── Jump to Edit — same selectbox+button pattern as the Edit tab itself.
-    def _fmt_ovw(rid: int) -> str:
-        rec = next((r for r in filtered if r["id"] == rid), None)
-        if rec is None:
-            return str(rid)
-        return f"{rec['po_number']} — {rec.get('style') or '—'}"
 
-    col_sel, col_btn = st.columns([4, 1])
-    with col_sel:
-        chosen_id = st.selectbox(
-            t("Jump to record"),
-            options=[r["id"] for r in filtered],
-            format_func=_fmt_ovw,
-            key="pt_ovw_jump_select",
-            label_visibility="collapsed",
-        )
-    with col_btn:
-        if st.button(f"✏️ {t('Edit')}", key="pt_ovw_jump_edit", use_container_width=True):
-            _jump_to_edit(chosen_id)
+def _grid_diff(original: pd.DataFrame, edited: pd.DataFrame, mode: str,
+               records: list[dict]) -> dict:
+    """Cell-level diff → ``{(po, style): {column: value}}`` for
+    ``update_stage_fields``.
+
+    Only CHANGED cells are emitted, so an untouched row never writes. In
+    ACTUAL mode a filled date also marks the stage Done, and clearing a date
+    on a previously-Done stage downgrades it to In Progress -- the status can
+    never claim Done without a completion date (same rule the Milestones
+    editor used).
+    """
+    by_key = {
+        (r.get("po_number", ""), r.get("style") or ""): r for r in records
+    }
+    out: dict = {}
+    for i in range(min(len(original), len(edited))):
+        o_row, e_row = original.iloc[i], edited.iloc[i]
+        key = (str(e_row["PO Number"]), str(e_row["Style"]))
+        rec = by_key.get(key, {})
+        fields: dict = {}
+        for stage, label in MILESTONE_STAGES:
+            o_val, e_val = o_row[label], e_row[label]
+            if _date_str(o_val) == _date_str(e_val):
+                continue
+            val = _date_str(e_val)
+            fields[f"{stage}_{mode}"] = val
+            if mode == GRID_ACTUAL:
+                if val:
+                    fields[f"{stage}_status"] = "Done"
+                elif (rec.get(f"{stage}_status") or "") == "Done":
+                    fields[f"{stage}_status"] = "In Progress"
+        if fields:
+            out[key] = fields
+    return out
+
+
+def _date_str(v) -> str:
+    """Normalise a grid cell (date / Timestamp / str / NaT / None) to a plain
+    ``YYYY-MM-DD`` string or '' — the storage format of every *_planned /
+    *_actual column, and what the buy plan Index prints.
+
+    The ``.date()`` call is essential: ``pd.Timestamp`` (what data_editor
+    hands back) IS a ``datetime.date`` subclass, so an isinstance guard would
+    skip it and store ``2026-08-01T00:00:00`` instead of ``2026-08-01``.
+    ``datetime.date`` itself has no ``.date`` attribute, so it falls through
+    untouched.
+    """
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v.strip()
+    try:
+        if pd.isna(v):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    if hasattr(v, "date"):
+        try:
+            v = v.date()
+        except (TypeError, ValueError):
+            pass
+    return v.isoformat() if hasattr(v, "isoformat") else str(v).strip()
+
+
+def _render_grid_tab(records, store, username, today, admin_mode) -> None:
+    """One-page milestone grid + (admin) the full 22-stage editor."""
+    if not records:
+        st.info(t(
+            "Nothing tracked yet — use **➕ Add / Remove** to start tracking "
+            "PO/styles, then fill their milestone dates here."
+        ))
+        return
+
+    filtered = _render_progress_filters(records, "pt_grid")
+    if not filtered:
+        st.warning(t("No records match the current filters."))
+        return
+
+    mode_labels = {GRID_PLANNED: t("计划 Planned"), GRID_ACTUAL: t("实际 Actual")}
+    mode = st.radio(
+        "Date mode", [GRID_PLANNED, GRID_ACTUAL], horizontal=True,
+        key=SK.PT_GRID_MODE, format_func=lambda m: mode_labels[m],
+        label_visibility="collapsed",
+    )
+    st.caption(t(
+        "**计划 Planned** dates are what the buy plan's Index tab prints and "
+        "what the factory form asks for. Switch to **实际 Actual** to record "
+        "what actually happened — filling an actual date marks that milestone "
+        "complete."
+    ))
+
+    # Completion at a glance (✅ done · 📅 planned · ⬜ nothing).
+    st.dataframe(
+        _status_strip_df(filtered), width="stretch", hide_index=True,
+        height=min(60 + 35 * len(filtered), 280),
+    )
+
+    original = _grid_dataframe(filtered, mode)
+    col_cfg = {
+        "PO Number": st.column_config.TextColumn(t("PO Number"), width="medium"),
+        "Style":     st.column_config.TextColumn(t("Style"), width="small"),
+        "Factory":   st.column_config.TextColumn(t("Factory"), width="small"),
+        "Done":      st.column_config.TextColumn(t("Done"), width="small"),
+    }
+    for _stage, label in MILESTONE_STAGES:
+        col_cfg[label] = st.column_config.DateColumn(label, width="small",
+                                                     format="YYYY-MM-DD")
+    edited = st.data_editor(
+        original, hide_index=True, width="stretch", num_rows="fixed",
+        disabled=_GRID_META_COLS + ["Done"],
+        column_config=col_cfg,
+        key=f"pt_grid_editor_{mode}",
+        height=min(60 + 35 * len(filtered), 500),
+    )
+
+    changes = _grid_diff(original, edited, mode, filtered)
+    n = sum(len(v) for v in changes.values())
+    if st.button(
+        f"💾 {t('Save')}" + (f" ({n} {t('change(s)')})" if n else ""),
+        type="primary", disabled=not changes, key="pt_grid_save",
+    ):
+        saved = 0
+        for (po, style), fields in changes.items():
+            try:
+                if store.update_stage_fields(po, style, fields,
+                                             updated_by=username):
+                    saved += 1
+            except ValueError as exc:
+                st.error(f"{po} / {style}: {exc}")
+        st.success(f"✅ {saved} {t('record(s) updated.')}")
+        fragment_rerun()
+
+    # ── Advanced: the full 22-stage record (admin only, collapsed) ──────────
+    # Kept verbatim so no capability is lost -- dependencies, readiness gates,
+    # optional samples, expected-days and QC all still live here. The daily
+    # path above never renders any of it.
+    if admin_mode:
+        st.divider()
+        with st.expander(f"🛠 {t('Advanced — full 22-stage record')}", expanded=False):
+            st.caption(t(
+                "Detailed per-stage tracking: dependencies, readiness gates, "
+                "optional samples, expected days and QC inspections. Most "
+                "work only needs the grid above."
+            ))
+            readiness_map = {r["id"]: store.compute_readiness(r) for r in records}
+            _render_edit_tab(records, readiness_map, store, username, today)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1158,6 +1194,71 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
 # Add New tab — Stage 5
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _default_tracking_payload() -> tuple[dict, dict, dict]:
+    """``(stage_fields, dep_fields, qc_fields)`` for a brand-new record:
+    every stage Not Started with no dates, DEFAULT_DEP_ON flags set, QC at
+    its defaults. Shared by single-add and bulk-add so both create identical
+    records.
+    """
+    stage_fields: dict[str, Any] = {}
+    for s in STAGES:
+        if s in OPTIONAL_SAMPLE_STAGES:
+            stage_fields[f"{s}_applicable"] = 0
+        stage_fields[f"{s}_status"]        = "Not Started"
+        stage_fields[f"{s}_planned"]       = ""
+        stage_fields[f"{s}_actual"]        = ""
+        stage_fields[f"{s}_notes"]         = ""
+        stage_fields[f"{s}_expected_days"] = None
+
+    dep_fields: dict[str, Any] = {}
+    for source, targets in PREREQ_VALID.items():
+        # loop var `tgt`, not `t` — `t` is this module's i18n translator; a
+        # bare `for t in ...:` would make Python treat `t` as local for the
+        # whole function (UnboundLocalError on any t() call).
+        for tgt in targets:
+            col = dep_col(source, tgt)
+            dep_fields[col] = 1 if col in DEFAULT_DEP_ON else 0
+    dep_fields[dep_col("pp_sample", "cutting")] = 1   # always required
+
+    qc_fields: dict[str, Any] = {}
+    for key in QC_INSPECTIONS:
+        qc_fields[f"{key}_booking_deadline"] = ""
+        qc_fields[f"{key}_reminder_days"]    = 7
+        qc_fields[f"{key}_booked"]           = 0
+        qc_fields[f"{key}_booking_date"]     = ""
+        qc_fields[f"{key}_inspection_date"]  = ""
+        qc_fields[f"{key}_result"]           = "Pending"
+        qc_fields[f"{key}_notes"]            = ""
+    return stage_fields, dep_fields, qc_fields
+
+
+def _render_remove_section(store, records: list[dict]) -> None:
+    """Stop tracking selected PO/styles. Deletes ONLY the tracking record —
+    the underlying PO/order data is untouched (see store.delete)."""
+    if not records:
+        return
+    with st.expander(f"🗑 {t('Stop tracking (remove records)')}", expanded=False):
+        by_label = {
+            f"{r['po_number']} — {r.get('style') or '—'}": r["id"] for r in records
+        }
+        guard_multiselect_state("pt_remove_sel", list(by_label))
+        chosen = st.multiselect(
+            t("Records to stop tracking"), options=list(by_label),
+            key="pt_remove_sel",
+        )
+        st.caption(t(
+            "Removes the tracking record and its milestone dates. The PO and "
+            "order data itself are not deleted."
+        ))
+        if chosen and st.button(
+            f"🗑 {t('Stop tracking')} ({len(chosen)})", key="pt_remove_go",
+        ):
+            store.delete([by_label[c] for c in chosen])
+            st.session_state.pop("pt_remove_sel", None)
+            st.success(f"✅ {len(chosen)} {t('record(s) removed.')}")
+            fragment_rerun()
+
+
 def _render_add_tab(
     store,
     po_store,
@@ -1165,6 +1266,7 @@ def _render_add_tab(
     *,
     user_cos: list[str],
     admin_mode: bool,
+    records: list[dict] | None = None,
 ) -> None:
     """Picker + initial-fields form for adding a new tracking record.
 
@@ -1180,6 +1282,7 @@ def _render_add_tab(
     )
     if not untracked:
         st.info(t("All POs are already being tracked."))
+        _render_remove_section(store, records or [])
         return
 
     # ── Client filter ──────────────────────────────────────────────────────
@@ -1238,40 +1341,7 @@ def _render_add_tab(
     st.divider()
 
     if st.button("➕ Start Tracking", type="primary", use_container_width=True):
-        # Build the empty default payload — all stages Not Started,
-        # expected_days=None, DEFAULT_DEP_ON flags set to 1.
-        stage_fields: dict[str, Any] = {}
-        for s in STAGES:
-            if s in OPTIONAL_SAMPLE_STAGES:
-                stage_fields[f"{s}_applicable"] = 0
-            stage_fields[f"{s}_status"]        = "Not Started"
-            stage_fields[f"{s}_planned"]       = ""
-            stage_fields[f"{s}_actual"]        = ""
-            stage_fields[f"{s}_notes"]         = ""
-            stage_fields[f"{s}_expected_days"] = None
-
-        dep_fields: dict[str, Any] = {}
-        for source, targets in PREREQ_VALID.items():
-            # loop var `tgt`, not `t` — `t` is this module's i18n translator;
-            # a bare `for t in ...:` anywhere in the function makes Python
-            # treat `t` as local for the WHOLE function (UnboundLocalError on
-            # the t("Overall Notes") call above, which runs unconditionally).
-            for tgt in targets:
-                col = dep_col(source, tgt)
-                dep_fields[col] = 1 if col in DEFAULT_DEP_ON else 0
-        # pp_sample → cutting is always 1
-        dep_fields[dep_col("pp_sample", "cutting")] = 1
-
-        qc_fields: dict[str, Any] = {}
-        for key in QC_INSPECTIONS:
-            qc_fields[f"{key}_booking_deadline"] = ""
-            qc_fields[f"{key}_reminder_days"]    = 7
-            qc_fields[f"{key}_booked"]           = 0
-            qc_fields[f"{key}_booking_date"]     = ""
-            qc_fields[f"{key}_inspection_date"]  = ""
-            qc_fields[f"{key}_result"]           = "Pending"
-            qc_fields[f"{key}_notes"]            = ""
-
+        stage_fields, dep_fields, qc_fields = _default_tracking_payload()
         new_id = store.upsert(
             po_number=chosen["po_number"],
             style=chosen.get("style") or "",
@@ -1289,29 +1359,43 @@ def _render_add_tab(
             + (f" — {chosen['style']}" if chosen.get("style") else "")
             + "."
         )
-        # Navigate to Edit tab with the new record pre-selected
+        # Back to the grid with the new record pre-selected in Advanced.
         st.session_state[SK.PT_SELECTED_EDIT] = new_id
-        st.session_state[SK.PT_ACTIVE_TAB]    = TAB_EDIT
+        st.session_state[SK.PT_ACTIVE_TAB]    = TAB_GRID
         # Delete the radio's own widget key so the next render falls back to
         # index=PT_ACTIVE_TAB.  Writing it directly after instantiation raises
         # StreamlitAPIException ("cannot be modified after widget instantiated").
         st.session_state.pop("pt_tab_radio", None)
         fragment_rerun()
 
+    # ── Bulk add — everything currently listed (after the client filter) ────
+    st.divider()
+    if st.button(
+        f"➕ {t('Track all')} {len(untracked)} {t('shown')}",
+        use_container_width=True, key="pt_add_all",
+    ):
+        stage_fields, dep_fields, qc_fields = _default_tracking_payload()
+        n = 0
+        for row in untracked:
+            store.upsert(
+                po_number=row["po_number"],
+                style=row.get("style") or "",
+                factory=row.get("factory") or "",
+                company=row.get("company") or "",
+                updated_by=username,
+                overall_notes="",
+                use_substitute_materials=1,
+                stage_fields=dict(stage_fields),
+                dep_fields=dict(dep_fields),
+                qc_fields=dict(qc_fields),
+            )
+            n += 1
+        st.success(f"✅ {n} {t('record(s) now tracked.')}")
+        st.session_state[SK.PT_ACTIVE_TAB] = TAB_GRID
+        st.session_state.pop("pt_tab_radio", None)
+        fragment_rerun()
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Plan tab — Stage 8 placeholder
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _render_plan_tab(records, store) -> None:
-    """Stage 8 will render the planning what-if interface."""
-    if not records:
-        st.info(t("No tracked records yet — nothing to plan."))
-        return
-    st.caption(
-        f"📅 {t('Plan placeholder')} — {len(records)} "
-        + t("record(s) available. Schedule calculator lands in Stage 8.")
-    )
+    _render_remove_section(store, records or [])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1638,77 +1722,10 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                         )
                         fragment_rerun()
 
-    # ── 3.5 Milestones editor — the buy plan Index tab's tracking fields ────
-    # Expected completion date + status note per milestone, and marking a
-    # milestone complete/arrived (fills the actual date, status -> Done).
-    # Written to production_tracking, so populated values flow straight into
-    # the Sky East buy plan's Index columns on the next generation.
-    with st.expander(f"📋 {t('Milestones (buy plan tracking fields)')}", expanded=False):
-        def _fmt_ms_rec(idx: int) -> str:
-            r = records[idx]
-            return f"{r['po_number']} — {r.get('style') or '—'}"
-
-        ms_idx = st.selectbox(
-            t("PO / Style"), options=range(len(records)),
-            format_func=_fmt_ms_rec, key="pt_fu_ms_rec",
-        )
-        ms_rec = records[ms_idx]
-        _rid_key = f"{ms_rec['po_number']}|{ms_rec.get('style') or ''}"
-
-        def _to_date(v):
-            s = str(v or "").strip()
-            try:
-                return date.fromisoformat(s) if s else None
-            except ValueError:
-                return None
-
-        ms_df = pd.DataFrame([{
-            "milestone": _lbl,
-            "expected":  _to_date(ms_rec.get(f"{_stage}_planned")),
-            "note":      ms_rec.get(f"{_stage}_notes") or "",
-            "completed": _to_date(ms_rec.get(f"{_stage}_actual")),
-        } for _stage, _lbl in MILESTONE_STAGES])
-        edited_ms = st.data_editor(
-            ms_df, hide_index=True, width="stretch", num_rows="fixed",
-            disabled=["milestone"],
-            key=f"pt_fu_ms_editor_{_rid_key}",
-            column_config={
-                "milestone": st.column_config.TextColumn(t("Milestone"), width="medium"),
-                "expected":  st.column_config.DateColumn(t("Expected date")),
-                "note":      st.column_config.TextColumn(t("Status note"), width="large"),
-                "completed": st.column_config.DateColumn(t("Completed (arrived)")),
-            },
-        )
-        st.caption(t(
-            "Fill **Completed** to mark a milestone done/arrived — its stage "
-            "is set to Done. These fields appear in the buy plan's Index tab "
-            "and in the factory request form's 里程碑 sheet."
-        ))
-        if st.button(f"💾 {t('Save milestones')}", type="primary",
-                     key=f"pt_fu_ms_save_{_rid_key}"):
-            fields: dict = {}
-            for i, (_stage, _lbl) in enumerate(MILESTONE_STAGES):
-                row = edited_ms.iloc[i]
-                exp, comp = row["expected"], row["completed"]
-                fields[f"{_stage}_planned"] = (
-                    exp.isoformat() if hasattr(exp, "isoformat") and pd.notna(exp) else "")
-                fields[f"{_stage}_notes"] = str(row["note"] or "")
-                if pd.notna(comp) and comp is not None:
-                    fields[f"{_stage}_actual"] = comp.isoformat()
-                    fields[f"{_stage}_status"] = "Done"
-                else:
-                    fields[f"{_stage}_actual"] = ""
-                    # Un-completing a previously Done milestone downgrades it,
-                    # so the status can't claim Done with no completion date.
-                    if (ms_rec.get(f"{_stage}_status") or "") == "Done":
-                        fields[f"{_stage}_status"] = "In Progress"
-            pt_store = get_production_tracking_store()
-            pt_store.update_stage_fields(
-                ms_rec["po_number"], ms_rec.get("style") or "", fields,
-                updated_by=username,
-            )
-            st.success(f"✅ {t('Milestones saved.')}")
-            fragment_rerun()
+    # NOTE: the per-record Milestones editor that used to live here was
+    # replaced by the 📅 Tracking Grid (all records at once, same 9
+    # MILESTONE_STAGES). The factory round-trip below still carries the
+    # 里程碑 sheet, so factories keep updating milestones by Excel.
 
     # ── 4. Manual entry (phone/WeChat reports keyed in by your own staff) ───
     with st.expander(f"✍️ {t('Manual entry')}", expanded=False):

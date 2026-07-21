@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.89.0",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "feat", "text": "**🏭 Tracking rebuilt around one page — the milestone grid.** The tab now opens on a single editable table: one row per PO/style, one column per milestone (面料到厂 · 辅料到厂 · 样衣确认 · 大货版 · 全码版 · 裁剪 · 车位 · 后道 · 工厂交期) — exactly the block the buy plan's Index tab prints. Type dates straight into the grid and hit Save. A toggle switches all nine columns between **计划 Planned** and **实际 Actual**; filling an actual date marks that milestone complete (clearing it reopens the milestone). Above the grid a ✅/📅/⬜ strip shows completion at a glance, and Company / Factory / search filters narrow the rows."},
+            {"type": "refactor", "text": "**Six sub-tabs became three** — 📅 Tracking Grid · ➕ Add / Remove · 📨 Factory Updates. The Dashboard cards, the Overview table and the never-finished Plan placeholder are gone (along with its unused schedule calculator), and the per-record Milestones editor is replaced by the grid. Metrics are now the three that match the grid: Tracked · Milestones done · Overdue. Adding gained a **Track all shown** bulk button, and removing records moved here from the edit form."},
+            {"type": "refactor", "text": "**The 22-stage detail form is still there, just out of the way** — it now lives in a collapsed admin-only **🛠 Advanced** panel at the bottom of the grid, with every stage, dependency, readiness gate, optional sample, expected-days field and QC inspection intact. Nothing was deleted from the database and no migration ran, so any of it can come back to the daily view if the process ever needs it. Rationale: across every tracked record, not one of the 22 stages had ever been given a status, date or note — the detail was costing clicks without earning any."},
+        ],
+    },
+    {
         "version": "2.88.1",
         "date": "2026-07-21",
         "entries": [

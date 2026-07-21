@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.88.1"
+APP_VERSION = "2.89.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -150,10 +150,8 @@ for key, default in [
     (SK.SE_COLOR_SOURCE, None),
     # Production Tracking
     (SK.PT_SELECTED_EDIT,  None),   # int — record id selected in Edit tab
-    (SK.PT_SELECTED_PLAN,  None),   # int — record id selected in Plan tab
-    (SK.PT_PLAN_OVERRIDE,  {}),     # dict[stage, int] — what-if day overrides
     (SK.PT_DELETE_CONFIRM, False),  # bool — delete confirmation shown
-    (SK.PT_ACTIVE_TAB,     0),      # int — active sub-tab (0 = Dashboard)
+    (SK.PT_ACTIVE_TAB,     0),      # int — active sub-tab (0 = Tracking Grid)
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
