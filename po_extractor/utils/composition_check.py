@@ -226,17 +226,32 @@ def parse_composition(s: str) -> list[tuple[float, str]]:
     return out
 
 
+# One-slot memo for the sorted canonical fiber names: (id, len) of the fiber
+# dict → sorted tuple. validate_all loads the dict once per batch and passes
+# the same object down, so the rebuild+sort runs once per batch instead of
+# once per unknown token.
+_canonical_names_cache: tuple[tuple[int, int], tuple[str, ...]] | None = None
+
+
+def _canonical_fiber_names(all_fibers: dict[str, str]) -> tuple[str, ...]:
+    global _canonical_names_cache
+    tag = (id(all_fibers), len(all_fibers))
+    if _canonical_names_cache is None or _canonical_names_cache[0] != tag:
+        _canonical_names_cache = (
+            tag, tuple(sorted(set(all_fibers.values()), key=str.lower)))
+    return _canonical_names_cache[1]
+
+
 def _suggest_fiber(token: str, all_fibers: dict[str, str]) -> str:
     """Return a likely canonical fiber name for a misspelled token, or ''."""
     key = token.lower().strip()
     if key in all_fibers:
         return ""  # already valid
-    canonical_names = tuple(sorted(set(all_fibers.values()), key=str.lower))
     matches = get_close_matches(key, list(all_fibers.keys()), n=1, cutoff=0.75)
     if matches:
         return all_fibers[matches[0]]
     # Try against canonical display names too (handles e.g. "Polyster" → "Polyester")
-    matches = get_close_matches(token, canonical_names, n=1, cutoff=0.75)
+    matches = get_close_matches(token, _canonical_fiber_names(all_fibers), n=1, cutoff=0.75)
     return matches[0] if matches else ""
 
 

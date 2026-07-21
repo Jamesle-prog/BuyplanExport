@@ -221,6 +221,27 @@ def _progress_brand(brand_by_pc: dict | None, pc_no, sty_norm: str,
             or fallback)
 
 
+# One-slot memo for _available_progress_colors: (id, len) of the lookup dict
+# → {(pc_no_norm, sty_norm): sorted colour names}. The lookup dict is built
+# once per export and never mutated afterwards, so the index is built lazily
+# on the first miss and reused for every subsequent miss of that export
+# (previously each miss linear-scanned the whole lookup).
+_progress_color_index_cache: tuple[tuple[int, int], dict] | None = None
+
+
+def _progress_color_index(cn_by_pc_lookup: dict) -> dict:
+    global _progress_color_index_cache
+    tag = (id(cn_by_pc_lookup), len(cn_by_pc_lookup))
+    if _progress_color_index_cache is None or _progress_color_index_cache[0] != tag:
+        idx: dict[tuple[str, str], list[str]] = {}
+        for key in cn_by_pc_lookup:
+            if key[2]:
+                idx.setdefault((key[0], key[1]), []).append(key[2])
+        idx = {k: sorted(set(v)) for k, v in idx.items()}
+        _progress_color_index_cache = (tag, idx)
+    return _progress_color_index_cache[1]
+
+
 def _available_progress_colors(
     cn_by_pc_lookup: dict | None, pc_no_norm: str, sty_norm: str,
 ) -> list[str]:
@@ -231,14 +252,13 @@ def _available_progress_colors(
     having to open the source file to check for a naming mismatch (e.g.
     client says "Dark Blue", 大货进度表 says "Navy").
 
-    Cheap by construction: only ever called on a miss (rare), not per row.
+    Only ever called on a miss; the per-lookup index (built once, see
+    :func:`_progress_color_index`) keeps repeated misses cheap.
     """
     if not cn_by_pc_lookup:
         return []
-    return sorted({
-        key[2] for key in cn_by_pc_lookup
-        if key[0] == pc_no_norm and key[1] == sty_norm and key[2]
-    })
+    # list() copy: callers must never mutate the cached index's lists.
+    return list(_progress_color_index(cn_by_pc_lookup).get((pc_no_norm, sty_norm), ()))
 
 
 # Every size column a real ordered item carries a non-zero quantity in at

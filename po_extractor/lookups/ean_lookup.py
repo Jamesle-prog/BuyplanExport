@@ -98,18 +98,33 @@ class EANLookup:
         col_ean   = col_ean   if col_ean   is not None else 16
         col_qty   = col_qty   if col_qty   is not None else 18
 
-        def _cv(row, ci):
-            return str(row.iloc[ci]).strip() if ci < len(row) else ""
+        # Pre-extract each needed column once (plain value arrays) — iterrows()
+        # plus per-field .iloc is far slower on large files (same pattern as
+        # config_sku_lookup._build_map).
+        data   = df.iloc[hrow_idx + 1:]
+        n_cols = df.shape[1]
 
-        for _, row in df.iloc[hrow_idx + 1:].iterrows():
-            ean = _cv(row, col_ean)
+        def _col_arr(ci):
+            return data.iloc[:, ci].values if ci < n_cols else None
+
+        ean_arr   = _col_arr(col_ean)
+        po_arr    = _col_arr(col_po)
+        style_arr = _col_arr(col_style)
+        size_arr  = _col_arr(col_size)
+        qty_arr   = _col_arr(col_qty)
+
+        def _cv(arr, i):
+            return str(arr[i]).strip() if arr is not None else ""
+
+        for i in range(len(data)):
+            ean = _cv(ean_arr, i)
             if not ean or ean in ("nan", "None", "EAN"):
                 continue
 
-            po    = _norm_key(_cv(row, col_po))
-            style = _norm_key(_cv(row, col_style))
-            size  = _cv(row, col_size).strip().upper()
-            qty_s = _cv(row, col_qty)
+            po    = _norm_key(_cv(po_arr, i))
+            style = _norm_key(_cv(style_arr, i))
+            size  = _cv(size_arr, i).strip().upper()
+            qty_s = _cv(qty_arr, i)
             try:
                 qty = int(float(qty_s)) if qty_s and qty_s != "nan" else 0
             except (ValueError, TypeError):

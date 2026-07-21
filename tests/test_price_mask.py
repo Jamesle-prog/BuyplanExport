@@ -259,7 +259,8 @@ def test_mask_batch_runs_ai_concurrently_and_reports_progress(monkeypatch, tmp_p
         return {"9.99"}
     monkeypatch.setattr(pm, "detect_prices_ai", _detect)
 
-    def _mask(path, out, api_key=None, model="", ai_prices=None, keep=None):
+    def _mask(path, out, api_key=None, model="", ai_prices=None, keep=None,
+              full_text=None):
         mask_calls.append((path, ai_prices))
         return path + ".masked"
     monkeypatch.setattr(pm, "mask_prices", _mask)
@@ -279,7 +280,8 @@ def test_mask_batch_runs_ai_concurrently_and_reports_progress(monkeypatch, tmp_p
 def test_mask_batch_serial_without_ai_still_reports_progress(monkeypatch, tmp_path):
     from po_extractor.utils import price_mask as pm
     monkeypatch.setattr(pm, "mask_prices",
-                        lambda p, o, api_key=None, model="", ai_prices=None, keep=None: p + ".m")
+                        lambda p, o, api_key=None, model="", ai_prices=None, keep=None,
+                        full_text=None: p + ".m")
     prog = []
     out = pm.mask_prices_batch(["a.pdf", "b.pdf"], str(tmp_path),
                                on_progress=lambda d, t: prog.append((d, t)))

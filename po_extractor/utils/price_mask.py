@@ -162,7 +162,8 @@ def _pdf_text(pdf_path: str) -> str:
 def mask_prices(pdf_path: str, output_dir: str,
                 api_key: str | None = None, model: str = "deepseek-chat",
                 ai_prices: set[str] | None = None,
-                keep: "set | list | None" = None) -> str:
+                keep: "set | list | None" = None,
+                full_text: str | None = None) -> str:
     """Write a price-redacted copy of a PDF; return the output path.
 
     When *api_key* is given, DeepSeek-detected prices are unioned with the
@@ -173,6 +174,9 @@ def mask_prices(pdf_path: str, output_dir: str,
     *keep* is a set of retail prices (e.g. the PO's MSRP) that must NEVER be
     redacted — retail prices are public. A token whose numeric value equals a
     keep value is left visible even if the regex/AI would otherwise mask it.
+
+    *full_text* is the PDF's already-extracted text (e.g. from the batch AI
+    pass) so it isn't re-extracted here; ``None`` → extracted from the doc.
     """
     import fitz  # PyMuPDF — loaded lazily so Excel-only callers don't need it
 
@@ -184,7 +188,8 @@ def mask_prices(pdf_path: str, output_dir: str,
 
     doc = fitz.open(pdf_path)
     try:
-        full_text = "\n".join(page.get_text() for page in doc)
+        if full_text is None:
+            full_text = "\n".join(page.get_text() for page in doc)
         # Keep any retail price the PO labels (MSRP/SRP/RRP) — public, and works
         # even when the parser captured no MSRP (so the caller passed no keep).
         keep_floats |= _retail_values_from_text(full_text)
@@ -239,8 +244,8 @@ def mask_prices_batch(pdf_paths: list[str], output_dir: str,
     # Concurrent AI detection (network-bound) → {path: price set}; fitz work
     # below stays single-threaded.
     ai_by_path: dict[str, set] = {}
+    texts: dict[str, str] = {}
     if api_key and total > 1:
-        texts: dict[str, str] = {}
         for path in pdf_paths:
             try:
                 texts[path] = _pdf_text(path)
@@ -263,8 +268,11 @@ def mask_prices_batch(pdf_paths: list[str], output_dir: str,
     results = []
     for i, path in enumerate(pdf_paths, 1):
         try:
+            # full_text: reuse the text already extracted for the AI pass —
+            # "" (extraction failed) falls back to in-function extraction.
             out = mask_prices(path, output_dir, api_key=api_key, model=model,
-                              ai_prices=ai_by_path.get(path), keep=keep)
+                              ai_prices=ai_by_path.get(path), keep=keep,
+                              full_text=texts.get(path) or None)
             results.append(out)
             print(f"masked: {out}")
         except Exception as e:

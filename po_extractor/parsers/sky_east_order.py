@@ -72,6 +72,10 @@ SIZE_TO_DB: dict[str, str] = {
 SIZE_KEYS  = ("XS", "S", "M", "L", "XL", "2XL")
 _SIZE_COLS = ("xs",  "s", "m", "l", "xl", "xxl")   # DB column names
 
+# Stop scanning data rows after this many consecutive fully-blank rows —
+# WPS-saved files inflate ws.max_row with styled-but-empty rows.
+_BLANK_ROW_LIMIT = 20
+
 
 def _is_size_header(text: str) -> bool:
     """Return True if *text* looks like a garment size column header."""
@@ -674,6 +678,7 @@ def parse(path: str, processed_by: str = "") -> SkyEastContract:
     items: list[SkyEastItem] = []
     skipped_zero_qty: list[dict] = []
     current_brand = ""
+    blank_streak = 0
 
     for r in range(hrow + 1, ws.max_row + 1):
         item_raw  = cv(r, "item")
@@ -681,6 +686,18 @@ def parse(path: str, processed_by: str = "") -> SkyEastContract:
 
         if _is_footer(item_raw):
             break
+
+        # WPS-saved files often carry styled-but-empty rows thousands deep,
+        # which inflate ws.max_row; each phantom row costs ~20 ws.cell()
+        # calls. Bail out after a run of fully blank rows instead of
+        # scanning to the phantom end of the sheet. (Blank rows were
+        # already skipped below via `continue` — this only adds the bail.)
+        if (item_raw is None or item_raw == "") and not _v(style_raw):
+            blank_streak += 1
+            if blank_streak >= _BLANK_ROW_LIMIT:
+                break
+            continue
+        blank_streak = 0
 
         is_div, brand_name = _is_brand_divider(item_raw, style_raw)
         if is_div:

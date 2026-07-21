@@ -34,63 +34,72 @@ def _buyplan_totals(path: str) -> dict:
     the scan is widened to 30 rows — comfortably above any known template's
     metadata block — rather than the previous hardcoded 10.
     """
-    wb = load_workbook(path, data_only=True)
-    out = {}
-    for sheet in wb.sheetnames:
-        ws = wb[sheet]
-        total_col = header_row = None
-        for r in range(1, min(30, ws.max_row) + 1):
-            for cell in ws[r]:
-                if cell.value == "Total":
-                    total_col, header_row = cell.column, r
+    # read_only + values_only: pure scan, no need to build styled Cell objects
+    wb = load_workbook(path, read_only=True, data_only=True)
+    try:
+        out = {}
+        for ws in wb.worksheets:
+            total_col = header_row = None
+            for r, row in enumerate(
+                    ws.iter_rows(min_row=1, max_row=30, values_only=True), 1):
+                for c, v in enumerate(row, 1):
+                    if v == "Total":
+                        total_col, header_row = c, r
+                        break
+                if total_col:
                     break
-            if total_col:
-                break
-        if not total_col:
-            continue
-        # Data rows: header_row+1 to max_row - 1 (last row is the in-sheet Total row)
-        s = 0
-        for r in range(header_row + 1, ws.max_row):
-            v = ws.cell(row=r, column=total_col).value
-            if isinstance(v, (int, float)):
-                s += int(v)
-        out[sheet] = s
-    return out
+            if not total_col:
+                continue
+            # Data rows: header_row+1 to max_row - 1 (last row is the
+            # in-sheet Total row) — collect the column, drop the last value.
+            vals = [row[0] for row in ws.iter_rows(
+                min_row=header_row + 1, min_col=total_col, max_col=total_col,
+                values_only=True)]
+            out[ws.title] = sum(
+                int(v) for v in vals[:-1] if isinstance(v, (int, float)))
+        return out
+    finally:
+        wb.close()
 
 
 def _colorplan_totals(path: str) -> dict:
     """Return {style: total_units} by summing all numeric cells from row 3 onward."""
-    wb = load_workbook(path, data_only=True)
-    out = {}
-    for sheet in wb.sheetnames:
-        ws = wb[sheet]
-        s = 0
-        for r in range(3, ws.max_row + 1):
-            for c in range(2, ws.max_column + 1):
-                v = ws.cell(row=r, column=c).value
-                if isinstance(v, (int, float)):
-                    s += int(v)
-        out[sheet] = s
-    return out
+    wb = load_workbook(path, read_only=True, data_only=True)
+    try:
+        out = {}
+        for ws in wb.worksheets:
+            s = 0
+            for row in ws.iter_rows(min_row=3, min_col=2, values_only=True):
+                for v in row:
+                    if isinstance(v, (int, float)):
+                        s += int(v)
+            out[ws.title] = s
+        return out
+    finally:
+        wb.close()
 
 
 def _po_summary_totals(path: str) -> dict:
     """Return {style: total_units} by summing the 'Total' column grouped by Style."""
-    wb = load_workbook(path, data_only=True)
-    ws = wb["PO Summary"] if "PO Summary" in wb.sheetnames else wb[wb.sheetnames[0]]
-    headers = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
+    wb = load_workbook(path, read_only=True, data_only=True)
     try:
-        style_col = headers.index("Style") + 1
-        total_col = headers.index("Total") + 1
-    except ValueError:
-        return {}
-    out: dict = {}
-    for r in range(2, ws.max_row + 1):
-        style = ws.cell(row=r, column=style_col).value
-        v = ws.cell(row=r, column=total_col).value
-        if style and isinstance(v, (int, float)):
-            out[style] = out.get(style, 0) + int(v)
-    return out
+        ws = wb["PO Summary"] if "PO Summary" in wb.sheetnames else wb[wb.sheetnames[0]]
+        rows = ws.iter_rows(values_only=True)
+        headers = list(next(rows, ()) or ())
+        try:
+            style_idx = headers.index("Style")
+            total_idx = headers.index("Total")
+        except ValueError:
+            return {}
+        out: dict = {}
+        for row in rows:
+            style = row[style_idx] if style_idx < len(row) else None
+            v     = row[total_idx] if total_idx < len(row) else None
+            if style and isinstance(v, (int, float)):
+                out[style] = out.get(style, 0) + int(v)
+        return out
+    finally:
+        wb.close()
 
 
 def export_cross_check(df_size: pd.DataFrame, buyplan_path: str,

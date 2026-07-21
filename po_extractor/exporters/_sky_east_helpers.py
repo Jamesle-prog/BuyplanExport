@@ -7,6 +7,7 @@ is not defined when generating buy plans).
 """
 from __future__ import annotations
 
+import functools
 import re
 from pathlib import Path
 
@@ -415,9 +416,27 @@ def _detect_fabric_rows(ws, max_row: int = 7) -> list[tuple[int, int, int, int, 
 # Style helpers
 # ---------------------------------------------------------------------------
 
+# Module-level style constants — openpyxl copies styles on assignment, so a
+# single shared instance is safe and avoids re-constructing Border/Alignment
+# objects per cell (~19 calls per data row on large exports).
+_THIN_SIDE   = Side(border_style="thin", color="FF000000")
+_THIN_BORDER = Border(left=_THIN_SIDE, right=_THIN_SIDE,
+                      top=_THIN_SIDE, bottom=_THIN_SIDE)
+
+_ALIGN_CENTER_NOWRAP = Alignment(horizontal="center", vertical="center",
+                                 wrapText=False)
+_ALIGN_LEFT_WRAP     = Alignment(horizontal="left", vertical="center",
+                                 wrapText=True, indent=1)
+_ALIGN_CENTER        = Alignment(horizontal="center", vertical="center")
+_ALIGN_LEFT_INDENT   = Alignment(horizontal="left", vertical="center", indent=1)
+
+_TOTAL_FILL = PatternFill(start_color="FFFFFF00", end_color="FFFFFF00",
+                          fill_type="solid")
+_TOTAL_FONT = Font(bold=True)
+
+
 def _thin() -> Border:
-    s = Side(border_style="thin", color="FF000000")
-    return Border(left=s, right=s, top=s, bottom=s)
+    return _THIN_BORDER
 
 
 _DATA_ROW_HEIGHT_BASE = 15.75   # Excel default line height in points
@@ -534,21 +553,19 @@ def _style_data(cell, value) -> None:
     # Numbers: centre-aligned, no wrap.
     # Text: left-aligned with wrap so long values are fully visible.
     if isinstance(value, (int, float)):
-        cell.alignment = Alignment(horizontal="center", vertical="center",
-                                   wrapText=False)
+        cell.alignment = _ALIGN_CENTER_NOWRAP
         cell.number_format = "#,##0"
     else:
-        cell.alignment = Alignment(horizontal="left", vertical="center",
-                                   wrapText=True, indent=1)
-    cell.border = _thin()
+        cell.alignment = _ALIGN_LEFT_WRAP
+    cell.border = _THIN_BORDER
 
 
 def _style_total(cell, value) -> None:
     cell.value = value
-    cell.fill  = PatternFill(start_color="FFFFFF00", end_color="FFFFFF00", fill_type="solid")
-    cell.font  = Font(bold=True)
-    cell.alignment = Alignment(horizontal="center", vertical="center")
-    cell.border = _thin()
+    cell.fill  = _TOTAL_FILL
+    cell.font  = _TOTAL_FONT
+    cell.alignment = _ALIGN_CENTER
+    cell.border = _THIN_BORDER
     if isinstance(value, (int, float)):
         cell.number_format = "#,##0"
 
@@ -949,9 +966,9 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
         for cn in range(1, len(headers) + 1):
             c = idx_ws.cell(rn, cn)
             if cn == _C_NO or cn == _C_QTY or cn == _C_RETLBL:
-                c.alignment = Alignment(horizontal="center", vertical="center")
+                c.alignment = _ALIGN_CENTER
             else:
-                c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+                c.alignment = _ALIGN_LEFT_INDENT
 
     # ── Column widths ─────────────────────────────────────────────────────────
     # Explicit widths for the fixed columns; fall back to header-length for the
@@ -1154,8 +1171,7 @@ def _create_overview_sheet(wb, overview_rows: list[dict], n_fabric_slots: int = 
         for cn in range(1, len(headers) + 1):
             c = ov_ws.cell(rn, cn)
             c.alignment = (
-                Alignment(horizontal="center", vertical="center") if cn in _center_cols
-                else Alignment(horizontal="left", vertical="center", indent=1)
+                _ALIGN_CENTER if cn in _center_cols else _ALIGN_LEFT_INDENT
             )
 
     # ── Column widths ─────────────────────────────────────────────────────
@@ -1207,12 +1223,18 @@ def _fabric_version_note(fabric_version_id: int | None) -> str | None:
         return None
 
 
+@functools.lru_cache(maxsize=256)
 def _prep_image_for_embed(img_bytes: bytes, display_px: int) -> bytes:
     """Resample *img_bytes* to fit within 2× *display_px* for Excel embedding.
 
     Uses thumbnail() for fast progressive downsampling of large images, then
     saves as JPEG (much faster encode/decode than PNG for photos).
     Falls back to the original bytes if Pillow is unavailable or decode fails.
+
+    lru_cache: Overview/Index rows of the same style share the identical
+    ``photo`` bytes object, so without the cache the PIL decode→thumbnail→
+    JPEG-encode pipeline ran once per row (~1000× on big exports). bytes are
+    hashable, so (img_bytes, display_px) memoises directly.
     """
     target = display_px * 2          # 2× for HiDPI rendering
     try:

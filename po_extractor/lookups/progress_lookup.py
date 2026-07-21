@@ -339,11 +339,17 @@ def parse_progress_rows(source, sheet_name: str | None = None) -> list[dict]:
     for k, v in ProgressLookup._COL_DEFAULTS.items():
         col.setdefault(k, v - 1)   # 1-based default -> 0-based
 
-    def _cv(row, key):
-        c = col.get(key)
-        if c is not None and c < len(row):
-            return row.iloc[c]
-        return None
+    # Pre-extract each mapped column once (plain value arrays) — iterrows()
+    # plus per-field .iloc lookups is far slower on large files (see the
+    # same pattern in config_sku_lookup._build_map).
+    _data   = df.iloc[1:]
+    _n_cols = df.shape[1]
+    _arrs = {key: _data.iloc[:, c].values
+             for key, c in col.items() if c < _n_cols}
+
+    def _cv(i, key):
+        a = _arrs.get(key)
+        return a[i] if a is not None else None
 
     # See the identical guard in ProgressLookup._load()'s history — some
     # 大货进度表 exports never populate 序号 at all; enforcing the check
@@ -359,41 +365,41 @@ def parse_progress_rows(source, sheet_name: str | None = None) -> list[dict]:
                 continue
 
     records: list[dict] = []
-    for _, row in df.iloc[1:].iterrows():
-        style_display = _v(_cv(row, "style"))
+    for i in range(len(_data)):
+        style_display = _v(_cv(i, "style"))
         style = _norm_key(style_display)
         if not style:
             continue
         if seq_col_used:
-            seq_raw = _cv(row, "seq")
+            seq_raw = _cv(i, "seq")
             try:
                 int(float(str(seq_raw)))
             except (ValueError, TypeError):
                 continue
 
-        color_raw     = _v(_cv(row, "color"))
-        cn_code_raw   = _v(_cv(row, "cn_code"))
-        cn_color_raw  = _clean_cn_color(_v(_cv(row, "cn_color")))
-        color_summary = _v(_cv(row, "color_summary"))
+        color_raw     = _v(_cv(i, "color"))
+        cn_code_raw   = _v(_cv(i, "cn_code"))
+        cn_color_raw  = _clean_cn_color(_v(_cv(i, "cn_color")))
+        color_summary = _v(_cv(i, "color_summary"))
         # color_code priority: explicit "中文颜色代码" column > parsed from en_color string
         color_code = cn_code_raw or _extract_color_code(color_raw)
 
         shared = {
-            "contract_no":   _v(_cv(row, "contract_no")),
-            "pc_no":         _v(_cv(row, "pc_no")),
-            "image_id":      _dispimg_id(_cv(row, "image")),
+            "contract_no":   _v(_cv(i, "contract_no")),
+            "pc_no":         _v(_cv(i, "pc_no")),
+            "image_id":      _dispimg_id(_cv(i, "image")),
             "style":         style,
             "style_display": style_display,
-            "label_color":   _v(_cv(row, "label_color")),
-            "ex_fty":        _v(_cv(row, "ex_fty")),
-            "qty":           _cv(row, "qty"),
-            "zalando_po":    _v(_cv(row, "zalando_po")),
-            "brand":         _v(_cv(row, "brand")),
-            "fabric":        _v(_cv(row, "fabric")),
-            "test_note":     _v(_cv(row, "test_note")),
+            "label_color":   _v(_cv(i, "label_color")),
+            "ex_fty":        _v(_cv(i, "ex_fty")),
+            "qty":           _cv(i, "qty"),
+            "zalando_po":    _v(_cv(i, "zalando_po")),
+            "brand":         _v(_cv(i, "brand")),
+            "fabric":        _v(_cv(i, "fabric")),
+            "test_note":     _v(_cv(i, "test_note")),
             "color_summary": color_summary,
-            "launch_date":   _v(_cv(row, "launch_date")),
-            "remarks":       _v(_cv(row, "remarks")),
+            "launch_date":   _v(_cv(i, "launch_date")),
+            "remarks":       _v(_cv(i, "remarks")),
         }
         # A two-tone style (e.g. "52#/白色 3#" in the code cell) becomes one
         # record per colour, so each colour is independently look-up-able —

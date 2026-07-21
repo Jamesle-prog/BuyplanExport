@@ -113,14 +113,25 @@ class FabricLookup:
         sheet_names = list(all_sheets.keys())
 
         # ── Sheet 1: style → fabric mapping ──────────────────────────────────
+        # Pre-extract each needed column once (plain value arrays) — iterrows()
+        # plus per-field .iloc is far slower on large files (same pattern as
+        # config_sku_lookup._build_map).
         df1 = all_sheets[sheet_names[0]].fillna("")
-        for _, row in df1.iloc[1:].iterrows():
-            style = _norm_key(_v(row.iloc[0]))
+        rows1 = df1.iloc[1:]
+        cols1 = [rows1.iloc[:, ci].values if ci < df1.shape[1] else None
+                 for ci in range(4)]
+
+        def _cv1(i, ci):
+            a = cols1[ci]
+            return a[i] if a is not None else None
+
+        for i in range(len(rows1)):
+            style = _norm_key(_v(_cv1(i, 0)))
             if not style:
                 continue
-            img_id      = _dispimg_id(row.iloc[1] if len(row) > 1 else None)
-            fabric_cell = row.iloc[2] if len(row) > 2 else None
-            comp        = _v(row.iloc[3] if len(row) > 3 else None)
+            img_id      = _dispimg_id(_cv1(i, 1))
+            fabric_cell = _cv1(i, 2)
+            comp        = _v(_cv1(i, 3))
 
             parts = _extract_hhn_numbers(fabric_cell)
             if style in self._by_style:
@@ -140,16 +151,24 @@ class FabricLookup:
         # ── Sheet 2: fabric detail ────────────────────────────────────────────
         if len(sheet_names) > 1:
             df2 = all_sheets[sheet_names[1]].fillna("")
-            for _, row in df2.iloc[1:].iterrows():
-                hhn_raw  = _v(row.iloc[0] if len(row) > 0 else None)
-                hhn_norm = (_v(row.iloc[1] if len(row) > 1 else None)) or hhn_raw
+            rows2 = df2.iloc[1:]
+            cols2 = [rows2.iloc[:, ci].values if ci < df2.shape[1] else None
+                     for ci in range(8)]
+
+            def _cv2(i, ci):
+                a = cols2[ci]
+                return a[i] if a is not None else None
+
+            for i in range(len(rows2)):
+                hhn_raw  = _v(_cv2(i, 0))
+                hhn_norm = _v(_cv2(i, 1)) or hhn_raw
                 if not hhn_norm:
                     continue
-                comp_tested    = _v(row.iloc[3] if len(row) > 3 else None)
-                comp_confirmed = _v(row.iloc[4] if len(row) > 4 else None)
-                weight    = row.iloc[5] if len(row) > 5 else None
-                width     = row.iloc[6] if len(row) > 6 else None
-                composite = _v(row.iloc[7] if len(row) > 7 else None)
+                comp_tested    = _v(_cv2(i, 3))
+                comp_confirmed = _v(_cv2(i, 4))
+                weight    = _cv2(i, 5)
+                width     = _cv2(i, 6)
+                composite = _v(_cv2(i, 7))
 
                 record = {
                     "composition":  comp_confirmed or comp_tested,

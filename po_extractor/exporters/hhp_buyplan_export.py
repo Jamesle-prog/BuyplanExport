@@ -177,10 +177,19 @@ def export_hhp_buyplan(
     ws_index = wb.create_sheet("Index", 0)
     _write_index_headers(ws_index)
 
-    styles_in_order = stable_unique(
-        df["Main Supplier Config SKU"].dropna().astype(str).str.strip()
-        if "Main Supplier Config SKU" in df.columns else pd.Series(dtype=str)
-    )
+    style_col = "Main Supplier Config SKU"
+    if style_col in df.columns:
+        styles_in_order = stable_unique(
+            df[style_col].dropna().astype(str).str.strip()
+        )
+        # Normalize once + one groupby instead of refiltering the whole
+        # DataFrame per style (twice — here and again in _build_photo_map).
+        style_groups: dict[str, pd.DataFrame] = dict(
+            iter(df.groupby(df[style_col].astype(str).str.strip(), sort=False))
+        )
+    else:
+        styles_in_order = stable_unique(pd.Series(dtype=str))
+        style_groups = {}
 
     # Pre-fetch fabric_master enrichment for all HHN codes used in this df —
     # one DB round-trip instead of N per style.  Used to fill weight (克重)
@@ -192,9 +201,10 @@ def export_hhp_buyplan(
 
     index_row = 2
     for style in styles_in_order:
-        sub = df[df["Main Supplier Config SKU"].astype(str).str.strip() == style].copy()
-        if sub.empty:
+        sub = style_groups.get(style)
+        if sub is None or sub.empty:
             continue
+        sub = sub.copy()
 
         sheet_name = _unique_sheet_name(wb, clean_sheet_name(style))
 
@@ -220,7 +230,7 @@ def export_hhp_buyplan(
 
     # Inject photos (front in J3:L6, back in M3:O6) via zip-level patch.
     # openpyxl copy_worksheet drops drawings, so we do this after save.
-    sheet_photo_map = _build_photo_map(df, sheet_style_map, photo_map,
+    sheet_photo_map = _build_photo_map(style_groups, sheet_style_map, photo_map,
                                       images_dir=images_dir)
     if sheet_photo_map:
         inject_style_photos(path, sheet_photo_map)
@@ -305,15 +315,25 @@ def _apply_compact_layout(ws, *, last_row: int) -> None:
     """
     from openpyxl.styles import Font
 
-    # Font size = 10 on every cell with a value or an explicit style
+    # Font size = 10 on every cell with a value or an explicit style.
+    # Reuse shared Font instances keyed by attributes — same pattern as
+    # _apply_sky_east_compact_layout; reusing immutable style objects is
+    # ~10x faster than constructing a new Font per cell (avoids deep-copy
+    # overhead inside openpyxl for every cell on every sheet).
+    _font_cache: dict[tuple, Font] = {}
     for row in ws.iter_rows():
         for cell in row:
             f = cell.font
-            cell.font = Font(
-                name=f.name, size=10, bold=f.bold, italic=f.italic,
-                vertAlign=f.vertAlign, underline=f.underline, strike=f.strike,
-                color=f.color,
-            )
+            key = (f.name, f.bold, f.italic, f.vertAlign,
+                   f.underline, f.strike,
+                   f.color.rgb if f.color and f.color.type == "rgb" else None)
+            if key not in _font_cache:
+                _font_cache[key] = Font(
+                    name=f.name, size=10, bold=f.bold, italic=f.italic,
+                    vertAlign=f.vertAlign, underline=f.underline,
+                    strike=f.strike, color=f.color,
+                )
+            cell.font = _font_cache[key]
 
     # Column widths
     for col_idx in range(1, FACTORY_DATE_COL + 1):           # A..R
@@ -536,12 +556,16 @@ def _to_bytes(photo) -> bytes | None:
 
 
 def _build_photo_map(
-    df: pd.DataFrame,
+    style_groups: dict[str, pd.DataFrame],
     sheet_style_map: dict[str, str],
     photo_map: dict,
     images_dir: str | None = None,
 ) -> dict[str, dict[str, bytes | None]]:
     """Build ``{sheet_title: {'front': bytes|None, 'back': bytes|None}}``.
+
+    *style_groups* is the per-style groupby dict built once in
+    :func:`export_hhp_buyplan` — reused here instead of refiltering the
+    whole DataFrame per style.
 
     Path strings returned by :func:`resolve_photo_pair` are read from disk
     here so the post-save zip patcher gets raw bytes.
@@ -555,15 +579,13 @@ def _build_photo_map(
     "the picture is not showing" needs diagnosing.
     """
     out: dict[str, dict[str, bytes | None]] = {}
-    style_col = "Main Supplier Config SKU"
 
     misses: list[str] = []
     n_front = n_back = 0
 
     for sheet_name, style in sheet_style_map.items():
-        sub = df[df[style_col].astype(str).str.strip() == style] \
-              if style_col in df.columns else pd.DataFrame()
-        if sub.empty:
+        sub = style_groups.get(style)
+        if sub is None or sub.empty:
             continue
         front_raw, back_raw = resolve_photo_pair(style, sub.iloc[0], photo_map,
                                                  images_dir=images_dir)

@@ -47,8 +47,8 @@ def parse_sky_east_order(xlsx_path: str, processed_by: str = "") -> SkyEastContr
     """Canonical Sky East purchase-contract parser (dynamic layout detection).
 
     The old ``sky_east_excel.parse_sky_east`` (hardcoded row/column positions)
-    is superseded by this and intentionally no longer exported — import
-    from here, not from parser modules directly.
+    was superseded by this and has been removed — import from here, not
+    from parser modules directly.
     """
     return sky_east_order.parse(xlsx_path, processed_by=processed_by)
 

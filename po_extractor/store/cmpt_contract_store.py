@@ -164,6 +164,28 @@ class CmptContractStore(BaseSQLiteStore):
 
     # ── Reads ───────────────────────────────────────────────────────────────
 
+    # Shared aggregate header query — list_contracts and get_contract compute
+    # the same fields (total_qty / line_count / agreed_total / paid_total).
+    _HEADER_SQL = """
+        SELECT c.*,
+               COALESCE(l.total_qty, 0)    AS total_qty,
+               COALESCE(l.line_count, 0)   AS line_count,
+               COALESCE(l.agreed_total, 0) AS agreed_total,
+               COALESCE(p.paid_total, 0)   AS paid_total
+        FROM cmpt_contracts c
+        LEFT JOIN (
+            SELECT contract_id, SUM(qty) AS total_qty, COUNT(*) AS line_count,
+                   SUM(qty * unit_price) AS agreed_total
+            FROM cmpt_contract_lines GROUP BY contract_id
+        ) l ON l.contract_id = c.id
+        LEFT JOIN (
+            SELECT contract_id, SUM(amount) AS paid_total
+            FROM cmpt_payments GROUP BY contract_id
+        ) p ON p.contract_id = c.id
+        {where}
+        ORDER BY c.id DESC
+    """
+
     def list_contracts(self, factory: str | None = None,
                        status: str | None = None) -> list[dict]:
         """Contract headers newest first, each with computed ``agreed_total``
@@ -173,25 +195,8 @@ class CmptContractStore(BaseSQLiteStore):
             where.append("c.factory=?"); params.append(factory)
         if status:
             where.append("c.status=?"); params.append(status)
-        sql = f"""
-            SELECT c.*,
-                   COALESCE(l.total_qty, 0)    AS total_qty,
-                   COALESCE(l.line_count, 0)   AS line_count,
-                   COALESCE(l.agreed_total, 0) AS agreed_total,
-                   COALESCE(p.paid_total, 0)   AS paid_total
-            FROM cmpt_contracts c
-            LEFT JOIN (
-                SELECT contract_id, SUM(qty) AS total_qty, COUNT(*) AS line_count,
-                       SUM(qty * unit_price) AS agreed_total
-                FROM cmpt_contract_lines GROUP BY contract_id
-            ) l ON l.contract_id = c.id
-            LEFT JOIN (
-                SELECT contract_id, SUM(amount) AS paid_total
-                FROM cmpt_payments GROUP BY contract_id
-            ) p ON p.contract_id = c.id
-            {"WHERE " + " AND ".join(where) if where else ""}
-            ORDER BY c.id DESC
-        """
+        sql = self._HEADER_SQL.format(
+            where="WHERE " + " AND ".join(where) if where else "")
         with self._conn() as conn:
             rows = conn.execute(sql, params).fetchall()
         out = []
@@ -203,11 +208,14 @@ class CmptContractStore(BaseSQLiteStore):
 
     def get_contract(self, contract_id: int) -> dict | None:
         """Full contract: header (with computed totals) + lines + payments."""
-        headers = [c for c in self.list_contracts() if c["id"] == contract_id]
-        if not headers:
-            return None
-        contract = headers[0]
+        sql = self._HEADER_SQL.format(where="WHERE c.id=?")
         with self._conn() as conn:
+            row = conn.execute(sql, (contract_id,)).fetchone()
+            if row is None:
+                return None
+            contract = dict(row)
+            contract["balance"] = round(
+                (contract["agreed_total"] or 0) - (contract["paid_total"] or 0), 2)
             contract["lines"] = [dict(r) for r in conn.execute(
                 "SELECT * FROM cmpt_contract_lines WHERE contract_id=? ORDER BY id",
                 (contract_id,),
