@@ -107,27 +107,76 @@ def test_photo_map_batch_loads_from_primary_and_fallback(tmp_path, monkeypatch):
 
 
 def test_photo_map_unlistable_primary_degrades_fast_not_per_file(tmp_path, monkeypatch):
-    """An unreachable primary folder must cost exactly ONE failed listdir --
-    never a per-style probe -- and the extracted fallback must still work."""
+    """An unreachable primary folder must cost exactly ONE failed directory
+    enumeration -- never a per-style probe -- and the extracted fallback must
+    still work."""
     extracted = tmp_path / "extracted"; extracted.mkdir()
     monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(extracted))
     (extracted / "DR9_front.png").write_bytes(_png())
 
-    listdir_calls = []
-    real_listdir = shared.os.listdir
+    scandir_calls = []
+    real_scandir = shared.os.scandir
 
-    def _listdir(folder):
-        listdir_calls.append(folder)
+    def _scandir(folder):
+        scandir_calls.append(folder)
         if "unreachable" in str(folder):
             raise OSError(1326, "Logon failure")
-        return real_listdir(folder)
-    monkeypatch.setattr(shared.os, "listdir", _listdir)
+        return real_scandir(folder)
+    monkeypatch.setattr(shared.os, "scandir", _scandir)
 
     out = shared.load_style_photo_map(
         [f"DR{i}" for i in range(50)], str(tmp_path / "unreachable"),
     )
     assert set(out) == {"DR9"}
-    assert len(listdir_calls) == 2       # one per folder, regardless of 50 styles
+    assert len(scandir_calls) == 2       # one per folder, regardless of 50 styles
+
+
+def test_photo_map_caches_external_folder_reads(tmp_path, monkeypatch):
+    """Bytes from an EXTERNAL (e.g. network-mounted) folder are mirrored
+    locally, so a second run never re-reads the source -- the fix for a
+    Mountain Duck image folder costing ~20 MB of transfer per generation."""
+    external = tmp_path / "mount"; external.mkdir()
+    extracted = tmp_path / "extracted"; extracted.mkdir()
+    cache = tmp_path / "photo_cache"
+    monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(extracted))
+    monkeypatch.setattr(shared, "PHOTO_CACHE_DIR", str(cache))
+    src = external / "DR1_front.png"
+    src.write_bytes(_png())
+
+    opened = []
+    import builtins
+    real_builtin_open = builtins.open
+
+    def _tracking_open(path, *a, **kw):
+        if str(external) in str(path):
+            opened.append(str(path))
+        return real_builtin_open(path, *a, **kw)
+    monkeypatch.setattr(builtins, "open", _tracking_open)
+
+    first = shared.load_style_photo_map(["DR1"], str(external))
+    assert first["DR1"][0] is not None
+    assert len(opened) == 1                      # source read once
+
+    second = shared.load_style_photo_map(["DR1"], str(external))
+    assert second["DR1"][0] == first["DR1"][0]
+    assert len(opened) == 1                      # served from local cache
+
+
+def test_photo_map_cache_invalidates_on_source_change(tmp_path, monkeypatch):
+    """A changed source file yields a different cache key (size+mtime), so
+    the new bytes are picked up -- the cache can never serve stale photos."""
+    external = tmp_path / "mount"; external.mkdir()
+    extracted = tmp_path / "extracted"; extracted.mkdir()
+    monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(extracted))
+    monkeypatch.setattr(shared, "PHOTO_CACHE_DIR", str(tmp_path / "photo_cache"))
+    src = external / "DR1_front.png"
+    src.write_bytes(_png())
+    first = shared.load_style_photo_map(["DR1"], str(external))["DR1"][0]
+
+    bigger = _png() + b"\x00" * 64               # different size -> different key
+    src.write_bytes(bigger)
+    second = shared.load_style_photo_map(["DR1"], str(external))["DR1"][0]
+    assert second == bigger and second != first
 
 
 def test_photo_map_sanitizes_style_names_like_pair_loader(tmp_path, monkeypatch):

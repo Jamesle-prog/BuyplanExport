@@ -463,49 +463,128 @@ def load_style_photo_pair(style: str, primary_dir: str | None = None) -> list:
     return pair
 
 
+# Local mirror of photo bytes read from an EXTERNAL (often network-mounted)
+# image folder. Filenames encode source size+mtime, so a changed source file
+# simply misses the cache — no invalidation logic, no staleness window.
+PHOTO_CACHE_DIR = os.path.join(os.path.dirname(IMAGES_DIR_DEFAULT), "photo_cache")
+
+
+def _is_app_local_dir(folder: str) -> bool:
+    """True when *folder* lives under the app's own data dir (already local,
+    so mirroring its bytes into the cache would be pure waste)."""
+    try:
+        root = os.path.abspath(os.path.dirname(IMAGES_DIR_DEFAULT))
+        return os.path.commonpath([root, os.path.abspath(folder)]) == root
+    except (OSError, ValueError):
+        return False
+
+
+def _read_photo_cached(folder: str, fname: str, size: int, mtime: float) -> bytes | None:
+    """Read ``folder/fname``, mirroring it locally so later runs skip the
+    network. The cache key embeds size+mtime: a source edit yields a
+    different key (miss → re-read), so the cache can never serve stale bytes.
+    Cache failures are non-fatal — worst case we just re-read the source.
+    """
+    import hashlib
+    key = hashlib.sha1(f"{folder}|{fname}".encode("utf-8", "replace")).hexdigest()[:16]
+    cache_path = os.path.join(PHOTO_CACHE_DIR, f"{key}_{size}_{int(mtime)}.bin")
+    try:
+        with open(cache_path, "rb") as fh:
+            return fh.read()                      # hit — no network read
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(folder, fname), "rb") as fh:
+            data = fh.read()                      # miss — pay the source read
+    except OSError:
+        return None
+    try:
+        os.makedirs(PHOTO_CACHE_DIR, exist_ok=True)
+        # Drop superseded versions of this same source file.
+        for old in os.listdir(PHOTO_CACHE_DIR):
+            if old.startswith(key + "_"):
+                try:
+                    os.remove(os.path.join(PHOTO_CACHE_DIR, old))
+                except OSError:
+                    pass
+        with open(cache_path, "wb") as fh:
+            fh.write(data)
+    except OSError:
+        pass
+    return data
+
+
 def load_style_photo_map(styles, primary_dir: str | None = None) -> dict[str, list]:
     """Batch version of :func:`load_style_photo_pair` for many styles at once:
     ``{style: [front_bytes|None, back_bytes|None]}`` (styles with no photo at
     all are omitted).
 
-    ONE ``os.listdir`` per folder instead of per-style ``os.path.exists``
-    probes. This matters enormously when the configured image folder is a
-    network / Mountain Duck mount: each probe is a network round-trip, so 60
-    styles × front/back × 2 folders = up to 240 round-trips — measured in
-    MINUTES on a slow mount, and a hang per file on an unreachable one. A
-    folder that cannot be listed simply contributes nothing (one fast
-    failure), and only files that actually exist are opened.
+    Built for network-mounted image folders (Mountain Duck / SMB), where the
+    naive per-style approach was minutes-slow:
+
+    1. ONE ``os.scandir`` per folder — names AND size/mtime in a single
+       enumeration — instead of per-style ``os.path.exists`` round-trips.
+    2. Reads run CONCURRENTLY (mount latency dominates per-file cost, so
+       parallelism is close to a linear win on the first run).
+    3. Bytes from an external folder are mirrored into a local cache keyed by
+       size+mtime, so later runs read locally and never touch the network.
+
+    A folder that cannot be listed contributes nothing (one fast failure
+    instead of a hang per file).
     """
     import re as _re
-    primary = primary_dir if primary_dir is not None else images_dir()
-    listings: list[tuple[str, set[str]]] = []
-    for folder in (primary, EXTRACTED_IMAGES_DIR):
-        try:
-            listings.append((folder, set(os.listdir(folder))))
-        except OSError:
-            listings.append((folder, set()))
+    from concurrent.futures import ThreadPoolExecutor
 
-    out: dict[str, list] = {}
+    primary = primary_dir if primary_dir is not None else images_dir()
+    # folder -> {filename: (size, mtime)}
+    listings: list[tuple[str, dict[str, tuple[int, float]]]] = []
+    for folder in (primary, EXTRACTED_IMAGES_DIR):
+        entries: dict[str, tuple[int, float]] = {}
+        try:
+            with os.scandir(folder) as it:
+                for e in it:
+                    try:
+                        st_ = e.stat()            # free from the enumeration on Windows
+                        entries[e.name] = (st_.st_size, st_.st_mtime)
+                    except OSError:
+                        entries[e.name] = (0, 0.0)
+        except OSError:
+            pass
+        listings.append((folder, entries))
+
+    # Resolve which (folder, filename) each style/position should read from.
+    wanted: list[tuple[str, int, str, str, tuple[int, float]]] = []
     for style in styles:
         s = str(style or "").strip()
         if not s:
             continue
         safe = _re.sub(r'[\\/:*?"<>|]', '_', s)
-        pair: list = []
-        for pos in ("front", "back"):
+        for idx, pos in enumerate(("front", "back")):
             fname = f"{safe}_{pos}.png"
-            data = None
-            for folder, names in listings:
-                if fname in names:
-                    try:
-                        with open(os.path.join(folder, fname), "rb") as fh:
-                            data = fh.read()
-                        break
-                    except OSError:
-                        pass
-            pair.append(data)
-        if any(pair):
-            out[s] = pair
+            for folder, entries in listings:
+                if fname in entries:
+                    wanted.append((s, idx, folder, fname, entries[fname]))
+                    break
+
+    if not wanted:
+        return {}
+
+    def _fetch(job):
+        _s, _idx, folder, fname, (size, mtime) = job
+        if _is_app_local_dir(folder):
+            try:
+                with open(os.path.join(folder, fname), "rb") as fh:
+                    return _s, _idx, fh.read()
+            except OSError:
+                return _s, _idx, None
+        return _s, _idx, _read_photo_cached(folder, fname, size, mtime)
+
+    out: dict[str, list] = {}
+    with ThreadPoolExecutor(max_workers=min(12, len(wanted))) as ex:
+        for _s, _idx, data in ex.map(_fetch, wanted):
+            if data is None:
+                continue
+            out.setdefault(_s, [None, None])[_idx] = data
     return out
 
 

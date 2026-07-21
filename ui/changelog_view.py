@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.85.0",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "perf", "text": "**Style photos on a network folder no longer dominate generation.** With the image folder on a Mountain Duck / SMB mount, reading ~20 MB of style photos one file at a time was by far the slowest part of Generate Buy Plan + 核料. Three changes: photo reads now run **concurrently** (12 at a time) instead of serially; folder scanning gets names, sizes and timestamps in a **single** enumeration; and bytes read from an external folder are **mirrored into a local cache** so later generations read from the local disk and never touch the network again. The cache key includes each file’s size and timestamp, so an updated photo is picked up automatically and stale bytes can never be served. Net effect: the first generation is several times faster, and every one after it skips the network entirely."},
+        ],
+    },
+    {
         "version": "2.84.4",
         "date": "2026-07-21",
         "entries": [

@@ -39,6 +39,7 @@ data/fabric_master.db-shm
 data/output/
 data/images/
 data/extracted_images/
+data/photo_cache/
 data/image_folder_history.json
 
 # Sample / input documents at project root (not source code)
