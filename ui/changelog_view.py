@@ -10,12 +10,23 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.90.0",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "feat", "text": "**Type one date, get nine — auto-plan for the milestone grid.** Rather than filling nine milestones per style by hand, the grid drafts them from a single date: **倒推** counts back from each style's 离厂时间 (already on the client PO — read from Sky East orders and GIII factory-ship dates alike), or **正推** counts forward from a production start date you enter. You pick the direction per selection. Both read one shared lead-time table, so the two directions can never disagree. By default only empty milestones are filled, so hand-tuned dates survive; a preview shows exactly what each row will get before you commit."},
+            {"type": "feat", "text": "**Lead times are yours to set.** A Lead times tab holds the days-before-离厂时间 for each milestone (fabric 45 days, cutting 20, 后道 5, and so on as sensible starting points). Tune them once per client or factory and every future draft plan follows."},
+            {"type": "feat", "text": "**Bulk shortcuts in the grid**: fill one milestone date down every selected row, copy a whole plan from one style onto others, and shift a style's remaining plan by N days when it slips (blank milestones stay blank — shifting never invents a schedule)."},
+            {"type": "feat", "text": "**The status strip now shows urgency, not just progress** — 🔴 overdue (planned date passed with nothing recorded), 🟠 due within a week, ✅ done, 📅 scheduled, ⬜ not scheduled — so the grid tells you where to look."},
+            {"type": "refactor", "text": "**The Advanced 22-stage panel is open to everyone now** (still collapsed by default) rather than admin-only, so the stage-level detail is there for anyone who grows into it."},
+        ],
+    },
+    {
         "version": "2.89.0",
         "date": "2026-07-21",
         "entries": [
             {"type": "feat", "text": "**🏭 Tracking rebuilt around one page — the milestone grid.** The tab now opens on a single editable table: one row per PO/style, one column per milestone (面料到厂 · 辅料到厂 · 样衣确认 · 大货版 · 全码版 · 裁剪 · 车位 · 后道 · 工厂交期) — exactly the block the buy plan's Index tab prints. Type dates straight into the grid and hit Save. A toggle switches all nine columns between **计划 Planned** and **实际 Actual**; filling an actual date marks that milestone complete (clearing it reopens the milestone). Above the grid a ✅/📅/⬜ strip shows completion at a glance, and Company / Factory / search filters narrow the rows."},
             {"type": "refactor", "text": "**Six sub-tabs became three** — 📅 Tracking Grid · ➕ Add / Remove · 📨 Factory Updates. The Dashboard cards, the Overview table and the never-finished Plan placeholder are gone (along with its unused schedule calculator), and the per-record Milestones editor is replaced by the grid. Metrics are now the three that match the grid: Tracked · Milestones done · Overdue. Adding gained a **Track all shown** bulk button, and removing records moved here from the edit form."},
-            {"type": "refactor", "text": "**The 22-stage detail form is still there, just out of the way** — it now lives in a collapsed admin-only **🛠 Advanced** panel at the bottom of the grid, with every stage, dependency, readiness gate, optional sample, expected-days field and QC inspection intact. Nothing was deleted from the database and no migration ran, so any of it can come back to the daily view if the process ever needs it. Rationale: across every tracked record, not one of the 22 stages had ever been given a status, date or note — the detail was costing clicks without earning any."},
+            {"type": "refactor", "text": "**The 22-stage detail form is still there, just out of the way** — it now lives in a collapsed admin-only **🛠 Advanced** panel at the bottom of the grid, with every stage, dependency, readiness gate, optional sample, expected-days field and QC inspection intact. Nothing was deleted from the database and no migration ran, so any of it can come back to the daily view as the process grows into it. The goal is a gentle starting point: the nine milestones that already appear on the buy plan come first, and the deeper stage detail is one click away when it's needed."},
         ],
     },
     {

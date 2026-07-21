@@ -45,7 +45,7 @@ that are toggled off (and therefore not rendered) on a given save cycle.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd
@@ -875,19 +875,36 @@ def _grid_dataframe(records: list[dict], mode: str) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=cols)
 
 
-def _status_strip_df(records: list[dict]) -> pd.DataFrame:
-    """Read-only completion strip: ✅ done / 📅 planned / ⬜ nothing, per
-    milestone. Lets the user see completion while the editor shows dates."""
+def _status_strip_df(records: list[dict], today: date | None = None) -> pd.DataFrame:
+    """Read-only completion strip, one symbol per milestone:
+
+    ✅ done · 🔴 overdue (planned date passed, nothing recorded) ·
+    🟠 due within 7 days · 📅 scheduled later · ⬜ not scheduled.
+
+    Shows where attention is needed while the editor below shows the dates.
+    """
+    today = today or date.today()
+    soon = today + timedelta(days=7)
     rows = []
     for r in records:
         row = {"PO Number": r.get("po_number", ""), "Style": r.get("style") or ""}
         for stage, label in MILESTONE_STAGES:
-            if (r.get(f"{stage}_actual") or "").strip():
+            actual = (r.get(f"{stage}_actual") or "").strip()
+            planned = (r.get(f"{stage}_planned") or "").strip()
+            if actual:
                 row[label] = "✅"
-            elif (r.get(f"{stage}_planned") or "").strip():
-                row[label] = "📅"
-            else:
+            elif not planned:
                 row[label] = "⬜"
+            else:
+                due = _parse_date(planned)
+                if due is None:
+                    row[label] = "📅"
+                elif due < today:
+                    row[label] = "🔴"
+                elif due <= soon:
+                    row[label] = "🟠"
+                else:
+                    row[label] = "📅"
         rows.append(row)
     return pd.DataFrame(
         rows, columns=["PO Number", "Style"] + [lbl for _, lbl in MILESTONE_STAGES]
@@ -958,6 +975,291 @@ def _date_str(v) -> str:
     return v.isoformat() if hasattr(v, "isoformat") else str(v).strip()
 
 
+def _ex_factory_for(record: dict, anchors: dict) -> str:
+    """Best ex-factory date for a record: the client PO's own 离厂时间 when
+    we have it, else the 工厂交期 already planned on the record. Falls back
+    to a PO-only match so a style-name mismatch between the order file and
+    the tracking record doesn't lose the anchor."""
+    po = record.get("po_number", "")
+    sty = record.get("style") or ""
+    return (
+        anchors.get((po, sty))
+        or anchors.get((po, ""))
+        or (record.get("shipping_planned") or "")
+    ).strip()
+
+
+def _exfty_anchor_map() -> dict:
+    """``{(po_number, style): ex_factory_date}`` unioned across BOTH client
+    pipelines — Sky East items' 离厂时间 and GIII's factory_ship_date /
+    xport_date — because tracking records come from both. A ``(po, "")``
+    entry is also stored so a PO-only lookup still resolves.
+
+    Best-effort: a failure in either source yields fewer anchors, never an
+    error (auto-plan then falls back to the record's own 工厂交期).
+    """
+    out: dict = {}
+
+    def _put(po: str, sty: str, raw) -> None:
+        from po_extractor.utils.lead_times import parse_anchor_date
+        d = parse_anchor_date(raw)
+        if not po or d is None:
+            return
+        out.setdefault((po, sty), d.isoformat())
+        out.setdefault((po, ""), d.isoformat())
+
+    try:                                    # Sky East — client PO 离厂时间
+        from ui.stores import get_sky_east_store
+        df = get_sky_east_store().list_items()
+        if df is not None and not df.empty and "ex_fty_date" in df.columns:
+            for _, r in df.iterrows():
+                _put(str(r.get("zalando_po") or "").strip(),
+                     str(r.get("style") or "").strip(),
+                     r.get("ex_fty_date"))
+    except Exception:
+        pass
+
+    try:                                    # GIII — factory ship / export date
+        from ui.stores import get_store
+        import sqlite3 as _sq
+        conn = _sq.connect(get_store().db_path)
+        conn.row_factory = _sq.Row
+        try:
+            for r in conn.execute(
+                "SELECT po_number, style, factory_ship_date, xport_date "
+                "FROM po_metadata"
+            ).fetchall():
+                _put(str(r["po_number"] or "").strip(),
+                     str(r["style"] or "").strip(),
+                     r["factory_ship_date"] or r["xport_date"])
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    return out
+
+
+def _render_autoplan_section(records, store, username, today) -> None:
+    """Draft nine milestone dates from ONE date, plus the bulk shortcuts.
+
+    Backward (倒推) counts back from each style's 离厂时间; forward (正推)
+    counts on from a start date. Both use the same offsets table, so the two
+    directions can never disagree — see po_extractor/utils/lead_times.py.
+    """
+    from po_extractor.utils.lead_times import (
+        MILESTONE_STAGES as _MS,          # same order as the grid
+        load_lead_days, save_lead_days, plan_backward, plan_forward,
+        shift_plan, cycle_length,
+    )
+
+    with st.expander(f"🗓 {t('Auto-plan & bulk edits')}", expanded=False):
+        lead_days = load_lead_days()
+
+        by_label = {
+            f"{r['po_number']} — {r.get('style') or '—'}": r for r in records
+        }
+        guard_multiselect_state("pt_autoplan_rows", list(by_label))
+        chosen_labels = st.multiselect(
+            t("Apply to which PO / styles?"), options=list(by_label),
+            key="pt_autoplan_rows",
+            help=t("Leave empty to apply to every row currently shown."),
+        )
+        targets = ([by_label[c] for c in chosen_labels] if chosen_labels
+                   else list(records))
+        st.caption(f"{len(targets)} {t('row(s) selected')}")
+
+        tab_plan, tab_bulk, tab_lead = st.tabs(
+            [t("Draft a plan"), t("Bulk edits"), t("Lead times")]
+        )
+
+        # ── Draft a plan ───────────────────────────────────────────────────
+        with tab_plan:
+            direction = st.radio(
+                "Direction",
+                ["backward", "forward"],
+                horizontal=True, key="pt_autoplan_dir",
+                format_func=lambda d: (t("倒推 Back from 离厂时间")
+                                       if d == "backward"
+                                       else t("正推 Forward from a start date")),
+                label_visibility="collapsed",
+            )
+            anchors = _exfty_anchor_map() if direction == "backward" else {}
+            start_date = None
+            if direction == "forward":
+                start_date = st.date_input(t("Production start date"),
+                                           value=today, key="pt_autoplan_start")
+                st.caption(
+                    f"{t('Implied 离厂时间')}: "
+                    f"{(start_date + timedelta(days=cycle_length(lead_days))).isoformat()}"
+                )
+
+            overwrite = st.checkbox(
+                t("Overwrite dates that are already filled"),
+                key="pt_autoplan_overwrite",
+                help=t("Off (default): only empty milestones are filled, so "
+                       "hand-tuned dates survive."),
+            )
+
+            preview_rows, jobs = [], []
+            for rec in targets:
+                if direction == "backward":
+                    anchor = _ex_factory_for(rec, anchors)
+                    anchor_date = _parse_date(anchor)
+                    if anchor_date is None:
+                        preview_rows.append({
+                            "PO Number": rec["po_number"],
+                            "Style": rec.get("style") or "",
+                            "Anchor": "—",
+                            "Result": t("no 离厂时间 on file — skipped"),
+                        })
+                        continue
+                    plan = plan_backward(anchor_date, lead_days)
+                    anchor_txt = anchor_date.isoformat()
+                else:
+                    plan = plan_forward(start_date, lead_days)
+                    anchor_txt = start_date.isoformat()
+
+                fields = {}
+                for stage, _lbl in _MS:
+                    if not overwrite and (rec.get(f"{stage}_planned") or "").strip():
+                        continue
+                    fields[f"{stage}_planned"] = plan[stage]
+                preview_rows.append({
+                    "PO Number": rec["po_number"],
+                    "Style": rec.get("style") or "",
+                    "Anchor": anchor_txt,
+                    "Result": (f"{len(fields)} {t('date(s)')}" if fields
+                               else t("already planned — nothing to fill")),
+                })
+                if fields:
+                    jobs.append((rec["po_number"], rec.get("style") or "", fields))
+
+            if preview_rows:
+                st.dataframe(pd.DataFrame(preview_rows), width="stretch",
+                             hide_index=True,
+                             height=min(60 + 35 * len(preview_rows), 260))
+            if st.button(
+                f"🗓 {t('Fill')} {sum(len(f) for _, _, f in jobs)} {t('date(s)')}",
+                type="primary", disabled=not jobs, key="pt_autoplan_go",
+            ):
+                for po, sty, fields in jobs:
+                    store.update_stage_fields(po, sty, fields, updated_by=username)
+                st.success(f"✅ {len(jobs)} {t('record(s) updated.')}")
+                fragment_rerun()
+
+        # ── Bulk edits ─────────────────────────────────────────────────────
+        with tab_bulk:
+            b1, b2 = st.columns(2)
+
+            with b1:
+                st.markdown(f"**{t('Set one milestone for all selected')}**")
+                fill_stage = st.selectbox(
+                    t("Milestone"), options=[s for s, _ in _MS],
+                    format_func=lambda s: MILESTONE_LABELS.get(s, s),
+                    key="pt_bulk_fill_stage",
+                )
+                fill_date = st.date_input(t("Date"), value=today,
+                                          key="pt_bulk_fill_date")
+                fill_which = st.radio(
+                    "Which field", [GRID_PLANNED, GRID_ACTUAL], horizontal=True,
+                    key="pt_bulk_fill_field",
+                    format_func=lambda m: (t("计划 Planned") if m == GRID_PLANNED
+                                           else t("实际 Actual")),
+                    label_visibility="collapsed",
+                )
+                if st.button(f"⬇️ {t('Fill down')}", key="pt_bulk_fill_go",
+                             disabled=not targets):
+                    for rec in targets:
+                        fields = {f"{fill_stage}_{fill_which}": fill_date.isoformat()}
+                        if fill_which == GRID_ACTUAL:
+                            fields[f"{fill_stage}_status"] = "Done"
+                        store.update_stage_fields(
+                            rec["po_number"], rec.get("style") or "", fields,
+                            updated_by=username)
+                    st.success(f"✅ {len(targets)} {t('record(s) updated.')}")
+                    fragment_rerun()
+
+                st.divider()
+                st.markdown(f"**{t('Shift the whole plan')}**")
+                shift_days = st.number_input(
+                    t("Days (negative = earlier)"), value=7, step=1,
+                    key="pt_bulk_shift_days")
+                if st.button(f"↔ {t('Shift planned dates')}",
+                             key="pt_bulk_shift_go", disabled=not targets):
+                    n = 0
+                    for rec in targets:
+                        planned = {s: (rec.get(f"{s}_planned") or "")
+                                   for s, _ in _MS}
+                        shifted = shift_plan(planned, int(shift_days))
+                        fields = {f"{s}_planned": v
+                                  for s, v in shifted.items()
+                                  if v and v != planned[s]}
+                        if fields:
+                            store.update_stage_fields(
+                                rec["po_number"], rec.get("style") or "", fields,
+                                updated_by=username)
+                            n += 1
+                    st.success(f"✅ {n} {t('record(s) updated.')}")
+                    fragment_rerun()
+
+            with b2:
+                st.markdown(f"**{t('Copy a plan onto the selected rows')}**")
+                src_label = st.selectbox(
+                    t("Copy dates from"), options=list(by_label),
+                    key="pt_bulk_copy_src",
+                )
+                src = by_label[src_label]
+                src_plan = {s: (src.get(f"{s}_planned") or "") for s, _ in _MS}
+                st.caption(
+                    f"{sum(1 for v in src_plan.values() if v)}/{len(_MS)} "
+                    + t("milestone(s) planned on the source")
+                )
+                if st.button(f"📋 {t('Copy plan')}", key="pt_bulk_copy_go",
+                             disabled=not targets):
+                    n = 0
+                    for rec in targets:
+                        if (rec["po_number"], rec.get("style") or "") == (
+                                src["po_number"], src.get("style") or ""):
+                            continue          # don't copy onto itself
+                        fields = {f"{s}_planned": v
+                                  for s, v in src_plan.items() if v}
+                        if fields:
+                            store.update_stage_fields(
+                                rec["po_number"], rec.get("style") or "", fields,
+                                updated_by=username)
+                            n += 1
+                    st.success(f"✅ {n} {t('record(s) updated.')}")
+                    fragment_rerun()
+
+        # ── Lead times ─────────────────────────────────────────────────────
+        with tab_lead:
+            st.caption(t(
+                "Days before 离厂时间 that each milestone should be complete. "
+                "Used by both plan directions — tune once per client/factory "
+                "and every future draft plan follows it."
+            ))
+            lead_df = pd.DataFrame(
+                [{"Milestone": MILESTONE_LABELS.get(s, s),
+                  "Days before 离厂时间": lead_days[s]} for s, _ in _MS]
+            )
+            edited_lead = st.data_editor(
+                lead_df, hide_index=True, width="content", num_rows="fixed",
+                disabled=["Milestone"], key="pt_lead_editor",
+                column_config={
+                    "Days before 离厂时间": st.column_config.NumberColumn(
+                        t("Days before 离厂时间"), min_value=0, step=1),
+                },
+            )
+            if st.button(f"💾 {t('Save lead times')}", key="pt_lead_save"):
+                save_lead_days({
+                    s: int(edited_lead.iloc[i]["Days before 离厂时间"] or 0)
+                    for i, (s, _) in enumerate(_MS)
+                })
+                st.success(f"✅ {t('Lead times saved.')}")
+                fragment_rerun()
+
+
 def _render_grid_tab(records, store, username, today, admin_mode) -> None:
     """One-page milestone grid + (admin) the full 22-stage editor."""
     if not records:
@@ -985,11 +1287,14 @@ def _render_grid_tab(records, store, username, today, admin_mode) -> None:
         "complete."
     ))
 
-    # Completion at a glance (✅ done · 📅 planned · ⬜ nothing).
+    # Completion at a glance, colour-coded: 🔴 overdue · 🟠 due within 7 days
+    # · ✅ done · 📅 scheduled · ⬜ nothing.
     st.dataframe(
-        _status_strip_df(filtered), width="stretch", hide_index=True,
+        _status_strip_df(filtered, today), width="stretch", hide_index=True,
         height=min(60 + 35 * len(filtered), 280),
     )
+
+    _render_autoplan_section(filtered, store, username, today)
 
     original = _grid_dataframe(filtered, mode)
     col_cfg = {
@@ -1030,16 +1335,17 @@ def _render_grid_tab(records, store, username, today, admin_mode) -> None:
     # Kept verbatim so no capability is lost -- dependencies, readiness gates,
     # optional samples, expected-days and QC all still live here. The daily
     # path above never renders any of it.
-    if admin_mode:
-        st.divider()
-        with st.expander(f"🛠 {t('Advanced — full 22-stage record')}", expanded=False):
-            st.caption(t(
-                "Detailed per-stage tracking: dependencies, readiness gates, "
-                "optional samples, expected days and QC inspections. Most "
-                "work only needs the grid above."
-            ))
-            readiness_map = {r["id"]: store.compute_readiness(r) for r in records}
-            _render_edit_tab(records, readiness_map, store, username, today)
+    st.divider()
+    with st.expander(f"🛠 {t('Advanced — full 22-stage record')}", expanded=False):
+        st.caption(t(
+            "Detailed per-stage tracking: dependencies, readiness gates, "
+            "optional samples, expected days and QC inspections. Most "
+            "work only needs the grid above."
+        ))
+        # Readiness is computed HERE (not at tab entry) so the simple path
+        # never pays for a 22-stage scan per record.
+        readiness_map = {r["id"]: store.compute_readiness(r) for r in records}
+        _render_edit_tab(records, readiness_map, store, username, today)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
