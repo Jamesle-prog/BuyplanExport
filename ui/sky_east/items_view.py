@@ -173,8 +173,8 @@ def _show_return_label_conflicts(pending: list[dict]) -> None:
             key="se_rl_pending_editor",
         )
 
-        col1, col2 = st.columns(2)
-        if col1.button(t("Apply"), type="primary", use_container_width=True,
+        col1, col2, col3 = st.columns(3)
+        if col1.button(t("Apply selected"), type="primary", use_container_width=True,
                        key="se_rl_pending_apply"):
             store = get_sky_east_store()
             n_replaced = n_kept = 0
@@ -189,7 +189,20 @@ def _show_return_label_conflicts(pending: list[dict]) -> None:
                 f"✅ {n_replaced} {t('replaced')}, {n_kept} {t('kept as recorded')}."
             )
             st.rerun()
-        if col2.button(t("Keep all as recorded (dismiss)"), use_container_width=True,
+        # One-click accept: replace EVERY conflicting item with the file's
+        # new value, ignoring the checkboxes -- for the common case where
+        # the client's newest PO is simply right.
+        if col2.button(t("Apply all new"), use_container_width=True,
+                       key="se_rl_pending_apply_all"):
+            store = get_sky_east_store()
+            for p in pending:
+                store.apply_pending_item(p["item"])
+            st.session_state[SK.SE_RL_PENDING] = []
+            st.success(
+                f"✅ {len(pending)} {t('replaced')}, 0 {t('kept as recorded')}."
+            )
+            st.rerun()
+        if col3.button(t("Keep all as recorded (dismiss)"), use_container_width=True,
                        key="se_rl_pending_dismiss"):
             st.session_state[SK.SE_RL_PENDING] = []
             fragment_rerun()

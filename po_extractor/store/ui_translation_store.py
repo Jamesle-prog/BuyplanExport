@@ -1516,6 +1516,8 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Saved shipping sample requirement for', '已保存船样要求，品牌数：', 'label', 'sky_east'),
     ('brand(s)', '个', 'label', 'sky_east'),
     ("Remind me later (don't save)", '稍后提醒（暂不保存）', 'button', 'sky_east'),
+    ('Apply selected', '应用所选', 'button', 'sky_east'),
+    ('Apply all new', '全部采用新值', 'button', 'sky_east'),
 
     # Fabric DB — version history review/restore additions (v2.79.0)
     ('approved by', '审批人', 'label', 'admin'),

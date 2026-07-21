@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.83.1",
+        "date": "2026-07-21",
+        "entries": [
+            {"type": "feat", "text": "**Return Label conflicts: one-click \"Apply all new\".** The review panel gains a button that accepts the file's new value for every conflicting item at once — no more ticking each Replace checkbox when the client's newest PO is simply right. \"Apply\" is renamed \"Apply selected\" for clarity; \"Keep all as recorded\" unchanged."},
+        ],
+    },
+    {
         "version": "2.83.0",
         "date": "2026-07-21",
         "entries": [
