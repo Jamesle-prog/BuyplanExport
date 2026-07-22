@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.92.0"
+APP_VERSION = "2.93.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -437,10 +437,12 @@ def _show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
 @st.fragment
 def _show_production_tracking_tab(user_cos: list[str], admin_mode: bool) -> None:
     from ui.production_tracking_view import show_production_tracking_tab
+    from auth.users import get_user_factories
     show_production_tracking_tab(
         user_cos=user_cos,
         username=st.session_state.username,
         admin_mode=admin_mode,
+        user_factories=get_user_factories(st.session_state.username),
     )
 
 

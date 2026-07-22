@@ -117,7 +117,8 @@ def create_user(username: str, password: str,
                 role: str | None = None,
                 companies: list[str] | None = None,
                 email: str | None = None,
-                modules: list[str] | None = None) -> None:
+                modules: list[str] | None = None,
+                factories: list[str] | None = None) -> None:
     if not username or not password:
         raise ValueError("Username and password are required")
     users = _load()
@@ -130,6 +131,9 @@ def create_user(username: str, password: str,
         "companies": companies if companies is not None else existing.get("companies", []),
         "email": (email if email is not None else existing.get("email", "")) or "",
         "modules": modules if modules is not None else existing.get("modules", []),
+        # Factory scope (production tracking): empty = not factory-restricted.
+        # Preserved across edits that don't touch it (e.g. password change).
+        "factories": factories if factories is not None else existing.get("factories", []),
     }
     _save(users)
 
@@ -160,7 +164,8 @@ def change_password(username: str, old_password: str, new_password: str) -> bool
     create_user(username, new_password,
                 role=rec.get("role", ROLE_USER),
                 companies=rec.get("companies", []),
-                modules=rec.get("modules", []))
+                modules=rec.get("modules", []),
+                factories=rec.get("factories", []))
     return True
 
 
@@ -173,14 +178,15 @@ def list_users() -> list[str]:
 
 
 def get_user(username: str) -> dict | None:
-    """Return {role, companies, email, modules} or None."""
+    """Return {role, companies, email, modules, factories} or None."""
     rec = _load().get(username)
     if not rec:
         return None
     return {"role": rec.get("role", ROLE_USER),
             "companies": rec.get("companies", []),
             "email": rec.get("email", "") or "",
-            "modules": rec.get("modules", []) or []}
+            "modules": rec.get("modules", []) or [],
+            "factories": rec.get("factories", []) or []}
 
 
 def get_user_email(username: str) -> str:
@@ -238,6 +244,27 @@ def set_user_modules(username: str, modules: list[str]) -> bool:
     if username not in users:
         return False
     users[username]["modules"] = modules
+    _save(users)
+    return True
+
+
+def get_user_factories(username: str) -> list[str]:
+    """Factory scope for production tracking. Admin returns [] (unrestricted);
+    a regular user with a non-empty list is restricted to those factories and
+    may only record progress against them. Empty = not factory-restricted."""
+    u = get_user(username)
+    if not u:
+        return []
+    if u["role"] == ROLE_ADMIN:
+        return []
+    return u["factories"]
+
+
+def set_user_factories(username: str, factories: list[str]) -> bool:
+    users = _load()
+    if username not in users:
+        return False
+    users[username]["factories"] = factories
     _save(users)
     return True
 

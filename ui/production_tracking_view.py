@@ -101,6 +101,56 @@ GRID_PLANNED = "planned"
 GRID_ACTUAL  = "actual"
 
 
+# ── Access scope ──────────────────────────────────────────────────────────────
+
+class TrackScope:
+    """What the current user may see and change in the tracking module.
+
+    Built once per render in ``show_production_tracking_tab`` and threaded
+    into every panel so access control lives in ONE place, enforced on the
+    server side (not just by hiding widgets). Three shapes:
+
+      - **admin** — unrestricted.
+      - **client-scoped** — a normal user limited to their companies. Sees
+        and edits only their companies' rows; imports that name an
+        out-of-scope PO/style are rejected.
+      - **factory-scoped** (``factory_mode``) — a factory login limited to
+        specific factories. Sees only those factories' rows and may record
+        **progress only**: actual/completion dates, quantity reports and
+        status notes — never planned dates, and never add/remove rows.
+
+    ``allowed_keys`` is the set of ``(po_number, style)`` the user may touch;
+    every apply path checks :meth:`permits` before writing, so a crafted
+    upload can't reach a row outside scope.
+    """
+
+    def __init__(self, admin: bool, factory_mode: bool, allowed_keys):
+        self.admin = admin
+        self.factory_mode = factory_mode
+        self.allowed_keys = allowed_keys        # frozenset[(po, style)]
+
+    def permits(self, po_number: str, style: str) -> bool:
+        if self.admin:
+            return True
+        return ((str(po_number or "").strip(), str(style or "").strip())
+                in self.allowed_keys)
+
+    def sanitize_fields(self, fields: dict) -> dict:
+        """Drop writes a factory user isn't allowed to make (planned dates).
+        Client/admin scopes pass through unchanged."""
+        if not self.factory_mode:
+            return fields
+        return {k: v for k, v in fields.items() if not k.endswith("_planned")}
+
+    @property
+    def can_edit_planned(self) -> bool:
+        return not self.factory_mode
+
+    @property
+    def can_add_remove(self) -> bool:
+        return not self.factory_mode
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _wkey(rid: int, base: str) -> str:
@@ -621,6 +671,7 @@ def show_production_tracking_tab(
     user_cos: list[str],
     username: str,
     admin_mode: bool,
+    user_factories: list[str] | None = None,
 ) -> None:
     """Entry point for the 🏭 Tracking tab.
 
@@ -635,63 +686,90 @@ def show_production_tracking_tab(
         Pre-computed admin flag from the caller.  We never call
         ``is_admin()`` inside this view — privilege checks live at one
         call site (``app.py``).
+    user_factories
+        Factory strings this user is restricted to (a "factory login").
+        Empty/None = not factory-restricted. A factory user sees only these
+        factories' rows and may record progress only. Ignored for admins.
     """
     store    = get_production_tracking_store()
     po_store = get_store()
     today    = date.today()
+    user_factories = user_factories or []
+    factory_mode = bool(user_factories) and not admin_mode
 
     # ── Access control gate ────────────────────────────────────────────────
-    # Non-admin users with no assigned companies see nothing — never let
-    # admin status leak through the "no filter" path of list_all().
-    if not admin_mode and not user_cos:
+    # A user needs SOME scope: admin, a company, or a factory. Without any,
+    # they see nothing (never let admin status leak through list_all's
+    # no-filter path).
+    if not admin_mode and not user_cos and not factory_mode:
         st.info(t(
             "No companies assigned to your account. "
             "Contact an administrator to be granted access."
         ))
         return
 
-    records = store.list_all(
-        companies=user_cos if not admin_mode else None,
-        allow_all=admin_mode,
+    # Fetch within company scope (admins and factory-only users with no
+    # company restriction get everything), then narrow to the user's
+    # factories. A factory user is scoped by factory, which can span clients,
+    # so an empty company list does NOT mean "nothing" for them.
+    if admin_mode or not user_cos:
+        records = store.list_all(allow_all=True)
+    else:
+        records = store.list_all(companies=user_cos)
+
+    if factory_mode:
+        fset = {f.strip() for f in user_factories}
+        records = [r for r in records if (r.get("factory") or "").strip() in fset]
+
+    allowed_keys = frozenset(
+        ((r.get("po_number") or "").strip(), (r.get("style") or "").strip())
+        for r in records
     )
-    # NOTE: readiness / QC reminders are computed LAZILY inside the Advanced
-    # editor only — they are pure per-record loops over 22 stages and the
-    # simplified surface never shows them.
+    scope = TrackScope(admin=admin_mode, factory_mode=factory_mode,
+                       allowed_keys=allowed_keys)
+
+    if factory_mode:
+        st.caption("🏭 " + t("Factory view — you see only your factory's "
+                             "orders and record progress against them.")
+                   + f"  ({', '.join(user_factories)})")
 
     # ── Top metrics row ────────────────────────────────────────────────────
     _render_metrics(records, today)
 
     # ── Sub-tab navigation (st.radio with session-state-controlled index) ──
-    # Setting only PT_ACTIVE_TAB would silently fail because Streamlit
-    # ignores `index=` once the widget key has a value in session_state —
-    # cross-tab jumps must pop "pt_tab_radio" as well (see _render_add_tab).
-    # NOTE: options stay English (stable widget/session values, index math);
-    # format_func translates at render time so language switches apply live.
-    _stored_tab = st.session_state.get(SK.PT_ACTIVE_TAB, TAB_GRID)
-    if not isinstance(_stored_tab, int) or not 0 <= _stored_tab < len(_TAB_LABELS):
-        _stored_tab = TAB_GRID          # stale index from the old 6-tab layout
+    # Factory users don't get Add / Remove — they can't create or delete
+    # tracking rows, only report progress. Build the visible tab list from
+    # capability, and dispatch by (stable English) label.
+    tab_defs = [(_TAB_LABELS[TAB_GRID], "grid")]
+    if scope.can_add_remove:
+        tab_defs.append((_TAB_LABELS[TAB_ADD], "add"))
+    tab_defs.append((_TAB_LABELS[TAB_FACTORY], "factory"))
+    labels = [lbl for lbl, _ in tab_defs]
+
+    _stored = st.session_state.get(SK.PT_ACTIVE_TAB, TAB_GRID)
+    if not isinstance(_stored, int) or not 0 <= _stored < len(_TAB_LABELS):
+        _stored = TAB_GRID
+    # Map the stored full-layout index onto the (possibly reduced) label list.
+    _stored_label = _TAB_LABELS[_stored]
+    index = labels.index(_stored_label) if _stored_label in labels else 0
     active_label = st.radio(
-        "Sub-section",
-        _TAB_LABELS,
-        horizontal=True,
-        index=_stored_tab,
-        key="pt_tab_radio",
-        format_func=t,
-        label_visibility="collapsed",
+        "Sub-section", labels, horizontal=True, index=index,
+        key="pt_tab_radio", format_func=t, label_visibility="collapsed",
     )
     st.session_state[SK.PT_ACTIVE_TAB] = _TAB_LABELS.index(active_label)
+    which = dict(tab_defs)[active_label]
 
     st.divider()
 
     # ── Dispatch ───────────────────────────────────────────────────────────
-    if active_label == _TAB_LABELS[TAB_GRID]:
+    if which == "grid":
         _render_grid_tab(records, store, po_store, username, today,
-                         admin_mode, user_cos)
-    elif active_label == _TAB_LABELS[TAB_ADD]:
+                         admin_mode, user_cos, scope)
+    elif which == "add":
         _render_add_tab(store, po_store, username, user_cos=user_cos,
                         admin_mode=admin_mode, records=records)
-    elif active_label == _TAB_LABELS[TAB_FACTORY]:
-        _render_factory_updates_tab(records, username, admin_mode)
+    elif which == "factory":
+        _render_factory_updates_tab(records, username, admin_mode, scope)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1272,7 +1350,7 @@ def _render_autoplan_section(records, store, username, today) -> None:
                 fragment_rerun()
 
 
-def _render_grid_excel_io(filtered, store, username) -> None:
+def _render_grid_excel_io(filtered, store, username, scope: "TrackScope") -> None:
     """Download the visible grid as Excel, edit it there, and upload to apply.
 
     A faster path than typing into the on-screen editor for a whole season:
@@ -1280,6 +1358,11 @@ def _render_grid_excel_io(filtered, store, username) -> None:
     import applies them exactly the way the grid does (a filled Actual marks
     the milestone done; a blank cell never erases). Only rows that are still
     tracked are updated — anything else is reported, never silently dropped.
+
+    Scope is enforced on apply: a row for a PO/style outside the user's access
+    is rejected, and a factory user's planned-date edits are ignored (they may
+    record progress only) — so a hand-edited upload can't escape the user's
+    permissions.
     """
     from po_extractor.exporters.tracking_grid_xlsx import (
         build_tracking_grid_xlsx, parse_tracking_grid_xlsx,
@@ -1343,42 +1426,54 @@ def _render_grid_excel_io(filtered, store, username) -> None:
 
         if st.button(f"✅ {t('Apply')} {len(rows)} {t('row(s)')}",
                      type="primary", key="pt_grid_xlsx_apply"):
-            applied = skipped = 0
+            applied = skipped = blocked = 0
             for row in rows:
+                po, style = row["po_number"], row["style"]
+                # Access gate — a crafted upload can't reach a row out of scope.
+                if not scope.permits(po, style):
+                    blocked += 1
+                    continue
+                fields = scope.sanitize_fields(row["fields"])
+                if not fields:               # factory user: only planned edits
+                    continue
                 try:
-                    if store.update_stage_fields(
-                            row["po_number"], row["style"], row["fields"],
-                            updated_by=username):
+                    if store.update_stage_fields(po, style, fields,
+                                                 updated_by=username):
                         applied += 1
                     else:
                         skipped += 1
-                        st.warning(
-                            f"⚠️ {row['po_number']} / {row['style']} — "
-                            + t("not tracked; skipped."))
+                        st.warning(f"⚠️ {po} / {style} — "
+                                   + t("not tracked; skipped."))
                 except ValueError as exc:
                     skipped += 1
-                    st.error(f"{row['po_number']} / {row['style']}: {exc}")
-            st.success(
-                f"✅ {applied} {t('record(s) updated.')}"
-                + (f" {skipped} {t('skipped')}." if skipped else ""))
+                    st.error(f"{po} / {style}: {exc}")
+            msg = f"✅ {applied} {t('record(s) updated.')}"
+            if skipped:
+                msg += f" {skipped} {t('skipped')}."
+            if blocked:
+                msg += f" 🔒 {blocked} " + t("outside your access — not applied.")
+            st.success(msg)
             fragment_rerun()
 
 
 def _render_grid_tab(records, store, po_store, username, today, admin_mode,
-                     user_cos) -> None:
+                     user_cos, scope: "TrackScope") -> None:
     """One-page milestone grid + (admin) the full 22-stage editor."""
     # Newly-loaded contracts that aren't tracked yet — surfaced right here
-    # with a one-click "Track all", so loading orders makes them visible on
-    # the grid instead of hidden in the Add / Remove tab.
-    had_untracked = _render_untracked_banner(
-        store, po_store, username, user_cos, admin_mode)
+    # with a one-click "Track all". Factory users can't add rows, so they
+    # never see this.
+    had_untracked = False
+    if scope.can_add_remove:
+        had_untracked = _render_untracked_banner(
+            store, po_store, username, user_cos, admin_mode)
 
     if not records:
         if not had_untracked:
             st.info(t(
                 "Nothing tracked yet — use **➕ Add / Remove** to start tracking "
                 "PO/styles, then fill their milestone dates here."
-            ))
+            ) if scope.can_add_remove else t(
+                "No orders for your factory are being tracked yet."))
         return
     if had_untracked:
         st.divider()
@@ -1388,18 +1483,28 @@ def _render_grid_tab(records, store, po_store, username, today, admin_mode,
         st.warning(t("No records match the current filters."))
         return
 
-    mode_labels = {GRID_PLANNED: t("计划 Planned"), GRID_ACTUAL: t("实际 Actual")}
-    mode = st.radio(
-        "Date mode", [GRID_PLANNED, GRID_ACTUAL], horizontal=True,
-        key=SK.PT_GRID_MODE, format_func=lambda m: mode_labels[m],
-        label_visibility="collapsed",
-    )
-    st.caption(t(
-        "**计划 Planned** dates are what the buy plan's Index tab prints and "
-        "what the factory form asks for. Switch to **实际 Actual** to record "
-        "what actually happened — filling an actual date marks that milestone "
-        "complete."
-    ))
+    # Factory users record progress only, so the grid is pinned to 实际 Actual
+    # (planned dates are the merchandiser's to set). Everyone else toggles.
+    if scope.can_edit_planned:
+        mode_labels = {GRID_PLANNED: t("计划 Planned"), GRID_ACTUAL: t("实际 Actual")}
+        mode = st.radio(
+            "Date mode", [GRID_PLANNED, GRID_ACTUAL], horizontal=True,
+            key=SK.PT_GRID_MODE, format_func=lambda m: mode_labels[m],
+            label_visibility="collapsed",
+        )
+        st.caption(t(
+            "**计划 Planned** dates are what the buy plan's Index tab prints and "
+            "what the factory form asks for. Switch to **实际 Actual** to record "
+            "what actually happened — filling an actual date marks that milestone "
+            "complete."
+        ))
+    else:
+        mode = GRID_ACTUAL
+        st.caption(t(
+            "Enter the **实际 Actual** date each milestone was completed — "
+            "filling a date marks it done. Planned dates are set by the "
+            "merchandiser."
+        ))
 
     # Completion at a glance, colour-coded: 🔴 overdue · 🟠 due within 7 days
     # · ✅ done · 📅 scheduled · ⬜ nothing.
@@ -1436,6 +1541,13 @@ def _render_grid_tab(records, store, po_store, username, today, admin_mode,
     ):
         saved = 0
         for (po, style), fields in changes.items():
+            # Defence in depth: the editor only shows in-scope rows, but never
+            # write one the scope forbids, and strip fields the user can't set.
+            if not scope.permits(po, style):
+                continue
+            fields = scope.sanitize_fields(fields)
+            if not fields:
+                continue
             try:
                 if store.update_stage_fields(po, style, fields,
                                              updated_by=username):
@@ -1446,12 +1558,15 @@ def _render_grid_tab(records, store, po_store, username, today, admin_mode,
         fragment_rerun()
 
     # ── Excel round-trip — edit the whole grid in a spreadsheet ─────────────
-    _render_grid_excel_io(filtered, store, username)
+    _render_grid_excel_io(filtered, store, username, scope)
 
-    # ── Advanced: the full 22-stage record (admin only, collapsed) ──────────
+    # ── Advanced: the full 22-stage record (collapsed) ──────────────────────
     # Kept verbatim so no capability is lost -- dependencies, readiness gates,
     # optional samples, expected-days and QC all still live here. The daily
-    # path above never renders any of it.
+    # path above never renders any of it. Hidden from factory users: it edits
+    # planned dates and the full stage model, beyond their progress-only remit.
+    if scope.factory_mode:
+        return
     st.divider()
     with st.expander(f"🛠 {t('Advanced — full 22-stage record')}", expanded=False):
         st.caption(t(
@@ -1875,16 +1990,25 @@ def _render_add_tab(
 # Factory Updates tab — quantity reports from factories (units cut/sewn/packed)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_buyplan_tracking_import(bp: dict, records, username) -> None:
+def _render_buyplan_tracking_import(bp: dict, records, username,
+                                    scope: "TrackScope") -> None:
     """Preview + apply the tracking columns of a returned BUY PLAN Index tab.
 
     The Index identifies rows by (客人PC NO, 款号); the tracking key is
     (Zalando PO, style), so PC+style resolve to the PO via sky_east_items.
     Only EXPECTED (计划) dates and 生产工厂 travel on this form — non-empty
     cells overwrite the stored plan; blanks never erase anything.
+
+    This carries PLANNED dates, so it's disabled for factory users (progress
+    only) and gated by ``scope`` for everyone else.
     """
     from ui.stores import get_sky_east_store
     from po_extractor.store._factory_progress_schema import MILESTONE_LABELS
+
+    if scope.factory_mode:
+        st.info(t("Returned buy plans set planned dates, which factory logins "
+                  "can't change. Ask the merchandiser to import it."))
+        return
 
     rows = bp.get("rows") or []
     st.markdown(f"**{t('Returned buy plan detected')}** — "
@@ -1918,7 +2042,7 @@ def _render_buyplan_tracking_import(bp: dict, records, username) -> None:
                        + (f", {changes}" if changes else ""))
         if not po:
             status = "❓ " + t("PO not found for this PC/style")
-        elif (po, row["style"]) not in tracked:
+        elif (po, row["style"]) not in tracked or not scope.permits(po, row["style"]):
             status = "⚠ " + t("not tracked; skipped")
         else:
             status = "✓"
@@ -1950,14 +2074,19 @@ def _render_buyplan_tracking_import(bp: dict, records, username) -> None:
         fragment_rerun()
 
 
-def _render_factory_updates_tab(records, username, admin_mode) -> None:
+def _render_factory_updates_tab(records, username, admin_mode,
+                                scope: "TrackScope") -> None:
     """Excel round-trip + manual entry for factory quantity reports.
 
     Flow: generate a request form for one factory (their tracked PO/styles
     pre-filled) → factory fills the New-quantities columns → upload the
     returned file (validated preview → import) → per-PO/style totals table.
     Each report is a dated log entry (history kept); totals are derived.
-    A future factory-login phase reuses the same store writes unchanged.
+
+    ``scope`` gates every write: an imported report or milestone update for a
+    PO/style outside the user's access is refused, and a factory user's
+    planned-date edits are dropped (progress only). ``records`` is already the
+    user's scoped set, so the tables and pickers show only permitted rows.
     """
     from ui.stores import get_factory_progress_store
     from po_extractor.store._factory_progress_schema import (
@@ -2111,7 +2240,7 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                         t("Not a recognisable progress form or buy plan:")
                         + f" {exc2}")
                 else:
-                    _render_buyplan_tracking_import(_bp, records, username)
+                    _render_buyplan_tracking_import(_bp, records, username, scope)
             if parsed is not None:
                 reports = parsed["reports"]
                 milestones = parsed.get("milestones") or []
@@ -2150,8 +2279,11 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                            if milestones else "")
                     )
                     if st.button(_btn_label, type="primary", key="pt_fu_import_go"):
-                        n = 0
+                        n = blocked = 0
                         for rp in reports:
+                            if not scope.permits(rp["po_number"], rp["style"]):
+                                blocked += 1
+                                continue
                             try:
                                 fp_store.add_report(
                                     rp["po_number"], rp["style"], rp["stage"],
@@ -2168,6 +2300,9 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                         pt_store = get_production_tracking_store()
                         n_ms = 0
                         for m in milestones:
+                            if not scope.permits(m["po_number"], m["style"]):
+                                blocked += 1
+                                continue
                             fields: dict = {}
                             if m["expected"]:
                                 fields[f"{m['stage']}_planned"] = m["expected"]
@@ -2176,6 +2311,11 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                             if m["completed"]:
                                 fields[f"{m['stage']}_actual"] = m["completed"]
                                 fields[f"{m['stage']}_status"] = "Done"
+                            # Factory users record progress only — drop any
+                            # planned/expected date from the sheet.
+                            fields = scope.sanitize_fields(fields)
+                            if not fields:
+                                continue
                             try:
                                 if pt_store.update_stage_fields(
                                     m["po_number"], m["style"], fields,
@@ -2192,6 +2332,8 @@ def _render_factory_updates_tab(records, username, admin_mode) -> None:
                             f"✅ {n} {t('report(s) imported.')}"
                             + (f" {n_ms} {t('milestone update(s) applied.')}"
                                if milestones else "")
+                            + (f" 🔒 {blocked} " + t("outside your access — not applied.")
+                               if blocked else "")
                         )
                         fragment_rerun()
 

@@ -1722,6 +1722,37 @@ _SEED: list[tuple[str, str, str, str]] = [
      '标记为「不在当前视图」的行位于当前筛选之外或已不再跟踪；若该 PO／款号'
      '仍存在，仍会被应用。', 'label', 'tracking'),
     ('not tracked; skipped.', '未跟踪，已跳过。', 'label', 'tracking'),
+
+    # Tracking — factory-scoped access (v2.93.0)
+    ("Factory view — you see only your factory's orders and record progress "
+     "against them.",
+     '工厂视图——您只能看到本工厂的订单，并对其录入进度。', 'label', 'tracking'),
+    ('No orders for your factory are being tracked yet.',
+     '暂无本工厂的订单在跟踪中。', 'label', 'tracking'),
+    ('Enter the **实际 Actual** date each milestone was completed — filling a '
+     'date marks it done. Planned dates are set by the merchandiser.',
+     '录入每个里程碑的**实际**完成日期——填写日期即表示完成。计划日期由跟单员'
+     '设置。', 'label', 'tracking'),
+    ('outside your access — not applied.', '超出您的权限——未应用。',
+     'label', 'tracking'),
+    ("Returned buy plans set planned dates, which factory logins can't change. "
+     "Ask the merchandiser to import it.",
+     '回传的采购计划会设置计划日期，工厂账号无法更改。请让跟单员导入。',
+     'label', 'tracking'),
+    ('Factory scope — Tracking (empty = all factories)',
+     '工厂权限——跟踪（留空＝全部工厂）', 'label', 'admin'),
+    ("A user with factories set sees ONLY those factories' rows in 🏭 Tracking "
+     "and may only record progress (actual dates, quantity reports, status "
+     "notes) — not planned dates, and no adding/removing rows.",
+     '设置了工厂的用户在 🏭 跟踪 中只能看到这些工厂的行，且只能录入进度'
+     '（实际日期、数量报告、状态备注）——不能设置计划日期，也不能新增／删除行。',
+     'label', 'admin'),
+    ('Set factory scope', '设置工厂权限', 'button', 'admin'),
+    ('Factory scope updated.', '工厂权限已更新。', 'label', 'admin'),
+    ('Set this to make a factory login: they see only these factories in '
+     '🏭 Tracking and can only record progress.',
+     '设置此项即为工厂账号：他们在 🏭 跟踪 中只能看到这些工厂，且只能录入进度。',
+     'label', 'admin'),
 ]
 # fmt: on
 

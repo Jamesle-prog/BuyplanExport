@@ -195,6 +195,17 @@ class ProductionTrackingStore(BaseSQLiteStore):
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
+    def list_distinct_factories(self) -> list[str]:
+        """Every non-blank factory string currently on a tracking record,
+        sorted. Feeds the admin 'assign factory to user' picker so a factory
+        user is scoped to exactly the strings that appear on real records."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT TRIM(factory) f FROM production_tracking "
+                "WHERE TRIM(COALESCE(factory,'')) != '' ORDER BY f"
+            ).fetchall()
+        return [r[0] for r in rows]
+
     def get(self, po_number: str, style: str) -> dict | None:
         """Return a single record by natural key, or None."""
         with self._conn() as conn:

@@ -9,13 +9,25 @@ from ui.shared import guard_multiselect_state
 from auth.users import (
     ALL_MODULES, MODULE_LABELS, ROLE_ADMIN, create_user, delete_user,
     get_user, list_users, set_user_companies, set_user_email,
-    set_user_modules, set_user_role,
+    set_user_factories, set_user_modules, set_user_role,
 )
+
+
+def _known_factories() -> list[str]:
+    """Factory strings a user can be scoped to — the distinct factories on
+    tracking records. Never raises: an empty list just means no factory
+    users can be assigned yet (load some orders first)."""
+    try:
+        from ui.stores import get_production_tracking_store
+        return get_production_tracking_store().list_distinct_factories()
+    except Exception:
+        return []
 
 
 def show_user_admin() -> None:
     st.subheader(f"⚙️ {t('User Management')}")
     all_companies = list_company_names()
+    all_factories = _known_factories()
     users = list_users()
 
     for uname in users:
@@ -24,10 +36,12 @@ def show_user_admin() -> None:
         cos = info.get("companies", [])
         email = info.get("email", "")
         mods = info.get("modules", [])
+        facs = info.get("factories", [])
         mod_summary = ", ".join(MODULE_LABELS.get(m, m) for m in mods) or t("all tabs")
         with st.expander(
             f"{'👑' if role == ROLE_ADMIN else '👤'} {uname}  |  {role}  |  "
             f"{t('companies:')} {', '.join(cos) or t('all (admin)')}  |  {t('tabs:')} {mod_summary}"
+            + (f"  |  🏭 {len(facs)}" if facs else "")
             + (f"  |  ✉ {email}" if email else "")
         ):
             c1, c2, c3 = st.columns([1, 2, 1])
@@ -93,6 +107,27 @@ def show_user_admin() -> None:
                 set_user_modules(uname, new_mods)
                 st.success(t("Allowed tabs updated."))
                 st.rerun()
+
+            # ── Factory scope (production tracking) ────────────────────────
+            _facs_key = f"facs_{uname}"
+            if _facs_key not in st.session_state:
+                st.session_state[_facs_key] = [f for f in facs if f in all_factories]
+            else:
+                guard_multiselect_state(_facs_key, all_factories)
+            new_facs = st.multiselect(
+                t("Factory scope — Tracking (empty = all factories)"),
+                all_factories,
+                key=_facs_key,
+                help=t("A user with factories set sees ONLY those factories' "
+                       "rows in 🏭 Tracking and may only record progress "
+                       "(actual dates, quantity reports, status notes) — not "
+                       "planned dates, and no adding/removing rows."),
+            )
+            if st.button(t("Set factory scope"), key=f"setfac_{uname}"):
+                set_user_factories(uname, new_facs)
+                st.success(t("Factory scope updated."))
+                st.rerun()
+
             new_email = st.text_input(
                 t("Email (used for sending generated files)"),
                 value=email, key=f"email_{uname}",
@@ -124,10 +159,18 @@ def show_user_admin() -> None:
         format_func=lambda m: MODULE_LABELS.get(m, m),
         key="new_mods",
     )
+    new_facs = st.multiselect(
+        t("Factory scope — Tracking (empty = all factories)"),
+        all_factories,
+        key="new_facs",
+        help=t("Set this to make a factory login: they see only these "
+               "factories in 🏭 Tracking and can only record progress."),
+    )
     if st.button(f"➕ {t('Create user')}", type="primary"):
         if new_uname and new_pw:
             create_user(new_uname, new_pw, role=new_role,
-                        companies=new_cos, email=new_email, modules=new_mods)
+                        companies=new_cos, email=new_email, modules=new_mods,
+                        factories=new_facs)
             st.success(f"{t('User')} '{new_uname}' {t('created.')}")
             st.rerun()
         else:

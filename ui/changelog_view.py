@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.93.0",
+        "date": "2026-07-22",
+        "entries": [
+            {"type": "feat", "text": "**Factory logins for Tracking.** A user can now be scoped to one or more factories (Admin → Users → *Factory scope*). A factory user sees **only their own factory's rows** in 🏭 Tracking and may record **progress only** — actual/completion dates, quantity reports, and status notes. They cannot set planned dates, cannot add or remove tracking rows, and never see other factories or the Advanced 22-stage editor. The grid is pinned to 实际 Actual for them, and the Add / Remove tab is hidden. Perfect for giving a factory contact a login to report their own progress."},
+            {"type": "security", "text": "**Client and factory scope is now enforced on every write, not just the view.** Previously a scoped user's Excel or factory-form upload could apply to any PO in the file — including clients they can't see. Now every apply path (grid save, grid Excel import, factory progress-form import, returned buy-plan import) checks each row against the user's access and refuses out-of-scope rows, reporting how many were blocked. A factory user's planned-date edits are stripped on import. Scoping is real now, not cosmetic."},
+            {"type": "feat", "text": "Client-scoped users (e.g. a Sky East-only account) are unchanged in spirit but now genuinely can't reach another client's tracking rows through a crafted upload. Admins are unrestricted as before."},
+        ],
+    },
+    {
         "version": "2.92.0",
         "date": "2026-07-22",
         "entries": [
