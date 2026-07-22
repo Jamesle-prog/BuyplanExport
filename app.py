@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.93.0"
+APP_VERSION = "2.94.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -459,10 +459,20 @@ def _show_email_tab(admin_mode: bool) -> None:
 
 
 def _show_admin_panel():
-    (admin_tab_users, admin_tab_cos, admin_tab_schema, admin_tab_sizes,
-     admin_tab_tpl, admin_tab_pipe, admin_tab_bsr, admin_tab_smtp,
-     admin_tab_i18n, admin_tab_settings) = st.tabs(
-        [f"👤 {t('Users')}", f"🏢 {t('Companies')}", f"📋 {t('Column Mapping')}",
+    # Badge the Factories tab with the count of unresolved factory names so an
+    # admin sees at a glance that loaded POs introduced names needing review.
+    try:
+        from ui.stores import get_factory_registry_store
+        _fac_pending = get_factory_registry_store().unresolved_count()
+    except Exception:
+        _fac_pending = 0
+    _fac_label = f"🏭 {t('Factories')}" + (f" ({_fac_pending})" if _fac_pending else "")
+
+    (admin_tab_users, admin_tab_cos, admin_tab_fac, admin_tab_schema,
+     admin_tab_sizes, admin_tab_tpl, admin_tab_pipe, admin_tab_bsr,
+     admin_tab_smtp, admin_tab_i18n, admin_tab_settings) = st.tabs(
+        [f"👤 {t('Users')}", f"🏢 {t('Companies')}", _fac_label,
+         f"📋 {t('Column Mapping')}",
          f"📐 {t('Size Order')}", f"📄 {t('Templates')}", f"🧩 {t('Pipeline Layouts')}",
          f"🚢 {t('船样要求')}", f"📧 {t('Email')}", f"🌐 {t('Translations')}",
          f"⚙️ {t('Settings')}"]
@@ -470,6 +480,10 @@ def _show_admin_panel():
 
     with admin_tab_cos:
         _show_company_admin()
+
+    with admin_tab_fac:
+        from ui.admin_factories import show_factory_admin
+        show_factory_admin()
 
     with admin_tab_users:
         _show_user_admin()

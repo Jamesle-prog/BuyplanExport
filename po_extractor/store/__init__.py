@@ -22,6 +22,7 @@ from .production_tracking_store import ProductionTrackingStore
 from .factory_progress_store import FactoryProgressStore
 from .cmpt_contract_store import CmptContractStore
 from .email_inbox_store import EmailInboxStore
+from .factory_registry_store import FactoryRegistryStore
 
 
 def _db_path() -> str:
@@ -202,6 +203,11 @@ def get_email_inbox_store() -> EmailInboxStore:
     return EmailInboxStore(_db_path())
 
 
+def get_factory_registry_store() -> FactoryRegistryStore:
+    """Return a fresh FactoryRegistryStore wired to the canonical DB."""
+    return FactoryRegistryStore(_db_path())
+
+
 # ── Cross-store helpers ──────────────────────────────────────────────────────
 
 def list_all_brands(company: str) -> list[str]:
@@ -229,11 +235,12 @@ __all__ = [
     "POStore", "SkyEastStore", "FabricMasterStore",
     "ColorTranslationStore", "BoatSampleStore", "UITranslationStore",
     "AppSettingsStore", "ProductionTrackingStore", "FactoryProgressStore",
-    "CmptContractStore", "EmailInboxStore",
+    "CmptContractStore", "EmailInboxStore", "FactoryRegistryStore",
     "get_po_store", "get_sky_east_store", "get_fabric_master_store",
     "get_color_translation_store", "get_boat_sample_store",
     "get_ui_translation_store", "get_app_settings_store",
     "get_production_tracking_store", "get_factory_progress_store",
     "get_cmpt_contract_store", "get_email_inbox_store",
+    "get_factory_registry_store",
     "list_all_brands", "count_fabric_rows",
 ]

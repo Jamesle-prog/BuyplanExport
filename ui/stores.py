@@ -35,6 +35,7 @@ from po_extractor.store import (
     FactoryProgressStore,
     CmptContractStore,
     EmailInboxStore,
+    FactoryRegistryStore,
     get_po_store as _get_po_store,
     get_sky_east_store as _get_sky_east_store,
     get_fabric_master_store as _get_fabric_master_store,
@@ -46,6 +47,7 @@ from po_extractor.store import (
     get_factory_progress_store as _get_factory_progress_store,
     get_cmpt_contract_store as _get_cmpt_contract_store,
     get_email_inbox_store as _get_email_inbox_store,
+    get_factory_registry_store as _get_factory_registry_store,
     list_all_brands as _list_all_brands,
 )
 from po_extractor.config import DATA_DIR, DB_PATH   # canonical path constants
@@ -168,6 +170,13 @@ def get_email_inbox_store() -> EmailInboxStore:
     """Return the cached EmailInboxStore (same ``functools.cache``
     rationale as get_production_tracking_store above)."""
     return _get_email_inbox_store()
+
+
+@functools.cache
+def get_factory_registry_store() -> FactoryRegistryStore:
+    """Return the cached FactoryRegistryStore (same ``functools.cache``
+    rationale as get_production_tracking_store above)."""
+    return _get_factory_registry_store()
 
 
 # ── Convenience helpers exported for UI code ────────────────────────────────

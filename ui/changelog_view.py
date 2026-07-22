@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.94.0",
+        "date": "2026-07-22",
+        "entries": [
+            {"type": "feat", "text": "**Factory dictionary — one factory, many names.** Different clients write the same factory differently (\"01423 - CHANGZHOU JINTAN XINZHUAN\" vs \"…XINZHUANGYUAN GARMENT CO.,LTD.\" vs a bare code), so the same factory looked like several. A new **Admin → 🏭 Factories** tab holds a canonical factory and every alias that maps to it."},
+            {"type": "feat", "text": "**Unknown names are caught and queued for review.** When a loaded PO carries a factory name that isn't in the dictionary, it shows up under *Needs review* (the tab title carries a count badge). For each, the admin either links it as an alias of an existing factory — a fuzzy suggestion, matched on the shared code like \"01423\", is pre-selected — or approves it as a new factory. Regular users keep loading POs uninterrupted; nothing is auto-added without an admin's say-so."},
+            {"type": "feat", "text": "**Factory logins now follow the canonical factory.** A factory-scoped user (v2.93.0) is assigned a canonical factory, and Tracking matches every one of its aliases — so a single assignment covers all the client-specific spellings, and the near-duplicate-name problem is gone. Assignments made before the dictionary existed still match by exact name."},
+        ],
+    },
+    {
         "version": "2.93.0",
         "date": "2026-07-22",
         "entries": [

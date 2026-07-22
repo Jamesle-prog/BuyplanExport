@@ -14,9 +14,17 @@ from auth.users import (
 
 
 def _known_factories() -> list[str]:
-    """Factory strings a user can be scoped to — the distinct factories on
-    tracking records. Never raises: an empty list just means no factory
-    users can be assigned yet (load some orders first)."""
+    """Factory names a user can be scoped to. Prefers the canonical factories
+    from the dictionary (so one assignment covers all a factory's client
+    spellings); falls back to the raw distinct strings on tracking records
+    when the dictionary is empty. Never raises."""
+    try:
+        from ui.stores import get_factory_registry_store
+        canon = get_factory_registry_store().canonical_names()
+        if canon:
+            return canon
+    except Exception:
+        pass
     try:
         from ui.stores import get_production_tracking_store
         return get_production_tracking_store().list_distinct_factories()

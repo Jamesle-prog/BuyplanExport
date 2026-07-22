@@ -1753,6 +1753,45 @@ _SEED: list[tuple[str, str, str, str]] = [
      '🏭 Tracking and can only record progress.',
      '设置此项即为工厂账号：他们在 🏭 跟踪 中只能看到这些工厂，且只能录入进度。',
      'label', 'admin'),
+
+    # Admin — Factory Dictionary (v2.94.0)
+    ('Factories', '工厂', 'tab', 'admin'),
+    ('Factory Dictionary', '工厂字典', 'label', 'admin'),
+    ('Different clients write the same factory differently. Link each name to '
+     'one canonical factory so tracking and factory logins treat them as one.',
+     '不同客户对同一工厂的写法不同。将每个名称链接到一个标准工厂，使跟踪和'
+     '工厂账号将其视为同一工厂。', 'label', 'admin'),
+    ('Needs review', '待审核', 'label', 'admin'),
+    ('Every factory name in your data is in the dictionary.',
+     '数据中的所有工厂名称都已在字典中。', 'label', 'admin'),
+    ("These factory names appear on loaded POs but aren't linked yet. For "
+     "each, link it to an existing factory (it's just a different name) or "
+     "add it as a new factory.",
+     '这些工厂名称出现在已载入的 PO 中但尚未链接。请为每个名称链接到现有工厂'
+     '（只是不同写法）或添加为新工厂。', 'label', 'admin'),
+    ('Looks like', '疑似', 'label', 'admin'),
+    ('Resolve', '处理', 'label', 'admin'),
+    ('Link to existing factory', '链接到现有工厂', 'label', 'admin'),
+    ('Add as new factory', '添加为新工厂', 'label', 'admin'),
+    ('Canonical factory', '标准工厂', 'label', 'admin'),
+    ('Link', '链接', 'button', 'admin'),
+    ('New factory name', '新工厂名称', 'label', 'admin'),
+    ('Short code (optional)', '简码（可选）', 'label', 'admin'),
+    ('Add factory', '添加工厂', 'button', 'admin'),
+    ('Dictionary', '字典', 'label', 'admin'),
+    ('Add a factory', '添加工厂', 'label', 'admin'),
+    ('Factory name', '工厂名称', 'label', 'admin'),
+    ('Code', '简码', 'label', 'admin'),
+    ('No factories yet. Add one above, or resolve a name under Needs review.',
+     '暂无工厂。请在上方添加，或在「待审核」中处理某个名称。', 'label', 'admin'),
+    ('names', '个名称', 'label', 'admin'),
+    ('Client-specific names that map to this factory:',
+     '映射到此工厂的客户专用名称：', 'label', 'admin'),
+    ('Remove this name', '移除此名称', 'label', 'admin'),
+    ('Add another name for this factory', '为此工厂添加另一个名称',
+     'label', 'admin'),
+    ('Add name', '添加名称', 'button', 'admin'),
+    ('Delete factory', '删除工厂', 'button', 'admin'),
 ]
 # fmt: on
 

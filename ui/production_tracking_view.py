@@ -718,8 +718,15 @@ def show_production_tracking_tab(
         records = store.list_all(companies=user_cos)
 
     if factory_mode:
-        fset = {f.strip() for f in user_factories}
-        records = [r for r in records if (r.get("factory") or "").strip() in fset]
+        # Resolve through the factory dictionary so one assignment (a canonical
+        # factory) covers every client-specific spelling of it. Falls back to
+        # exact-string match when the name isn't in the dictionary yet.
+        from po_extractor.store import get_factory_registry_store
+        from po_extractor.store.factory_registry_store import norm as _fac_norm
+        allowed_norm = get_factory_registry_store().scope_norms_for_names(
+            user_factories)
+        records = [r for r in records
+                   if _fac_norm(r.get("factory") or "") in allowed_norm]
 
     allowed_keys = frozenset(
         ((r.get("po_number") or "").strip(), (r.get("style") or "").strip())
