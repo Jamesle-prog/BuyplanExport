@@ -1,10 +1,42 @@
 """User management — bcrypt-hashed passwords + role + company assignments."""
+from __future__ import annotations
+
 import json
 import os
 
-import bcrypt
+# NOTE: bcrypt is imported lazily (see _bcrypt()) — it's a compiled extension
+# that costs ~150 ms to import, and its hash routine another ~100 ms per call
+# by design. Nothing before login needs it, but this module is pulled in at
+# the very top of app.py, so an eager ``import bcrypt`` (plus the module-level
+# dummy-hash that used to live here) put a quarter-second on every cold start
+# and on the login page. It is loaded the first time a password is actually
+# hashed or checked.
 
 _USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
+
+_bcrypt_mod = None            # cached bcrypt module (populated on first use)
+_dummy_hash: bytes | None = None   # timing-pad hash, computed once on demand
+
+
+def _bcrypt():
+    """Import bcrypt on first use and cache it on the module."""
+    global _bcrypt_mod
+    if _bcrypt_mod is None:
+        import bcrypt
+        _bcrypt_mod = bcrypt
+    return _bcrypt_mod
+
+
+def _timing_pad_hash() -> bytes:
+    """A throwaway hash used to equalise ``verify_password`` timing when the
+    username doesn't exist — an instant return would let an attacker tell
+    valid usernames from invalid ones by response time. Computed lazily so a
+    full bcrypt hash never runs at import."""
+    global _dummy_hash
+    if _dummy_hash is None:
+        b = _bcrypt()
+        _dummy_hash = b.hashpw(b"__timing_pad__", b.gensalt())
+    return _dummy_hash
 
 # Roles
 ROLE_ADMIN = "admin"
@@ -89,7 +121,8 @@ def create_user(username: str, password: str,
     if not username or not password:
         raise ValueError("Username and password are required")
     users = _load()
-    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    b = _bcrypt()
+    hashed = b.hashpw(password.encode(), b.gensalt()).decode()
     existing = users.get(username, {})
     users[username] = {
         "password": hashed,
@@ -101,23 +134,20 @@ def create_user(username: str, password: str,
     _save(users)
 
 
-# Throwaway hash used to equalise timing when the username doesn't exist —
-# an instant return let attackers distinguish valid usernames from invalid
-# ones by response time (missing user ≈ instant; real user ≈ full bcrypt).
-_DUMMY_HASH = bcrypt.hashpw(b"__timing_pad__", bcrypt.gensalt()).decode()
-
-
 def verify_password(username: str, password: str) -> bool:
     if not username or not password:
         return False
+    b = _bcrypt()
     users = _load()
     rec = users.get(username)
     if not rec:
-        bcrypt.checkpw(password.encode(), _DUMMY_HASH.encode())
+        # Spend the same time as a real check so a missing username can't be
+        # distinguished from a wrong password by response time.
+        b.checkpw(password.encode(), _timing_pad_hash())
         return False
     try:
         h = rec["password"] if isinstance(rec, dict) else rec
-        return bcrypt.checkpw(password.encode(), h.encode())
+        return b.checkpw(password.encode(), h.encode())
     except Exception:
         return False
 

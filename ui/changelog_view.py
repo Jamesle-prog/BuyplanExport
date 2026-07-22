@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.91.1",
+        "date": "2026-07-22",
+        "entries": [
+            {"type": "perf", "text": "**The app starts and the login page appears far faster.** Two things were loading the entire program before you could even see the sign-in box. First, the view layer (every tab — Sky East, Fabric DB, GIII, the exporters and their pandas/Excel machinery) was imported up-front the moment anything from the `ui` package was touched, so the login screen paid for tabs a logged-out user never sees. It now loads each tab only when you open it. Second, the login module ran a full password-hash at import purely as a timing safeguard, and pulled in the (slow-to-load) crypto library on every start; both now happen only on the first actual sign-in. Cold start of the app module dropped from ~1.6 s to ~0.6 s, and nothing heavy (pandas, Excel, image, PDF or crypto libraries) loads until a signed-in user opens a tab that needs it."},
+        ],
+    },
+    {
         "version": "2.91.0",
         "date": "2026-07-21",
         "entries": [
