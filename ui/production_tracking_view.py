@@ -1272,6 +1272,98 @@ def _render_autoplan_section(records, store, username, today) -> None:
                 fragment_rerun()
 
 
+def _render_grid_excel_io(filtered, store, username) -> None:
+    """Download the visible grid as Excel, edit it there, and upload to apply.
+
+    A faster path than typing into the on-screen editor for a whole season:
+    the export carries every milestone's Planned and Actual date, and the
+    import applies them exactly the way the grid does (a filled Actual marks
+    the milestone done; a blank cell never erases). Only rows that are still
+    tracked are updated — anything else is reported, never silently dropped.
+    """
+    from po_extractor.exporters.tracking_grid_xlsx import (
+        build_tracking_grid_xlsx, parse_tracking_grid_xlsx,
+    )
+
+    with st.expander(f"📊 {t('Excel export / import')}", expanded=False):
+        st.caption(t(
+            "Download the rows shown above as an Excel table, edit the "
+            "Planned / Actual dates in Excel, then upload it here to apply. A "
+            "blank cell never erases a stored date."
+        ))
+        st.download_button(
+            f"⬇️ {t('Export grid to Excel')}",
+            data=build_tracking_grid_xlsx(filtered),
+            file_name=f"Tracking_{date.today().isoformat()}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="pt_grid_xlsx_dl",
+        )
+
+        st.divider()
+        uploaded = st.file_uploader(
+            t("Upload edited tracking table (.xlsx)"), type=["xlsx", "xlsm"],
+            key="pt_grid_xlsx_up", label_visibility="collapsed",
+        )
+        if uploaded is None:
+            return
+
+        try:
+            parsed = parse_tracking_grid_xlsx(uploaded.getvalue())
+        except ValueError as exc:
+            st.error(f"{t('Could not read this file:')} {exc}")
+            return
+
+        for issue in parsed["issues"]:
+            st.warning(f"⚠️ {issue}")
+        rows = parsed["rows"]
+        if not rows:
+            st.info(t("No date changes found in this file."))
+            return
+
+        # Preview: how many milestone dates each PO/style would receive, and
+        # flag rows that aren't tracked (typo guard) before anything is written.
+        tracked = {(r.get("po_number", ""), r.get("style") or "") for r in filtered}
+        prev, untracked = [], 0
+        for row in rows:
+            key = (row["po_number"], row["style"])
+            n_dates = sum(1 for k in row["fields"] if k.endswith(("_planned", "_actual")))
+            is_tracked = key in tracked
+            untracked += 0 if is_tracked else 1
+            prev.append({
+                "PO Number": row["po_number"], "Style": row["style"],
+                "Dates": n_dates,
+                "Status": "✓" if is_tracked else ("⚠ " + t("not in the current view")),
+            })
+        st.dataframe(pd.DataFrame(prev), width="stretch", hide_index=True,
+                     height=min(60 + 35 * len(prev), 320))
+        if untracked:
+            st.caption("⚠️ " + t(
+                "Rows marked not-in-view are outside the current filter or no "
+                "longer tracked; they are still applied if the PO/style exists."))
+
+        if st.button(f"✅ {t('Apply')} {len(rows)} {t('row(s)')}",
+                     type="primary", key="pt_grid_xlsx_apply"):
+            applied = skipped = 0
+            for row in rows:
+                try:
+                    if store.update_stage_fields(
+                            row["po_number"], row["style"], row["fields"],
+                            updated_by=username):
+                        applied += 1
+                    else:
+                        skipped += 1
+                        st.warning(
+                            f"⚠️ {row['po_number']} / {row['style']} — "
+                            + t("not tracked; skipped."))
+                except ValueError as exc:
+                    skipped += 1
+                    st.error(f"{row['po_number']} / {row['style']}: {exc}")
+            st.success(
+                f"✅ {applied} {t('record(s) updated.')}"
+                + (f" {skipped} {t('skipped')}." if skipped else ""))
+            fragment_rerun()
+
+
 def _render_grid_tab(records, store, po_store, username, today, admin_mode,
                      user_cos) -> None:
     """One-page milestone grid + (admin) the full 22-stage editor."""
@@ -1352,6 +1444,9 @@ def _render_grid_tab(records, store, po_store, username, today, admin_mode,
                 st.error(f"{po} / {style}: {exc}")
         st.success(f"✅ {saved} {t('record(s) updated.')}")
         fragment_rerun()
+
+    # ── Excel round-trip — edit the whole grid in a spreadsheet ─────────────
+    _render_grid_excel_io(filtered, store, username)
 
     # ── Advanced: the full 22-stage record (admin only, collapsed) ──────────
     # Kept verbatim so no capability is lost -- dependencies, readiness gates,

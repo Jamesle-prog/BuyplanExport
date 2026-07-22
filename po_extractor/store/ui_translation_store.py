@@ -1702,6 +1702,26 @@ _SEED: list[tuple[str, str, str, str]] = [
      'label', 'tracking'),
     ('Add them to see their milestones here.', '添加后即可在此查看其里程碑。',
      'label', 'tracking'),
+
+    # Tracking — grid Excel export/import (v2.92.0)
+    ('Excel export / import', 'Excel 导出 / 导入', 'label', 'tracking'),
+    ('Download the rows shown above as an Excel table, edit the Planned / '
+     'Actual dates in Excel, then upload it here to apply. A blank cell never '
+     'erases a stored date.',
+     '将上方显示的行下载为 Excel 表格，在 Excel 中编辑计划／实际日期，然后在此'
+     '上传即可应用。留空的单元格不会清除已有日期。', 'label', 'tracking'),
+    ('Export grid to Excel', '导出表格到 Excel', 'button', 'tracking'),
+    ('Upload edited tracking table (.xlsx)', '上传编辑后的跟踪表 (.xlsx)',
+     'label', 'tracking'),
+    ('Could not read this file:', '无法读取此文件：', 'label', 'tracking'),
+    ('No date changes found in this file.', '此文件中未发现日期更改。',
+     'label', 'tracking'),
+    ('not in the current view', '不在当前视图中', 'label', 'tracking'),
+    ('Rows marked not-in-view are outside the current filter or no longer '
+     'tracked; they are still applied if the PO/style exists.',
+     '标记为「不在当前视图」的行位于当前筛选之外或已不再跟踪；若该 PO／款号'
+     '仍存在，仍会被应用。', 'label', 'tracking'),
+    ('not tracked; skipped.', '未跟踪，已跳过。', 'label', 'tracking'),
 ]
 # fmt: on
 

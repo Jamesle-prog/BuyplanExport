@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.92.0",
+        "date": "2026-07-22",
+        "entries": [
+            {"type": "feat", "text": "**Edit the whole Tracking Grid in Excel.** A new **📊 Excel export / import** panel under the grid lets you download the rows you're looking at as a spreadsheet, edit the milestone dates in Excel, and upload it back to apply — much faster than typing into the on-screen table for a whole season. The export carries both the **计划 Planned** and **实际 Actual** date of all nine milestones (colour-coded blue/green), so nothing is lost in the round-trip. On import you get a preview of how many dates each PO/style will receive before anything is written."},
+            {"type": "feat", "text": "The import is deliberately safe: columns are matched by their header text (so reordering columns in Excel doesn't scramble anything), a **blank cell never erases** a stored date (clear a date in the on-screen grid instead), a filled Actual date marks that milestone done — exactly like the grid — and a mistyped date is reported and skipped rather than poisoning the whole file. Rows whose PO/style is no longer tracked are flagged and skipped, never silently dropped."},
+        ],
+    },
+    {
         "version": "2.91.2",
         "date": "2026-07-22",
         "entries": [
