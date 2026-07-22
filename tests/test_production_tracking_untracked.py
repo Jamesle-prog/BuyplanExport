@@ -94,3 +94,26 @@ def test_tracked_sky_east_po_drops_out_of_untracked(stores):
     )
     rows = pt_store.list_untracked_pos(po_store, companies=None, allow_all=True)
     assert _po_numbers(rows) == {"PO-GIII-1"}
+
+
+def test_bulk_track_creates_records_and_clears_untracked(stores):
+    """The grid banner's 'Track all new' one-click: every untracked PO/style
+    (GIII + Sky East) becomes a tracked record, and the untracked list then
+    empties. Locks the v2.91.2 fix for 'loaded contracts don't show up'."""
+    from ui.production_tracking_view import _bulk_track
+
+    po_store, pt_store, _ = stores
+    untracked = pt_store.list_untracked_pos(po_store, companies=None,
+                                            allow_all=True)
+    assert _po_numbers(untracked) == {"PO-GIII-1", "PO-SE-1"}
+
+    n = _bulk_track(pt_store, untracked, "tester")
+    assert n == 2
+
+    tracked = {(r["po_number"], r.get("style") or "")
+               for r in pt_store.list_all(allow_all=True)}
+    assert ("PO-GIII-1", "STY-G1") in tracked
+    assert ("PO-SE-1", "STY-S1") in tracked
+    # Nothing left to offer once everything shown has been added.
+    assert pt_store.list_untracked_pos(po_store, companies=None,
+                                       allow_all=True) == []

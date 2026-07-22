@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.91.2",
+        "date": "2026-07-22",
+        "entries": [
+            {"type": "fix", "text": "**Newly-loaded orders now show up on the Tracking Grid.** Loading contracts — Sky East orders especially — never made them appear in the grid, because tracking rows are only created when you add them, and the only place to do that was buried in the **➕ Add / Remove** tab. The grid now shows a banner at the top — *“N loaded PO/style(s) are not tracked yet”*, broken down by client — with a **Track all N new** button right there. One click creates empty tracking rows for every untracked order (their milestones then fill in from the buy plan and factory reports as usual). Nothing is auto-added — the grid stays opt-in — but the orders you just loaded are now one click from the grid instead of hidden. The banner also shows even when nothing is tracked yet, so a fresh install can populate the grid immediately."},
+        ],
+    },
+    {
         "version": "2.91.1",
         "date": "2026-07-22",
         "entries": [

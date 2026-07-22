@@ -685,7 +685,8 @@ def show_production_tracking_tab(
 
     # ── Dispatch ───────────────────────────────────────────────────────────
     if active_label == _TAB_LABELS[TAB_GRID]:
-        _render_grid_tab(records, store, username, today, admin_mode)
+        _render_grid_tab(records, store, po_store, username, today,
+                         admin_mode, user_cos)
     elif active_label == _TAB_LABELS[TAB_ADD]:
         _render_add_tab(store, po_store, username, user_cos=user_cos,
                         admin_mode=admin_mode, records=records)
@@ -1271,14 +1272,24 @@ def _render_autoplan_section(records, store, username, today) -> None:
                 fragment_rerun()
 
 
-def _render_grid_tab(records, store, username, today, admin_mode) -> None:
+def _render_grid_tab(records, store, po_store, username, today, admin_mode,
+                     user_cos) -> None:
     """One-page milestone grid + (admin) the full 22-stage editor."""
+    # Newly-loaded contracts that aren't tracked yet — surfaced right here
+    # with a one-click "Track all", so loading orders makes them visible on
+    # the grid instead of hidden in the Add / Remove tab.
+    had_untracked = _render_untracked_banner(
+        store, po_store, username, user_cos, admin_mode)
+
     if not records:
-        st.info(t(
-            "Nothing tracked yet — use **➕ Add / Remove** to start tracking "
-            "PO/styles, then fill their milestone dates here."
-        ))
+        if not had_untracked:
+            st.info(t(
+                "Nothing tracked yet — use **➕ Add / Remove** to start tracking "
+                "PO/styles, then fill their milestone dates here."
+            ))
         return
+    if had_untracked:
+        st.divider()
 
     filtered = _render_progress_filters(records, "pt_grid")
     if not filtered:
@@ -1549,6 +1560,71 @@ def _default_tracking_payload() -> tuple[dict, dict, dict]:
     return stage_fields, dep_fields, qc_fields
 
 
+def _bulk_track(store, rows: list[dict], username: str) -> int:
+    """Create an empty tracking record for every (po, style) in *rows*.
+
+    Shared by the grid's "Track all new" banner and the Add tab's bulk
+    button so both create identical starter records. Returns how many were
+    written.
+    """
+    stage_fields, dep_fields, qc_fields = _default_tracking_payload()
+    n = 0
+    for row in rows:
+        store.upsert(
+            po_number=row["po_number"],
+            style=row.get("style") or "",
+            factory=row.get("factory") or "",
+            company=row.get("company") or "",
+            updated_by=username,
+            overall_notes="",
+            use_substitute_materials=1,
+            stage_fields=dict(stage_fields),
+            dep_fields=dict(dep_fields),
+            qc_fields=dict(qc_fields),
+        )
+        n += 1
+    return n
+
+
+def _render_untracked_banner(store, po_store, username, user_cos,
+                             admin_mode) -> bool:
+    """Show a one-click 'Track all N new' banner when loaded contracts (GIII
+    or Sky East) aren't tracked yet. Returns True if any were shown.
+
+    This keeps tracking opt-in — nothing is added until the button is
+    pressed — while making newly-loaded orders visible right on the grid
+    instead of hidden behind the Add / Remove tab.
+    """
+    untracked = store.list_untracked_pos(
+        po_store,
+        companies=user_cos if not admin_mode else None,
+        allow_all=admin_mode,
+    )
+    if not untracked:
+        return False
+
+    from collections import Counter
+    by_client = Counter((r.get("company") or t("Unknown")) for r in untracked)
+    breakdown = " · ".join(f"{client}: {k}" for client, k in
+                           sorted(by_client.items()))
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        st.info(
+            f"➕ {len(untracked)} "
+            + t("loaded PO/style(s) are not tracked yet")
+            + f"  ({breakdown}). "
+            + t("Add them to see their milestones here.")
+        )
+    with c2:
+        if st.button(f"➕ {t('Track all')} {len(untracked)} {t('new')}",
+                     key="pt_grid_track_all", type="primary",
+                     use_container_width=True):
+            n = _bulk_track(store, untracked, username)
+            st.success(f"✅ {n} {t('record(s) now tracked.')}")
+            fragment_rerun()
+    return True
+
+
 def _render_remove_section(store, records: list[dict]) -> None:
     """Stop tracking selected PO/styles. Deletes ONLY the tracking record —
     the underlying PO/order data is untouched (see store.delete)."""
@@ -1691,22 +1767,7 @@ def _render_add_tab(
         f"➕ {t('Track all')} {len(untracked)} {t('shown')}",
         use_container_width=True, key="pt_add_all",
     ):
-        stage_fields, dep_fields, qc_fields = _default_tracking_payload()
-        n = 0
-        for row in untracked:
-            store.upsert(
-                po_number=row["po_number"],
-                style=row.get("style") or "",
-                factory=row.get("factory") or "",
-                company=row.get("company") or "",
-                updated_by=username,
-                overall_notes="",
-                use_substitute_materials=1,
-                stage_fields=dict(stage_fields),
-                dep_fields=dict(dep_fields),
-                qc_fields=dict(qc_fields),
-            )
-            n += 1
+        n = _bulk_track(store, untracked, username)
         st.success(f"✅ {n} {t('record(s) now tracked.')}")
         st.session_state[SK.PT_ACTIVE_TAB] = TAB_GRID
         st.session_state.pop("pt_tab_radio", None)

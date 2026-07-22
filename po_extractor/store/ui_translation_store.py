@@ -1695,6 +1695,13 @@ _SEED: list[tuple[str, str, str, str]] = [
     # Tracking — overdue notification (v2.91.0)
     ('planned', '计划', 'label', 'tracking'),
     ('Email the overdue list', '邮件发送逾期清单', 'button', 'tracking'),
+
+    # Tracking — untracked-orders banner (v2.91.2)
+    ('Unknown', '未知', 'label', 'tracking'),
+    ('loaded PO/style(s) are not tracked yet', '个已载入的 PO/款号尚未跟踪',
+     'label', 'tracking'),
+    ('Add them to see their milestones here.', '添加后即可在此查看其里程碑。',
+     'label', 'tracking'),
 ]
 # fmt: on
 
