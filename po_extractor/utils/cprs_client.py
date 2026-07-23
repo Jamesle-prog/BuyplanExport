@@ -346,6 +346,37 @@ class CprsClient:
         except Exception:
             return None
 
+    def export_doc_suite(self, body: dict) -> dict | None:
+        """POST /export/doc-suite (CPRS ≥1.6.15) — the full document pack.
+
+        One call returns a ZIP holding the factory requirements HTML, the
+        bilingual packing cards, the rules-driven trim list (.xlsx), the
+        internal (priced) requirements HTML, and a manifest.json. *body* is
+        the same decoded /evaluate context + pos/notes/pending as
+        :meth:`export_requirements_doc`; CPRS builds everything — the app
+        stores the returned ZIP verbatim.
+
+        Returns ``{"zip": bytes, "run_id": str, "card_count": str,
+        "image_count": str}`` or ``None``. Uncached; generous timeout — the
+        observed pack is ~13 MB with embedded images.
+        """
+        if not self.base:
+            return None
+        try:
+            import requests
+            r = requests.post(self.base + "/export/doc-suite",
+                              json=body, headers=self._headers(), timeout=300)
+            if r.status_code != 200:
+                return None
+            return {
+                "zip": r.content,
+                "run_id": r.headers.get("X-CPRS-Run-Id", ""),
+                "card_count": r.headers.get("X-CPRS-Card-Count", ""),
+                "image_count": r.headers.get("X-CPRS-Image-Count", ""),
+            }
+        except Exception:
+            return None
+
     def manual_image(self, image_id: str) -> bytes | None:
         """Fetch a requirement's illustrative artwork as raw bytes."""
         if not (self.base and image_id):

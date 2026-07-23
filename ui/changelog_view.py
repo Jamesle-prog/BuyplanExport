@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.99.0",
+        "date": "2026-07-23",
+        "entries": [
+            {"type": "feat", "text": "**One click now fetches the whole CPRS document pack.** The 🧭 section (upload panel and Generate / Export alike) gained a mode choice: **📦 Full doc suite** calls CPRS's new `/export/doc-suite` (≥1.6.15) and returns one ZIP per order context containing the factory requirements (no commercial info — safe to forward), bilingual packing cards with per-carton panels (18 kg cap, 1-SKU-solid and similar rules pre-applied), the rules-driven 辅料 trim list (.xlsx, with order-quantity formulas and tracking dropdowns), the internal priced variant, and a manifest. The single-HTML requirements doc remains available as the second mode."},
+            {"type": "feat", "text": "Same pass-through contract as before: the decoded /evaluate context plus your PO register and confirmed notes go to CPRS verbatim, and the returned pack is saved untouched — the suite already includes both variants, so no variant choice (and no app-side filtering) applies in suite mode."},
+        ],
+    },
+    {
         "version": "2.98.0",
         "date": "2026-07-23",
         "entries": [

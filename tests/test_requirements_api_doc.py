@@ -196,6 +196,39 @@ def test_export_requirements_doc_none_without_base():
     assert c.export_requirements_doc({"brand": "DKNY"}) is None
 
 
+def test_export_doc_suite_returns_zip_and_headers(monkeypatch):
+    from po_extractor.utils import cprs_client as mod
+
+    class _Resp:
+        status_code = 200
+        content = b"PK\x03\x04suite"
+        headers = {"X-CPRS-Run-Id": "r9", "X-CPRS-Card-Count": "57",
+                   "X-CPRS-Image-Count": "51"}
+
+    class _Requests:
+        @staticmethod
+        def post(url, json=None, headers=None, timeout=None):
+            assert url.endswith("/api/v1/export/doc-suite")
+            # Same decoded-context body as the single-doc endpoint; the
+            # suite includes both variants so no variant key is sent.
+            assert "variant" not in json
+            assert json["pos"][0]["order"] == "A1"
+            return _Resp()
+
+    import sys
+    monkeypatch.setitem(sys.modules, "requests", _Requests)
+    c = mod.CprsClient("http://localhost:3100")
+    out = c.export_doc_suite({"clientId": "x", "channel": "WHOLESALE",
+                              "pos": [{"order": "A1"}]})
+    assert out["zip"].startswith(b"PK")
+    assert (out["run_id"], out["card_count"]) == ("r9", "57")
+
+
+def test_export_doc_suite_none_without_base():
+    from po_extractor.utils.cprs_client import CprsClient
+    assert CprsClient("").export_doc_suite({}) is None
+
+
 def test_export_requirements_doc_returns_html_and_headers(monkeypatch):
     from po_extractor.utils import cprs_client as mod
 

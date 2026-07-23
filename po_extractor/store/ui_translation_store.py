@@ -1844,6 +1844,20 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('card(s)', '张卡片', 'label', 'giii'),
     ('image(s)', '张图片', 'label', 'giii'),
     ('Requirements pack (.zip)', '要求文档包 (.zip)', 'label', 'giii'),
+
+    # GIII — CPRS doc-suite endpoint (v2.99.0)
+    ('API documents (CPRS)', 'API 文档（CPRS）', 'label', 'giii'),
+    ('What to generate', '生成内容', 'label', 'giii'),
+    ('📦 Full doc suite (factory + packing + trim list + internal)',
+     '📦 完整文档包（工厂版＋装箱＋辅料清单＋内部版）', 'label', 'giii'),
+    ('Single requirements doc (HTML)', '单份要求文档（HTML）', 'label', 'giii'),
+    ('One ZIP per order context, built entirely by CPRS: factory '
+     'requirements (no prices), bilingual packing cards with per-carton '
+     'panels, the rules-driven trim list (.xlsx) with order-quantity '
+     'formulas, the internal priced variant, and a manifest.',
+     '每个订单上下文一个 ZIP，全部由 CPRS 生成：工厂版要求（不含价格）、含'
+     '每箱面板的双语装箱卡、带订购数公式的规则驱动辅料清单 (.xlsx)、含价格'
+     '的内部版，以及 manifest 清单。', 'label', 'giii'),
 ]
 # fmt: on
 
