@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.100.0",
+        "date": "2026-07-23",
+        "entries": [
+            {"type": "feat", "text": "**Upload the buyer's DSP file — the trim list becomes DSP-first.** The 🧭 API documents section gained an optional DSP upload (CPRS ≥1.6.16). The app extracts per-trim rows — 款号, 辅料名称, 料号, supplier, placement, 单件用量, colour, and an optional explicit PO list — and sends them as `dspTrims[]`. In the generated pack, DSP rows form the trim list's A section with order-quantity formulas; CPRS rule rows follow, marked 以 DSP 为准 wherever they disagree; and the pack carries a verbatim per-style DSP appendix sheet. Verified live: a DSP row fed in came back inside the generated Trim_List.xlsx."},
+            {"type": "feat", "text": "The parser copes with real buyer files: the header row is found anywhere in the first rows of any sheet (English or Chinese headings, banner rows above tolerated), a blank 用量 is sent as 0 so the API renders 按TP rather than a made-up number, junk cells become listed warnings instead of failures, and when several order contexts are selected each trim is routed to the context its style or explicit PO list belongs to. As always, CPRS never reads the mailbox or the file itself — extracting and structuring the DSP is the app's job, and everything extracted is passed through verbatim."},
+        ],
+    },
+    {
         "version": "2.99.0",
         "date": "2026-07-23",
         "entries": [

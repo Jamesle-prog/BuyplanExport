@@ -1858,6 +1858,19 @@ _SEED: list[tuple[str, str, str, str]] = [
      '每个订单上下文一个 ZIP，全部由 CPRS 生成：工厂版要求（不含价格）、含'
      '每箱面板的双语装箱卡、带订购数公式的规则驱动辅料清单 (.xlsx)、含价格'
      '的内部版，以及 manifest 清单。', 'label', 'giii'),
+
+    # GIII — buyer DSP upload → dspTrims[] (v2.100.0)
+    ('Buyer DSP file (optional, .xlsx) — makes the trim list DSP-first',
+     '买家 DSP 文件（可选，.xlsx）——辅料清单将以 DSP 为准', 'label', 'giii'),
+    ('Per-trim rows (style, material, supplier, placement, qty/pc…) are '
+     'extracted and sent as dspTrims[] — DSP rows become the trim list\'s A '
+     'section with quantity formulas; CPRS rule rows follow, marked 以 DSP '
+     '为准 where they differ.',
+     '逐条提取辅料行（款号、辅料、供应商、部位、单件用量等）并作为 '
+     'dspTrims[] 传入——DSP 行成为辅料清单 A 段并带数量公式；CPRS 规则行'
+     '列于其后，不一致处标注「以 DSP 为准」。', 'label', 'giii'),
+    ('DSP file could not be read:', 'DSP 文件无法读取：', 'label', 'giii'),
+    ('trim row(s) from sheet', '条辅料行，来自工作表', 'label', 'giii'),
 ]
 # fmt: on
 

@@ -305,6 +305,45 @@ def _show_requirements_api_section(outputs: dict, key_prefix: str) -> None:
             height=80,
         )
 
+        # ── Optional buyer DSP file → dspTrims[] (CPRS ≥1.6.16) ─────────────
+        # CPRS never reads mailboxes/files itself — structuring the DSP is
+        # the caller's job. Parsed rows are previewed here and routed to the
+        # matching order context at generation time.
+        dsp_trims: list[dict] = []
+        dsp_file = st.file_uploader(
+            t("Buyer DSP file (optional, .xlsx) — makes the trim list DSP-first"),
+            type=["xlsx", "xlsm"], key=f"{key_prefix}_api_dsp",
+            help=t("Per-trim rows (style, material, supplier, placement, "
+                   "qty/pc…) are extracted and sent as dspTrims[] — DSP rows "
+                   "become the trim list's A section with quantity formulas; "
+                   "CPRS rule rows follow, marked 以 DSP 为准 where they differ."),
+        )
+        if dsp_file is not None:
+            from po_extractor.parsers.dsp_trims import parse_dsp_trims
+            _dsp_cache_key = f"{key_prefix}_api_dsp_cache"
+            _sig = (dsp_file.name, dsp_file.size)
+            _cached = st.session_state.get(_dsp_cache_key)
+            if not _cached or _cached[0] != _sig:
+                try:
+                    parsed = parse_dsp_trims(dsp_file.getvalue())
+                    _cached = (_sig, parsed, "")
+                except ValueError as exc:
+                    _cached = (_sig, None, str(exc))
+                st.session_state[_dsp_cache_key] = _cached
+            _, _parsed, _err = _cached
+            if _err:
+                st.error(t("DSP file could not be read:") + f" {_err}")
+            elif _parsed:
+                dsp_trims = _parsed["trims"]
+                for iss in _parsed["issues"][:8]:
+                    st.warning(f"📎 {iss}")
+                n_styles = len({tr.get("style") for tr in dsp_trims
+                                if tr.get("style")})
+                st.caption(
+                    f"📎 {len(dsp_trims)} {t('trim row(s) from sheet')} "
+                    f"“{_parsed['sheet']}”"
+                    + (f" · {n_styles} {t('style(s)')}" if n_styles else ""))
+
         docs_key = f"{key_prefix}_api_docs"
         if st.button("🧭 " + t("Generate via CPRS API")
                      + f" ({len(reqs)} {t('document(s)')})",
@@ -336,6 +375,14 @@ def _show_requirements_api_section(outputs: dict, key_prefix: str) -> None:
                     body["pos"] = rq["pos"]
                     if notes:
                         body["notes"] = notes
+                    if dsp_trims:
+                        from po_extractor.parsers.dsp_trims import (
+                            trims_for_request,
+                        )
+                        routed = (dsp_trims if len(reqs) == 1
+                                  else trims_for_request(dsp_trims, rq))
+                        if routed:
+                            body["dspTrims"] = routed
                     safe = "".join(ch if ch.isalnum() or ch in "-_." else "_"
                                    for ch in rq["label"])[:60] or "doc"
                     if mode == "suite":
