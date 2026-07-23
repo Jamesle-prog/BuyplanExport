@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.96.0",
+        "date": "2026-07-23",
+        "entries": [
+            {"type": "feat", "text": "**Sign-in v2 — the designed split-screen login is live.** Implemented from the claude.ai/design project (\"Threadline Login.dc.html\"): the left panel carries the wordmark, the headline, a four-step journey strip (客户订单 Client PO → 采购计划 Buy Plan → 生产 Production → 交付 Delivery) and a line-art atelier scene — spool, garment rack, dress form, sewing machine, parcel — crossed by a slowly moving stitched thread. The right panel holds the sign-in form with rounded fields and the gradient button."},
+            {"type": "feat", "text": "**Choose your language before signing in.** A 🌐 pill in the form panel switches English ↔ 中文 on the spot — factory logins land in their own language without touching the sidebar. All new copy is seeded bilingually, with the Chinese taken from the design file itself. Typography upgraded to Bricolage Grotesque + Schibsted Grotesk (+ Noto Sans SC for Chinese); dark mode and reduced-motion are both respected, the hero hides on narrow phone screens, and the styling stays scoped to the login page only."},
+        ],
+    },
+    {
         "version": "2.95.0",
         "date": "2026-07-22",
         "entries": [

@@ -1804,6 +1804,15 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Welcome back 👋', '欢迎回来 👋', 'label', 'nav'),
     ('Sign in to pick up where you left off.', '登录以继续您的工作。',
      'label', 'nav'),
+
+    # Login v2 — split-screen design (v2.96.0). zh strings come from the
+    # design file itself ("Threadline Login.dc.html").
+    ('Client POs, buy plans, fabric, and factory progress — connected in one '
+     'place.', '客户订单、采购计划、面料与工厂进度——尽在一处。', 'label', 'nav'),
+    ('Client PO', '客户订单', 'label', 'nav'),
+    ('Production', '生产', 'label', 'nav'),
+    ('Delivery', '交付', 'label', 'nav'),
+    ('Welcome back', '欢迎回来', 'label', 'nav'),
 ]
 # fmt: on
 
