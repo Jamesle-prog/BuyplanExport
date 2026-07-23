@@ -464,6 +464,112 @@ def _warehouse_codes(cprs, client_id) -> set:
 
 
 
+def raw_po_context(m, brand: str) -> dict:
+    """The RAW-PO context dict handed to CPRS (``/evaluate/po`` and the
+    ``/export/requirements-doc`` API share this shape). The app only passes
+    fields through — CPRS decodes brand→client, ship-to→warehouse,
+    account→account, channel and COO itself.
+
+    The retail ACCOUNT is the PO's Customer (Macy's / Ross / AM Retail …).
+    The buyer field is the G-III vendor entity (G-III Apparel/Leather,
+    Kostroma) — never a CPRS account, so sending it only produces a false
+    "not matched" warning. When there's no customer, send no account and let
+    CPRS apply brand-level defaults silently.
+    """
+    raw: dict = {"brand": brand, "poNumber": m.po_number or "?"}
+    if m.style:
+        raw["style"] = m.style
+    wh = clean_warehouse(m.destination_code)   # strip the 'WRH' prefix
+    if wh:
+        raw["warehouseCode"] = wh
+    if (m.ship_to or "").strip():
+        raw["shipTo"] = m.ship_to
+    account = str(getattr(m, "customer", "") or "").strip()
+    if account:
+        raw["account"] = account
+    if (m.country_of_origin or "").strip():
+        raw["coo"] = m.country_of_origin
+    return raw
+
+
+def build_requirements_api_requests(pos) -> tuple[list[dict], list[str]]:
+    """Prepare ``/export/requirements-doc`` request bodies for parsed *pos*.
+
+    Pure — no CPRS calls — so it can run at upload time and sit in session
+    state until the user clicks Generate. POs sharing one order context
+    (brand, warehouse, ship-to, account, COO) are grouped into ONE document
+    whose ``pos[]`` register lists each PO; the API renders that register
+    verbatim and never invents a CPO/MSRP/FOB we didn't send (missing values
+    show as 待定 by the API's own rule). Business fields (fob/amount/msrp)
+    are always passed — the *variant* chosen at generation time decides
+    whether the API renders or strips them; the app takes no view.
+
+    Returns ``(requests, warnings)`` where each request is
+    ``{"label": str, "body": {…context…, "pos": [row…]}}``.
+    """
+    groups: dict[tuple, dict] = {}
+    warnings: list[str] = []
+    for po in pos:
+        m = po.metadata
+        po_no = m.po_number or "?"
+        brand = brand_of(m.po_number, m.division_name or getattr(m, "division", ""))
+        if not brand:
+            warnings.append(f"PO {po_no}: no brand on the PO — not in the API "
+                            f"requirements document.")
+            continue
+        ctx = raw_po_context(m, brand)
+
+        colors, sizes = [], []
+        total_units = 0
+        for sr in (po.size_rows or []):
+            c = str(getattr(sr, "color", "") or "").strip()
+            if c and c not in colors:
+                colors.append(c)
+            s = str(getattr(sr, "size", "") or "").strip()
+            u = int(getattr(sr, "units", 0) or 0)
+            total_units += u
+            if s:
+                sizes.append(f"{s}×{u}")
+
+        row = {
+            "order":          po_no,
+            "giiiSalesOrder": po_no,
+            "style":          str(m.style or ""),
+            "color":          " / ".join(colors),
+            "qty":            total_units,
+            "sizes":          " ".join(sizes),
+            "etd":            str(getattr(m, "factory_ship_date", "") or
+                                  getattr(m, "xport_date", "") or "").strip(),
+            "cpo":            str(getattr(m, "cpo", "") or "").strip(),
+            "msrp":           str(getattr(m, "msrp", "") or "").strip(),
+            "fob":            str(getattr(m, "unit_cost", "") or "").strip(),
+            "amount":         str(getattr(m, "line_extended_cost", "") or "").strip(),
+        }
+
+        gkey = (brand, ctx.get("warehouseCode", ""), ctx.get("shipTo", ""),
+                ctx.get("account", ""), ctx.get("coo", ""))
+        grp = groups.get(gkey)
+        if grp is None:
+            # One document per order context; its context comes from the
+            # first PO in the group (identical for all by construction,
+            # except poNumber/style which are per-PO and travel in pos[]).
+            body = dict(ctx)
+            body.pop("style", None)
+            label = " · ".join(p for p in (
+                brand, ctx.get("warehouseCode", ""),
+                ctx.get("account", "")) if p)
+            grp = groups[gkey] = {"label": label or brand, "body": body,
+                                  "pos": []}
+        grp["pos"].append(row)
+
+    requests = []
+    for grp in groups.values():
+        body = dict(grp["body"])
+        body["pos"] = grp["pos"]
+        requests.append({"label": grp["label"], "body": body})
+    return requests, warnings
+
+
 def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
     """Resolve the FULL requirement set for freshly-uploaded POs (the
     upload-time requirements document — all domains, not just the buy-plan
@@ -509,24 +615,7 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
 
         # Hand CPRS the RAW PO; /evaluate/po decodes brand→client, ship-to→
         # warehouse, account→account, channel, COO — and evaluates it.
-        raw: dict = {"brand": brand, "poNumber": po_no}
-        if m.style:
-            raw["style"] = m.style
-        wh = clean_warehouse(m.destination_code)   # strip the 'WRH' prefix
-        if wh:
-            raw["warehouseCode"] = wh
-        if (m.ship_to or "").strip():
-            raw["shipTo"] = m.ship_to
-        # The retail ACCOUNT is the PO's Customer (Macy's / Ross / AM Retail …).
-        # The buyer field is the G-III vendor entity (G-III Apparel/Leather,
-        # Kostroma) — never a CPRS account, so sending it only produces a false
-        # "not matched" warning. When there's no customer, send no account and
-        # let CPRS apply brand-level defaults silently.
-        account = str(getattr(m, "customer", "") or "").strip()
-        if account:
-            raw["account"] = account
-        if (m.country_of_origin or "").strip():
-            raw["coo"] = m.country_of_origin
+        raw = raw_po_context(m, brand)
 
         po_ev = _evaluate_po_resilient(cprs, raw)
         if not po_ev:

@@ -241,10 +241,28 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
     _req = _build_requirements_doc(pos)
     if _req:
         outputs["requirements_bytes"], outputs["requirements_warns"] = _req
+    _stash_requirements_api_requests(outputs, pos)
 
     st.session_state.results = outputs
     st.session_state.parse_log = log
     # Temp dirs are cleaned up by the caller's (_run_extraction) finally block.
+
+
+def _stash_requirements_api_requests(out: dict, pos) -> None:
+    """Prepare (NOT send) the /export/requirements-doc request bodies so the
+    results panel can generate the API document on demand with the user's
+    chosen variant. Pure and cheap — no CPRS traffic at upload time. Never
+    raises: the API doc is an optional extra on top of the upload."""
+    try:
+        from po_extractor.ui_helpers.giii_requirements import (
+            build_requirements_api_requests,
+        )
+        reqs, warns = build_requirements_api_requests(pos)
+        if reqs:
+            out["requirements_api_reqs"] = reqs
+            out["requirements_api_warns"] = warns
+    except Exception:
+        pass
 
 
 def _build_requirements_doc(pos) -> tuple[bytes, list[str]] | None:
@@ -705,6 +723,7 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
     _req = _build_requirements_doc(pos)
     if _req:
         out["requirements_bytes"], out["requirements_warns"] = _req
+    _stash_requirements_api_requests(out, pos)
 
     if total:
         if _prog:

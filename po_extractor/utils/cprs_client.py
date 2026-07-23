@@ -313,6 +313,39 @@ class CprsClient:
         return {"ratio": str(spec.get("alpha") or spec.get("numeric") or ""),
                 "pcs_box": str(spec.get("pieces_per_bag") or "")}
 
+    def export_requirements_doc(self, body: dict) -> dict | None:
+        """POST /export/requirements-doc (CPRS ≥1.6.14) — the API-generated
+        requirements document.
+
+        *body* carries the same order context as ``/evaluate/po`` plus the
+        document options (``variant``, ``pos``, ``notes``, ``includeImages``);
+        CPRS decides everything about content and rendering — the app passes
+        the context through and saves the returned HTML verbatim (same
+        no-local-gates principle as ``evaluate_po``).
+
+        Returns ``{"html": bytes, "run_id": str, "card_count": str,
+        "image_count": str}`` or ``None`` on failure. Deliberately uncached —
+        a document must reflect the knowledge base at generation time — and
+        on a longer timeout: embedded images make this call much heavier than
+        an evaluation (the API allows up to ~18 MB of them).
+        """
+        if not self.base:
+            return None
+        try:
+            import requests
+            r = requests.post(self.base + "/export/requirements-doc",
+                              json=body, headers=self._headers(), timeout=120)
+            if r.status_code != 200:
+                return None
+            return {
+                "html": r.content,
+                "run_id": r.headers.get("X-CPRS-Run-Id", ""),
+                "card_count": r.headers.get("X-CPRS-Card-Count", ""),
+                "image_count": r.headers.get("X-CPRS-Image-Count", ""),
+            }
+        except Exception:
+            return None
+
     def manual_image(self, image_id: str) -> bytes | None:
         """Fetch a requirement's illustrative artwork as raw bytes."""
         if not (self.base and image_id):

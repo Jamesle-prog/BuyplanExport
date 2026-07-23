@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.97.0",
+        "date": "2026-07-23",
+        "entries": [
+            {"type": "feat", "text": "**GIII: generate the requirements document through the CPRS API.** Next to the existing 要求文档 (.xlsx), the results panel now has an **API requirements document (HTML)** section using CPRS's new `/export/requirements-doc` endpoint (CPRS ≥1.6.14). Pick 工厂 factory (prices stripped — safe to send out) or internal (full), optionally embed the manual artwork, add confirmed notes (one per line), and Generate — you get a self-contained bilingual HTML pack per order context, with the API's card/image counts shown. Several contexts download as one zip."},
+            {"type": "feat", "text": "True to the CPRS design principle, the app invents nothing: the same raw-PO context that `/evaluate/po` gets is sent along with a PO register (SO, style, colours, size breakdown, qty, ETD, CPO, MSRP, FOB/amount) taken verbatim from the parsed POs — a missing CPO stays missing and CPRS itself renders 待定. The variant is the only policy and it's the API's: business fields are always sent, and the factory variant strips them server-side. Request bodies are prepared at upload time (no CPRS traffic until you click Generate)."},
+        ],
+    },
+    {
         "version": "2.96.0",
         "date": "2026-07-23",
         "entries": [
