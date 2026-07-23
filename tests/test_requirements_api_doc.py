@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from po_extractor.models.po_data import POData, POMetadata, SizeRow
 from po_extractor.ui_helpers.giii_requirements import (
-    build_requirements_api_requests, raw_po_context,
+    build_requirements_api_requests, export_body_from_decoded, raw_po_context,
 )
 
 
@@ -59,12 +59,12 @@ def test_one_document_per_order_context():
     assert len(reqs) == 2                        # Macy's ctx + Ross ctx
     by_label = {r["label"]: r for r in reqs}
     macys = next(r for lbl, r in by_label.items() if "Macy's" in lbl)
-    assert [p["order"] for p in macys["body"]["pos"]] == ["A1", "A2"]
+    assert [p["order"] for p in macys["pos"]] == ["A1", "A2"]
 
 
 def test_pos_row_shape_and_aggregation():
     reqs, _ = build_requirements_api_requests([_po()])
-    row = reqs[0]["body"]["pos"][0]
+    row = reqs[0]["pos"][0]
     assert row["order"] == "6503123"
     assert row["giiiSalesOrder"] == "6503123"
     assert row["style"] == "DU5105"
@@ -76,19 +76,19 @@ def test_pos_row_shape_and_aggregation():
 
 def test_missing_cpo_and_msrp_stay_empty_never_invented():
     reqs, _ = build_requirements_api_requests([_po(cpo="", msrp="")])
-    row = reqs[0]["body"]["pos"][0]
+    row = reqs[0]["pos"][0]
     assert row["cpo"] == "" and row["msrp"] == ""   # API renders 待定 itself
 
 
 def test_business_fields_always_passed_variant_is_api_policy():
     reqs, _ = build_requirements_api_requests(
         [_po(unit_cost="12.50", msrp="$59", cpo="CPO-77")])
-    row = reqs[0]["body"]["pos"][0]
+    row = reqs[0]["pos"][0]
     assert row["fob"] == "12.50"
     assert row["msrp"] == "$59"
     assert row["cpo"] == "CPO-77"
     # ...and the app sets no variant here — that's chosen at generation time.
-    assert "variant" not in reqs[0]["body"]
+    assert "variant" not in reqs[0]["raw"]
 
 
 def test_group_body_has_no_per_po_style():
@@ -96,8 +96,8 @@ def test_group_body_has_no_per_po_style():
     group-level context (it travels in pos[] instead)."""
     reqs, _ = build_requirements_api_requests(
         [_po(po_number="A1", style="DU1"), _po(po_number="A2", style="DU2")])
-    assert "style" not in reqs[0]["body"]
-    assert {p["style"] for p in reqs[0]["body"]["pos"]} == {"DU1", "DU2"}
+    assert "style" not in reqs[0]["raw"]
+    assert {p["style"] for p in reqs[0]["pos"]} == {"DU1", "DU2"}
 
 
 def test_brandless_po_warns_and_is_skipped():
@@ -110,7 +110,29 @@ def test_brandless_po_warns_and_is_skipped():
 def test_builder_is_pure_no_cprs_needed():
     """The builder must not require a CPRS client at all (runs at upload)."""
     reqs, _ = build_requirements_api_requests([_po()])
-    assert reqs and "pos" in reqs[0]["body"]
+    assert reqs and reqs[0]["pos"] and reqs[0]["raw"]["brand"] == "DKNY"
+
+
+# ── export_body_from_decoded ────────────────────────────────────────────────
+
+def test_export_body_taken_verbatim_from_decoded():
+    body = export_body_from_decoded({
+        "clientId": "11111111-2222-3333-4444-555555555555",
+        "channel": "WHOLESALE", "warehouseCode": "US01",
+        "accountCode": "MACYS", "coo": "CHINA",
+        "warehouseInfo": {"region": "US"},        # extra keys never leak
+    })
+    assert body == {
+        "clientId": "11111111-2222-3333-4444-555555555555",
+        "channel": "WHOLESALE", "warehouseCode": "US01",
+        "accountCode": "MACYS", "coo": "CHINA",
+    }
+
+
+def test_export_body_drops_empty_fields():
+    body = export_body_from_decoded({"clientId": "x", "channel": "",
+                                     "accountCode": None})
+    assert body == {"clientId": "x"}
 
 
 # ── client method ───────────────────────────────────────────────────────────

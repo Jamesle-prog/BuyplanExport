@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.97.1",
+        "date": "2026-07-23",
+        "entries": [
+            {"type": "fix", "text": "**API requirements doc: matched the endpoint's actual contract.** `/export/requirements-doc` takes the *decoded* `/evaluate` context (clientId + channel), not the raw PO. Generation now runs the stored raw PO through CPRS's own `/evaluate/po` first (cached since upload, so no extra wait) and passes the decoded context through verbatim — the app still resolves nothing itself. Verified live against CPRS 1.6.14: a factory-variant document generated end-to-end (27 cards)."},
+        ],
+    },
+    {
         "version": "2.97.0",
         "date": "2026-07-23",
         "entries": [

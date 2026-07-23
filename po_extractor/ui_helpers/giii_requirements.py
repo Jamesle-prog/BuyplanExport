@@ -505,7 +505,11 @@ def build_requirements_api_requests(pos) -> tuple[list[dict], list[str]]:
     whether the API renders or strips them; the app takes no view.
 
     Returns ``(requests, warnings)`` where each request is
-    ``{"label": str, "body": {…context…, "pos": [row…]}}``.
+    ``{"label": str, "raw": {…/evaluate/po context…}, "pos": [row…]}``.
+    At generation time the raw context goes through ``evaluate_po`` first
+    (cached since upload) and the DECODED context CPRS returns — clientId,
+    channel, warehouseCode, accountCode — is passed to the export endpoint
+    verbatim via :func:`export_body_from_decoded`; the app decodes nothing.
     """
     groups: dict[tuple, dict] = {}
     warnings: list[str] = []
@@ -553,21 +557,33 @@ def build_requirements_api_requests(pos) -> tuple[list[dict], list[str]]:
             # One document per order context; its context comes from the
             # first PO in the group (identical for all by construction,
             # except poNumber/style which are per-PO and travel in pos[]).
-            body = dict(ctx)
-            body.pop("style", None)
+            raw = dict(ctx)
+            raw.pop("style", None)
             label = " · ".join(p for p in (
                 brand, ctx.get("warehouseCode", ""),
                 ctx.get("account", "")) if p)
-            grp = groups[gkey] = {"label": label or brand, "body": body,
+            grp = groups[gkey] = {"label": label or brand, "raw": raw,
                                   "pos": []}
         grp["pos"].append(row)
 
-    requests = []
-    for grp in groups.values():
-        body = dict(grp["body"])
-        body["pos"] = grp["pos"]
-        requests.append({"label": grp["label"], "body": body})
+    requests = [{"label": g["label"], "raw": g["raw"], "pos": g["pos"]}
+                for g in groups.values()]
     return requests, warnings
+
+
+def export_body_from_decoded(decoded: dict) -> dict:
+    """The /export/requirements-doc context, taken VERBATIM from
+    ``evaluate_po``'s ``decoded`` block (the endpoint validates the
+    /evaluate shape: clientId UUID + channel + optional codes). Empty values
+    are dropped rather than sent — the app supplies nothing of its own."""
+    out: dict = {}
+    for src, dst in (("clientId", "clientId"), ("channel", "channel"),
+                     ("warehouseCode", "warehouseCode"),
+                     ("accountCode", "accountCode"), ("coo", "coo")):
+        v = str((decoded or {}).get(src) or "").strip()
+        if v:
+            out[dst] = v
+    return out
 
 
 def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:

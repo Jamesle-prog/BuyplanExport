@@ -299,9 +299,20 @@ def _show_requirements_api_section(outputs: dict, key_prefix: str) -> None:
             notes = [ln.strip() for ln in (notes_raw or "").splitlines()
                      if ln.strip()]
             files, failed = [], []
+            from po_extractor.ui_helpers.giii_requirements import (
+                export_body_from_decoded,
+            )
             with st.spinner(t("Asking CPRS to build the document(s)…")):
                 for rq in reqs:
-                    body = dict(rq["body"])
+                    # The export endpoint takes the /evaluate context — let
+                    # CPRS decode the raw PO itself (cached since upload) and
+                    # pass its decoded context through verbatim.
+                    ev = cprs.evaluate_po(dict(rq["raw"])) or {}
+                    body = export_body_from_decoded(ev.get("decoded") or {})
+                    if not body.get("clientId"):
+                        failed.append(rq["label"])
+                        continue
+                    body["pos"] = rq["pos"]
                     body["variant"] = variant
                     body["includeImages"] = bool(include_images)
                     if notes:
