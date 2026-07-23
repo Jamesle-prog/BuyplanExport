@@ -85,6 +85,72 @@ def test_no_recognisable_header_raises():
         parse_dsp_trims(content)
 
 
+# ── PDF path (pure core — pdfplumber page structures) ───────────────────────
+
+from po_extractor.parsers.dsp_trims import trims_from_pdf_pages  # noqa: E402
+
+
+def test_pdf_table_with_headers():
+    pages = [{
+        "text": "DSP PACKAGE\nSTYLE: DU5105\nSeason FA26",
+        "tables": [[
+            ["Material Name", "Material Code", "Supplier", "Qty/PC"],
+            ["Woven label", "LAB04472", "Trimco", "1"],
+            ["Hang tag", "HT-9", "Trimco", "2"],
+        ]],
+    }]
+    out = trims_from_pdf_pages(pages)
+    assert len(out["trims"]) == 2
+    # No style column → the style stated in the page text applies.
+    assert all(tr["style"] == "DU5105" for tr in out["trims"])
+    assert out["trims"][0]["materialCode"] == "LAB04472"
+
+
+def test_pdf_continuation_page_reuses_columns():
+    header = ["Material Name", "Qty/PC"]
+    pages = [
+        {"text": "STYLE: DU1", "tables": [[header, ["Label", "1"]]]},
+        # Page 2: table WITHOUT its own header row — continuation.
+        {"text": "STYLE: DU1", "tables": [[["Zipper", "2"]]]},
+    ]
+    out = trims_from_pdf_pages(pages)
+    assert [t["materialName"] for t in out["trims"]] == ["Label", "Zipper"]
+
+
+def test_pdf_repeated_header_row_is_skipped():
+    header = ["Material Name", "Qty/PC"]
+    pages = [{"text": "", "tables": [[header, ["Button", "4"],
+                                      header, ["Thread", "0.1"]]]}]
+    out = trims_from_pdf_pages(pages)
+    assert [t["materialName"] for t in out["trims"]] == ["Button", "Thread"]
+
+
+def test_pdf_style_column_beats_page_style():
+    pages = [{
+        "text": "STYLE: PAGEONLY",
+        "tables": [[
+            ["Style", "Material Name", "Qty/PC"],
+            ["DU7", "Snap", "6"],
+            ["", "Care label", "1"],       # blank cell falls back to page style
+        ]],
+    }]
+    out = trims_from_pdf_pages(pages)
+    assert out["trims"][0]["style"] == "DU7"
+    assert out["trims"][1]["style"] == "PAGEONLY"
+
+
+def test_pdf_without_any_table_raises():
+    with pytest.raises(ValueError):
+        trims_from_pdf_pages([{"text": "cover page only", "tables": []}])
+
+
+def test_pdf_magic_bytes_dispatch():
+    """A %PDF payload must route to the PDF parser (which then rejects this
+    junk PDF cleanly), never to openpyxl."""
+    with pytest.raises(ValueError):
+        parse_dsp_trims(b"%PDF-1.7 not really a pdf")
+
+
 # ── routing to order contexts ───────────────────────────────────────────────
 
 _RQ = {"label": "DKNY", "raw": {},

@@ -311,8 +311,8 @@ def _show_requirements_api_section(outputs: dict, key_prefix: str) -> None:
         # matching order context at generation time.
         dsp_trims: list[dict] = []
         dsp_file = st.file_uploader(
-            t("Buyer DSP file (optional, .xlsx) — makes the trim list DSP-first"),
-            type=["xlsx", "xlsm"], key=f"{key_prefix}_api_dsp",
+            t("Buyer DSP file (optional, PDF or Excel) — makes the trim list DSP-first"),
+            type=["pdf", "xlsx", "xlsm"], key=f"{key_prefix}_api_dsp",
             help=t("Per-trim rows (style, material, supplier, placement, "
                    "qty/pc…) are extracted and sent as dspTrims[] — DSP rows "
                    "become the trim list's A section with quantity formulas; "

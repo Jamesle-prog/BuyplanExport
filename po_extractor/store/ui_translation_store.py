@@ -1871,6 +1871,9 @@ _SEED: list[tuple[str, str, str, str]] = [
      '列于其后，不一致处标注「以 DSP 为准」。', 'label', 'giii'),
     ('DSP file could not be read:', 'DSP 文件无法读取：', 'label', 'giii'),
     ('trim row(s) from sheet', '条辅料行，来自工作表', 'label', 'giii'),
+    ('Buyer DSP file (optional, PDF or Excel) — makes the trim list DSP-first',
+     '买家 DSP 文件（可选，PDF 或 Excel）——辅料清单将以 DSP 为准',
+     'label', 'giii'),
 ]
 # fmt: on
 

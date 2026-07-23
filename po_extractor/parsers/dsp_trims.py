@@ -71,13 +71,21 @@ def _match_field(header: str) -> str | None:
 
 
 def parse_dsp_trims(content: bytes) -> dict:
-    """Parse a buyer DSP workbook into CPRS ``dspTrims[]`` rows.
+    """Parse a buyer DSP file — PDF (the usual format) or Excel — into CPRS
+    ``dspTrims[]`` rows.
 
-    Returns ``{"trims": [...], "issues": [str], "sheet": str}``. Raises
-    ``ValueError`` only for file-level problems (unreadable file, no sheet
-    with a recognisable header row) — cell-level junk becomes an issue line,
-    never an exception.
+    Returns ``{"trims": [...], "issues": [str], "sheet": str}`` (``sheet``
+    is the worksheet name for Excel, a page summary for PDF). Raises
+    ``ValueError`` only for file-level problems (unreadable file, no
+    recognisable trim table) — cell-level junk becomes an issue line, never
+    an exception.
     """
+    if content[:5] == b"%PDF-":
+        return _parse_pdf(content)
+    return _parse_xlsx(content)
+
+
+def _parse_xlsx(content: bytes) -> dict:
     try:
         wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True,
                                     read_only=True)
@@ -156,6 +164,141 @@ def parse_dsp_trims(content: bytes) -> dict:
         return {"trims": trims, "issues": issues, "sheet": sheet_name}
     finally:
         wb.close()
+
+
+# ── PDF path (the usual buyer format) ───────────────────────────────────────
+
+# A style number stated in page text ("STYLE: DU5105" / "款号 DU5105") — the
+# style often lives in the PDF's page header rather than a table column.
+_PAGE_STYLE_RE = re.compile(
+    r"(?:style\s*(?:no\.?|number|#)?|款号|款式)\s*[:：#]?\s*"
+    r"([A-Z][A-Z0-9]{2,}(?:[-/][A-Z0-9]+)*)",
+    re.IGNORECASE)
+
+
+def _page_style(text: str) -> str:
+    m = _PAGE_STYLE_RE.search(text or "")
+    return (m.group(1).strip().upper() if m else "")
+
+
+def trims_from_pdf_pages(pages: list[dict]) -> dict:
+    """Pure core of the PDF path — *pages* is
+    ``[{"tables": [[row_cells…]…], "text": str}, …]`` (what pdfplumber
+    extracts). Returns the same shape as :func:`parse_dsp_trims`.
+
+    Header rows are matched with the same bilingual synonyms as the Excel
+    path. A table with no header row of its own continues the previous
+    table's columns (multi-page tables repeat or omit headers page by
+    page). When a page has no style column, a style stated in the page text
+    ("STYLE: DU5105") applies to that page's rows — extraction of a stated
+    fact, not invention.
+    """
+    trims: list[dict] = []
+    issues: list[str] = []
+    carry_cols: dict[int, str] | None = None
+    pages_used = 0
+
+    for p_idx, page in enumerate(pages, 1):
+        default_style = _page_style(page.get("text") or "")
+        page_hit = False
+        for table in (page.get("tables") or []):
+            rows = [r or [] for r in (table or []) if r]
+            if not rows:
+                continue
+            # Find the header row inside the first few rows of this table.
+            cols: dict[int, str] | None = None
+            start = 0
+            for i, row in enumerate(rows[:4]):
+                cand: dict[int, str] = {}
+                for c_idx, cell in enumerate(row):
+                    f = _match_field(cell)
+                    if f and f not in cand.values():
+                        cand[c_idx] = f
+                if "materialName" in cand.values():
+                    cols, start = cand, i + 1
+                    break
+            if cols is None:
+                if carry_cols is None:
+                    continue            # decorative table before any header
+                cols, start = carry_cols, 0   # continuation page
+            else:
+                carry_cols = cols
+            page_hit = True
+
+            for r_off, row in enumerate(rows[start:], start + 1):
+                vals = {f: (row[c] if c < len(row) else None)
+                        for c, f in cols.items()}
+                name = str(vals.get("materialName") or "").strip()
+                style = str(vals.get("style") or "").strip() or default_style
+                orders_raw = str(vals.get("appliesToOrders") or "").strip()
+                if not any((name, style, orders_raw)):
+                    continue
+                if not name:
+                    continue            # spacer/subtotal line in the grid
+                # A repeated header row inside a continuation table.
+                if _match_field(name) == "materialName":
+                    continue
+
+                qty_raw = vals.get("qtyPerPc")
+                qty: float = 0
+                if qty_raw not in (None, ""):
+                    try:
+                        qty = float(str(qty_raw).replace(",", "").strip())
+                    except (TypeError, ValueError):
+                        issues.append(
+                            f"page {p_idx} row {r_off} ({name}): qty "
+                            f"{qty_raw!r} is not a number — sent as 0 (按TP)")
+                        qty = 0
+
+                trim = {
+                    "style":        style,
+                    "materialName": name,
+                    "materialCode": str(vals.get("materialCode") or "").strip(),
+                    "supplier":     str(vals.get("supplier") or "").strip(),
+                    "placement":    str(vals.get("placement") or "").strip(),
+                    "qtyPerPc":     qty,
+                    "color":        str(vals.get("color") or "").strip(),
+                }
+                orders = [o for o in re.split(r"[,;/\s]+", orders_raw) if o]
+                if orders:
+                    trim["appliesToOrders"] = orders
+                trims.append(trim)
+        if page_hit:
+            pages_used += 1
+
+    if not trims:
+        raise ValueError(
+            "No recognisable trim table found in the PDF (need a table with "
+            "a material/辅料 column). If the DSP is a scanned image rather "
+            "than a text PDF, export it to Excel first.")
+    return {"trims": trims, "issues": issues,
+            "sheet": f"PDF · {pages_used} page(s)"}
+
+
+def _parse_pdf(content: bytes) -> dict:
+    """pdfplumber glue around :func:`trims_from_pdf_pages`."""
+    try:
+        import pdfplumber
+    except Exception as exc:                     # pragma: no cover
+        raise ValueError(f"PDF support unavailable: {exc}") from exc
+    try:
+        pages: list[dict] = []
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            for page in pdf.pages:
+                try:
+                    tables = page.extract_tables() or []
+                except Exception:
+                    tables = []
+                try:
+                    text = page.extract_text() or ""
+                except Exception:
+                    text = ""
+                pages.append({"tables": tables, "text": text})
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"Not a readable PDF: {exc}") from exc
+    return trims_from_pdf_pages(pages)
 
 
 def trims_for_request(trims: list[dict], rq: dict) -> list[dict]:

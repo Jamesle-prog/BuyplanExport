@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.101.0",
+        "date": "2026-07-23",
+        "entries": [
+            {"type": "feat", "text": "**The DSP upload now reads PDFs — the format buyers actually send.** The same uploader accepts PDF (or Excel): tables are extracted page by page with the same bilingual header matching, a multi-page table whose continuation pages repeat or omit the header row is stitched back together, repeated in-table header lines are skipped, and when the style lives in the page banner (\"STYLE: DU5105\") rather than a column, that stated style applies to the page's rows — extraction of a stated fact, never invention. A scanned-image PDF (no text layer) is refused with a clear message rather than returning nothing."},
+        ],
+    },
+    {
         "version": "2.100.0",
         "date": "2026-07-23",
         "entries": [
