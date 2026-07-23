@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.98.0",
+        "date": "2026-07-23",
+        "entries": [
+            {"type": "feat", "text": "**The API requirements document is now on Generate / Export too.** The 🧭 API requirements document (HTML) section — variant, image embedding, confirmed notes, Generate — appears under the action buttons on GIII → Generate / Export → Generate Outputs, built from the **stored** PO data for whatever POs you've selected (no re-upload needed). Selected POs group into one document per order context (e.g. all 32 Calvin Klein · ROSS POs in one file), and POs whose brand can't be decoded are listed rather than silently dropped. Same section, same behavior as the upload panel — one request builder feeds both, so the two entry points can never disagree."},
+        ],
+    },
+    {
         "version": "2.97.1",
         "date": "2026-07-23",
         "entries": [

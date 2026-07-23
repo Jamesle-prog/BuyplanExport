@@ -571,6 +571,68 @@ def build_requirements_api_requests(pos) -> tuple[list[dict], list[str]]:
     return requests, warnings
 
 
+def api_requests_from_stored(meta_df, sizes_df) -> tuple[list[dict], list[str]]:
+    """:func:`build_requirements_api_requests` fed from the STORED frames
+    (``POStore.list_pos`` + ``load_size_rows``) instead of freshly parsed
+    POData — the Generate/Export screen regenerates from history, so the API
+    document must be reachable from there too. Rebuilds lightweight
+    POData/POMetadata/SizeRow objects and reuses the one request builder, so
+    upload-time and stored-data documents can never disagree in shape."""
+    from ..models.po_data import POData, POMetadata, SizeRow
+
+    def _s(row, col) -> str:
+        v = row.get(col)
+        if v is None:
+            return ""
+        try:                       # pandas NaN → "" (str(NaN) would be "nan")
+            import pandas as pd
+            if pd.isna(v):
+                return ""
+        except Exception:
+            pass
+        return str(v).strip()
+
+    sizes_by_po: dict[str, list] = {}
+    if sizes_df is not None and len(sizes_df):
+        for _, r in sizes_df.iterrows():
+            po_no = _s(r, "PO Number") or _s(r, "po_number")
+            if not po_no:
+                continue
+            sizes_by_po.setdefault(po_no, []).append(SizeRow(
+                po_number=po_no,
+                style=_s(r, "Style") or _s(r, "style"),
+                color=_s(r, "Color") or _s(r, "color"),
+                size=_s(r, "Size") or _s(r, "size"),
+                units=int(float(r.get("Units") if r.get("Units") is not None
+                                else r.get("units") or 0) or 0),
+                upc=_s(r, "UPC") or _s(r, "upc"),
+            ))
+
+    pos = []
+    for _, row in meta_df.iterrows():
+        po_no = _s(row, "po_number")
+        if not po_no:
+            continue
+        m = POMetadata(
+            po_number=po_no,
+            style=_s(row, "style"),
+            customer=_s(row, "customer"),
+            destination_code=_s(row, "destination_code"),
+            ship_to=_s(row, "ship_to"),
+            country_of_origin=_s(row, "country_of_origin"),
+            cpo=_s(row, "cpo"),
+            msrp=_s(row, "msrp"),
+            unit_cost=_s(row, "unit_cost"),
+            line_extended_cost=_s(row, "line_extended_cost"),
+            factory_ship_date=_s(row, "factory_ship_date"),
+            xport_date=_s(row, "xport_date"),
+            division=_s(row, "division_code"),
+            division_name=_s(row, "division_name"),
+        )
+        pos.append(POData(metadata=m, size_rows=sizes_by_po.get(po_no, [])))
+    return build_requirements_api_requests(pos)
+
+
 def export_body_from_decoded(decoded: dict) -> dict:
     """The /export/requirements-doc context, taken VERBATIM from
     ``evaluate_po``'s ``decoded`` block (the endpoint validates the

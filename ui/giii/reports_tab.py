@@ -295,6 +295,37 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
                 except Exception as exc:
                     st.error(t("Requirements check failed:") + f" {exc}")
 
+    # ── API requirements document (CPRS /export/requirements-doc) ─────────────
+    # Same section as the upload-time results panel, fed from the STORED data
+    # for the current selection — request bodies are rebuilt (pure, no CPRS
+    # traffic) whenever the selection changes.
+    if selected:
+        _sig = tuple(sorted(selected))
+        _cache = st.session_state.get("rpt_api_reqs_cache")
+        if not _cache or _cache[0] != _sig:
+            try:
+                from po_extractor.ui_helpers.giii_requirements import (
+                    api_requests_from_stored,
+                )
+                _meta = filt_df[filt_df["po_number"].isin(selected)]
+                _reqs, _warns = api_requests_from_stored(
+                    _meta, store.load_size_rows(selected))
+            except Exception as _exc:
+                _reqs, _warns = [], [f"API document unavailable: {_exc}"]
+            _cache = (_sig, _reqs, _warns)
+            st.session_state["rpt_api_reqs_cache"] = _cache
+        from ui.giii.results import _show_requirements_api_section
+        _show_requirements_api_section(
+            {"requirements_api_reqs": _cache[1],
+             "requirements_api_warns": _cache[2]},
+            key_prefix="rpt",
+        )
+        if not _cache[1]:
+            # The section renders nothing without requests — surface WHY
+            # (e.g. no brand decodable on any selected PO).
+            for _w in _cache[2]:
+                st.warning(f"🧭 {_w}")
+
     # ── Download area ─────────────────────────────────────────────────────────
     if st.session_state.get("rpt_all_results"):
         _show_downloads(st.session_state["rpt_all_results"], key_prefix="rpt")

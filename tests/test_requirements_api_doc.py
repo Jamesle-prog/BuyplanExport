@@ -113,6 +113,59 @@ def test_builder_is_pure_no_cprs_needed():
     assert reqs and reqs[0]["pos"] and reqs[0]["raw"]["brand"] == "DKNY"
 
 
+# ── api_requests_from_stored (Generate/Export screen) ───────────────────────
+
+def test_stored_frames_produce_same_request_shape():
+    """The stored-data adapter must yield the same requests as the parsed
+    path — one builder, two entry points."""
+    import pandas as pd
+    from po_extractor.ui_helpers.giii_requirements import api_requests_from_stored
+
+    meta = pd.DataFrame([{
+        "po_number": "6503123", "style": "DU5105", "customer": "Macy's",
+        "destination_code": "WRHUS01", "ship_to": "Carlstadt NJ",
+        "country_of_origin": "CHINA", "cpo": "", "msrp": "$59",
+        "unit_cost": "12.50", "line_extended_cost": "375.00",
+        "factory_ship_date": "2026-09-01", "xport_date": "",
+        "division_code": "DK", "division_name": "DKNY",
+    }])
+    sizes = pd.DataFrame([
+        {"PO Number": "6503123", "Style": "DU5105", "Color": "BLACK",
+         "Size": "S", "Units": 10, "UPC": "1"},
+        {"PO Number": "6503123", "Style": "DU5105", "Color": "IVORY",
+         "Size": "M", "Units": 5, "UPC": "2"},
+    ])
+    reqs, warns = api_requests_from_stored(meta, sizes)
+    assert warns == []
+    assert len(reqs) == 1
+    row = reqs[0]["pos"][0]
+    assert row["order"] == "6503123"
+    assert row["color"] == "BLACK / IVORY"
+    assert row["qty"] == 15
+    assert row["msrp"] == "$59" and row["fob"] == "12.50"
+    assert reqs[0]["raw"]["warehouseCode"] == "US01"
+
+
+def test_stored_adapter_handles_nan_and_missing_sizes():
+    import pandas as pd
+    from po_extractor.ui_helpers.giii_requirements import api_requests_from_stored
+
+    meta = pd.DataFrame([{
+        "po_number": "6503999", "style": "DU9", "customer": float("nan"),
+        "destination_code": None, "ship_to": float("nan"),
+        "country_of_origin": None, "cpo": float("nan"), "msrp": None,
+        "unit_cost": None, "line_extended_cost": None,
+        "factory_ship_date": None, "xport_date": None,
+        "division_code": "DK", "division_name": "DKNY",
+    }])
+    reqs, warns = api_requests_from_stored(meta, pd.DataFrame())
+    assert len(reqs) == 1
+    row = reqs[0]["pos"][0]
+    assert row["cpo"] == "" and row["msrp"] == ""       # NaN never leaks as "nan"
+    assert row["qty"] == 0 and row["sizes"] == ""
+    assert "account" not in reqs[0]["raw"]              # NaN customer dropped
+
+
 # ── export_body_from_decoded ────────────────────────────────────────────────
 
 def test_export_body_taken_verbatim_from_decoded():
