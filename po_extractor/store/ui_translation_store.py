@@ -1792,6 +1792,18 @@ _SEED: list[tuple[str, str, str, str]] = [
      'label', 'admin'),
     ('Add name', '添加名称', 'button', 'admin'),
     ('Delete factory', '删除工厂', 'button', 'admin'),
+
+    # Login screen (v2.94.1 / renamed v2.95.0)
+    ('Purchase-order automation & buy plans', '采购订单自动化与采购计划',
+     'label', 'nav'),
+    ('Sign in to continue', '登录以继续', 'label', 'nav'),
+    ('your username', '您的用户名', 'label', 'nav'),
+    ('Authorized users only', '仅限授权用户', 'label', 'nav'),
+    ('From order to delivery, one thread.', '从下单到交付，一线贯通。',
+     'label', 'nav'),
+    ('Welcome back 👋', '欢迎回来 👋', 'label', 'nav'),
+    ('Sign in to pick up where you left off.', '登录以继续您的工作。',
+     'label', 'nav'),
 ]
 # fmt: on
 

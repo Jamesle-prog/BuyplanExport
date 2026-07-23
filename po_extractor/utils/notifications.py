@@ -84,9 +84,10 @@ def recipients_for(event: str) -> list[str]:
 # ── Sending ─────────────────────────────────────────────────────────────────
 
 def _format_body(lines: list[str], footer: str = "") -> str:
+    from ..config import APP_NAME
     body = "\n".join(f"  • {ln}" for ln in lines if str(ln).strip())
     tail = (footer or
-            "Sent automatically by PO Extractor. Reply to this address to "
+            f"Sent automatically by {APP_NAME}. Reply to this address to "
             "reach the team — this mailbox is not monitored by a robot.")
     return f"{body}\n\n{tail}\n" if body else f"{tail}\n"
 
@@ -117,11 +118,16 @@ def notify(event: str, subject: str, lines: list[str], *,
 
 # ── Event-shaped convenience wrappers ───────────────────────────────────────
 
+def _tag() -> str:
+    from ..config import APP_NAME
+    return f"[{APP_NAME}]"
+
+
 def notify_buyplan_generated(client: str, pc_no: str, styles: int,
                              filenames: list[str] | None = None) -> str:
     return notify(
         EVENT_BUYPLAN_GENERATED,
-        f"[PO Extractor] Buy plan generated — {client} {pc_no}".strip(),
+        f"{_tag()} Buy plan generated — {client} {pc_no}".strip(),
         [f"Client: {client}", f"PC/PO: {pc_no}", f"Styles: {styles}"]
         + [f"File: {f}" for f in (filenames or [])],
     )
@@ -132,7 +138,7 @@ def notify_fabric_missing(client: str, pc_no: str, missing: list[str]) -> str:
         return "nothing missing"
     return notify(
         EVENT_FABRIC_MISSING,
-        f"[PO Extractor] Missing fabric information — {client} {pc_no}".strip(),
+        f"{_tag()} Missing fabric information — {client} {pc_no}".strip(),
         [f"{len(missing)} item(s) could not be matched to the fabric master:"]
         + list(missing[:50]),
     )
@@ -143,7 +149,7 @@ def notify_milestones_overdue(rows: list[str]) -> str:
         return "nothing overdue"
     return notify(
         EVENT_MILESTONES_OVERDUE,
-        f"[PO Extractor] {len(rows)} milestone(s) overdue",
+        f"{_tag()} {len(rows)} milestone(s) overdue",
         rows[:100],
     )
 
@@ -152,7 +158,7 @@ def notify_factory_data(from_addr: str, filename: str, kind_label: str,
                         summary: str) -> str:
     return notify(
         EVENT_FACTORY_DATA,
-        f"[PO Extractor] Factory data received — {filename}",
+        f"{_tag()} Factory data received — {filename}",
         [f"From: {from_addr}", f"Type: {kind_label}", f"Contents: {summary}",
          "Open the 📧 Email tab to review and apply it."],
     )
@@ -161,7 +167,7 @@ def notify_factory_data(from_addr: str, filename: str, kind_label: str,
 def notify_fabric_pending(uploaded_by: str, n_rows: int, note: str = "") -> str:
     return notify(
         EVENT_FABRIC_PENDING,
-        "[PO Extractor] Fabric list waiting for approval",
+        f"{_tag()} Fabric list waiting for approval",
         [f"Uploaded by: {uploaded_by or 'unknown'}", f"Rows: {n_rows}"]
         + ([f"Note: {note}"] if note else [])
         + ["Open Fabric DB → Pending Review to approve or reject it."],

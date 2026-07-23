@@ -1,5 +1,10 @@
 """Shared constants and regex patterns."""
 
+# Product name — single source of truth. Shown on the login screen, sidebar,
+# browser tab, and in outbound emails. Change it here and it updates everywhere.
+APP_NAME = "Threadline"
+APP_TAGLINE = "From order to delivery, one thread."
+
 SIZE_ORDER = [
     'PXS', 'PS', 'PM', 'PL', 'PXL', 'P1X', 'P2X', 'P3X', 'P2XL', 'P3XL',
     'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL',

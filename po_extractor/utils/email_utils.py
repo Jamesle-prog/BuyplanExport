@@ -126,11 +126,12 @@ def send_test_email(to: str) -> None:
     settings = _smtp.load()
     if not (settings["host"] and _smtp.effective_sender(settings)):
         raise EmailError("SMTP is not configured yet — fill in the form first.")
+    from po_extractor.config import APP_NAME
     recipients = _validated_recipients(to)
     msg = _build_message(
         recipients,
-        "PO Extractor — SMTP test",
-        "This is a test message from PO Extractor. If you can read this, "
+        f"{APP_NAME} — SMTP test",
+        f"This is a test message from {APP_NAME}. If you can read this, "
         "your SMTP settings are working.\n",
         attachments=(),
         settings=settings,

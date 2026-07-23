@@ -1,10 +1,10 @@
-"""PO Extractor — Streamlit UI."""
+"""Threadline — Streamlit UI."""
 import os
 import sys
 
 import streamlit as st
 
-APP_VERSION = "2.94.0"
+APP_VERSION = "2.95.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -15,7 +15,9 @@ from auth.users import (
     change_password, get_user_companies, get_user_modules, is_admin,
     user_exists, verify_password,
 )
-from po_extractor.config import SCHEMA_PATH as _SCHEMA_PATH_CFG, CACHE_TTL_SECONDS
+from po_extractor.config import (
+    SCHEMA_PATH as _SCHEMA_PATH_CFG, CACHE_TTL_SECONDS, APP_NAME, APP_TAGLINE,
+)
 from ui.session_keys import SK
 from ui.i18n import t
 
@@ -47,8 +49,8 @@ def _cached_schema() -> list[dict]:
 # Page config
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title=f"PO Extractor v{APP_VERSION}",
-    page_icon="📦",
+    page_title=f"{APP_NAME} v{APP_VERSION}",
+    page_icon="🧵",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -58,13 +60,6 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 st.markdown("""
 <style>
-/* Login card */
-.login-card {
-    background: #f8f9fa;
-    border: 1px solid #dee2e6;
-    border-radius: 12px;
-    padding: 2.5rem 2rem;
-}
 /* Subtle file uploader border */
 [data-testid="stFileUploader"] {
     border: 2px dashed #ced4da;
@@ -223,44 +218,153 @@ def _login_succeeded(key: str) -> None:
 # ---------------------------------------------------------------------------
 # Login page
 # ---------------------------------------------------------------------------
+# Scoped to the login screen only (injected inside show_login, so it never
+# affects the main app's forms/layout). A bold, friendly single-accent look —
+# warm gradient backdrop, one big rounded card, pill inputs and button.
+# Theme-aware via prefers-color-scheme, which Streamlit's default theme follows.
+_LOGIN_CSS = """
+<style>
+/* Warm gradient backdrop across the whole viewport (login page only). */
+[data-testid="stAppViewContainer"] {
+    background:
+        radial-gradient(1100px 520px at 15% -10%, #ffe3ec 0%, rgba(255,227,236,0) 60%),
+        radial-gradient(1000px 560px at 95% 8%, #ffe9dd 0%, rgba(255,233,221,0) 55%),
+        linear-gradient(180deg, #fff6f8 0%, #fff 62%);
+}
+[data-testid="stHeader"] { background: transparent; }
+[data-testid="stAppViewContainer"] .block-container {
+    max-width: 460px; padding-top: 8vh; padding-bottom: 5rem;
+}
+
+/* Brand header */
+.tl-brand { text-align: center; margin: 0 0 1.6rem; }
+.tl-logo {
+    width: 84px; height: 84px; margin: 0 auto 1.1rem;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 42px; border-radius: 26px;
+    background: linear-gradient(135deg, #ff2e74 0%, #ff6a5b 100%);
+    box-shadow: 0 16px 34px rgba(255,46,116,0.40);
+}
+.tl-title {
+    font-size: 2.5rem; font-weight: 800; margin: 0; letter-spacing: -0.03em;
+    color: #16121a; line-height: 1.05;
+}
+.tl-sub {
+    color: #7a6b73; font-size: 1.05rem; margin-top: 0.55rem; font-weight: 500;
+}
+
+/* The form becomes one big friendly card. */
+div[data-testid="stForm"] {
+    border: none; border-radius: 26px;
+    padding: 2.1rem 2rem 1.6rem;
+    background: #ffffff;
+    box-shadow: 0 24px 60px rgba(255,46,116,0.14), 0 4px 14px rgba(20,20,43,0.06);
+}
+div[data-testid="stForm"] label p { font-weight: 650; font-size: 0.9rem; color:#4b4048; }
+div[data-testid="stForm"] input {
+    border-radius: 999px !important; padding: 0.7rem 1.1rem !important;
+    background: #f8f6f7 !important; border: 1.5px solid #f0eaed !important;
+    font-size: 0.98rem !important;
+}
+div[data-testid="stForm"] input:focus {
+    border-color: #ff2e74 !important;
+    box-shadow: 0 0 0 3px rgba(255,46,116,0.14) !important;
+}
+div[data-testid="stFormSubmitButton"] button {
+    border-radius: 999px; font-weight: 750; font-size: 1.02rem;
+    padding: 0.7rem 1rem; margin-top: 0.35rem;
+    border: none; color: #fff;
+    background: linear-gradient(135deg, #ff2e74 0%, #ff6a5b 100%);
+    box-shadow: 0 12px 26px rgba(255,46,116,0.36);
+    transition: filter .15s ease, transform .06s ease, box-shadow .15s ease;
+}
+div[data-testid="stFormSubmitButton"] button:hover {
+    filter: brightness(1.05); box-shadow: 0 16px 32px rgba(255,46,116,0.44);
+}
+div[data-testid="stFormSubmitButton"] button:active { transform: translateY(1px); }
+
+.tl-hi { font-size: 1.15rem; font-weight: 750; color:#16121a; margin: 0 0 0.2rem; }
+.tl-hi-sub { color:#8a7c83; font-size:0.86rem; margin: 0 0 1rem; }
+.tl-foot {
+    text-align: center; color: #b6a9b0; font-size: 0.76rem; margin-top: 1.5rem;
+}
+.tl-foot b { color:#8a7c83; font-weight:600; }
+
+@media (prefers-color-scheme: dark) {
+    [data-testid="stAppViewContainer"] {
+        background:
+            radial-gradient(1100px 520px at 15% -10%, #2a1620 0%, rgba(42,22,32,0) 60%),
+            radial-gradient(1000px 560px at 95% 8%, #241a1c 0%, rgba(36,26,28,0) 55%),
+            linear-gradient(180deg, #14121a 0%, #0f0e14 62%);
+    }
+    .tl-title { color: #f4eef2; }
+    .tl-sub { color: #b9a9b2; }
+    .tl-hi { color: #f4eef2; }
+    div[data-testid="stForm"] {
+        background: #191620;
+        box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+    }
+    div[data-testid="stForm"] input {
+        background: #221d29 !important; border-color: #2f2833 !important;
+        color: #f4eef2 !important;
+    }
+}
+</style>
+"""
+
+
 def show_login():
-    _, col, _ = st.columns([1, 1.2, 1])
-    with col:
-        st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown(_LOGIN_CSS, unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="tl-brand">
+            <div class="tl-logo">🧵</div>
+            <div class="tl-title">{APP_NAME}</div>
+            <div class="tl-sub">{t(APP_TAGLINE)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.form("login_form"):
         st.markdown(
-            f"## 📦 PO Extractor "
-            f"<span style='font-size:0.55em; color:#888; font-weight:normal;'>"
-            f"v{APP_VERSION}</span>",
+            f"<div class='tl-hi'>{t('Welcome back 👋')}</div>"
+            f"<div class='tl-hi-sub'>{t('Sign in to pick up where you left off.')}</div>",
             unsafe_allow_html=True,
         )
-        st.markdown("---")
+        username = st.text_input(t("Username"), placeholder=t("your username"))
+        password = st.text_input(t("Password"), type="password",
+                                 placeholder="••••••••")
+        submitted = st.form_submit_button(t("Sign In"), type="primary",
+                                          use_container_width=True)
 
-        with st.form("login_form"):
-            username = st.text_input(t("Username"), placeholder="your username")
-            password = st.text_input(t("Password"), type="password", placeholder="••••••••")
-            submitted = st.form_submit_button(t("Sign In"), type="primary", use_container_width=True)
+    st.markdown(
+        f"<div class='tl-foot'>🔒 {t('Authorized users only')} · "
+        f"<b>{APP_NAME}</b> v{APP_VERSION}</div>",
+        unsafe_allow_html=True,
+    )
 
-        if submitted:
-            uname_key = (username or "").strip().lower()
-            wait = max(
-                _login_lock_remaining(uname_key),
-                _login_lock_remaining(_LOGIN_GLOBAL_KEY),
-            )
-            if wait:
-                st.error(f"{t('Too many failed attempts. Try again in')} {wait} s.")
-            elif verify_password(username, password):
-                _login_succeeded(uname_key)
-                st.session_state.logged_in = True
-                st.session_state.username = username
-                st.session_state.results = None
-                st.session_state.parse_log = []
-                st.rerun()
-            else:
-                _login_failed(uname_key, _LOGIN_FAIL_THRESHOLD,
-                              _LOGIN_BASE_LOCK_S, _LOGIN_MAX_LOCK_S)
-                _login_failed(_LOGIN_GLOBAL_KEY, _LOGIN_GLOBAL_THRESHOLD,
-                              _LOGIN_GLOBAL_LOCK_S, _LOGIN_GLOBAL_LOCK_S)
-                st.error(t("Incorrect username or password."))
+    if submitted:
+        uname_key = (username or "").strip().lower()
+        wait = max(
+            _login_lock_remaining(uname_key),
+            _login_lock_remaining(_LOGIN_GLOBAL_KEY),
+        )
+        if wait:
+            st.error(f"{t('Too many failed attempts. Try again in')} {wait} s.")
+        elif verify_password(username, password):
+            _login_succeeded(uname_key)
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            st.session_state.results = None
+            st.session_state.parse_log = []
+            st.rerun()
+        else:
+            _login_failed(uname_key, _LOGIN_FAIL_THRESHOLD,
+                          _LOGIN_BASE_LOCK_S, _LOGIN_MAX_LOCK_S)
+            _login_failed(_LOGIN_GLOBAL_KEY, _LOGIN_GLOBAL_THRESHOLD,
+                          _LOGIN_GLOBAL_LOCK_S, _LOGIN_GLOBAL_LOCK_S)
+            st.error(t("Incorrect username or password."))
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +393,7 @@ def _show_change_password_sidebar():
 def show_main():
     # ---- Sidebar ----
     with st.sidebar:
-        st.markdown("### 📦 PO Extractor")
+        st.markdown(f"### 🧵 {APP_NAME}")
         st.caption(f"v{APP_VERSION}")
         st.divider()
         # ── CPRS server status (at-a-glance; cached health probe) ─────────

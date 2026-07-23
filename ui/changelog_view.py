@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.95.0",
+        "date": "2026-07-22",
+        "entries": [
+            {"type": "feat", "text": "**The app is now called Threadline** 🧵 — the thread that runs from a client PO through buy plans to the factory floor. \"PO Extractor\" no longer described what it grew into. The name is set in one place (`APP_NAME`) and flows to the login screen, the sidebar, the browser tab, and outbound emails."},
+            {"type": "feat", "text": "**A bold, friendly new sign-in screen.** A warm gradient backdrop, a big rounded logo badge, a large welcome headline, pill-shaped inputs with a focus glow, and a full-width pill Sign In button — a modern, approachable first impression. It adapts to light and dark, and the styling is scoped to the login page only, so the rest of the app is untouched and the page stays fast to load."},
+        ],
+    },
+    {
         "version": "2.94.0",
         "date": "2026-07-22",
         "entries": [
