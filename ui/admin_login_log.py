@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.i18n import t
-from ui.shared import fragment_rerun
+from ui.shared import fragment_rerun, CSV_MIME
 from ui.stores import get_login_log_store
 from po_extractor.store.login_log_store import (
     OUTCOME_SUCCESS, OUTCOME_FAILED, OUTCOME_LOCKED,
@@ -90,7 +90,7 @@ def show_login_log_admin() -> None:
         st.download_button(
             "⬇️ " + t("Download (.csv)"),
             data=df.to_csv(index=False).encode("utf-8-sig"),
-            file_name="login_log.csv", mime="text/csv",
+            file_name="login_log.csv", mime=CSV_MIME,
             key="ll_csv", use_container_width=True,
         )
 
@@ -98,9 +98,10 @@ def show_login_log_admin() -> None:
     with st.expander(f"🧹 {t('Maintenance')}", expanded=False):
         mc1, mc2 = st.columns(2)
         with mc1:
+            from po_extractor.config import LOGIN_LOG_RETENTION_DAYS
             days = st.number_input(t("Delete events older than (days)"),
-                                   min_value=0, value=365, step=30,
-                                   key="ll_purge_days")
+                                   min_value=0, value=LOGIN_LOG_RETENTION_DAYS,
+                                   step=30, key="ll_purge_days")
             if st.button(t("Purge old events"), key="ll_purge_btn"):
                 n = store.purge_older_than(int(days))
                 st.success(f"✅ {n} {t('old event(s) removed.')}")

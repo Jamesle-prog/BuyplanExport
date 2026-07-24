@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.102.0"
+APP_VERSION = "2.102.1"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -185,11 +185,15 @@ _LOGIN_GUARD_LOCK = _threading.Lock()
 _LOGIN_FAILURES: dict[str, tuple[int, float]] = {}   # key → (fails, locked_until)
 _LOGIN_GLOBAL_KEY = "\x00global"
 
-_LOGIN_FAIL_THRESHOLD   = 5      # per-username fails before lockout
-_LOGIN_BASE_LOCK_S      = 60.0   # first lockout, doubles per extra fail
-_LOGIN_MAX_LOCK_S       = 900.0
-_LOGIN_GLOBAL_THRESHOLD = 30     # total fails across all usernames
-_LOGIN_GLOBAL_LOCK_S    = 120.0
+# Sign-in lockout policy — values live in po_extractor.config so they're
+# tunable in one place alongside the other cross-cutting constants.
+from po_extractor.config import (
+    LOGIN_FAIL_THRESHOLD    as _LOGIN_FAIL_THRESHOLD,
+    LOGIN_BASE_LOCK_S       as _LOGIN_BASE_LOCK_S,
+    LOGIN_MAX_LOCK_S        as _LOGIN_MAX_LOCK_S,
+    LOGIN_GLOBAL_THRESHOLD  as _LOGIN_GLOBAL_THRESHOLD,
+    LOGIN_GLOBAL_LOCK_S     as _LOGIN_GLOBAL_LOCK_S,
+)
 
 
 def _login_lock_remaining(key: str) -> int:

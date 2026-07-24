@@ -25,9 +25,9 @@ from ui.stores import IMAGES_DIR_DEFAULT
 # or emptied.  Image lookups fall back to this folder when the primary misses.
 EXTRACTED_IMAGES_DIR = os.path.join(os.path.dirname(IMAGES_DIR_DEFAULT), "extracted_images")
 
-XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-CSV_MIME  = "text/csv"
-ZIP_MIME  = "application/zip"
+# MIME types — canonical values live in po_extractor.config; re-exported here
+# so the many `from ui.shared import XLSX_MIME` call sites keep working.
+from po_extractor.config import XLSX_MIME, ZIP_MIME, CSV_MIME, HTML_MIME  # noqa: F401
 
 # File-type lists for st.file_uploader — single source of truth so changes
 # (e.g. allowing .xlsm in legacy uploaders) only need one edit.

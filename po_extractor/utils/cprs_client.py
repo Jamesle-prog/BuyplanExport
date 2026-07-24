@@ -19,9 +19,14 @@ from __future__ import annotations
 
 import re
 
+from ..config import (
+    CPRS_TIMEOUT_S, CPRS_EXPORT_TIMEOUT_S, CPRS_SUITE_TIMEOUT_S,
+)
+
 
 class CprsClient:
-    def __init__(self, base_url: str, api_key: str = "", timeout: float = 8.0):
+    def __init__(self, base_url: str, api_key: str = "",
+                 timeout: float = CPRS_TIMEOUT_S):
         # Normalize to ".../api/v1" with no trailing slash.
         base = (base_url or "").strip().rstrip("/")
         if base and not base.endswith("/api/v1"):
@@ -334,7 +339,8 @@ class CprsClient:
         try:
             import requests
             r = requests.post(self.base + "/export/requirements-doc",
-                              json=body, headers=self._headers(), timeout=120)
+                              json=body, headers=self._headers(),
+                              timeout=CPRS_EXPORT_TIMEOUT_S)
             if r.status_code != 200:
                 return None
             return {
@@ -365,7 +371,8 @@ class CprsClient:
         try:
             import requests
             r = requests.post(self.base + "/export/doc-suite",
-                              json=body, headers=self._headers(), timeout=300)
+                              json=body, headers=self._headers(),
+                              timeout=CPRS_SUITE_TIMEOUT_S)
             if r.status_code != 200:
                 return None
             return {

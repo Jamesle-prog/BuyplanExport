@@ -8,7 +8,7 @@ import streamlit as st
 
 from auth.companies import list_company_names, COMPANY_SKY_EAST
 from ui.i18n import t
-from ui.shared import fragment_rerun
+from ui.shared import fragment_rerun, XLSX_MIME
 from ui.sky_east._shared import _parse_fabric_mapping_bytes
 from ui.sky_east.processing import _enrich_fabric_parts_from_cache
 from ui.stores import get_store
@@ -142,7 +142,7 @@ def _show_fabric_mapping_section() -> None:
             f"📥 {t('Download Template')}",
             data=_gen_tpl(),
             file_name="FabricMapping_Template.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            mime=XLSX_MIME,
             key="fm_tab_tpl_dl",
             use_container_width=True,
         )

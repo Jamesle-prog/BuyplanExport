@@ -16,6 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.i18n import clear_cache, supported_langs, t
+from ui.shared import CSV_MIME
 from ui.stores import get_ui_translation_store
 
 
@@ -195,7 +196,7 @@ def _show_import_export_tab(store) -> None:
                 "📥 " + t("Download translations.csv"),
                 data=csv_bytes,
                 file_name="ui_translations.csv",
-                mime="text/csv",
+                mime=CSV_MIME,
                 use_container_width=True,
                 key="i18n_dl_btn",
             )

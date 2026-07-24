@@ -18,7 +18,7 @@ import socket
 import pandas as pd
 import streamlit as st
 
-_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+from ui.shared import XLSX_MIME as _XLSX_MIME
 
 from auth.users import get_user_companies
 from ui.i18n import t

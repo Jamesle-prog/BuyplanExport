@@ -591,7 +591,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
             "📥 Download errors (.xlsx)",
             data=_buf.getvalue(),
             file_name="WashLabel_CompositionErrors.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            mime=XLSX_MIME,
             key="se_wl_err_dl",
             use_container_width=True,
         )

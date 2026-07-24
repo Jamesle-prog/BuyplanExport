@@ -13,6 +13,7 @@ from po_extractor.ui_helpers import (
 from ui.i18n import t
 from ui.shared import build_image_cache_for_ids as _build_image_cache_for_ids
 from ui.shared import persisted_download
+from ui.shared import ZIP_MIME, HTML_MIME, CSV_MIME
 from auth.companies import COMPANY_SKY_EAST
 from ui.stores import get_store, get_sky_east_store
 from ui.giii._shared import _XLSX_MIME, live_label
@@ -205,7 +206,7 @@ def _show_downloads(outputs: dict, key_prefix: str = "dl"):
             label="📁 Extracted Data (.zip)",
             data=outputs["csvs_zip"],
             file_name="extracted_data.zip",
-            mime="application/zip",
+            mime=ZIP_MIME,
             use_container_width=True,
             key=f"{key_prefix}_csvzip",
         )
@@ -217,7 +218,7 @@ def _show_downloads(outputs: dict, key_prefix: str = "dl"):
                 label="🔒 Masked PDFs (.zip)",
                 data=outputs["masked_zip"],
                 file_name="masked_pdfs.zip",
-                mime="application/zip",
+                mime=ZIP_MIME,
                 use_container_width=True,
                 key=f"{key_prefix}_masked",
             )
@@ -389,7 +390,7 @@ def _show_requirements_api_section(outputs: dict, key_prefix: str) -> None:
                         res = cprs.export_doc_suite(body)
                         if res and res.get("zip"):
                             files.append((f"DocSuite_{safe}.zip",
-                                          res["zip"], res, "application/zip"))
+                                          res["zip"], res, ZIP_MIME))
                         else:
                             failed.append(rq["label"])
                     else:
@@ -398,7 +399,7 @@ def _show_requirements_api_section(outputs: dict, key_prefix: str) -> None:
                         res = cprs.export_requirements_doc(body)
                         if res and res.get("html"):
                             files.append((f"Requirements_{safe}_{variant}.html",
-                                          res["html"], res, "text/html"))
+                                          res["html"], res, HTML_MIME))
                         else:
                             failed.append(rq["label"])
             if failed:
@@ -441,7 +442,7 @@ def _show_requirements_api_section(outputs: dict, key_prefix: str) -> None:
                     + f" — {len(files)} {t('file(s)')}",
                     data=buf.getvalue(),
                     file_name="CPRS_Documents.zip",
-                    mime="application/zip", use_container_width=True,
+                    mime=ZIP_MIME, use_container_width=True,
                     key=f"{key_prefix}_api_dl",
                 )
 
@@ -468,7 +469,7 @@ def _show_excel_downloads(outputs: dict):
             label=f"🎨 Template_P — {outputs['template_p_count']} workbook(s) (.zip)",
             data=outputs["template_p_zip"],
             file_name="Zalando_面料_by_Fabric.zip",
-            mime="application/zip",
+            mime=ZIP_MIME,
             use_container_width=True,
             key="excel_dl_templatep",
         )
@@ -480,7 +481,7 @@ def _show_excel_downloads(outputs: dict):
                 label=f"↩ Repeat Orders Report ({outputs['repeat_count']} group(s))",
                 data=outputs["repeat_csv"],
                 file_name="repeat_orders.csv",
-                mime="text/csv",
+                mime=CSV_MIME,
                 use_container_width=True,
                 key="excel_dl_repeats",
             )
@@ -491,7 +492,7 @@ def _show_excel_downloads(outputs: dict):
             label="🔒 Download Masked Files (.zip)",
             data=outputs["masked_zip"],
             file_name="zalando_masked.zip",
-            mime="application/zip",
+            mime=ZIP_MIME,
             use_container_width=True,
             key="excel_dl_masked",
         )
@@ -544,14 +545,14 @@ def _show_smart_downloads(outputs: dict):
             with cols2[1]:
                 st.download_button(
                     "📁 Extracted Data (.zip)", grp["csvs_zip"],
-                    file_name=f"{company}_data.zip", mime="application/zip",
+                    file_name=f"{company}_data.zip", mime=ZIP_MIME,
                     use_container_width=True, key=f"dl_{company}_csv",
                 )
             if "masked_zip" in grp:
                 with cols2[2]:
                     st.download_button(
                         "🔒 Masked PDFs (.zip)", grp["masked_zip"],
-                        file_name=f"{company}_masked.zip", mime="application/zip",
+                        file_name=f"{company}_masked.zip", mime=ZIP_MIME,
                         use_container_width=True, key=f"dl_{company}_mask",
                     )
             elif grp.get("mask_failed"):
@@ -575,7 +576,7 @@ def _show_smart_downloads(outputs: dict):
                 st.download_button(
                     f"🎨 Template_P — {grp['template_p_count']} workbook(s) (.zip)",
                     grp["template_p_zip"],
-                    file_name=f"{company}_面料_workbooks.zip", mime="application/zip",
+                    file_name=f"{company}_面料_workbooks.zip", mime=ZIP_MIME,
                     use_container_width=True,
                     key=f"dl_{company}_tp",
                 )
@@ -593,14 +594,14 @@ def _show_smart_downloads(outputs: dict):
                         f"↩ Repeat Orders ({len(repeats)} group(s))",
                         rbuf.getvalue().encode(),
                         file_name=f"{company}_repeat_orders.csv",
-                        mime="text/csv", use_container_width=True,
+                        mime=CSV_MIME, use_container_width=True,
                         key=f"dl_{company}_rep",
                     )
                     st.caption("Styles appearing in multiple POs")
             if "masked_zip" in grp:
                 st.download_button(
                     "🔒 Masked Files (.zip)", grp["masked_zip"],
-                    file_name=f"{company}_masked.zip", mime="application/zip",
+                    file_name=f"{company}_masked.zip", mime=ZIP_MIME,
                     use_container_width=True,
                     key=f"dl_{company}_mask",
                 )

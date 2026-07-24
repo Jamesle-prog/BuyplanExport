@@ -53,7 +53,7 @@ import streamlit as st
 
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import fragment_rerun, guard_multiselect_state
+from ui.shared import fragment_rerun, guard_multiselect_state, XLSX_MIME
 from ui.stores import get_production_tracking_store, get_store
 
 # ── Schema constants — imported once at module load, not on every render ──────
@@ -1385,7 +1385,7 @@ def _render_grid_excel_io(filtered, store, username, scope: "TrackScope") -> Non
             f"⬇️ {t('Export grid to Excel')}",
             data=build_tracking_grid_xlsx(filtered),
             file_name=f"Tracking_{date.today().isoformat()}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            mime=XLSX_MIME,
             key="pt_grid_xlsx_dl",
         )
 
@@ -2214,7 +2214,7 @@ def _render_factory_updates_tab(records, username, admin_mode,
                 data=build_progress_request_xlsx(sel_factory, fac_rows,
                                                  milestones=_ms_rows),
                 file_name=f"进度回报表_{sel_factory}_{_date.today().isoformat()}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                mime=XLSX_MIME,
                 key="pt_fu_form_download",
             )
 

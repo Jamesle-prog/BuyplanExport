@@ -15,7 +15,7 @@ from po_extractor.ui_helpers.combined_summary import (
 )
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import _th, _tr, guard_multiselect_state
+from ui.shared import _th, _tr, guard_multiselect_state, XLSX_MIME
 from ui.stores import get_store, get_sky_east_store
 
 
@@ -210,7 +210,7 @@ def _show_po_tracker(df: pd.DataFrame) -> None:
         "⬇️ " + t("Download PO Tracker (.xlsx)"),
         data=xlsx,
         file_name="po_tracker.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        mime=XLSX_MIME,
         key="tracker_dl",
     )
 
@@ -344,7 +344,7 @@ def _show_all_orders(df: pd.DataFrame) -> None:
         "⬇️ " + t("Download All Orders (.xlsx)"),
         data=xlsx,
         file_name="all_orders.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        mime=XLSX_MIME,
         key="sum_all_dl",
     )
 

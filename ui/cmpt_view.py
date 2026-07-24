@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.i18n import t
-from ui.shared import fragment_rerun
+from ui.shared import fragment_rerun, XLSX_MIME
 from ui.stores import (
     get_cmpt_contract_store,
     get_factory_progress_store,
@@ -376,7 +376,7 @@ def _contract_detail_section(store, username: str, admin_mode: bool) -> None:
                     f"⬇️ {t('Download contract document')}",
                     data=doc,
                     file_name=f"CMPT_{contract['contract_no']}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    mime=XLSX_MIME,
                     key=f"cmpt_doc_dl_{cid}",
                 )
 
@@ -401,7 +401,7 @@ def _template_section() -> None:
                 st.download_button(
                     f"⬇️ {t('Download current template')}", data=fh.read(),
                     file_name="cmpt_template.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    mime=XLSX_MIME,
                     key="cmpt_tpl_dl",
                 )
         else:

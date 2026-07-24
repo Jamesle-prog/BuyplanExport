@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.102.1",
+        "date": "2026-07-24",
+        "entries": [
+            {"type": "refactor", "text": "**Cross-cutting constants centralized in `po_extractor/config.py`.** The OOXML spreadsheet MIME type (previously re-typed in ~20 places — one transposed character silently breaks a download), the ZIP/HTML/CSV types, the CPRS request timeouts (the inline 120 s / 300 s export waits), and the sign-in lockout policy now live in one place and are imported everywhere. Behaviour is identical (every value unchanged; full suite green) — this only removes duplication so these knobs are tuned once. The design-asset colours in the login screen were deliberately left inline."},
+        ],
+    },
+    {
         "version": "2.102.0",
         "date": "2026-07-24",
         "entries": [

@@ -26,7 +26,7 @@ import streamlit as st
 
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import fragment_rerun
+from ui.shared import fragment_rerun, XLSX_MIME
 from ui.stores import get_email_inbox_store
 
 from po_extractor.store.email_inbox_store import (
@@ -144,7 +144,7 @@ def _render_attachment(att: dict, msg: dict, username: str) -> None:
         st.download_button(
             f"⬇️ {t('Download')}", data=full.get("content") or b"",
             file_name=att["filename"] or "attachment.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            mime=XLSX_MIME,
             key=f"em_dl_{att['id']}",
         )
 

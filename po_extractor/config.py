@@ -5,6 +5,32 @@
 APP_NAME = "Threadline"
 APP_TAGLINE = "From order to delivery, one thread."
 
+# ── MIME types ────────────────────────────────────────────────────────────
+# The long OOXML spreadsheet type was previously re-typed in ~16 places (one
+# transposed character silently breaks a download). Import these instead.
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+ZIP_MIME  = "application/zip"
+HTML_MIME = "text/html"
+CSV_MIME  = "text/csv"
+
+# ── CPRS request timeouts (seconds) ───────────────────────────────────────
+# Evaluations are quick; the document exporters embed images and are much
+# heavier — the doc-suite pack runs to ~13 MB.
+CPRS_TIMEOUT_S        = 8.0     # default: /health, /evaluate, /evaluate/po, …
+CPRS_EXPORT_TIMEOUT_S = 120     # /export/requirements-doc (single HTML)
+CPRS_SUITE_TIMEOUT_S  = 300     # /export/doc-suite (full ZIP pack)
+
+# ── Sign-in policy (lockout backoff) ──────────────────────────────────────
+# Per-username: LOGIN_FAIL_THRESHOLD wrong tries → lock LOGIN_BASE_LOCK_S,
+# doubling each further miss up to LOGIN_MAX_LOCK_S. A separate all-usernames
+# counter throttles credential-stuffing across accounts.
+LOGIN_FAIL_THRESHOLD    = 5
+LOGIN_BASE_LOCK_S       = 60.0
+LOGIN_MAX_LOCK_S        = 900.0
+LOGIN_GLOBAL_THRESHOLD  = 30
+LOGIN_GLOBAL_LOCK_S     = 120.0
+LOGIN_LOG_RETENTION_DAYS = 365   # default for the admin "purge old events" tool
+
 SIZE_ORDER = [
     'PXS', 'PS', 'PM', 'PL', 'PXL', 'P1X', 'P2X', 'P3X', 'P2XL', 'P3XL',
     'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL',
