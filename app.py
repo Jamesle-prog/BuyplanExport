@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.101.0"
+APP_VERSION = "2.102.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -489,6 +489,31 @@ def _login_hero_html() -> str:
     )
 
 
+def _client_ip() -> str:
+    """Best-effort client IP for the audit log — the forwarded address behind
+    a reverse proxy, else "". Never raises: the log is a nice-to-have and must
+    not break sign-in on a Streamlit build that lacks st.context.headers."""
+    try:
+        headers = getattr(st.context, "headers", None) or {}
+        xff = headers.get("X-Forwarded-For") or headers.get("x-forwarded-for")
+        if xff:
+            return xff.split(",")[0].strip()
+        return (headers.get("X-Real-Ip") or headers.get("x-real-ip") or "").strip()
+    except Exception:
+        return ""
+
+
+def _record_login(username: str, outcome: str, detail: str = "") -> None:
+    """Append a sign-in event to the audit log. Lazy-imported and fully
+    guarded so it never delays the login page or blocks a real sign-in."""
+    try:
+        from po_extractor.store import get_login_log_store
+        get_login_log_store().record(
+            username, outcome, detail=detail, ip=_client_ip())
+    except Exception:
+        pass
+
+
 def show_login():
     st.markdown(_LOGIN_CSS, unsafe_allow_html=True)
     left, right = st.columns([1.05, 1])
@@ -527,9 +552,11 @@ def show_login():
                 _login_lock_remaining(_LOGIN_GLOBAL_KEY),
             )
             if wait:
+                _record_login(username, "locked", f"locked {wait}s")
                 st.error(f"{t('Too many failed attempts. Try again in')} {wait} s.")
             elif verify_password(username, password):
                 _login_succeeded(uname_key)
+                _record_login(username, "success")
                 st.session_state.logged_in = True
                 st.session_state.username = username
                 st.session_state.results = None
@@ -540,6 +567,7 @@ def show_login():
                               _LOGIN_BASE_LOCK_S, _LOGIN_MAX_LOCK_S)
                 _login_failed(_LOGIN_GLOBAL_KEY, _LOGIN_GLOBAL_THRESHOLD,
                               _LOGIN_GLOBAL_LOCK_S, _LOGIN_GLOBAL_LOCK_S)
+                _record_login(username, "failed", "wrong username or password")
                 st.error(t("Incorrect username or password."))
 
         st.markdown(
@@ -756,12 +784,12 @@ def _show_admin_panel():
 
     (admin_tab_users, admin_tab_cos, admin_tab_fac, admin_tab_schema,
      admin_tab_sizes, admin_tab_tpl, admin_tab_pipe, admin_tab_bsr,
-     admin_tab_smtp, admin_tab_i18n, admin_tab_settings) = st.tabs(
+     admin_tab_smtp, admin_tab_i18n, admin_tab_log, admin_tab_settings) = st.tabs(
         [f"👤 {t('Users')}", f"🏢 {t('Companies')}", _fac_label,
          f"📋 {t('Column Mapping')}",
          f"📐 {t('Size Order')}", f"📄 {t('Templates')}", f"🧩 {t('Pipeline Layouts')}",
          f"🚢 {t('船样要求')}", f"📧 {t('Email')}", f"🌐 {t('Translations')}",
-         f"⚙️ {t('Settings')}"]
+         f"🔐 {t('Login Log')}", f"⚙️ {t('Settings')}"]
     )
 
     with admin_tab_cos:
@@ -770,6 +798,10 @@ def _show_admin_panel():
     with admin_tab_fac:
         from ui.admin_factories import show_factory_admin
         show_factory_admin()
+
+    with admin_tab_log:
+        from ui.admin_login_log import show_login_log_admin
+        show_login_log_admin()
 
     with admin_tab_users:
         _show_user_admin()

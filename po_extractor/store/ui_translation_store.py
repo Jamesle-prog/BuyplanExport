@@ -1874,6 +1874,43 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Buyer DSP file (optional, PDF or Excel) — makes the trim list DSP-first',
      '买家 DSP 文件（可选，PDF 或 Excel）——辅料清单将以 DSP 为准',
      'label', 'giii'),
+
+    # Admin — Login Log (v2.102.0)
+    ('Login Log', '登录日志', 'label', 'admin'),
+    ('Every sign-in attempt — successful logins plus wrong passwords and '
+     'lockouts. Visible to admins only.',
+     '每一次登录尝试——成功登录以及密码错误和锁定。仅管理员可见。',
+     'label', 'admin'),
+    ('Successful logins', '成功登录', 'label', 'admin'),
+    ('Distinct users', '独立用户', 'label', 'admin'),
+    ('Failed', '失败', 'label', 'admin'),
+    ('Locked out', '被锁定', 'label', 'admin'),
+    ('Outcome', '结果', 'label', 'admin'),
+    ('Filter by username', '按用户名筛选', 'label', 'admin'),
+    ('Show', '显示', 'label', 'admin'),
+    ('No sign-in events match the current filters.',
+     '没有符合当前筛选条件的登录记录。', 'label', 'admin'),
+    ('Download (.csv)', '下载 (.csv)', 'button', 'admin'),
+    ('Delete events older than (days)', '删除早于（天）的记录', 'label', 'admin'),
+    ('Purge old events', '清理旧记录', 'button', 'admin'),
+    ('Clearing the log is permanent and cannot be undone.',
+     '清空日志为永久操作，无法撤销。', 'label', 'admin'),
+    ('I understand — delete the entire log', '我已知晓——删除整个日志',
+     'label', 'admin'),
+    ('Clear the whole log', '清空整个日志', 'button', 'admin'),
+    ('Time', '时间', 'label', 'admin'),
+    ('IP address', 'IP 地址', 'label', 'admin'),
+    ('Maintenance', '维护', 'label', 'admin'),
+    ('All', '全部', 'label', 'admin'),
+    ('Successful only', '仅成功', 'label', 'admin'),
+    ('Failed only', '仅失败', 'label', 'admin'),
+    ('Locked only', '仅锁定', 'label', 'admin'),
+    ('old event(s) removed.', '条旧记录已删除。', 'label', 'admin'),
+    ('event(s) cleared.', '条记录已清空。', 'label', 'admin'),
+    # Raw outcome codes rendered via t() in the table's Outcome column.
+    ('success', '成功', 'label', 'admin'),
+    ('failed', '失败', 'label', 'admin'),
+    ('locked', '锁定', 'label', 'admin'),
 ]
 # fmt: on
 

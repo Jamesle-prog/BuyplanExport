@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.102.0",
+        "date": "2026-07-24",
+        "entries": [
+            {"type": "feat", "text": "**Sign-in audit log (admin only).** Every login attempt is now recorded — who, when, and how it went — and a new **Admin → 🔐 Login Log** tab shows it: successful logins plus wrong-password and lockout events, newest first, with a summary row (successful logins · distinct users · failed · locked), filters by outcome and username, CSV export, and maintenance controls to purge old rows or clear the log. The forwarded client IP is captured when the app runs behind a reverse proxy. Regular users never see it; recording is fully guarded so a logging hiccup can never block a real sign-in."},
+        ],
+    },
+    {
         "version": "2.101.0",
         "date": "2026-07-23",
         "entries": [
