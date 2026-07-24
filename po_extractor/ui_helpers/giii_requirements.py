@@ -90,7 +90,16 @@ def _evaluate_po_resilient(cprs, raw: dict):
     (a restart between POs) doesn't drop a PO that would otherwise resolve.
     Returns the result dict or None after the last attempt. No sleeping when
     the very first attempt succeeds — the retry cost is paid only on a miss."""
-    po = cprs.evaluate_po(raw)
+    def _try():
+        # A CPRS restart mid-run can RAISE (ConnectionError) rather than
+        # return None; treat that identically to a miss so one PO's transient
+        # failure never crashes the whole buy-plan resolution.
+        try:
+            return cprs.evaluate_po(raw)
+        except Exception:
+            return None
+
+    po = _try()
     if po:
         return po
     for _ in range(max(0, _EVAL_ATTEMPTS - 1)):
@@ -99,7 +108,7 @@ def _evaluate_po_resilient(cprs, raw: dict):
                 time.sleep(_EVAL_BACKOFF)
             except Exception:
                 pass
-        po = cprs.evaluate_po(raw)
+        po = _try()
         if po:
             return po
     return None

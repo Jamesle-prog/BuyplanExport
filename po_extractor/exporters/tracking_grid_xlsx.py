@@ -146,10 +146,12 @@ def parse_tracking_grid_xlsx(content: bytes) -> dict:
     try:
         ws = wb[_SHEET_TITLE] if _SHEET_TITLE in wb.sheetnames else wb.active
 
-        # Locate the header row by its first cell, tolerating extra title rows.
+        # Locate the header row by ANY cell starting with "PO号", so a header
+        # still parses if the user reordered the columns in Excel.
         header_row = None
         for r in range(1, min(ws.max_row, 20) + 1):
-            if str(ws.cell(r, 1).value or "").strip().startswith("PO号"):
+            if any(str(ws.cell(r, c).value or "").strip().startswith("PO号")
+                   for c in range(1, ws.max_column + 1)):
                 header_row = r
                 break
         if header_row is None:
@@ -158,12 +160,16 @@ def parse_tracking_grid_xlsx(content: bytes) -> dict:
                 "(expected a 'PO号 PO No.' header cell)"
             )
 
-        # Map each data column to its (stage, kind) by header text.
+        # Map every column to its meaning by HEADER TEXT (never fixed index),
+        # so reordering PO / Style / date columns in Excel can't scramble it.
+        col_po = _COL_PO
         col_style = None
         date_cols: dict[int, tuple[str, str]] = {}
         for c in range(1, ws.max_column + 1):
             text = str(ws.cell(header_row, c).value or "").strip()
-            if text.startswith("款号"):
+            if text.startswith("PO号"):
+                col_po = c
+            elif text.startswith("款号"):
                 col_style = c
             elif text in _HEADER_TO_FIELD:
                 date_cols[c] = _HEADER_TO_FIELD[text]
@@ -172,7 +178,7 @@ def parse_tracking_grid_xlsx(content: bytes) -> dict:
         issues: list[str] = []
         rows_seen = 0
         for r in range(header_row + 1, ws.max_row + 1):
-            po = str(ws.cell(r, _COL_PO).value or "").strip()
+            po = str(ws.cell(r, col_po).value or "").strip()
             if not po:
                 continue
             rows_seen += 1

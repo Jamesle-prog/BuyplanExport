@@ -326,7 +326,7 @@ def _run_giii_mapping_import(mapping_file, dry_run: bool = False,
     import shutil as _shutil
     tmpdir = tempfile.mkdtemp()
     try:
-        path = os.path.join(tmpdir, mapping_file.name)
+        path = os.path.join(tmpdir, os.path.basename(mapping_file.name))
         with open(path, "wb") as f:
             f.write(mapping_file.getbuffer())
 

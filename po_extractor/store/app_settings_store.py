@@ -93,8 +93,12 @@ class AppSettingsStore(BaseSQLiteStore):
                 if name in done:
                     continue
                 conn.execute(sql)
+                # OR IGNORE: two processes starting together both see the
+                # migration as pending; the loser's insert must be a silent
+                # no-op, not a UNIQUE-constraint crash on startup.
                 conn.execute(
-                    "INSERT INTO app_settings_migrations (name) VALUES (?)", (name,)
+                    "INSERT OR IGNORE INTO app_settings_migrations (name) "
+                    "VALUES (?)", (name,)
                 )
 
     # ── Read ────────────────────────────────────────────────────────────────

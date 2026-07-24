@@ -165,7 +165,7 @@ def iter_pdf_payloads(files):
                 continue
 
             import extract_msg
-            msg_path = os.path.join(tmp, uf.name)
+            msg_path = os.path.join(tmp, os.path.basename(uf.name))
             with open(msg_path, 'wb') as f:
                 f.write(uf.getbuffer())
             try:

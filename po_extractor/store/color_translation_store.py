@@ -290,8 +290,11 @@ class ColorTranslationStore(BaseSQLiteStore):
                                  "light_or_dark": shade, "label_color": label,
                                  "notes": notes})
                 else:
+                    # OR IGNORE: if a concurrent import inserted this
+                    # (client, brand, en_color) between the check above and
+                    # here, skip rather than crash on the UNIQUE constraint.
                     conn.execute(
-                        """INSERT INTO color_translations
+                        """INSERT OR IGNORE INTO color_translations
                            (client, brand, en_color, cn_color, color_code,
                             light_or_dark, label_color, notes, updated_at)
                            VALUES (?,?,?,?,?,?,?,?,?)""",
@@ -708,7 +711,7 @@ class ColorTranslationStore(BaseSQLiteStore):
                             )
                         else:
                             conn.execute(
-                                """INSERT INTO color_translations
+                                """INSERT OR IGNORE INTO color_translations
                                       (client, brand, en_color, cn_color,
                                        color_code, light_or_dark, label_color,
                                        notes, updated_at)

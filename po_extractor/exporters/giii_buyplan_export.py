@@ -98,6 +98,20 @@ def _col(df, *names):
     return None
 
 
+def _units(v) -> int:
+    """Coerce a units cell to a non-negative int. A bare ``int(v or 0)`` blows
+    up on an empty pandas cell (``float('nan')`` is truthy, so ``nan or 0`` is
+    ``nan`` and ``int(nan)`` raises) and on decimal strings like ``"2.0"`` —
+    either of which would abort the whole buy plan. Via float() both become 2/0."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 0
+    if f != f:            # NaN
+        return 0
+    return int(f)
+
+
 def assemble_buyplan_rows(df_size, df_meta, *, contract_by_po=None,
                           contract_by_style=None, color_lookup=None) -> list[BuyPlanRow]:
     """Assemble BuyPlanRows (one per PO × Color) from stored GIII frames.
@@ -146,7 +160,7 @@ def assemble_buyplan_rows(df_size, df_meta, *, contract_by_po=None,
         for _, sr in sub.iterrows():
             sz = str(sr[size_c]).strip() if size_c else ""
             if sz:
-                sizes[sz] = sizes.get(sz, 0) + int(sr[units_c] or 0) if units_c else 0
+                sizes[sz] = sizes.get(sz, 0) + (_units(sr[units_c]) if units_c else 0)
 
         contract = (contract_by_po.get(_norm_key(po))
                     or contract_by_style.get(_norm_key(style)) or "")

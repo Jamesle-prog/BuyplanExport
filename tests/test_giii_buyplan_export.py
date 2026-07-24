@@ -236,10 +236,51 @@ def test_assemble_rows_from_frames():
     assert navy.is_prepack is True             # "PPK" in packaging
 
 
+def test_assemble_rows_tolerates_blank_and_decimal_units():
+    """A blank (NaN) or decimal-string units cell must not abort the whole buy
+    plan — the old int(cell or 0) raised on NaN (truthy) and on '2.0'."""
+    import pandas as pd
+    from po_extractor.exporters.giii_buyplan_export import assemble_buyplan_rows
+
+    df_size = pd.DataFrame([
+        {"po_number": "PO1", "style": "ST1", "color": "NAVY", "size": "S", "units": None},
+        {"po_number": "PO1", "style": "ST1", "color": "NAVY", "size": "M", "units": "12.0"},
+        {"po_number": "PO1", "style": "ST1", "color": "NAVY", "size": "L", "units": "n/a"},
+    ])
+    df_meta = pd.DataFrame([{"po_number": "PO1", "style": "ST1"}])
+    rows = assemble_buyplan_rows(df_size, df_meta)
+    assert len(rows) == 1
+    # NaN → 0, "12.0" → 12, "n/a" → 0
+    assert rows[0].sizes == {"S": 0, "M": 12, "L": 0}
+
+
 def test_assemble_rows_empty():
     import pandas as pd
     from po_extractor.exporters.giii_buyplan_export import assemble_buyplan_rows
     assert assemble_buyplan_rows(pd.DataFrame(), pd.DataFrame()) == []
+
+
+def test_hhn_regex_stops_at_description_text():
+    """HHN codes must not swallow trailing CJK description / punctuation — a
+    greedy \\S+ captured 'HHN-JA-01715，300克' as one code."""
+    from po_extractor.lookups.fabric_lookup import _extract_hhn_numbers
+    assert _extract_hhn_numbers("大身：HHN-JA-01715，300克/平方米") == [
+        ("大身", "HHN-JA-01715")]
+    assert _extract_hhn_numbers("HHN-MS-01794(里布)") == [("", "HHN-MS-01794")]
+    # multi-line, hyphenated year-style codes still parse whole
+    assert _extract_hhn_numbers("面1 HHN-2026-001\n面2 HHN-DB-YS240782") == [
+        ("面1", "HHN-2026-001"), ("面2", "HHN-DB-YS240782")]
+
+
+def test_fabric_weight_width_tolerate_freetext():
+    """Non-numeric weight/width cells ('300g', 'TBC') must not crash the lookup."""
+    from po_extractor.lookups.fabric_lookup import _int_or_zero
+    assert _int_or_zero("300g") == 300
+    assert _int_or_zero("150cm") == 150
+    assert _int_or_zero("TBC") == 0
+    assert _int_or_zero("") == 0
+    assert _int_or_zero(None) == 0
+    assert _int_or_zero("48.5") == 48
 
 
 def test_dynamic_sizes_only_present_ones():

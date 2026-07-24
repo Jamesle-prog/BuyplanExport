@@ -58,8 +58,17 @@ class EANLookup:
 
         import pandas as pd
 
-        # Read entire file with pandas — single-pass, C-backed
-        df = pd.read_excel(self._path, header=None, dtype=str, engine="openpyxl")
+        # Read entire file with pandas — single-pass, C-backed. A corrupt /
+        # password-protected / missing reference file must leave the lookup
+        # empty (harmless misses), never crash every caller that uses it.
+        try:
+            df = pd.read_excel(self._path, header=None, dtype=str,
+                               engine="openpyxl")
+        except Exception as exc:
+            import warnings
+            warnings.warn(f"[ean_lookup] could not read {self._path}: {exc!r}")
+            self._loaded = True
+            return
         df = df.fillna("")
 
         hrow_idx = 2  # default (0-based)

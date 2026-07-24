@@ -109,7 +109,7 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
         # 1. Save uploads to disk
         pdf_paths = []
         for uf in uploaded_files:
-            path = os.path.join(tmpdir, uf.name)
+            path = os.path.join(tmpdir, os.path.basename(uf.name))
             with open(path, "wb") as f:
                 f.write(uf.getbuffer())
             pdf_paths.append(path)

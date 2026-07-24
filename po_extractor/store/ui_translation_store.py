@@ -1623,6 +1623,7 @@ _SEED: list[tuple[str, str, str, str]] = [
      '个照片文件无法读取，已跳过（网络共享上的损坏文件可能卡住整整一分钟——稍后会自动重试）。请在共享文件夹中修复或删除这些文件：', 'label', 'sky_east'),
     ('Seconds', '秒', 'label', 'sky_east'),
     ('核料 workbook(s) saved to', '个核料工作簿已保存到', 'label', 'sky_east'),
+    ('Sky East processing failed:', 'Sky East 处理失败：', 'label', 'sky_east'),
 
     # Fabric DB — version history review/restore additions (v2.79.0)
     ('approved by', '审批人', 'label', 'admin'),

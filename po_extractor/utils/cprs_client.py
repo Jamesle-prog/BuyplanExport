@@ -207,6 +207,8 @@ class CprsClient:
         if key not in self._cache:
             data = self._get("/warehouse-lookup/resolve",
                              {"ship_to": ship_to, "client_id": client_id})
+            if data is None:
+                return None        # transient failure — don't cache the miss
             code = None
             if isinstance(data, dict):
                 code = (data.get("warehouse_code") or data.get("warehouseCode")
@@ -293,6 +295,10 @@ class CprsClient:
             data = self._get("/search/requirements",
                              {"clientId": client_id, "subtype": "pre_pack_ratio",
                               "limit": 10, "include": "structured_output"})
+            if data is None:
+                # transient failure — don't cache an empty ratios map (it would
+                # stick until restart), just return the blank spec this time.
+                return {"ratio": "", "pcs_box": ""}
             items = data.get("data") or data.get("items") or data.get("results") \
                 if isinstance(data, dict) else (data if isinstance(data, list) else [])
             ratios: dict[str, dict] = {}
@@ -387,6 +393,10 @@ class CprsClient:
     def manual_image(self, image_id: str) -> bytes | None:
         """Fetch a requirement's illustrative artwork as raw bytes."""
         if not (self.base and image_id):
+            return None
+        # image_id goes into the URL path — allow only safe id characters so a
+        # crafted value ("../health") can't redirect the request.
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]+", str(image_id)):
             return None
         try:
             import requests

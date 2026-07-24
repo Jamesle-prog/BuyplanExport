@@ -128,6 +128,18 @@ def test_rename_and_delete(store):
     assert store.canonical_names() == []
 
 
+def test_rename_registers_new_name_as_alias(store):
+    """After a rename the factory must resolve by its NEW name (regression:
+    rename used to update only factory_canonical, leaving the new name
+    unresolvable)."""
+    cid = store.add_canonical("Old Name", code="01423")
+    store.rename_canonical(cid, "New Name")
+    assert store.resolve_id("New Name") == cid
+    assert store.canonical_name("new   name") == "New Name"   # norm-insensitive
+    # Old name still resolves too (its auto-alias is kept).
+    assert store.resolve_id("Old Name") == cid
+
+
 def test_remove_alias(store):
     cid = store.add_canonical("Factory A")
     store.add_alias(_V1, cid)

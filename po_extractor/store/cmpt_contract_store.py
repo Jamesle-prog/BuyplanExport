@@ -6,6 +6,7 @@ and payments (see ``_cmpt_schema.py``).
 """
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 from typing import Any
 
@@ -50,16 +51,21 @@ class CmptContractStore(BaseSQLiteStore):
             ).fetchone()
             if dup:
                 raise ValueError(f"Contract no. {contract_no!r} already exists.")
-            cur = conn.execute(
-                """INSERT INTO cmpt_contracts
-                      (contract_no, factory, company, contract_date, status,
-                       currency, notes, created_at, created_by,
-                       updated_at, updated_by)
-                   VALUES (?,?,?,?,'draft',?,?,?,?,?,?)""",
-                (contract_no, factory, company or "", contract_date or "",
-                 currency or "RMB", notes or "", now, created_by or "",
-                 now, created_by or ""),
-            )
+            try:
+                cur = conn.execute(
+                    """INSERT INTO cmpt_contracts
+                          (contract_no, factory, company, contract_date, status,
+                           currency, notes, created_at, created_by,
+                           updated_at, updated_by)
+                       VALUES (?,?,?,?,'draft',?,?,?,?,?,?)""",
+                    (contract_no, factory, company or "", contract_date or "",
+                     currency or "RMB", notes or "", now, created_by or "",
+                     now, created_by or ""),
+                )
+            except sqlite3.IntegrityError:
+                # Lost the check-then-insert race with a concurrent create —
+                # surface the same clean error, not a raw IntegrityError.
+                raise ValueError(f"Contract no. {contract_no!r} already exists.")
             cid = int(cur.lastrowid)
             self._insert_lines(conn, cid, lines or [])
         return cid

@@ -16,6 +16,7 @@ mailbox never queues the same file twice.
 """
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 
 from .base_store import BaseSQLiteStore
@@ -104,15 +105,21 @@ class EmailInboxStore(BaseSQLiteStore):
                     continue
 
                 allowed = bool(is_allowed(from_addr))
-                cur = conn.execute(
-                    """INSERT INTO email_messages
-                          (uid, from_addr, from_name, subject, sent_at, body,
-                           allowed, received_at)
-                       VALUES (?,?,?,?,?,?,?,?)""",
-                    (uid, from_addr, m.get("from_name") or "", subject,
-                     m.get("date") or "", (m.get("body") or "")[:4000],
-                     int(allowed), now),
-                )
+                try:
+                    cur = conn.execute(
+                        """INSERT INTO email_messages
+                              (uid, from_addr, from_name, subject, sent_at, body,
+                               allowed, received_at)
+                           VALUES (?,?,?,?,?,?,?,?)""",
+                        (uid, from_addr, m.get("from_name") or "", subject,
+                         m.get("date") or "", (m.get("body") or "")[:4000],
+                         int(allowed), now),
+                    )
+                except sqlite3.IntegrityError:
+                    # A concurrent poll of the same mailbox inserted this same
+                    # message between our dup-check and here — skip it rather
+                    # than abort the whole ingest on the UNIQUE constraint.
+                    continue
                 msg_id = int(cur.lastrowid)
                 n_msg += 1
 

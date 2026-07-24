@@ -107,7 +107,8 @@ def build_progress_request_xlsx(factory: str, rows: list[dict],
     for ri, row in enumerate(rows, header_row + 1):
         ws.cell(ri, _COL_PO,    value=row.get("po_number", ""))
         ws.cell(ri, _COL_STYLE, value=row.get("style", ""))
-        ws.cell(ri, _COL_QTY,   value=row.get("order_qty") or "")
+        _qty = row.get("order_qty")
+        ws.cell(ri, _COL_QTY,   value="" if _qty in (None, "") else _qty)
         ws.cell(ri, 4, value=row.get("cut", 0))
         ws.cell(ri, 5, value=row.get("sewn", 0))
         ws.cell(ri, 6, value=row.get("packed", 0))

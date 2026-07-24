@@ -57,13 +57,19 @@ def prune_extracted_images(folder: str | None = None, *,
 
     files: list[tuple[str, float, int]] = []
     total = 0
+    _base = os.path.realpath(folder)
     for name in names:
         p = os.path.join(folder, name)
         try:
             if not os.path.isfile(p):
                 continue
+            # Only ever delete inside the images folder — a symlink whose
+            # real target escapes the folder is skipped, so os.remove below
+            # can never touch an arbitrary file.
+            if os.path.commonpath([_base, os.path.realpath(p)]) != _base:
+                continue
             stt = os.stat(p)
-        except OSError:
+        except (OSError, ValueError):
             continue
         files.append((p, stt.st_mtime, stt.st_size))
         total += stt.st_size

@@ -203,7 +203,7 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
         # 1. Save uploads to disk
         excel_paths = []
         for uf in uploaded_excels:
-            path = os.path.join(tmpdir, uf.name)
+            path = os.path.join(tmpdir, os.path.basename(uf.name))
             with open(path, "wb") as f:
                 f.write(uf.getbuffer())
             excel_paths.append(path)

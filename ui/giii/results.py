@@ -328,7 +328,7 @@ def _show_requirements_api_section(outputs: dict, key_prefix: str) -> None:
                 try:
                     parsed = parse_dsp_trims(dsp_file.getvalue())
                     _cached = (_sig, parsed, "")
-                except ValueError as exc:
+                except Exception as exc:   # any parse failure → shown, not raised
                     _cached = (_sig, None, str(exc))
                 st.session_state[_dsp_cache_key] = _cached
             _, _parsed, _err = _cached
@@ -465,15 +465,16 @@ def _show_excel_downloads(outputs: dict):
         st.caption("One sheet per style — fabric, photos, PO rows, size grid")
 
     with col2:
-        st.download_button(
-            label=f"🎨 Template_P — {outputs['template_p_count']} workbook(s) (.zip)",
-            data=outputs["template_p_zip"],
-            file_name="Zalando_面料_by_Fabric.zip",
-            mime=ZIP_MIME,
-            use_container_width=True,
-            key="excel_dl_templatep",
-        )
-        st.caption("Color × Size pivot grouped by Fabric1_Code")
+        if outputs.get("template_p_zip"):
+            st.download_button(
+                label=f"🎨 Template_P — {outputs.get('template_p_count', 0)} workbook(s) (.zip)",
+                data=outputs["template_p_zip"],
+                file_name="Zalando_面料_by_Fabric.zip",
+                mime=ZIP_MIME,
+                use_container_width=True,
+                key="excel_dl_templatep",
+            )
+            st.caption("Color × Size pivot grouped by Fabric1_Code")
 
     if "repeat_csv" in outputs:
         with col3:

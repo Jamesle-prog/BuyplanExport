@@ -274,7 +274,10 @@ def generate_po_summary_excel(
         if po_sizes.empty:
             # No size breakdown — one summary row per PO
             total_u = int(_v(po_row, "total_units") or 0)
-            ext_c = round(total_u * cpu_f, 2)
+            # Extended Cost = units × UNIT cost (fob_f). Must NOT use cpu_f:
+            # cpu comes from line_extended_cost, which some sources populate
+            # as the whole-PO total, so units × that inflates the figure.
+            ext_c = round(total_u * fob_f, 2)
 
             row_data = [po_num, style, "", "", fob_f or fob, cpu_f or cpu]
             row_data += [0] * len(active_sizes)
@@ -304,7 +307,7 @@ def generate_po_summary_excel(
 
                 size_vals = [int(sz_row.get(s, 0) or 0) for s in active_sizes]
                 total_u   = sum(size_vals)
-                ext_c     = round(total_u * cpu_f, 2)
+                ext_c     = round(total_u * fob_f, 2)   # units × unit cost
 
                 row_data = [po_num, style, color_code, color_name,
                             fob_f or fob, cpu_f or cpu]

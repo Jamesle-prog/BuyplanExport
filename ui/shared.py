@@ -425,8 +425,9 @@ def load_image(picture_id: str,
     primary = img_dir if img_dir is not None else images_dir()
     # Primary (configured) folder first, then the persistent extracted-images
     # fallback so images survive restarts / a changed image folder.
+    _pid_file = f"{os.path.basename(str(picture_id))}.png"   # no path traversal
     for folder in (primary, EXTRACTED_IMAGES_DIR):
-        path = os.path.join(folder, f"{picture_id}.png")
+        path = os.path.join(folder, _pid_file)
         if os.path.exists(path):
             try:
                 with open(path, "rb") as f:
@@ -670,7 +671,7 @@ def save_images_to_disk(image_dict: dict,
 
         for pid, data in image_dict.items():
             if pid and data:
-                path = os.path.join(folder, f"{pid}.png")
+                path = os.path.join(folder, f"{os.path.basename(str(pid))}.png")
                 if not os.path.exists(path):
                     with open(path, "wb") as f:
                         f.write(data)
@@ -717,7 +718,7 @@ def build_image_cache_for_ids(picture_ids,
         # extracted-images fallback; populate the session cache on a hit.
         primary = img_dir if img_dir is not None else images_dir()
         for folder in (primary, EXTRACTED_IMAGES_DIR):
-            path = os.path.join(folder, f"{pid}.png")
+            path = os.path.join(folder, f"{os.path.basename(str(pid))}.png")
             if os.path.exists(path):
                 try:
                     with open(path, "rb") as _f:

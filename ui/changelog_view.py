@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.103.0",
+        "date": "2026-07-24",
+        "entries": [
+            {"type": "fix", "text": "**Correctness fixes from a full-codebase review.** The GIII PO-summary Excel's *Extended Cost* now multiplies units by the per-unit FOB (it previously used a field that was sometimes a whole-PO total, inflating the number). The GIII buy plan no longer aborts when a size cell is blank or holds a decimal like `12.0` — those become 0 / 12 instead of crashing the whole plan. Fabric HHN codes stop at the code itself: `大身：HHN-JA-01715，300克/平方米` reads as `HHN-JA-01715`, not the code plus its description. A blank new row in **Admin → Size Order** is dropped instead of being saved as a phantom size `NONE`, and a non-numeric weight/width cell (`300g`, `TBC`) no longer breaks the fabric lookup. The factory progress form keeps a real order quantity of 0 rather than blanking it."},
+            {"type": "fix", "text": "**Reference files can't take the app down.** If a lookup workbook (fabric 洗标, EAN export) is missing, corrupt, or password-protected, that lookup now stays empty and logs a warning instead of crashing every buy plan that reads it. Sky East processing shows a clean error message (and never a stale previous batch) if a post-parse step fails, rather than dumping a raw traceback."},
+            {"type": "security", "text": "**Concurrency & input hardening.** Several first-write-wins races between simultaneous users (settings migration, colour-translation import, inbound-email and contract inserts) are now idempotent. Uploaded filenames are normalized before being used in paths, the image-cache prune can only ever delete inside its own folder, and production-tracking writes validate column names against the live schema so a typo'd field surfaces as a clear error instead of malformed SQL."},
+        ],
+    },
+    {
         "version": "2.102.1",
         "date": "2026-07-24",
         "entries": [

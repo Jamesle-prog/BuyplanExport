@@ -111,7 +111,10 @@ class ProductionTrackingStore(BaseSQLiteStore):
         """
         po_number = (po_number or "").strip()
         style = (style or "").strip()
-        now = datetime.utcnow().isoformat(timespec="seconds")
+        # Same local "YYYY-MM-DD HH:MM:SS" format update_stage_fields writes,
+        # so the dashboard's ORDER BY updated_at sorts a single consistent
+        # format (mixing this with an ISO "T" UTC string scrambled the order).
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # ── Build the combined column → value mapping.
         payload: dict[str, Any] = {
@@ -142,6 +145,17 @@ class ProductionTrackingStore(BaseSQLiteStore):
             f"ON CONFLICT(po_number, style) DO UPDATE SET {update_set}"
         )
         with self._conn() as conn:
+            # Column names are interpolated into the SQL, so validate every
+            # payload key against the live schema — same guard as
+            # update_stage_fields(). A typo'd stage/dep/qc key would otherwise
+            # become invalid SQL (or worse) instead of a clear error.
+            valid_cols = {
+                r[1] for r in conn.execute(
+                    "PRAGMA table_info(production_tracking)").fetchall()
+            }
+            bad = [c for c in cols if c not in valid_cols]
+            if bad:
+                raise ValueError(f"Unknown production_tracking columns: {bad}")
             conn.execute(sql, [payload[c] for c in cols])
             row = conn.execute(
                 "SELECT id FROM production_tracking WHERE po_number=? AND style=?",

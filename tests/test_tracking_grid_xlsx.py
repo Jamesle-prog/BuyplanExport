@@ -84,6 +84,26 @@ def test_column_reorder_still_parses():
     assert fields[f"{_S1}_planned"] == "2026-08-10"
 
 
+def test_po_column_found_by_header_when_reordered():
+    """The PO column is matched by header text, not fixed index — moving it
+    in Excel must not break re-import (regression: PO was read at column 1)."""
+    rec = _record(po="PO-9", style="STY-Z",
+                  **{f"{_S0}_planned": "2026-08-01"})
+    wb = openpyxl.load_workbook(io.BytesIO(build_tracking_grid_xlsx([rec])))
+    ws = wb.active
+    hr = next(r for r in range(1, 10)
+              if str(ws.cell(r, 1).value or "").startswith("PO号"))
+    # Swap columns 1 (PO) and 3 (Factory) — header + every data row.
+    for rr in range(hr, ws.max_row + 1):
+        ws.cell(rr, 1).value, ws.cell(rr, 3).value = (
+            ws.cell(rr, 3).value, ws.cell(rr, 1).value)
+    buf = io.BytesIO(); wb.save(buf)
+    parsed = parse_tracking_grid_xlsx(buf.getvalue())
+    assert len(parsed["rows"]) == 1
+    assert parsed["rows"][0]["po_number"] == "PO-9"
+    assert parsed["rows"][0]["style"] == "STY-Z"
+
+
 def test_bad_date_is_reported_not_applied():
     wb = openpyxl.load_workbook(io.BytesIO(build_tracking_grid_xlsx([_record()])))
     ws = wb.active

@@ -280,6 +280,14 @@ class FactoryRegistryStore(BaseSQLiteStore):
                 "UPDATE factory_canonical SET name=?, name_norm=? WHERE id=?",
                 (new_name, norm(new_name), int(canonical_id)),
             )
+            # Register the new name as an alias so the factory resolves by it
+            # (the old name's auto-alias is kept — old spellings still map).
+            conn.execute(
+                "INSERT OR IGNORE INTO factory_alias (alias, alias_norm, "
+                "canonical_id, created_at, created_by) VALUES (?,?,?,?,?)",
+                (new_name, norm(new_name), int(canonical_id),
+                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "rename"),
+            )
 
     def remove_alias(self, alias_norm_or_text: str) -> None:
         with self._conn() as conn:

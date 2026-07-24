@@ -38,7 +38,14 @@ def show_size_order_admin() -> None:
 
     c1, c2 = st.columns([1, 3])
     if c1.button(f"💾 {t('Save size order')}", key="admin_size_save", use_container_width=True):
-        new_sizes = [str(v).strip().upper() for v in edited["Size"] if str(v).strip()]
+        # pd.notna first: a blank new row arrives as None/NaN, and
+        # str(None)=="None"/str(nan)=="nan" would otherwise survive the strip
+        # check and get saved as bogus size codes "NONE"/"NAN".
+        new_sizes = [
+            str(v).strip().upper()
+            for v in edited["Size"]
+            if pd.notna(v) and str(v).strip()
+        ]
         if not new_sizes:
             st.error(t("Size list cannot be empty."))
         else:

@@ -286,7 +286,7 @@ def _show_giii_upload_section():
     try:
         saved_paths: dict[str, str] = {}
         for uf in uploaded:
-            p = os.path.join(tmpdir, uf.name)
+            p = os.path.join(tmpdir, os.path.basename(uf.name))
             with open(p, "wb") as f:
                 f.write(uf.getbuffer())
             saved_paths[uf.name] = p

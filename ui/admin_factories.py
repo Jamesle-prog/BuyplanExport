@@ -138,12 +138,15 @@ def _render_dictionary(store) -> None:
         title = c["name"] + (f"  ·  {c['code']}" if c["code"] else "")
         with st.expander(f"🏭 {title}  ({len(c['aliases'])} {t('names')})"):
             st.caption(t("Client-specific names that map to this factory:"))
+            from po_extractor.store.factory_registry_store import norm as _fnorm
+            _is_canon = {a: _fnorm(a) == _fnorm(c["name"]) for a in c["aliases"]}
             for alias in c["aliases"]:
                 ac1, ac2 = st.columns([5, 1])
-                ac1.markdown(f"• {alias}")
-                # Never allow removing the last alias == the canonical's own
-                # name (it would make the factory unresolvable).
-                if len(c["aliases"]) > 1:
+                ac1.markdown(f"• {alias}"
+                             + (" *(" + t("canonical") + ")*" if _is_canon[alias] else ""))
+                # The alias equal to the factory's own name can't be removed —
+                # deleting it would leave the factory unresolvable by its name.
+                if len(c["aliases"]) > 1 and not _is_canon[alias]:
                     if ac2.button("🗑", key=f"fac_dela_{c['id']}_{abs(hash(alias))}",
                                   help=t("Remove this name")):
                         store.remove_alias(alias)

@@ -77,8 +77,10 @@ def _build_tracker_excel(df: pd.DataFrame) -> bytes:
         s = Side(style="thin", color="CCCCCC")
         return Border(left=s, right=s, top=s, bottom=s)
 
-    # Title row  (cell var named `tc` — `t` is the i18n translator import)
-    ws.merge_cells(f"A1:{get_column_letter(len(df.columns))}1")
+    # Title row  (cell var named `tc` — `t` is the i18n translator import).
+    # get_column_letter is 1-based; a 0-column frame (every column deselected)
+    # would raise ValueError, so floor the span at one column.
+    ws.merge_cells(f"A1:{get_column_letter(max(1, len(df.columns)))}1")
     tc = ws["A1"]
     tc.value = "PO Tracker — Commercial Summary"
     tc.font = Font(name="Arial", bold=True, size=13, color=WHITE)

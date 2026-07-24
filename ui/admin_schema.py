@@ -33,7 +33,8 @@ def show_schema_editor(
         "Edit the **Standard Label** to rename a column across all outputs instantly. "
         "Client alias columns show what that client calls the same field in their input files — "
         "useful for the dual-header row in Sky East Excel downloads. "
-        "Add rows for new fields; delete rows to hide them from outputs."
+        "Delete rows to hide fields from outputs. (The internal DB Field is "
+        "fixed because it must match the code — new fields are added in code.)"
     ))
 
     rows = load_live_schema(schema_path)

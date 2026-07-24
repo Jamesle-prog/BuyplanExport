@@ -312,7 +312,7 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
 
             order_paths = []
             for uf in order_files:
-                p = os.path.join(tmpdir, uf.name)
+                p = os.path.join(tmpdir, os.path.basename(uf.name))
                 with open(p, "wb") as f:
                     f.write(uf.getbuffer())
                 order_paths.append((uf.name, p))
@@ -372,7 +372,7 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             ]:
                 if uf is not None:
                     tracker.step(f"Loading {label} file")
-                    rpath = os.path.join(tmpdir, uf.name)
+                    rpath = os.path.join(tmpdir, os.path.basename(uf.name))
                     with open(rpath, "wb") as f:
                         f.write(uf.getbuffer())
                     ref_info[key] = rpath
@@ -492,6 +492,18 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             trim_image_cache()
         except Exception:
             pass
+    except Exception as exc:
+        # Per-file parse errors are handled inside the loop; this catches a
+        # failure in the post-loop steps (validation, save, image write) so the
+        # user sees a clean message instead of a raw Streamlit traceback. Clear
+        # any half-built results so the UI never renders a partial batch.
+        from ui.i18n import t
+        log.append(f"❌ {exc}")
+        # Mirror the success path's exact keys (se_log / se_results) so the
+        # results view reads this failure state, not a stale prior batch.
+        st.session_state.se_log = log
+        st.session_state.se_results = None
+        st.error(f"{t('Sky East processing failed:')} {exc}")
     finally:
         # Clean up temp directory — all data is now in memory / DB / disk images
         _shutil.rmtree(tmpdir, ignore_errors=True)
