@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.109.1",
+        "date": "2026-07-27",
+        "entries": [
+            {"type": "refactor", "text": "**Dropped the m/piece column.** Fabric consumption is now shown per garment (**m/unit**) only — the per-piece figure was a second way of saying the same thing and isn't what fabric is ordered against."},
+        ],
+    },
+    {
         "version": "2.109.0",
         "date": "2026-07-27",
         "entries": [

@@ -31,8 +31,7 @@ _LIST_RENAME = {
     "n_markers": "Markers", "mat_tables": "Tables",
     "total_plies": "Plies", "mat_cut_qty": "Pieces",
     "mat_fabric_m": "Fabric (m)", "m_per_unit": "m/unit",
-    "m_per_piece": "m/piece", "mat_efficiency_pct": "Efficiency %",
-    "cost": "Cost",
+    "mat_efficiency_pct": "Efficiency %", "cost": "Cost",
     "po_qty": "PO qty", "order_qty": "Plan qty", "cut_qty": "Cut qty",
     "diff_pct": "Cut vs PO %",
     "linked_pos": "Linked POs", "linked_styles": "Linked styles",
@@ -61,11 +60,10 @@ def show_plans_section() -> None:
     st.caption(t(
         "One row per fabric: shell and lining are different fabrics at "
         "different widths, so their metres and efficiency are never combined. "
-        "**m/unit** is fabric consumption per garment (单耗) and **m/piece** "
-        "per cut piece — they differ when one fabric yields several pieces of "
-        "a garment. **Pieces** counts pieces cut from that fabric; **Cut "
-        "qty**, **PO qty** and **Plan qty** all count units. **Cut vs PO %** "
-        "is positive when the plan overcuts."))
+        "**m/unit** is fabric consumption per garment (单耗). **Pieces** "
+        "counts pieces cut from that fabric; **Cut qty**, **PO qty** and "
+        "**Plan qty** all count units. **Cut vs PO %** is positive when the "
+        "plan overcuts."))
     show = view[[c for c in _LIST_RENAME if c in view.columns]].copy()
     for col in _ROUND_2:
         if col in show.columns:
@@ -82,11 +80,6 @@ def show_plans_section() -> None:
             _th("m/unit"): st.column_config.NumberColumn(
                 format="%.4f",
                 help=t("Metres of this fabric per garment."),
-            ),
-            _th("m/piece"): st.column_config.NumberColumn(
-                format="%.4f",
-                help=t("Metres of this fabric per cut piece — the plan's own "
-                       "'Average Length'."),
             ),
         },
     )
@@ -256,9 +249,8 @@ _FABRIC_RENAME = {
     "material": "Fabric", "width_cm": "Width (cm)", "spreading": "Spreading",
     "n_markers": "Markers", "total_tables": "Tables", "total_plies": "Plies",
     "cut_qty": "Pieces", "fabric_length_m": "Fabric (m)",
-    "m_per_unit": "m/unit", "m_per_piece": "m/piece",
-    "efficiency_pct": "Efficiency %", "cut_length_m": "Cut length (m)",
-    "cost": "Cost",
+    "m_per_unit": "m/unit", "efficiency_pct": "Efficiency %",
+    "cut_length_m": "Cut length (m)", "cost": "Cost",
 }
 
 
@@ -278,8 +270,6 @@ def _show_fabric_summary(store, plan_id: int) -> None:
         column_config={
             _th("m/unit"): st.column_config.NumberColumn(
                 format="%.4f", help=t("Metres of this fabric per garment.")),
-            _th("m/piece"): st.column_config.NumberColumn(
-                format="%.4f", help=t("Metres per cut piece.")),
         },
     )
 
