@@ -4,6 +4,8 @@ Missing-fields editor lives in ui/sky_east/_missing.py.
 """
 from __future__ import annotations
 
+import html
+
 import pandas as pd
 import streamlit as st
 
@@ -91,7 +93,14 @@ def _show_se_results(results: list, image_cache: dict):
                         change_parts = []
                         for field, (old_v, new_v) in non_size.items():
                             lbl = field_labels.get(field, field)
-                            change_parts.append(f"{lbl}: **{old_v}** -> **{new_v}**")
+                            # Escaped: this joins into an unsafe_allow_html
+                            # markdown below, and the values come from stored
+                            # contract fields (originally uploaded content).
+                            change_parts.append(
+                                f"{html.escape(str(lbl))}: "
+                                f"**{html.escape(str(old_v))}** -> "
+                                f"**{html.escape(str(new_v))}**"
+                            )
                         st.markdown(
                             t("Changed:") + " " + " &nbsp;·&nbsp; ".join(change_parts),
                             unsafe_allow_html=True,

@@ -1,6 +1,7 @@
 """Sky East import-time validation helpers."""
 from __future__ import annotations
 
+import html
 import streamlit as st
 
 
@@ -13,13 +14,13 @@ def _se_report_sku_conflicts(config_sku_lookup, log: list[str]) -> None:
         f"{n_conf} Config SKU conflict(s) detected -- "
         "the same PO + Color + Brand + Style maps to multiple different Config SKU values."
     )
-    log.append(f"{n_conf} Config SKU conflict(s) -- review required:")
+    log.append(f"{html.escape(str(n_conf))} Config SKU conflict(s) -- review required:")
     for c in config_sku_lookup.conflicts:
         msg = (f"  PO={c['po']} | Color={c['color']} | "
                f"Brand={c['brand']} | Style={c['style']} "
                f"-> conflicting values: {', '.join(c['values'])}")
         st.error(msg)
-        log.append(f'<span style="color:#dc3545">{msg}</span>')
+        log.append(f'<span style="color:#dc3545">{html.escape(str(msg))}</span>')
 
 
 def _se_validate_contracts(contracts, log: list[str]) -> None:
@@ -42,14 +43,14 @@ def _se_validate_contracts(contracts, log: list[str]) -> None:
     sku_msg = (f"Config SKU coverage: {n_sku}/{n_total} items ({pct_sku}%)"
                + (" OK" if pct_sku >= 95 else " (low -- upload Config SKU file?)"))
     st.write(f"  {sku_msg}")
-    log.append(f"{sku_msg}")
+    log.append(f"{html.escape(str(sku_msg))}")
 
     for key, label in ISSUE_CATEGORIES:
         issues = report["issues"][key]
         if issues:
             st.warning(f"{label} -- {len(issues)} issue(s) found")
-            log.append(f"{label} ({len(issues)} issue(s)):")
+            log.append(f"{html.escape(str(label))} ({html.escape(str(len(issues)))} issue(s)):")
             for msg in issues[:20]:
-                log.append(f"  {msg}")
+                log.append(f"  {html.escape(str(msg))}")
             if len(issues) > 20:
-                log.append(f"  ... and {len(issues) - 20} more")
+                log.append(f"  ... and {html.escape(str(len(issues) - 20))} more")

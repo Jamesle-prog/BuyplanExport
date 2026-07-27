@@ -4,3 +4,6 @@ openpyxl>=3.1.0
 streamlit>=1.32.0
 bcrypt>=4.0.0
 openai>=1.0.0
+# Hardened XML parsing for uploaded workbooks (image_extractor). Optional —
+# the code falls back to the stdlib parser when it isn't installed.
+defusedxml>=0.7.1

@@ -92,10 +92,10 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
         log.append(f'<span style="color:#dc3545">❌ {html.escape(str(skipped))}</span>')
     for src in result.source_files:
         n = len(result.df[result.df["_source_file"] == src]) if "_source_file" in result.df.columns else "?"
-        log.append(f'<span style="color:#198754">✅ {html.escape(str(src))}</span> — {n} rows')
+        log.append(f'<span style="color:#198754">✅ {html.escape(str(src))}</span> — {html.escape(str(n))} rows')
 
     if result.df.empty:
-        log.append(f"⚠️ {company}: no data found.")
+        log.append(f"⚠️ {html.escape(str(company))}: no data found.")
         return None
 
     for conflict in result.conflicts:
@@ -163,7 +163,7 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
                     for mp in masked_files:
                         zf.write(mp, os.path.basename(mp))
                 out["masked_zip"] = mbuf.getvalue()
-                log.append(f"🔒 {len(masked_files)} price-masked file(s) created for {company}")
+                log.append(f"🔒 {html.escape(str(len(masked_files)))} price-masked file(s) created for {html.escape(str(company))}")
         finally:
             _shutil_mask.rmtree(mask_out_dir, ignore_errors=True)
 
@@ -215,7 +215,7 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
             try:
                 progress_lookup = ProgressLookup(data=progress_file.getvalue())
                 st.write(f"  📊 Progress lookup ready ({len(progress_lookup)} record(s))")
-                log.append(f"📊 Progress lookup: {len(progress_lookup)} record(s)")
+                log.append(f"📊 Progress lookup: {html.escape(str(len(progress_lookup)))} record(s)")
             except Exception as exc:
                 st.warning(f"Could not load progress file: {exc}")
                 log.append(f"⚠️ Progress lookup error: {html.escape(str(exc))}")
@@ -225,7 +225,7 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
         photo_map: dict[str, bytes] = _load_photo_map_from_dir(images_folder)
         if photo_map:
             st.write(f"  📷 {len(photo_map)} photo(s) loaded from image folder")
-            log.append(f"📷 {len(photo_map)} photo(s) loaded from image folder")
+            log.append(f"📷 {html.escape(str(len(photo_map)))} photo(s) loaded from image folder")
 
         # 3. Combine all Excel files
         st.write(f"Merging {len(excel_paths)} Excel file(s)…")
@@ -239,7 +239,7 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
             n_rows = (len(result.df[result.df["_source_file"] == src])
                       if "_source_file" in result.df.columns else "?")
             st.write(f"  ✅ {src} — {n_rows} row(s)")
-            log.append(f'<span style="color:#198754">✅ {html.escape(str(src))}</span> — {n_rows} rows')
+            log.append(f'<span style="color:#198754">✅ {html.escape(str(src))}</span> — {html.escape(str(n_rows))} rows')
 
         if result.df.empty:
             status.update(label="No data found in the uploaded files.", state="error")
@@ -314,7 +314,7 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
                 st.write(f"🧹 Color cleanup ({len(cleanup_lines)} value(s)):")
                 for line in cleanup_lines:
                     st.write(line)
-                log.append(f"🧹 Color cleanup ({len(cleanup_lines)} value(s)):")
+                log.append(f"🧹 Color cleanup ({html.escape(str(len(cleanup_lines)))} value(s)):")
                 log.extend(cleanup_lines)
 
             # Look up the matched record once per row, then extract 4 fields
@@ -360,10 +360,10 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
 
             filled = (_enriched_df["合同号"] != "").sum()
             st.write(f"  合同号: {filled}/{len(_enriched_df)} row(s) matched")
-            log.append(f"合同号 enrichment: {filled}/{len(_enriched_df)} rows filled")
+            log.append(f"合同号 enrichment: {html.escape(str(filled))}/{html.escape(str(len(_enriched_df)))} rows filled")
             cn_filled = (_enriched_df["中文颜色"].astype(str).str.strip() != "").sum()
             st.write(f"  中文颜色: {cn_filled}/{len(_enriched_df)} row(s) (from 大货进度表)")
-            log.append(f"中文颜色 enrichment: {cn_filled}/{len(_enriched_df)} rows (大货进度表)")
+            log.append(f"中文颜色 enrichment: {html.escape(str(cn_filled))}/{html.escape(str(len(_enriched_df)))} rows (大货进度表)")
 
         buyplan_path = export_hhp_buyplan(_enriched_df, out_dir, photo_map=photo_map,
                                           fabric_version_id=fabric_version_id,
@@ -396,7 +396,7 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
                             zf.write(mp, os.path.basename(mp))
                     masked_excel_zip = mbuf.getvalue()
                     st.write(f"  🔒 {len(masked_files)} masked file(s) ready for download")
-                    log.append(f"🔒 {len(masked_files)} price-masked file(s) created")
+                    log.append(f"🔒 {html.escape(str(len(masked_files)))} price-masked file(s) created")
             finally:
                 _shutil.rmtree(mask_out_dir, ignore_errors=True)
 

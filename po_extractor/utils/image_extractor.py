@@ -16,7 +16,25 @@ from __future__ import annotations
 
 import re
 import zipfile
-from xml.etree import ElementTree as ET
+
+# Sheet XML here comes straight from an UPLOADED workbook, so parse it with
+# defusedxml when available: the stdlib ElementTree is documented as vulnerable
+# to entity-expansion DoS ("billion laughs" / quadratic blowup). Falling back to
+# the stdlib keeps this an optional hardening rather than a hard dependency —
+# the parsing API and behaviour are identical either way.
+try:
+    from defusedxml import ElementTree as ET
+    from defusedxml.common import DefusedXmlException
+except ImportError:                                   # pragma: no cover
+    from xml.etree import ElementTree as ET
+    DefusedXmlException = ()                          # nothing extra to catch
+
+# defusedxml raises DefusedXmlException (a ValueError subclass), NOT
+# ET.ParseError, when it refuses a hostile document — so a rejected workbook
+# must be caught here too, or hardening would turn a skipped file into a crash.
+_XML_ERRORS = (ET.ParseError,) + (
+    (DefusedXmlException,) if DefusedXmlException else ()
+)
 
 _DISPIMG_CELL_RE = re.compile(r'DISPIMG\("(ID_[0-9A-Fa-f]+)"', re.IGNORECASE)
 _COL_LETTER_RE   = re.compile(r'^([A-Za-z]+)')
@@ -155,8 +173,8 @@ def extract_images_from_xlsx(path: str) -> dict[str, bytes]:
                 if img_path and img_path in names:
                     result[img_id] = zf.read(img_path)
 
-    except (zipfile.BadZipFile, ET.ParseError, KeyError):
-        pass   # silently skip unreadable files
+    except (zipfile.BadZipFile, *_XML_ERRORS, KeyError):
+        pass   # silently skip unreadable / hostile files
 
     return result
 

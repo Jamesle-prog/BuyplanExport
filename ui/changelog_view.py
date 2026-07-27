@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.103.1",
+        "date": "2026-07-27",
+        "entries": [
+            {"type": "security", "text": "**Stored XSS in the processing log — closed across every pipeline.** The \"Processing log\" panel renders its lines as HTML so it can colour them, which makes every value written into a line an injection point — and those values include uploaded filenames and cell contents from supplier workbooks. A file named `<img src=x onerror=…>.xlsx` could run script in the operator's browser. v2.75.6 fixed this for the GIII Excel pipeline only; the Sky East pipeline, the GIII PDF/smart pipeline, and the Sky East validators were left raw, and even the \"fixed\" file still had unescaped values. All 87 interpolation points across all four log producers are now HTML-escaped, plus the Sky East change-diff panel."},
+            {"type": "security", "text": "**The escaping rule is now machine-enforced, so it can't silently regress again.** A new test parses each log-producing module and fails if any value reaches the log without `html.escape()` — the check that would have caught both the original gap and the incomplete v2.75.6 fix. It's paired with a test proving a hostile filename comes out inert, and a self-check proving the detector actually fails on unescaped input."},
+            {"type": "security", "text": "**Hardened XML parsing for uploaded workbooks.** Sheet XML from an uploaded `.xlsx` is now parsed with `defusedxml` when available, so a crafted entity-expansion file can't be used to exhaust memory. The refusal is caught alongside the existing parse errors, so a hostile file is skipped exactly like an unreadable one instead of surfacing as a crash. Falls back to the standard parser when `defusedxml` isn't installed."},
+        ],
+    },
+    {
         "version": "2.103.0",
         "date": "2026-07-24",
         "entries": [

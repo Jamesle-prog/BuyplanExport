@@ -3,6 +3,7 @@
 Excel-specific pipeline functions live in ui/giii/excel_extraction.py.
 """
 from __future__ import annotations
+import html
 import hashlib as _hl
 import io
 import os
@@ -123,7 +124,7 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
                 file_hash = _hl.md5(fh.read()).hexdigest()
             if file_hash in seen_hashes:
                 st.write(f"⚠️ {name} — identical file already in this batch, skipped")
-                log.append(f'<span style="color:#b08800">⚠️ {name}</span> — duplicate file skipped')
+                log.append(f'<span style="color:#b08800">⚠️ {html.escape(str(name))}</span> — duplicate file skipped')
                 tracker.step(f"Skipped duplicate: {name}")
                 continue
             seen_hashes.add(file_hash)
@@ -137,10 +138,10 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
                 pos.append(po)
                 n = len(po.size_rows)
                 st.write(f"✅ {name} — {n} size row(s)")
-                log.append(f'<span class="badge-ok">✅ {name}</span> — {n} size row(s)')
+                log.append(f'<span class="badge-ok">✅ {html.escape(str(name))}</span> — {html.escape(str(n))} size row(s)')
             except Exception as e:
                 st.write(f"❌ {name}: {e}")
-                log.append(f'<span class="badge-err">❌ {name}</span>: {e}')
+                log.append(f'<span class="badge-err">❌ {html.escape(str(name))}</span>: {html.escape(str(e))}')
                 get_store().save_exception(
                     po_number="", file_name=name, company=company,
                     reason=str(e),
@@ -471,21 +472,21 @@ def _validate_giii_pos(pos: list, log: list[str], company: str = "") -> None:
         po_no = (po.metadata.po_number or "").strip()
         if not po_no:
             n_no_po += 1
-            log.append(f"⚠️ {prefix}A PO has no PO number in metadata")
+            log.append(f"⚠️ {html.escape(str(prefix))}A PO has no PO number in metadata")
 
         for row in po.size_rows:
             # Missing style / color
             if not (getattr(row, "style", None) or "").strip():
                 n_missing += 1
                 log.append(
-                    f"⚠️ {prefix}PO {po_no}: row missing style "
-                    f"(size={row.size}, units={row.units})"
+                    f"⚠️ {html.escape(str(prefix))}PO {html.escape(str(po_no))}: row missing style "
+                    f"(size={html.escape(str(row.size))}, units={html.escape(str(row.units))})"
                 )
             if not (getattr(row, "color", None) or "").strip():
                 n_missing += 1
                 log.append(
-                    f"⚠️ {prefix}PO {po_no}: row missing color "
-                    f"(style={row.style}, size={row.size})"
+                    f"⚠️ {html.escape(str(prefix))}PO {html.escape(str(po_no))}: row missing color "
+                    f"(style={html.escape(str(row.style))}, size={html.escape(str(row.size))})"
                 )
 
             # Negative quantities
@@ -493,19 +494,19 @@ def _validate_giii_pos(pos: list, log: list[str], company: str = "") -> None:
             if units < 0:
                 n_neg += 1
                 log.append(
-                    f"⚠️ {prefix}PO {po_no}: {row.style}/{row.color} "
-                    f"size {row.size} — negative units ({units})"
+                    f"⚠️ {html.escape(str(prefix))}PO {html.escape(str(po_no))}: {html.escape(str(row.style))}/{html.escape(str(row.color))} "
+                    f"size {html.escape(str(row.size))} — negative units ({html.escape(str(units))})"
                 )
 
     total_issues = n_neg + n_missing + n_no_po
     if total_issues == 0:
-        log.append(f"✅ {prefix}Import validation passed — no data quality issues found")
+        log.append(f"✅ {html.escape(str(prefix))}Import validation passed — no data quality issues found")
     else:
         parts = []
         if n_no_po:   parts.append(f"{n_no_po} PO(s) missing PO number")
         if n_missing: parts.append(f"{n_missing} row(s) missing style/color")
         if n_neg:     parts.append(f"{n_neg} row(s) with negative units")
-        log.append(f"⚠️ {prefix}Import validation: " + " · ".join(parts))
+        log.append(f"⚠️ {html.escape(str(prefix))}Import validation: " + " · ".join(parts))
 
 
 def _process_pdf_group(company: str, paths: list[str], out_dir: str,
@@ -522,7 +523,7 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
         with open(path, "rb") as fh:
             h = _hl.md5(fh.read()).hexdigest()
         if h in seen:
-            log.append(f"♻️ {name} — duplicate skipped")
+            log.append(f"♻️ {html.escape(str(name))} — duplicate skipped")
             continue
         seen.add(h)
         todo.append((path, name, h))
@@ -617,7 +618,7 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
     pos = []
     for name, h, po, tag, exc in parsed:
         if exc is not None:
-            log.append(f'<span style="color:#dc3545">❌ {name}: {exc}</span>')
+            log.append(f'<span style="color:#dc3545">❌ {html.escape(str(name))}: {html.escape(str(exc))}</span>')
             get_store().save_exception(
                 po_number="", file_name=name, company=company,
                 reason=str(exc), processed_by=username,
@@ -627,7 +628,7 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
         po.metadata.processed_by = username
         po.metadata.source_file_hash = h
         pos.append(po)
-        log.append(f'<span style="color:#198754">{tag} {name}</span> — {len(po.size_rows)} rows')
+        log.append(f'<span style="color:#198754">{html.escape(str(tag))} {html.escape(str(name))}</span> — {html.escape(str(len(po.size_rows)))} rows')
 
     if not pos:
         return None
@@ -661,7 +662,7 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
     except Exception as _bp_exc:      # never let the buy plan fail the upload
         _prod_bytes = None
         log.append(f'<span style="color:#dc3545">⚠ 生产计划单 build failed: '
-                   f'{_bp_exc}</span>')
+                   f'{html.escape(str(_bp_exc))}</span>')
 
     masked_paths = []
     if mask_prices:
@@ -770,7 +771,7 @@ def _run_smart_processing_body(detections, saved_paths: dict[str, str],
     images_folder = _get_images_dir("giii_images_dir")
     photo_map: dict[str, bytes] = _load_photo_map_from_dir(images_folder)
     if photo_map:
-        log.append(f"📷 {len(photo_map)} photo(s) loaded from image folder")
+        log.append(f"📷 {html.escape(str(len(photo_map)))} photo(s) loaded from image folder")
 
     # Group detections by company
     grouped = group_by_company(detections)
@@ -814,7 +815,7 @@ def _run_smart_processing_body(detections, saved_paths: dict[str, str],
                 )
             else:
                 st.write(f"  ⚠️ {company} — no supported pipeline (format: {fmt_ids})")
-                log.append(f"⚠️ {company}: skipped (unsupported format {fmt_ids})")
+                log.append(f"⚠️ {html.escape(str(company))}: skipped (unsupported format {html.escape(str(fmt_ids))})")
                 continue
 
             if grp_out:
