@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from datetime import datetime
 from typing import Any
 
@@ -40,6 +41,28 @@ class CuttingPlanStore(BaseSQLiteStore):
             # migration no-ops.
             self._migrate_links_add_style(conn)
             conn.executescript(_CUTTING_PLAN_SCHEMA)
+            self._backfill_materials(conn)
+
+    @staticmethod
+    def _backfill_materials(conn) -> None:
+        """Populate cutting_plan_materials for plans saved before it existed.
+
+        The per-fabric figures were always in ``parsed_json``; this just
+        unpacks them so already-uploaded plans show up in the per-fabric list
+        instead of silently having no rows.
+        """
+        pending = conn.execute(
+            """SELECT p.id, p.parsed_json FROM cutting_plans p
+                WHERE NOT EXISTS (SELECT 1 FROM cutting_plan_materials m
+                                   WHERE m.plan_id = p.id)"""
+        ).fetchall()
+        for row in pending:
+            try:
+                parsed = json.loads(row["parsed_json"] or "{}")
+            except json.JSONDecodeError:
+                continue
+            if parsed.get("materials"):
+                CuttingPlanStore._replace_materials(conn, int(row["id"]), parsed)
 
     @staticmethod
     def _migrate_links_add_style(conn) -> None:
@@ -127,10 +150,46 @@ class CuttingPlanStore(BaseSQLiteStore):
                 ),
             )
             plan_id = int(cur.lastrowid)
+            self._replace_materials(conn, plan_id, parsed)
             self._replace_demands(conn, plan_id, parsed)
             if links:
                 self._replace_links(conn, plan_id, links, uploaded_by, now)
         return plan_id
+
+    @staticmethod
+    def _replace_materials(conn, plan_id: int, parsed: dict[str, Any]) -> None:
+        conn.execute("DELETE FROM cutting_plan_materials WHERE plan_id=?",
+                     (plan_id,))
+        rows = []
+        for seq, mat in enumerate(parsed.get("materials", [])):
+            plies = sum(int(line.get("plies") or 0)
+                        for spread in mat.get("spreads", [])
+                        for line in spread.get("rows", []))
+            rows.append((
+                plan_id, seq,
+                str(mat.get("material") or ""),
+                mat.get("width_cm"), mat.get("length_cm"),
+                str(mat.get("spreading") or ""),
+                int(mat.get("n_markers") or 0),
+                int(mat.get("total_tables") or 0),
+                mat.get("min_plies"), mat.get("max_plies"),
+                plies,
+                int(mat.get("cut_qty") or 0),
+                mat.get("fabric_length_m"),
+                mat.get("total_efficiency_pct"),
+                mat.get("total_cut_length_m"),
+                mat.get("total_cost"),
+            ))
+        if rows:
+            conn.executemany(
+                """INSERT INTO cutting_plan_materials
+                      (plan_id, seq, material, width_cm, length_cm, spreading,
+                       n_markers, total_tables, min_plies, max_plies,
+                       total_plies, cut_qty, fabric_length_m, efficiency_pct,
+                       cut_length_m, cost)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                rows,
+            )
 
     @staticmethod
     def _replace_demands(conn, plan_id: int, parsed: dict[str, Any]) -> None:
@@ -202,6 +261,8 @@ class CuttingPlanStore(BaseSQLiteStore):
         with self._conn() as conn:
             conn.execute("DELETE FROM cutting_plan_links WHERE plan_id=?",
                          (plan_id,))
+            conn.execute("DELETE FROM cutting_plan_materials WHERE plan_id=?",
+                         (plan_id,))
             conn.execute("DELETE FROM cutting_plan_demands WHERE plan_id=?",
                          (plan_id,))
             cur = conn.execute("DELETE FROM cutting_plans WHERE id=?",
@@ -216,6 +277,18 @@ class CuttingPlanStore(BaseSQLiteStore):
         "fabric_length_m, efficiency_pct, source_file, notes, "
         "uploaded_at, uploaded_by"
     )
+
+    @classmethod
+    def _list_cols(cls, alias: str = "") -> str:
+        """``_LIST_COLS`` qualified with a table alias.
+
+        Required in any joined query: cutting_plan_materials also has ``id``
+        and ``total_tables``, so the bare list is ambiguous there.
+        """
+        names = [c.strip() for c in cls._LIST_COLS.split(",")]
+        if not alias:
+            return ", ".join(names)
+        return ", ".join(f"{alias}.{n} AS {n}" for n in names)
 
     def list_plans(self) -> pd.DataFrame:
         """One row per plan, newest first, with its PO and style links.
@@ -245,6 +318,98 @@ class CuttingPlanStore(BaseSQLiteStore):
             return pd.DataFrame(columns=cols)
         df = pd.DataFrame([dict(r) for r in rows])
         df["linked_styles"] = df["linked_styles"].fillna("")
+        return df
+
+    def po_qty_by_plan(self, source: str = SOURCE_SKY_EAST) -> dict[int, int]:
+        """Ordered quantity from the **PO side**, per plan.
+
+        The plan file states what the cutting room was told to cut; this is
+        what the PO actually ordered for the linked POs and styles.  Seeing
+        both is the point — they should agree, and a gap means the plan was
+        built against a superseded quantity or linked to the wrong styles.
+
+        Items are counted once per plan (DISTINCT on the item id) so a plan
+        holding both a whole-PO link and a per-style link can't double-count.
+        Returns {} when the PO tables aren't present in this database.
+        """
+        sql = """
+            SELECT plan_id, SUM(total_qty) AS po_qty FROM (
+                SELECT DISTINCT l.plan_id AS plan_id,
+                                i.id      AS item_id,
+                                i.total_qty AS total_qty
+                  FROM cutting_plan_links l
+                  JOIN sky_east_items i
+                    ON TRIM(i.pc_no) = TRIM(l.pc_no)
+                   AND (l.po_no = '' OR TRIM(i.zalando_po) = TRIM(l.po_no))
+                   AND (l.style = '' OR TRIM(i.style)      = TRIM(l.style))
+                 WHERE l.source = ?
+            ) GROUP BY plan_id
+        """
+        try:
+            with self._conn() as conn:
+                rows = conn.execute(sql, (source,)).fetchall()
+        except sqlite3.OperationalError:
+            return {}          # no sky_east_items in this DB (e.g. a test DB)
+        return {int(r["plan_id"]): int(r["po_qty"] or 0) for r in rows}
+
+    def list_plan_materials(self, plan_id: int) -> pd.DataFrame:
+        """One row per fabric for a single plan, in the plan's own order."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT material, width_cm, spreading, n_markers,
+                          total_tables, total_plies, cut_qty, fabric_length_m,
+                          efficiency_pct, cut_length_m, cost
+                     FROM cutting_plan_materials
+                    WHERE plan_id=? ORDER BY seq, id""", (plan_id,)).fetchall()
+        cols = ["material", "width_cm", "spreading", "n_markers",
+                "total_tables", "total_plies", "cut_qty", "fabric_length_m",
+                "efficiency_pct", "cut_length_m", "cost"]
+        return (pd.DataFrame([dict(r) for r in rows]) if rows
+                else pd.DataFrame(columns=cols))
+
+    def list_plans_by_material(self) -> pd.DataFrame:
+        """The plan list expanded to one row per fabric.
+
+        Plan-level columns repeat on each of a plan's fabric rows; the
+        fabric-level ones (width, markers, tables, plies, metres, efficiency,
+        cost) are that fabric's own.  ``po_qty`` is the linked PO's ordered
+        quantity, alongside the plan's own ``order_qty``.  A plan whose
+        materials couldn't be read still appears, with empty fabric columns.
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"""SELECT {self._list_cols('p')},
+                       m.material, m.width_cm, m.spreading, m.n_markers,
+                       m.total_tables AS mat_tables,
+                       m.total_plies, m.cut_qty AS mat_cut_qty,
+                       m.fabric_length_m AS mat_fabric_m,
+                       m.efficiency_pct  AS mat_efficiency_pct,
+                       m.cut_length_m, m.cost, m.seq,
+                       (SELECT COUNT(DISTINCT l.pc_no || '|' || l.po_no)
+                          FROM cutting_plan_links l
+                         WHERE l.plan_id = p.id) AS linked_pos,
+                       (SELECT GROUP_CONCAT(s, ', ') FROM (
+                            SELECT DISTINCT l2.style AS s
+                              FROM cutting_plan_links l2
+                             WHERE l2.plan_id = p.id AND l2.style <> ''
+                             ORDER BY l2.style)) AS linked_styles
+                    FROM cutting_plans p
+                    LEFT JOIN cutting_plan_materials m ON m.plan_id = p.id
+                    ORDER BY datetime(p.uploaded_at) DESC, p.id DESC,
+                             m.seq, m.id"""
+            ).fetchall()
+        cols = ([c.strip() for c in self._LIST_COLS.split(",")]
+                + ["material", "width_cm", "spreading", "n_markers",
+                   "mat_tables", "total_plies", "mat_cut_qty",
+                   "mat_fabric_m", "mat_efficiency_pct", "cut_length_m",
+                   "cost", "seq", "linked_pos", "linked_styles", "po_qty"])
+        if not rows:
+            return pd.DataFrame(columns=cols)
+        df = pd.DataFrame([dict(r) for r in rows])
+        df["linked_styles"] = df["linked_styles"].fillna("")
+        df["material"] = df["material"].fillna("")
+        po_qty = self.po_qty_by_plan()
+        df["po_qty"] = df["id"].map(po_qty).fillna(0).astype(int)
         return df
 
     def get_plan(self, plan_id: int) -> dict[str, Any] | None:

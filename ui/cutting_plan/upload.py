@@ -12,7 +12,7 @@ from po_extractor.parsers.cutting_plan import CuttingPlanParseError, parse_cut_p
 from po_extractor.store.cutting_plan_store import summarise_plan
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import fragment_rerun
+from ui.shared import _th, fragment_rerun
 from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
     demand_frame, demand_matrix, link_rows, po_label, select_pos,
@@ -138,11 +138,6 @@ def _show_parsed_plan(entry: dict) -> None:
         c3.metric(t("Markers"), summary["total_markers"])
         c4.metric(t("Tables"), summary["total_tables"])
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric(t("Fabric length (m)"), f"{summary['fabric_length_m']:,.1f}")
-        c2.metric(t("Efficiency"), f"{summary['efficiency_pct']:.2f} %")
-        c3.metric(t("Materials"), summary["materials"] or "—")
-
         st.caption(
             f"{t('Styles')}: {summary['styles'] or '—'} · "
             f"{t('Colors')}: {summary['colors'] or '—'} · "
@@ -151,16 +146,23 @@ def _show_parsed_plan(entry: dict) -> None:
             f"{t('Plan date')}: {summary['plan_date'] or '—'}"
         )
 
+        # Per fabric, never combined: shell and lining are different fabrics
+        # at different widths, so one total metre count says nothing useful.
         mats = pd.DataFrame([{
-            "Material": m.get("material"),
-            "Width (cm)": m.get("width_cm"),
-            "Markers": m.get("n_markers"),
-            "Tables": m.get("total_tables"),
-            "Cut qty": m.get("cut_qty"),
-            "Fabric (m)": (round(m["fabric_length_m"], 2)
-                           if m.get("fabric_length_m") else None),
-            "Efficiency %": (round(m["total_efficiency_pct"], 2)
-                             if m.get("total_efficiency_pct") else None),
+            _th("Fabric"): m.get("material"),
+            _th("Width (cm)"): m.get("width_cm"),
+            _th("Markers"): m.get("n_markers"),
+            _th("Tables"): m.get("total_tables"),
+            _th("Plies"): sum(int(line.get("plies") or 0)
+                              for s in m.get("spreads", [])
+                              for line in s.get("rows", [])) or None,
+            _th("Cut qty"): m.get("cut_qty"),
+            _th("Fabric (m)"): (round(m["fabric_length_m"], 2)
+                                if m.get("fabric_length_m") else None),
+            _th("Efficiency %"): (round(m["total_efficiency_pct"], 2)
+                                  if m.get("total_efficiency_pct") else None),
+            _th("Cost"): (round(m["total_cost"], 2)
+                          if m.get("total_cost") else None),
         } for m in plan.get("materials", [])])
         if not mats.empty:
             st.dataframe(mats, use_container_width=True, hide_index=True)

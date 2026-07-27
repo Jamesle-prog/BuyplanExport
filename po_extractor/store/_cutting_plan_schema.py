@@ -7,6 +7,9 @@ Three tables:
   - ``cutting_plan_links``    — many-to-many, down to the style: a plan
     covers one or more POs and specific styles inside them, and a PO can be
     re-cut under a later plan
+  - ``cutting_plan_materials`` — one row per fabric in the plan, so shell and
+    lining consumption stay separate (they are different fabrics at different
+    widths; a combined metre count means nothing)
   - ``cutting_plan_demands``  — the plan's colour/size matrix, flattened, so a
     plan can be compared against PO quantities in SQL instead of by unpacking
     JSON
@@ -67,6 +70,32 @@ CREATE INDEX IF NOT EXISTS idx_cpl_plan  ON cutting_plan_links(plan_id);
 CREATE INDEX IF NOT EXISTS idx_cpl_pc    ON cutting_plan_links(pc_no);
 CREATE INDEX IF NOT EXISTS idx_cpl_po    ON cutting_plan_links(po_no);
 CREATE INDEX IF NOT EXISTS idx_cpl_style ON cutting_plan_links(style);
+
+-- One row per fabric. Kept out of the plan row on purpose: a plan's shell and
+-- lining are different fabrics at different cuttable widths, so a single
+-- summed metre count or averaged efficiency across them is not a number
+-- anyone can act on.
+CREATE TABLE IF NOT EXISTS cutting_plan_materials (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id         INTEGER NOT NULL,
+    seq             INTEGER NOT NULL DEFAULT 0,   -- order within the plan
+    material        TEXT DEFAULT '',
+    width_cm        REAL,
+    length_cm       REAL,
+    spreading       TEXT DEFAULT '',
+    n_markers       INTEGER DEFAULT 0,
+    total_tables    INTEGER DEFAULT 0,
+    min_plies       INTEGER,
+    max_plies       INTEGER,
+    total_plies     INTEGER DEFAULT 0,            -- summed over the spreads
+    cut_qty         INTEGER DEFAULT 0,
+    fabric_length_m REAL,
+    efficiency_pct  REAL,
+    cut_length_m    REAL,
+    cost            REAL
+);
+CREATE INDEX IF NOT EXISTS idx_cpm_plan     ON cutting_plan_materials(plan_id);
+CREATE INDEX IF NOT EXISTS idx_cpm_material ON cutting_plan_materials(material);
 
 CREATE TABLE IF NOT EXISTS cutting_plan_demands (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,

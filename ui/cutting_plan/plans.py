@@ -16,20 +16,27 @@ from ui.cutting_plan._shared import (
     po_label, safe_filename, select_pos,
 )
 
+# Column order of the saved-plans table (one row per fabric).  Fabric-level
+# figures sit together after the fabric name; plan-level ones repeat on each
+# of a plan's rows.
 _LIST_RENAME = {
     "id": "#", "plan_name": "Plan", "plan_date": "Plan date",
-    "styles": "Styles", "colors": "Colors", "materials": "Materials",
-    "order_qty": "Order qty", "cut_qty": "Cut qty",
-    "total_markers": "Markers", "total_tables": "Tables",
-    "fabric_length_m": "Fabric (m)", "efficiency_pct": "Efficiency %",
+    "styles": "Styles", "colors": "Colors",
+    "material": "Fabric", "width_cm": "Width (cm)",
+    "n_markers": "Markers", "mat_tables": "Tables",
+    "total_plies": "Plies", "mat_cut_qty": "Cut qty",
+    "mat_fabric_m": "Fabric (m)", "mat_efficiency_pct": "Efficiency %",
+    "cost": "Cost", "po_qty": "PO qty", "order_qty": "Plan qty",
     "linked_pos": "Linked POs", "linked_styles": "Linked styles",
     "uploaded_at": "Uploaded", "uploaded_by": "By",
 }
+_ROUND_2 = ("width_cm", "mat_fabric_m", "mat_efficiency_pct", "cut_length_m",
+            "cost")
 
 
 def show_plans_section() -> None:
     store = get_cutting_plan_store()
-    df = store.list_plans()
+    df = store.list_plans_by_material()
     if df.empty:
         st.info(t("No cut plans saved yet — upload one in the "
                   "**Upload & Link** tab."))
@@ -37,21 +44,28 @@ def show_plans_section() -> None:
 
     search = st.text_input(
         t("Search"), key="cp_plans_search",
-        placeholder=t("Plan name, style, colour or PO No."))
+        placeholder=t("Plan name, style, fabric, colour or PO No."))
     view = _filter_plans(df, search, store)
     if view.empty:
         st.warning(t("No plans match the search."))
         return
 
+    st.caption(t(
+        "One row per fabric: shell and lining are different fabrics at "
+        "different widths, so their metres and efficiency are never combined. "
+        "**PO qty** is what the linked PO ordered; **Plan qty** is what the "
+        "cut plan was built for."))
     show = view[[c for c in _LIST_RENAME if c in view.columns]].copy()
-    for col in ("fabric_length_m", "efficiency_pct"):
+    for col in _ROUND_2:
         if col in show.columns:
-            show[col] = show[col].round(2)
+            show[col] = pd.to_numeric(show[col], errors="coerce").round(2)
     st.dataframe(show.rename(columns=_tr(_LIST_RENAME)),
                  use_container_width=True, hide_index=True)
+    _warn_on_qty_mismatch(view)
 
     st.divider()
-    ids = view["id"].tolist()
+    # One entry per plan, not per fabric row.
+    ids = list(dict.fromkeys(int(i) for i in view["id"].tolist()))
     labels = {
         int(r["id"]): f"#{int(r['id'])} — {r['plan_name']} "
                       f"({r.get('plan_date') or '—'}, {r.get('colors') or '—'})"
@@ -64,12 +78,31 @@ def show_plans_section() -> None:
         _show_plan_detail(store, int(plan_id))
 
 
+def _warn_on_qty_mismatch(view: pd.DataFrame) -> None:
+    """Flag plans whose quantity doesn't match the PO they're linked to.
+
+    Not an error — a plan can legitimately cover more POs than are linked, or
+    overcut — but a silent gap between the two numbers usually means the plan
+    was built against a superseded quantity or linked to the wrong styles.
+    """
+    if "po_qty" not in view.columns or "order_qty" not in view.columns:
+        return
+    per_plan = view.drop_duplicates(subset=["id"])
+    off = per_plan[(per_plan["po_qty"] > 0)
+                   & (per_plan["po_qty"] != per_plan["order_qty"])]
+    for _, r in off.iterrows():
+        st.caption(
+            f"⚠️ #{int(r['id'])} {r['plan_name']}: " + t(
+                "PO ordered {po:,} pcs, plan is for {plan:,} pcs.").format(
+                    po=int(r["po_qty"]), plan=int(r["order_qty"])))
+
+
 def _filter_plans(df: pd.DataFrame, search: str, store) -> pd.DataFrame:
     q = (search or "").strip().lower()
     if not q:
         return df
-    text_cols = ["plan_name", "styles", "colors", "materials", "source_file",
-                 "notes", "uploaded_by", "linked_styles"]
+    text_cols = ["plan_name", "styles", "colors", "materials", "material",
+                 "source_file", "notes", "uploaded_by", "linked_styles"]
     mask = pd.Series(False, index=df.index)
     for col in text_cols:
         if col in df.columns:
@@ -92,23 +125,25 @@ def _show_plan_detail(store, plan_id: int) -> None:
         return
 
     st.markdown(f"### {plan.get('plan_name') or '—'}")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric(t("Order qty"), f"{int(plan.get('order_qty') or 0):,}")
+    po_qty = int(store.po_qty_by_plan().get(plan_id, 0))
+    order_qty = int(plan.get("order_qty") or 0)
     cut = int(plan.get("cut_qty") or 0)
-    c2.metric(t("Cut qty"), f"{cut:,}",
-              delta=(cut - int(plan.get("order_qty") or 0)) or None)
-    c3.metric(t("Fabric length (m)"),
-              f"{float(plan.get('fabric_length_m') or 0):,.1f}")
-    c4.metric(t("Efficiency"), f"{float(plan.get('efficiency_pct') or 0):.2f} %")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(t("PO qty"), f"{po_qty:,}" if po_qty else "—",
+              delta=((order_qty - po_qty) or None) if po_qty else None,
+              delta_color="inverse", help=t("Ordered on the linked PO(s)."))
+    c2.metric(t("Plan qty"), f"{order_qty:,}")
+    c3.metric(t("Cut qty"), f"{cut:,}", delta=(cut - order_qty) or None)
+    c4.metric(t("Markers"), int(plan.get("total_markers") or 0))
     st.caption(
         f"{t('Styles')}: {plan.get('styles') or '—'} · "
         f"{t('Colors')}: {plan.get('colors') or '—'} · "
-        f"{t('Materials')}: {plan.get('materials') or '—'} · "
         f"{t('Operator')}: {plan.get('operator') or '—'} · "
         f"{t('Client')}: {plan.get('client') or '—'} · "
         f"{t('Uploaded')}: {plan.get('uploaded_at') or '—'} "
         f"({plan.get('uploaded_by') or '—'})"
     )
+    _show_fabric_summary(store, plan_id)
     if plan.get("notes"):
         st.info(plan["notes"])
 
@@ -138,6 +173,29 @@ def _show_plan_detail(store, plan_id: int) -> None:
                 st.session_state[SK.CP_FLASH] = (
                     "success", t("Cut plan deleted."))
                 fragment_rerun()
+
+
+_FABRIC_RENAME = {
+    "material": "Fabric", "width_cm": "Width (cm)", "spreading": "Spreading",
+    "n_markers": "Markers", "total_tables": "Tables", "total_plies": "Plies",
+    "cut_qty": "Cut qty", "fabric_length_m": "Fabric (m)",
+    "efficiency_pct": "Efficiency %", "cut_length_m": "Cut length (m)",
+    "cost": "Cost",
+}
+
+
+def _show_fabric_summary(store, plan_id: int) -> None:
+    """Per-fabric consumption — never a single combined total."""
+    df = store.list_plan_materials(plan_id)
+    if df.empty:
+        return
+    show = df.copy()
+    for col in ("width_cm", "fabric_length_m", "efficiency_pct",
+                "cut_length_m", "cost"):
+        if col in show.columns:
+            show[col] = pd.to_numeric(show[col], errors="coerce").round(2)
+    st.dataframe(show.rename(columns=_tr(_FABRIC_RENAME)),
+                 use_container_width=True, hide_index=True)
 
 
 def _show_links(store, plan: dict) -> None:

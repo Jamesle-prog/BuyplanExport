@@ -540,6 +540,129 @@ def test_find_by_hash_flags_a_re_upload(store, exact):
     assert store.find_by_hash(b"other") is None
 
 
+def test_materials_are_stored_one_row_per_fabric(store, exact):
+    pid = store.save_plan(exact, source_file="a.xlsx")
+    mats = store.list_plan_materials(pid)
+    assert list(mats["material"]) == ["A"]
+    row = mats.iloc[0]
+    assert row["width_cm"] == 157
+    assert row["n_markers"] == 1
+    assert row["total_tables"] == 1
+    assert row["total_plies"] == 100          # summed over the spreads
+    assert row["fabric_length_m"] == 512.5
+    assert row["efficiency_pct"] == 87.5
+
+
+def test_plan_list_expands_to_one_row_per_fabric(store, exact):
+    """Shell and lining are different fabrics at different widths — their
+    metres and efficiency must never be shown combined."""
+    two = dict(exact)
+    lining = dict(exact["materials"][0])
+    lining.update({"material": "里", "width_cm": 173.0,
+                   "fabric_length_m": 64.2, "total_efficiency_pct": 84.2,
+                   "n_markers": 2, "total_tables": 2})
+    two["materials"] = [exact["materials"][0], lining]
+
+    pid = store.save_plan(two, source_file="a.xlsx")
+    df = store.list_plans_by_material()
+    assert len(df) == 2
+    assert set(df["id"]) == {pid}                      # same plan, two rows
+    assert list(df["material"]) == ["A", "里"]
+    assert list(df["width_cm"]) == [157, 173.0]
+    assert list(df["mat_fabric_m"]) == [512.5, 64.2]
+    assert list(df["mat_efficiency_pct"]) == [87.5, 84.2]
+    # Plan-level columns repeat on every fabric row.
+    assert list(df["plan_name"]) == [two["order_name"]] * 2
+
+
+def test_plan_with_unreadable_materials_still_appears_in_the_list(store):
+    plan = {"order_name": "no materials", "demands": [], "materials": [],
+            "style_totals": {}, "colors": []}
+    pid = store.save_plan(plan, source_file="a.xlsx")
+    df = store.list_plans_by_material()
+    assert list(df["id"]) == [pid]
+    assert df.iloc[0]["material"] == ""
+
+
+def test_materials_are_backfilled_for_plans_saved_before_the_table(store, exact):
+    """A plan uploaded before per-fabric rows existed must not vanish from the
+    per-fabric list — the figures were always in parsed_json."""
+    pid = store.save_plan(exact, source_file="a.xlsx")
+    with store._conn() as conn:
+        conn.execute("DELETE FROM cutting_plan_materials WHERE plan_id=?",
+                     (pid,))
+    assert store.list_plan_materials(pid).empty
+
+    CuttingPlanStore._checked_paths.clear()
+    reopened = CuttingPlanStore(store.db_path)
+    assert list(reopened.list_plan_materials(pid)["material"]) == ["A"]
+
+
+def test_delete_plan_removes_its_material_rows(store, exact):
+    pid = store.save_plan(exact, source_file="a.xlsx")
+    store.delete_plan(pid)
+    assert store.list_plan_materials(pid).empty
+    assert store.list_plans_by_material().empty
+
+
+def test_po_qty_comes_from_the_linked_po(store, exact):
+    """The plan states what the cutting room was told to cut; the PO qty is
+    what was actually ordered.  Both are shown so a gap is visible."""
+    _seed_sky_east_items(store.db_path, [
+        ("PC1", "PO1", "TP5016", 300),
+        ("PC1", "PO1", "DR5004", 200),
+        ("PC1", "PO2", "TP5016", 150),
+    ])
+    pid = store.save_plan(exact, source_file="a.xlsx", links=[
+        {"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"}])
+    assert store.po_qty_by_plan()[pid] == 300
+
+    store.set_links(pid, [{"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"},
+                          {"pc_no": "PC1", "po_no": "PO1", "style": "DR5004"}])
+    assert store.po_qty_by_plan()[pid] == 500
+
+    store.set_links(pid, [{"pc_no": "PC1", "po_no": "", "style": ""}])
+    assert store.po_qty_by_plan()[pid] == 650      # every style, both POs
+
+
+def test_po_qty_counts_each_item_once(store, exact):
+    """A whole-PO link plus a per-style link on the same PO must not add the
+    style's quantity twice."""
+    _seed_sky_east_items(store.db_path, [("PC1", "PO1", "TP5016", 300)])
+    pid = store.save_plan(exact, source_file="a.xlsx", links=[
+        {"pc_no": "PC1", "po_no": "PO1", "style": ""},
+        {"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"},
+    ])
+    assert store.po_qty_by_plan()[pid] == 300
+
+
+def test_po_qty_is_empty_without_the_po_tables(store, exact):
+    store.save_plan(exact, source_file="a.xlsx",
+                    links=[{"pc_no": "PC1", "po_no": "PO1"}])
+    assert store.po_qty_by_plan() == {}
+    # The list still renders; the column is simply zero.
+    assert list(store.list_plans_by_material()["po_qty"]) == [0]
+
+
+def _seed_sky_east_items(db_path: str, rows) -> None:
+    """Create a minimal sky_east_items table with (pc, po, style, qty) rows."""
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS sky_east_items (
+                   id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                   pc_no     TEXT, zalando_po TEXT, style TEXT,
+                   total_qty INTEGER DEFAULT 0)""")
+        conn.executemany(
+            "INSERT INTO sky_east_items (pc_no, zalando_po, style, total_qty) "
+            "VALUES (?,?,?,?)", rows)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def test_link_rows_expand_to_concrete_pc_po_style_triples():
     """The UI helper turns a selection into one row per (PC, PO, style) so a
     later lookup by any one of them finds the plan."""

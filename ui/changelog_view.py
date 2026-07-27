@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.107.0",
+        "date": "2026-07-27",
+        "entries": [
+            {"type": "feat", "text": "**Saved plans list shows one row per fabric.** Shell and lining are different fabrics at different cuttable widths, so combining them into a single metre count and an averaged efficiency produced a number nobody could act on — 2,020 m of 157 cm shell plus 64 m of 173 cm lining is not \"2,085 m\". Each fabric now gets its own line with its own width, markers, tables, plies, cut quantity, metres, efficiency and cost; plan-level details repeat alongside. The same per-fabric breakdown replaces the combined figures on the plan detail screen and in the upload preview."},
+            {"type": "feat", "text": "**PO quantity shown next to the plan's own quantity.** **PO qty** is what the linked PO(s) and styles actually ordered, read from the Sky East contract; **Plan qty** is what the cut plan was built for. They should agree — a gap usually means the plan was built against a superseded quantity or linked to the wrong styles — so any plan where they differ is flagged under the table. Items are counted once even when a plan holds both a whole-PO link and a per-style link."},
+            {"type": "fix", "text": "Plans uploaded before this release are backfilled automatically: the per-fabric figures were always in the stored parse, so they're unpacked into the new table on first open rather than the plan disappearing from the per-fabric list. A plan whose materials couldn't be read still appears, with the fabric columns empty."},
+        ],
+    },
+    {
         "version": "2.106.0",
         "date": "2026-07-27",
         "entries": [
