@@ -353,19 +353,33 @@ class CuttingPlanStore(BaseSQLiteStore):
         return {int(r["plan_id"]): int(r["po_qty"] or 0) for r in rows}
 
     def list_plan_materials(self, plan_id: int) -> pd.DataFrame:
-        """One row per fabric for a single plan, in the plan's own order."""
+        """One row per fabric for a single plan, in the plan's own order.
+
+        Adds the two consumption figures: metres per unit (per garment) and
+        metres per piece.  See :func:`consumption` for why both exist.
+        """
         with self._conn() as conn:
             rows = conn.execute(
-                """SELECT material, width_cm, spreading, n_markers,
-                          total_tables, total_plies, cut_qty, fabric_length_m,
-                          efficiency_pct, cut_length_m, cost
-                     FROM cutting_plan_materials
-                    WHERE plan_id=? ORDER BY seq, id""", (plan_id,)).fetchall()
+                """SELECT m.material, m.width_cm, m.spreading, m.n_markers,
+                          m.total_tables, m.total_plies, m.cut_qty,
+                          m.fabric_length_m, m.efficiency_pct, m.cut_length_m,
+                          m.cost, p.cut_qty AS unit_qty
+                     FROM cutting_plan_materials m
+                     JOIN cutting_plans p ON p.id = m.plan_id
+                    WHERE m.plan_id=? ORDER BY m.seq, m.id""",
+                (plan_id,)).fetchall()
         cols = ["material", "width_cm", "spreading", "n_markers",
                 "total_tables", "total_plies", "cut_qty", "fabric_length_m",
-                "efficiency_pct", "cut_length_m", "cost"]
-        return (pd.DataFrame([dict(r) for r in rows]) if rows
-                else pd.DataFrame(columns=cols))
+                "m_per_unit", "m_per_piece", "efficiency_pct", "cut_length_m",
+                "cost"]
+        if not rows:
+            return pd.DataFrame(columns=cols)
+        df = pd.DataFrame([dict(r) for r in rows])
+        df["m_per_unit"] = [consumption(m, q) for m, q in
+                            zip(df["fabric_length_m"], df["unit_qty"])]
+        df["m_per_piece"] = [consumption(m, q) for m, q in
+                             zip(df["fabric_length_m"], df["cut_qty"])]
+        return df[cols]
 
     def list_plans_by_material(self) -> pd.DataFrame:
         """The plan list expanded to one row per fabric.
@@ -401,8 +415,9 @@ class CuttingPlanStore(BaseSQLiteStore):
         cols = ([c.strip() for c in self._LIST_COLS.split(",")]
                 + ["material", "width_cm", "spreading", "n_markers",
                    "mat_tables", "total_plies", "mat_cut_qty",
-                   "mat_fabric_m", "mat_efficiency_pct", "cut_length_m",
-                   "cost", "seq", "linked_pos", "linked_styles", "po_qty"])
+                   "mat_fabric_m", "m_per_unit", "m_per_piece",
+                   "mat_efficiency_pct", "cut_length_m", "cost", "seq",
+                   "linked_pos", "linked_styles", "po_qty", "diff_pct"])
         if not rows:
             return pd.DataFrame(columns=cols)
         df = pd.DataFrame([dict(r) for r in rows])
@@ -414,6 +429,10 @@ class CuttingPlanStore(BaseSQLiteStore):
             cut_vs_po_pct(po, cut)
             for po, cut in zip(df["po_qty"], df["cut_qty"])
         ]
+        df["m_per_unit"] = [consumption(m, q) for m, q in
+                            zip(df["mat_fabric_m"], df["cut_qty"])]
+        df["m_per_piece"] = [consumption(m, q) for m, q in
+                             zip(df["mat_fabric_m"], df["mat_cut_qty"])]
         return df
 
     def get_plan(self, plan_id: int) -> dict[str, Any] | None:
@@ -528,6 +547,28 @@ class CuttingPlanStore(BaseSQLiteStore):
 # ---------------------------------------------------------------------------
 # Summary helpers (module-level so the UI can summarise before saving)
 # ---------------------------------------------------------------------------
+
+def consumption(length_m: Any, qty: Any, digits: int = 4) -> float | None:
+    """Fabric consumption — metres of one fabric divided by a quantity.
+
+    Which quantity decides what the number means, so callers pass it
+    explicitly: against the unit count it is metres per garment (what fabric
+    purchasing orders against, 单耗); against the piece count it is metres per
+    piece, which is what the plan's own "Average Length" line reports.  For a
+    co-ord set cut from one shell those differ by a factor of two.
+
+    Returns None when either side is missing — a blank cell, not a 0 that
+    would read as "this fabric costs nothing".
+    """
+    try:
+        metres = float(length_m or 0)
+        n = float(qty or 0)
+    except (TypeError, ValueError):
+        return None
+    if metres <= 0 or n <= 0:
+        return None
+    return round(metres / n, digits)
+
 
 def cut_vs_po_pct(po_qty: Any, cut_qty: Any) -> float | None:
     """How far the plan's cut quantity sits from what the PO ordered, in %.

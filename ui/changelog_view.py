@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.109.0",
+        "date": "2026-07-27",
+        "entries": [
+            {"type": "feat", "text": "**Fabric consumption per garment (单耗).** Every fabric row now carries **m/unit** — metres of that fabric per garment, the figure fabric purchasing orders against — and **m/piece**, metres per cut piece. They differ whenever one fabric yields several pieces of a garment: on a co-ord set the shell supplies both the trousers and the top, so per garment is double per piece. Shown on the saved-plans list, on the plan detail, and in the upload preview before saving. Cross-checks against the plan's own *Average Length* line, which is the per-piece figure."},
+            {"type": "feat", "text": "**Total per fabric across the listed plans.** A collapsible panel under the table totals each fabric's requirement across every plan on screen — how many metres of each fabric to buy. Grouped strictly by fabric; different fabrics are never added together."},
+            {"type": "fix", "text": "A fabric with no recorded length shows a blank consumption rather than 0, which would read as \"this fabric costs nothing\"."},
+        ],
+    },
+    {
         "version": "2.108.0",
         "date": "2026-07-27",
         "entries": [

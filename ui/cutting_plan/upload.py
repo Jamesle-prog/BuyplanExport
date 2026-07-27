@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from po_extractor.parsers.cutting_plan import CuttingPlanParseError, parse_cut_plan
-from po_extractor.store.cutting_plan_store import summarise_plan
+from po_extractor.store.cutting_plan_store import consumption, summarise_plan
 from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import _th, fragment_rerun
@@ -159,6 +159,10 @@ def _show_parsed_plan(entry: dict) -> None:
             _th("Pieces"): m.get("cut_qty"),
             _th("Fabric (m)"): (round(m["fabric_length_m"], 2)
                                 if m.get("fabric_length_m") else None),
+            _th("m/unit"): consumption(m.get("fabric_length_m"),
+                                       summary["cut_qty"]),
+            _th("m/piece"): consumption(m.get("fabric_length_m"),
+                                        m.get("cut_qty")),
             _th("Efficiency %"): (round(m["total_efficiency_pct"], 2)
                                   if m.get("total_efficiency_pct") else None),
             _th("Cost"): (round(m["total_cost"], 2)

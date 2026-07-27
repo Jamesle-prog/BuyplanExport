@@ -7,7 +7,7 @@ import streamlit as st
 from po_extractor.exporters.cutting_plan_export import (
     build_standard_cut_plan, plan_header_from_parsed,
 )
-from po_extractor.store.cutting_plan_store import cut_vs_po_pct
+from po_extractor.store.cutting_plan_store import consumption, cut_vs_po_pct
 from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import _th, _tr, fragment_rerun
@@ -30,7 +30,8 @@ _LIST_RENAME = {
     "material": "Fabric", "width_cm": "Width (cm)",
     "n_markers": "Markers", "mat_tables": "Tables",
     "total_plies": "Plies", "mat_cut_qty": "Pieces",
-    "mat_fabric_m": "Fabric (m)", "mat_efficiency_pct": "Efficiency %",
+    "mat_fabric_m": "Fabric (m)", "m_per_unit": "m/unit",
+    "m_per_piece": "m/piece", "mat_efficiency_pct": "Efficiency %",
     "cost": "Cost",
     "po_qty": "PO qty", "order_qty": "Plan qty", "cut_qty": "Cut qty",
     "diff_pct": "Cut vs PO %",
@@ -60,10 +61,11 @@ def show_plans_section() -> None:
     st.caption(t(
         "One row per fabric: shell and lining are different fabrics at "
         "different widths, so their metres and efficiency are never combined. "
-        "**Pieces** counts every piece cut from that fabric; **Cut qty** "
-        "counts units, which is what **PO qty** (ordered on the linked PO) "
-        "and **Plan qty** (what the plan was built for) also count. "
-        "**Cut vs PO %** is positive when the plan overcuts."))
+        "**m/unit** is fabric consumption per garment (单耗) and **m/piece** "
+        "per cut piece — they differ when one fabric yields several pieces of "
+        "a garment. **Pieces** counts pieces cut from that fabric; **Cut "
+        "qty**, **PO qty** and **Plan qty** all count units. **Cut vs PO %** "
+        "is positive when the plan overcuts."))
     show = view[[c for c in _LIST_RENAME if c in view.columns]].copy()
     for col in _ROUND_2:
         if col in show.columns:
@@ -77,8 +79,18 @@ def show_plans_section() -> None:
                 help=t("Cut qty against the linked PO's quantity. Blank when "
                        "no PO is linked."),
             ),
+            _th("m/unit"): st.column_config.NumberColumn(
+                format="%.4f",
+                help=t("Metres of this fabric per garment."),
+            ),
+            _th("m/piece"): st.column_config.NumberColumn(
+                format="%.4f",
+                help=t("Metres of this fabric per cut piece — the plan's own "
+                       "'Average Length'."),
+            ),
         },
     )
+    _show_fabric_totals(view)
     _warn_on_qty_mismatch(view)
 
     st.divider()
@@ -94,6 +106,46 @@ def show_plans_section() -> None:
         format_func=lambda i: labels.get(int(i), str(i)))
     if plan_id is not None:
         _show_plan_detail(store, int(plan_id))
+
+
+def _show_fabric_totals(view: pd.DataFrame) -> None:
+    """Total consumption per fabric across the plans on screen.
+
+    What fabric purchasing actually needs: how many metres of each fabric all
+    these plans call for.  Grouped by fabric and never across fabrics — the
+    rows are one per (plan, fabric), so summing within a fabric is sound.
+    """
+    if "material" not in view.columns:
+        return
+    rows = view[view["material"].astype(str).str.strip() != ""]
+    if rows.empty:
+        return
+    grouped = rows.groupby("material", sort=True).agg(
+        plans=("id", "nunique"),
+        pieces=("mat_cut_qty", "sum"),
+        metres=("mat_fabric_m", "sum"),
+    ).reset_index()
+    units = rows.drop_duplicates(subset=["id", "material"])
+    grouped["units"] = grouped["material"].map(
+        units.groupby("material")["cut_qty"].sum())
+    grouped["m_per_unit"] = [
+        consumption(m, u) for m, u in zip(grouped["metres"], grouped["units"])
+    ]
+    grouped["metres"] = pd.to_numeric(grouped["metres"],
+                                      errors="coerce").round(2)
+
+    with st.expander(f"🧵 {t('Fabric consumption — total per fabric')}",
+                     expanded=False):
+        st.caption(t(
+            "Across every plan listed above. Fabrics are never added "
+            "together: each line is one fabric's own requirement."))
+        st.dataframe(
+            grouped[["material", "plans", "units", "pieces", "metres",
+                     "m_per_unit"]].rename(columns=_tr({
+                         "material": "Fabric", "plans": "Plans",
+                         "units": "Units", "pieces": "Pieces",
+                         "metres": "Fabric (m)", "m_per_unit": "m/unit"})),
+            use_container_width=True, hide_index=True)
 
 
 def _warn_on_qty_mismatch(view: pd.DataFrame) -> None:
@@ -204,6 +256,7 @@ _FABRIC_RENAME = {
     "material": "Fabric", "width_cm": "Width (cm)", "spreading": "Spreading",
     "n_markers": "Markers", "total_tables": "Tables", "total_plies": "Plies",
     "cut_qty": "Pieces", "fabric_length_m": "Fabric (m)",
+    "m_per_unit": "m/unit", "m_per_piece": "m/piece",
     "efficiency_pct": "Efficiency %", "cut_length_m": "Cut length (m)",
     "cost": "Cost",
 }
@@ -219,8 +272,16 @@ def _show_fabric_summary(store, plan_id: int) -> None:
                 "cut_length_m", "cost"):
         if col in show.columns:
             show[col] = pd.to_numeric(show[col], errors="coerce").round(2)
-    st.dataframe(show.rename(columns=_tr(_FABRIC_RENAME)),
-                 use_container_width=True, hide_index=True)
+    st.dataframe(
+        show.rename(columns=_tr(_FABRIC_RENAME)),
+        use_container_width=True, hide_index=True,
+        column_config={
+            _th("m/unit"): st.column_config.NumberColumn(
+                format="%.4f", help=t("Metres of this fabric per garment.")),
+            _th("m/piece"): st.column_config.NumberColumn(
+                format="%.4f", help=t("Metres per cut piece.")),
+        },
+    )
 
 
 def _show_links(store, plan: dict) -> None:

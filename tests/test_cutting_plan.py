@@ -20,7 +20,7 @@ from po_extractor.parsers.cutting_plan import (
     CuttingPlanParseError, achieved_rows, parse_cut_plan, parse_cut_plan_grid,
 )
 from po_extractor.store.cutting_plan_store import (
-    CuttingPlanStore, cut_vs_po_pct, summarise_plan,
+    CuttingPlanStore, consumption, cut_vs_po_pct, summarise_plan,
 )
 
 
@@ -623,6 +623,37 @@ def test_po_qty_comes_from_the_linked_po(store, exact):
 
     store.set_links(pid, [{"pc_no": "PC1", "po_no": "", "style": ""}])
     assert store.po_qty_by_plan()[pid] == 650      # every style, both POs
+
+
+@pytest.mark.parametrize("metres,qty,expected", [
+    (2020.6236, 1057, 1.9117),      # shell, per garment
+    (2020.6236, 2114, 0.9558),      # shell, per piece — the plan's own figure
+    (64.2141, 1057, 0.0608),        # lining
+    (0, 1057, None),                # no fabric recorded — blank, not 0
+    (100.0, 0, None),               # nothing cut
+    (100.0, None, None),
+    (None, 100, None),
+])
+def test_consumption(metres, qty, expected):
+    assert consumption(metres, qty) == expected
+
+
+def test_consumption_columns_on_the_plan_list(store, exact):
+    pid = store.save_plan(exact, source_file="a.xlsx")
+    row = store.list_plans_by_material().iloc[0]
+    # 512.5 m over 500 units / 1000 pieces.
+    assert row["m_per_unit"] == 1.025
+    assert row["m_per_piece"] == 0.5125
+    mats = store.list_plan_materials(pid).iloc[0]
+    assert mats["m_per_unit"] == 1.025
+    assert mats["m_per_piece"] == 0.5125
+
+
+def test_consumption_per_unit_differs_from_per_piece_for_a_co_ord_set():
+    """One shell yielding both halves of a set uses twice the fabric per
+    garment that it does per piece."""
+    assert consumption(2000.0, 1000) == 2.0        # per garment
+    assert consumption(2000.0, 2000) == 1.0        # per piece
 
 
 @pytest.mark.parametrize("po,cut,expected", [
