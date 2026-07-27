@@ -12,6 +12,7 @@ XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ZIP_MIME  = "application/zip"
 HTML_MIME = "text/html"
 CSV_MIME  = "text/csv"
+PDF_MIME  = "application/pdf"
 
 # ── CPRS request timeouts (seconds) ───────────────────────────────────────
 # Evaluations are quick; the document exporters embed images and are much

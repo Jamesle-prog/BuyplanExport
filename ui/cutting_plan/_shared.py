@@ -6,12 +6,13 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from po_extractor.config import PDF_MIME, XLSX_MIME
 from ui.i18n import t
 from ui.shared import guard_multiselect_state
 from ui.stores import get_sky_east_store
 
-XLSX_MIME = ("application/vnd.openxmlformats-officedocument."
-             "spreadsheetml.sheet")
+_PAGE_SIZES = ["A4", "A3", "Letter"]
+_ORIENTATIONS = {"landscape": "Landscape", "portrait": "Portrait"}
 
 # Canonical Sky East size order — the DB stores one column per bucket.
 SIZE_ORDER = ["XS", "S", "M", "L", "XL", "2XL"]
@@ -179,6 +180,59 @@ def demand_frame(groups: list[tuple[str, list[str]]], colors: list[str],
             rows.append({"Style": style, "Color": color, **cells,
                          "Total": sum(cells.values())})
     return pd.DataFrame(rows)
+
+
+def pdf_export_block(xlsx_bytes: bytes | None, base_name: str, key: str, *,
+                     label: str | None = None) -> None:
+    """PDF options + build/download for a cutting-plan workbook.
+
+    The PDF always fits every column onto one page width with minimal
+    margins; page size and orientation are offered because a plan with many
+    styles needs A3 to stay comfortably readable.
+    """
+    if not xlsx_bytes:
+        return
+    from po_extractor.exporters.xlsx_to_pdf import PdfRenderError, xlsx_bytes_to_pdf
+
+    with st.expander(f"📕 {label or t('PDF version')}", expanded=False):
+        st.caption(t(
+            "All columns are fitted onto one page width with minimal page "
+            "margins; long sheets continue on further pages."))
+        c1, c2 = st.columns(2)
+        page_size = c1.selectbox(t("Page size"), _PAGE_SIZES,
+                                 key=f"{key}_pdf_page")
+        orientation = c2.selectbox(
+            t("Orientation"), list(_ORIENTATIONS),
+            format_func=lambda o: t(_ORIENTATIONS[o]),
+            key=f"{key}_pdf_orient")
+
+        if st.button(f"📕 {t('Build PDF')}", key=f"{key}_pdf_build",
+                     use_container_width=True):
+            try:
+                st.session_state[f"{key}_pdf_bytes"] = xlsx_bytes_to_pdf(
+                    xlsx_bytes, page_size=page_size, orientation=orientation)
+                st.session_state[f"{key}_pdf_name"] = f"{base_name}.pdf"
+            except PdfRenderError as exc:
+                st.error(str(exc))
+            except Exception as exc:                    # noqa: BLE001
+                st.error(f"{type(exc).__name__}: {exc}")
+
+        data = st.session_state.get(f"{key}_pdf_bytes")
+        if data:
+            st.download_button(
+                f"⬇️ {st.session_state.get(f'{key}_pdf_name', 'cut_plan.pdf')}",
+                data=data,
+                file_name=st.session_state.get(f"{key}_pdf_name",
+                                               "cut_plan.pdf"),
+                mime=PDF_MIME, use_container_width=True,
+                key=f"{key}_pdf_dl")
+
+
+def safe_filename(name: str, *, fallback: str = "cut_plan") -> str:
+    """Strip characters Windows/Excel reject from a download filename."""
+    cleaned = "".join(ch for ch in (name or "")
+                      if ch not in '\\/:*?"<>|').strip()
+    return cleaned or fallback
 
 
 def plan_caption(plan: dict[str, Any]) -> str:

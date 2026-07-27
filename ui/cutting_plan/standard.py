@@ -18,7 +18,8 @@ from ui.session_keys import SK
 from ui.shared import guard_multiselect_state
 from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
-    XLSX_MIME, demand_frame, demand_matrix, select_pos,
+    XLSX_MIME, demand_frame, demand_matrix, pdf_export_block, safe_filename,
+    select_pos,
 )
 
 
@@ -80,6 +81,10 @@ def show_standard_section() -> None:
             data=st.session_state[SK.CP_STD_BYTES],
             file_name=st.session_state[SK.CP_STD_FNAME],
             mime=XLSX_MIME, use_container_width=True, key="cp_std_dl")
+        pdf_export_block(
+            st.session_state[SK.CP_STD_BYTES],
+            str(st.session_state[SK.CP_STD_FNAME]).removesuffix(".xlsx"),
+            key="cp_std")
 
 
 def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
@@ -113,10 +118,12 @@ def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
         header=header, groups=groups, colors=colors, demand_qty=qty,
         materials=materials, sheet_name=order_name)
 
-    safe = "".join(ch for ch in order_name
-                   if ch not in '\\/:*?"<>|').strip() or "cut_plan"
     st.session_state[SK.CP_STD_BYTES] = data
-    st.session_state[SK.CP_STD_FNAME] = f"{safe}_CutPlan_standard.xlsx"
+    st.session_state[SK.CP_STD_FNAME] = (
+        f"{safe_filename(order_name)}_CutPlan_standard.xlsx")
+    # A previously built PDF belongs to the old workbook — drop it so the
+    # download button can't hand back a stale sheet.
+    st.session_state.pop("cp_std_pdf_bytes", None)
     if not materials:
         st.success(t("Standard template built (marker sections blank)."))
     else:

@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.105.0",
+        "date": "2026-07-27",
+        "entries": [
+            {"type": "feat", "text": "**Cutting plans export to PDF, every column on one page.** Both the standard version and the original uploaded file now have a **PDF version** panel next to the Excel download. Columns are never split across sheets of paper: column widths, row heights and the font are scaled by a single factor, exactly as Excel's *fit all columns on one page* does, and long sheets continue onto further pages. Page margins are minimal (2 mm) so the widest plan still gets a readable font. Page size (A4 / A3 / Letter) and orientation are selectable — a plan covering many styles is much easier to read on A3."},
+            {"type": "feat", "text": "**Nothing is clipped on the printout.** Columns are sized to the text they actually hold rather than to the width stored in the file — the Optitex export ships 12-character columns holding 50-character marker paths, which Excel hides by spilling text over neighbouring cells but a printout would simply cut off. Text still spills over genuinely empty cells the way Excel does, a single very long value can't starve the rest of the sheet, and Chinese colour and material names render correctly alongside Latin text instead of being stretched to double width."},
+            {"type": "refactor", "text": "Conversion runs on PyMuPDF, already a dependency, rather than driving Excel over COM — so it works on a server with no Office installed and can't hang a worker thread. `PDF_MIME` joins the other MIME types in `po_extractor/config.py`."},
+        ],
+    },
+    {
         "version": "2.104.0",
         "date": "2026-07-27",
         "entries": [

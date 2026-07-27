@@ -12,8 +12,8 @@ from ui.session_keys import SK
 from ui.shared import _th, _tr, fragment_rerun
 from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
-    XLSX_MIME, demand_matrix, link_rows, load_sky_east_items, po_label,
-    select_pos,
+    XLSX_MIME, demand_matrix, link_rows, load_sky_east_items, pdf_export_block,
+    po_label, safe_filename, select_pos,
 )
 
 _LIST_RENAME = {
@@ -263,6 +263,9 @@ def _show_files(store, plan: dict) -> None:
             f"⬇️ {t('Download original file')} ({fname})",
             data=data, file_name=fname, mime=XLSX_MIME,
             key=f"cp_dl_orig_{plan_id}", use_container_width=True)
+        pdf_export_block(data, safe_filename(fname.removesuffix(".xlsx")),
+                         key=f"cp_orig_{plan_id}",
+                         label=t("PDF of the original file"))
     else:
         st.caption(t("The original file wasn't stored with this plan."))
 
@@ -282,6 +285,11 @@ def _show_files(store, plan: dict) -> None:
             file_name=st.session_state[f"cp_std_{plan_id}_fname"],
             mime=XLSX_MIME, use_container_width=True,
             key=f"cp_std_dl_{plan_id}")
+        pdf_export_block(
+            st.session_state[f"cp_std_{plan_id}_bytes"],
+            str(st.session_state[f"cp_std_{plan_id}_fname"]).removesuffix(".xlsx"),
+            key=f"cp_stdplan_{plan_id}",
+            label=t("PDF of the standard version"))
 
 
 def _build_standard_for_plan(store, plan: dict) -> None:
@@ -312,6 +320,8 @@ def _build_standard_for_plan(store, plan: dict) -> None:
         sheet_name=plan.get("plan_name") or "Cut Plan")
     st.session_state[f"cp_std_{plan_id}_bytes"] = data
     st.session_state[f"cp_std_{plan_id}_fname"] = _std_filename(plan)
+    # Any PDF built from the previous workbook is now stale.
+    st.session_state.pop(f"cp_stdplan_{plan_id}_pdf_bytes", None)
 
 
 def _demands_from_parsed(parsed: dict):
@@ -331,5 +341,4 @@ def _demands_from_parsed(parsed: dict):
 
 def _std_filename(plan: dict) -> str:
     base = (plan.get("plan_name") or f"cut_plan_{plan.get('id')}").strip()
-    safe = "".join(ch for ch in base if ch not in '\\/:*?"<>|').strip() or "cut_plan"
-    return f"{safe}_CutPlan_standard.xlsx"
+    return f"{safe_filename(base)}_CutPlan_standard.xlsx"
