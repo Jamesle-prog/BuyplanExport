@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.108.0",
+        "date": "2026-07-27",
+        "entries": [
+            {"type": "feat", "text": "**Cut vs PO % on every cut plan.** A new column shows how far the plan's cut quantity sits from what the linked PO ordered — positive means overcut — and the plan detail's *Cut qty* tile carries the same figure. It's blank when no PO is linked, since there's no baseline to measure against. Plans that don't match are still called out under the table, now with the percentage."},
+            {"type": "fix", "text": "**\"Cut qty\" split into two clearly different numbers.** A fabric's figure counts every *piece* cut from it while the PO counts *units*, and for a co-ord set those differ by design — the shell yields both the trousers and the top, so its piece count is double the units. Comparing the two would have read as +111 % when the plan is only 5.7 % over. The per-fabric column is now labelled **Pieces**, **Cut qty** is the unit count, and the percentage is calculated from the unit count alone."},
+        ],
+    },
+    {
         "version": "2.107.0",
         "date": "2026-07-27",
         "entries": [

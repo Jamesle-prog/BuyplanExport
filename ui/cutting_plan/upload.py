@@ -156,7 +156,7 @@ def _show_parsed_plan(entry: dict) -> None:
             _th("Plies"): sum(int(line.get("plies") or 0)
                               for s in m.get("spreads", [])
                               for line in s.get("rows", [])) or None,
-            _th("Cut qty"): m.get("cut_qty"),
+            _th("Pieces"): m.get("cut_qty"),
             _th("Fabric (m)"): (round(m["fabric_length_m"], 2)
                                 if m.get("fabric_length_m") else None),
             _th("Efficiency %"): (round(m["total_efficiency_pct"], 2)

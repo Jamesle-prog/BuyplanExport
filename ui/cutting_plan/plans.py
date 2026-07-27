@@ -7,6 +7,7 @@ import streamlit as st
 from po_extractor.exporters.cutting_plan_export import (
     build_standard_cut_plan, plan_header_from_parsed,
 )
+from po_extractor.store.cutting_plan_store import cut_vs_po_pct
 from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import _th, _tr, fragment_rerun
@@ -19,19 +20,25 @@ from ui.cutting_plan._shared import (
 # Column order of the saved-plans table (one row per fabric).  Fabric-level
 # figures sit together after the fabric name; plan-level ones repeat on each
 # of a plan's rows.
+#
+# "Pieces" vs "Cut qty" is a real distinction, not a synonym: a fabric's
+# figure counts every piece cut from it (the trousers *and* the top of a
+# co-ord set), while Cut qty counts units, which is what the PO ordered.
 _LIST_RENAME = {
     "id": "#", "plan_name": "Plan", "plan_date": "Plan date",
     "styles": "Styles", "colors": "Colors",
     "material": "Fabric", "width_cm": "Width (cm)",
     "n_markers": "Markers", "mat_tables": "Tables",
-    "total_plies": "Plies", "mat_cut_qty": "Cut qty",
+    "total_plies": "Plies", "mat_cut_qty": "Pieces",
     "mat_fabric_m": "Fabric (m)", "mat_efficiency_pct": "Efficiency %",
-    "cost": "Cost", "po_qty": "PO qty", "order_qty": "Plan qty",
+    "cost": "Cost",
+    "po_qty": "PO qty", "order_qty": "Plan qty", "cut_qty": "Cut qty",
+    "diff_pct": "Cut vs PO %",
     "linked_pos": "Linked POs", "linked_styles": "Linked styles",
     "uploaded_at": "Uploaded", "uploaded_by": "By",
 }
 _ROUND_2 = ("width_cm", "mat_fabric_m", "mat_efficiency_pct", "cut_length_m",
-            "cost")
+            "cost", "diff_pct")
 
 
 def show_plans_section() -> None:
@@ -53,14 +60,25 @@ def show_plans_section() -> None:
     st.caption(t(
         "One row per fabric: shell and lining are different fabrics at "
         "different widths, so their metres and efficiency are never combined. "
-        "**PO qty** is what the linked PO ordered; **Plan qty** is what the "
-        "cut plan was built for."))
+        "**Pieces** counts every piece cut from that fabric; **Cut qty** "
+        "counts units, which is what **PO qty** (ordered on the linked PO) "
+        "and **Plan qty** (what the plan was built for) also count. "
+        "**Cut vs PO %** is positive when the plan overcuts."))
     show = view[[c for c in _LIST_RENAME if c in view.columns]].copy()
     for col in _ROUND_2:
         if col in show.columns:
             show[col] = pd.to_numeric(show[col], errors="coerce").round(2)
-    st.dataframe(show.rename(columns=_tr(_LIST_RENAME)),
-                 use_container_width=True, hide_index=True)
+    st.dataframe(
+        show.rename(columns=_tr(_LIST_RENAME)),
+        use_container_width=True, hide_index=True,
+        column_config={
+            _th("Cut vs PO %"): st.column_config.NumberColumn(
+                format="%+.1f %%",
+                help=t("Cut qty against the linked PO's quantity. Blank when "
+                       "no PO is linked."),
+            ),
+        },
+    )
     _warn_on_qty_mismatch(view)
 
     st.divider()
@@ -85,16 +103,16 @@ def _warn_on_qty_mismatch(view: pd.DataFrame) -> None:
     overcut — but a silent gap between the two numbers usually means the plan
     was built against a superseded quantity or linked to the wrong styles.
     """
-    if "po_qty" not in view.columns or "order_qty" not in view.columns:
+    if "po_qty" not in view.columns or "diff_pct" not in view.columns:
         return
     per_plan = view.drop_duplicates(subset=["id"])
-    off = per_plan[(per_plan["po_qty"] > 0)
-                   & (per_plan["po_qty"] != per_plan["order_qty"])]
+    off = per_plan[(per_plan["po_qty"] > 0) & (per_plan["diff_pct"].fillna(0) != 0)]
     for _, r in off.iterrows():
         st.caption(
             f"⚠️ #{int(r['id'])} {r['plan_name']}: " + t(
-                "PO ordered {po:,} pcs, plan is for {plan:,} pcs.").format(
-                    po=int(r["po_qty"]), plan=int(r["order_qty"])))
+                "PO ordered {po:,}, plan cuts {cut:,} — {pct:+.1f}%.").format(
+                    po=int(r["po_qty"]), cut=int(r["cut_qty"] or 0),
+                    pct=float(r["diff_pct"])))
 
 
 def _filter_plans(df: pd.DataFrame, search: str, store) -> pd.DataFrame:
@@ -128,12 +146,19 @@ def _show_plan_detail(store, plan_id: int) -> None:
     po_qty = int(store.po_qty_by_plan().get(plan_id, 0))
     order_qty = int(plan.get("order_qty") or 0)
     cut = int(plan.get("cut_qty") or 0)
+    diff_pct = cut_vs_po_pct(po_qty, cut)
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(t("PO qty"), f"{po_qty:,}" if po_qty else "—",
-              delta=((order_qty - po_qty) or None) if po_qty else None,
-              delta_color="inverse", help=t("Ordered on the linked PO(s)."))
-    c2.metric(t("Plan qty"), f"{order_qty:,}")
-    c3.metric(t("Cut qty"), f"{cut:,}", delta=(cut - order_qty) or None)
+              help=t("Ordered on the linked PO(s) and styles."))
+    c2.metric(t("Plan qty"), f"{order_qty:,}",
+              help=t("What the cut plan was built for."))
+    c3.metric(
+        t("Cut qty"), f"{cut:,}",
+        delta=(f"{diff_pct:+.1f}% " + t("vs PO") if diff_pct is not None
+               else ((cut - order_qty) or None)),
+        help=t("Units the plan cuts, against what the PO ordered. Pieces per "
+               "fabric are listed below — a co-ord set cuts more pieces than "
+               "units."))
     c4.metric(t("Markers"), int(plan.get("total_markers") or 0))
     st.caption(
         f"{t('Styles')}: {plan.get('styles') or '—'} · "
@@ -178,7 +203,7 @@ def _show_plan_detail(store, plan_id: int) -> None:
 _FABRIC_RENAME = {
     "material": "Fabric", "width_cm": "Width (cm)", "spreading": "Spreading",
     "n_markers": "Markers", "total_tables": "Tables", "total_plies": "Plies",
-    "cut_qty": "Cut qty", "fabric_length_m": "Fabric (m)",
+    "cut_qty": "Pieces", "fabric_length_m": "Fabric (m)",
     "efficiency_pct": "Efficiency %", "cut_length_m": "Cut length (m)",
     "cost": "Cost",
 }

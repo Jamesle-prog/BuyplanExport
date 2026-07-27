@@ -410,6 +410,10 @@ class CuttingPlanStore(BaseSQLiteStore):
         df["material"] = df["material"].fillna("")
         po_qty = self.po_qty_by_plan()
         df["po_qty"] = df["id"].map(po_qty).fillna(0).astype(int)
+        df["diff_pct"] = [
+            cut_vs_po_pct(po, cut)
+            for po, cut in zip(df["po_qty"], df["cut_qty"])
+        ]
         return df
 
     def get_plan(self, plan_id: int) -> dict[str, Any] | None:
@@ -524,6 +528,28 @@ class CuttingPlanStore(BaseSQLiteStore):
 # ---------------------------------------------------------------------------
 # Summary helpers (module-level so the UI can summarise before saving)
 # ---------------------------------------------------------------------------
+
+def cut_vs_po_pct(po_qty: Any, cut_qty: Any) -> float | None:
+    """How far the plan's cut quantity sits from what the PO ordered, in %.
+
+    Positive means overcut.  Both figures are *unit* counts — the plan's
+    per-style total, not the per-fabric piece count: a fabric's ``cut_qty``
+    sums the pieces of every style cut from it (trousers + top of a co-ord
+    set), so measuring it against a PO's unit quantity would read as +111 %
+    when nothing is actually over.
+
+    Returns None when the PO quantity is unknown (nothing linked, or the POs
+    aren't in this database) — there is no baseline to compare against.
+    """
+    try:
+        po = float(po_qty or 0)
+        cut = float(cut_qty or 0)
+    except (TypeError, ValueError):
+        return None
+    if po <= 0:
+        return None
+    return round((cut - po) / po * 100.0, 2)
+
 
 def _achieved_by_cell(parsed: dict[str, Any]) -> dict[tuple[str, str, str], int]:
     """(style, colour, size) → achieved qty, taken from the material whose

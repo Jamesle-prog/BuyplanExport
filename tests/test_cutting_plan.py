@@ -20,7 +20,7 @@ from po_extractor.parsers.cutting_plan import (
     CuttingPlanParseError, achieved_rows, parse_cut_plan, parse_cut_plan_grid,
 )
 from po_extractor.store.cutting_plan_store import (
-    CuttingPlanStore, summarise_plan,
+    CuttingPlanStore, cut_vs_po_pct, summarise_plan,
 )
 
 
@@ -623,6 +623,57 @@ def test_po_qty_comes_from_the_linked_po(store, exact):
 
     store.set_links(pid, [{"pc_no": "PC1", "po_no": "", "style": ""}])
     assert store.po_qty_by_plan()[pid] == 650      # every style, both POs
+
+
+@pytest.mark.parametrize("po,cut,expected", [
+    (1000, 1057, 5.7),        # overcut
+    (1000, 950, -5.0),        # short
+    (1000, 1000, 0.0),
+    (0, 1057, None),          # nothing linked — no baseline
+    (None, 1057, None),
+    (1000, 0, -100.0),
+])
+def test_cut_vs_po_pct(po, cut, expected):
+    assert cut_vs_po_pct(po, cut) == expected
+
+
+def test_diff_pct_uses_unit_cut_qty_not_the_per_fabric_piece_count(store):
+    """A co-ord set cuts trousers *and* a top from the shell, so that fabric's
+    piece count is double the units. Measuring it against the PO's unit
+    quantity would read +111 % when the plan is only 5.7 % over."""
+    plan = {
+        "order_name": "set", "colors": ["Wine"],
+        "style_totals": {"TROUSER": 1057, "TOP": 1057},
+        "demands": [{"style": "TROUSER", "color": "Wine", "size": "M",
+                     "qty": 1057},
+                    {"style": "TOP", "color": "Wine", "size": "M",
+                     "qty": 1057}],
+        "materials": [{
+            "material": "A", "n_markers": 1, "total_tables": 1,
+            "fabric_length_m": 100.0, "total_efficiency_pct": 87.0,
+            "cut_qty": 2114, "markers": [], "spreads": [],
+            "solution": [{"color": "Wine", "kind": "", "total_qty": 2114,
+                          "fabric_length_m": 100.0, "cells": [
+                              {"style": "TROUSER", "size": "M", "qty": 1057},
+                              {"style": "TOP", "size": "M", "qty": 1057}]}],
+        }],
+        "total_tables": 1,
+    }
+    _seed_sky_east_items(store.db_path, [("PC1", "PO1", "SET1", 1000)])
+    pid = store.save_plan(plan, source_file="a.xlsx",
+                          links=[{"pc_no": "PC1", "po_no": "PO1",
+                                  "style": "SET1"}])
+    row = store.list_plans_by_material().iloc[0]
+    assert int(row["mat_cut_qty"]) == 2114      # pieces off the shell
+    assert int(row["cut_qty"]) == 1057          # units
+    assert int(row["po_qty"]) == 1000
+    assert row["diff_pct"] == 5.7               # not 111.4
+    assert store.get_plan(pid)["cut_qty"] == 1057
+
+
+def test_diff_pct_is_blank_when_no_po_is_linked(store, exact):
+    store.save_plan(exact, source_file="a.xlsx")
+    assert store.list_plans_by_material().iloc[0]["diff_pct"] is None
 
 
 def test_po_qty_counts_each_item_once(store, exact):
