@@ -4,7 +4,7 @@ import sys
 
 import streamlit as st
 
-APP_VERSION = "2.103.1"
+APP_VERSION = "2.104.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -727,6 +727,7 @@ def show_main():
             user_cos=get_user_companies(st.session_state.username), admin_mode=admin_mode)),
         ("cmpt",           f"📄 {t('CMPT')}",           lambda: _show_cmpt_tab(admin_mode=admin_mode)),
         ("email",          f"📧 {t('Email')}",          lambda: _show_email_tab(admin_mode=admin_mode)),
+        ("cutting_plan",   f"✂️ {t('Cutting Plan')}",   lambda: _show_cutting_plan_tab()),
         ("releases",       f"🔖 {t('Releases')}",       lambda: _show_changelog_tab()),
     ]
     _visible_tabs = [(label, fn) for key, label, fn in _all_tabs if _allowed(key)]
@@ -774,6 +775,12 @@ def _show_cmpt_tab(admin_mode: bool) -> None:
 def _show_email_tab(admin_mode: bool) -> None:
     from ui.email_view import show_email_tab
     show_email_tab(username=st.session_state.username, admin_mode=admin_mode)
+
+
+@st.fragment
+def _show_cutting_plan_tab() -> None:
+    from ui.cutting_plan import show_cutting_plan_tab
+    show_cutting_plan_tab()
 
 
 def _show_admin_panel():

@@ -57,11 +57,15 @@ MODULE_TRACKING         = "tracking"
 MODULE_CMPT             = "cmpt"               # CMPT (加工) contracts + price ledger
 MODULE_EMAIL            = "email"              # inbox review + notifications
 MODULE_RELEASES         = "releases"
+# Cutting plans (裁剪计划). Deliberately its own module and NOT implied by any
+# Sky East module: cut plans expose marker efficiency, fabric consumption and
+# material cost, which the Buy Plan users must not see. Grant it explicitly.
+MODULE_CUTTING_PLAN     = "cutting_plan"
 
 ALL_MODULES = [
     MODULE_GIII, MODULE_SKY_EAST, MODULE_SKY_EAST_BUYPLAN, MODULE_FABRIC_DB,
     MODULE_REFERENCE_DATA, MODULE_COLORS, MODULE_SUMMARY, MODULE_TRACKING,
-    MODULE_CMPT, MODULE_EMAIL, MODULE_RELEASES,
+    MODULE_CMPT, MODULE_EMAIL, MODULE_CUTTING_PLAN, MODULE_RELEASES,
 ]
 
 MODULE_LABELS = {
@@ -75,6 +79,7 @@ MODULE_LABELS = {
     MODULE_TRACKING: "🏭 Tracking",
     MODULE_CMPT: "📄 CMPT Contracts",
     MODULE_EMAIL: "📧 Email",
+    MODULE_CUTTING_PLAN: "✂️ Cutting Plan",
     MODULE_RELEASES: "🔖 Releases",
 }
 

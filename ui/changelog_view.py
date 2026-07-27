@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.104.0",
+        "date": "2026-07-27",
+        "entries": [
+            {"type": "feat", "text": "**New ✂️ Cutting Plan tab — upload a cut plan, link it to the PO(s) it covers.** Cut plans are produced outside the app by the marker software (Optitex Cut Plan export): the file carries the marker ratios, ply counts, marker length, efficiency, fabric consumption and material cost, and none of it is recalculated here. Upload the .xlsx and the app reads every block — order demands, marker definition per material, marker ratios, spreading plies, and the solution — then records which POs it covers. One plan can cover many POs, and a PO can be re-cut under a later plan, so the link is many-to-many and a plan can be looked up by either PC No. or PO No. Re-uploading the identical file is flagged before it's saved twice, and the original file is kept so it can always be handed back unchanged."},
+            {"type": "feat", "text": "**Standard output — one layout for every PO's cutting plan.** Different POs' plans arrive in different shapes. Pick the PO(s) and the app emits the plan in one house layout, with the *Order demands* block rebuilt from the PO itself, so the sheet always states what was actually ordered. Marker sections are filled from the cut plan(s) linked to those POs; when nothing is linked yet you get the same standard layout with those sections blank for the cutting room to complete. Plans that overcut (a marker ratio rarely divides an order exactly) are read correctly — the *Order* / *Real* split is preserved, and the per-size ordered-vs-cut difference is shown."},
+            {"type": "feat", "text": "**Separate permission — Buy Plan users do not get it.** Cutting Plan is its own module in **Admin → Users**, granted explicitly and never implied by either Sky East module: cut plans expose marker efficiency, fabric consumption and material cost, which the Sky East Buy Plan role must not see. A user with *Sky East — Buy Plan only* keeps that tab and does not gain this one."},
+        ],
+    },
+    {
         "version": "2.103.1",
         "date": "2026-07-27",
         "entries": [

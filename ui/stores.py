@@ -37,6 +37,7 @@ from po_extractor.store import (
     EmailInboxStore,
     FactoryRegistryStore,
     LoginLogStore,
+    CuttingPlanStore,
     get_po_store as _get_po_store,
     get_sky_east_store as _get_sky_east_store,
     get_fabric_master_store as _get_fabric_master_store,
@@ -50,6 +51,7 @@ from po_extractor.store import (
     get_email_inbox_store as _get_email_inbox_store,
     get_factory_registry_store as _get_factory_registry_store,
     get_login_log_store as _get_login_log_store,
+    get_cutting_plan_store as _get_cutting_plan_store,
     list_all_brands as _list_all_brands,
 )
 from po_extractor.config import DATA_DIR, DB_PATH   # canonical path constants
@@ -186,6 +188,13 @@ def get_login_log_store() -> LoginLogStore:
     """Return the cached LoginLogStore (same ``functools.cache`` rationale as
     get_production_tracking_store above)."""
     return _get_login_log_store()
+
+
+@functools.cache
+def get_cutting_plan_store() -> CuttingPlanStore:
+    """Return the cached CuttingPlanStore (same ``functools.cache`` rationale
+    as get_production_tracking_store above)."""
+    return _get_cutting_plan_store()
 
 
 # ── Convenience helpers exported for UI code ────────────────────────────────

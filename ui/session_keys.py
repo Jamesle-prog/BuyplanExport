@@ -110,6 +110,14 @@ class SK:
     GIII_MASTER_DL_BYTES = "master_dl_bytes"
     GIII_MASTER_DL_FNAME = "master_dl_fname"
 
+    # ── Cutting Plan (✂️ 裁剪计划) ─────────────────────────────────────────────
+    CP_PARSED       = "cp_parsed"        # list[dict] — parsed uploads awaiting save
+    CP_PARSE_SIG    = "cp_parse_sig"     # uploader signature the parses were built from
+    CP_FLASH        = "cp_flash"         # one-shot (kind, message) after a save/delete
+    CP_EDIT_ID      = "cp_edit_id"       # plan id whose links are being edited
+    CP_STD_BYTES    = "cp_std_bytes"     # generated standard cut plan bytes
+    CP_STD_FNAME    = "cp_std_fname"
+
 
 # Allowed values for ``SK.SE_COLOR_SOURCE`` — controls where the buy-plan
 # Chinese colour mapping (中文颜色 / 中文颜色代码 / 主标颜色) is loaded from.
