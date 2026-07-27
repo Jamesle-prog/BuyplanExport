@@ -1,7 +1,7 @@
 """Shared helpers for the Cutting Plan tab — PO selection and demand matrices."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 
 import pandas as pd
 import streamlit as st
@@ -20,12 +20,11 @@ _SIZE_COLS = {"XS": "xs", "S": "s", "M": "m", "L": "l",
               "XL": "xl", "2XL": "xxl"}
 
 
-def po_label(pc_no: str, po_no: str) -> str:
-    """Display label for one linked PO — 'PC No. · PO No.'."""
-    pc_no, po_no = (pc_no or "").strip(), (po_no or "").strip()
-    if pc_no and po_no:
-        return f"{pc_no} · {po_no}"
-    return pc_no or po_no or "—"
+def po_label(pc_no: str, po_no: str, style: str = "") -> str:
+    """Display label for one link — 'PC No. · PO No. · Style'."""
+    parts = [p for p in ((pc_no or "").strip(), (po_no or "").strip(),
+                         (style or "").strip()) if p]
+    return " · ".join(parts) or "—"
 
 
 def load_sky_east_items(pc_nos: list[str]) -> pd.DataFrame:
@@ -36,20 +35,36 @@ def load_sky_east_items(pc_nos: list[str]) -> pd.DataFrame:
     return df if df is not None else pd.DataFrame()
 
 
-def select_pos(key_prefix: str, *,
-               help_text: str | None = None) -> tuple[list[str], list[str], pd.DataFrame]:
-    """Render the shared PC No. → PO No. selector.
+class POSelection(NamedTuple):
+    """What the PC No. → PO No. → style selector resolved to.
 
-    Returns ``(pc_nos, po_nos, items_df)``.  ``po_nos`` is empty when the user
-    hasn't narrowed the selection, which means *every* PO under the chosen
-    PC No.s.  ``items_df`` is already filtered to the effective selection.
+    ``po_nos`` / ``styles`` are empty when the user hasn't narrowed that
+    level, meaning *all* of them under the level above.  ``items`` is already
+    filtered to the effective selection, so callers can use it directly.
+    """
+    pc_nos: list[str]
+    po_nos: list[str]
+    styles: list[str]
+    items: pd.DataFrame
+
+    def __bool__(self) -> bool:
+        return bool(self.pc_nos)
+
+
+def select_pos(key_prefix: str, *,
+               help_text: str | None = None) -> POSelection:
+    """Render the shared PC No. → PO No. → style selector.
+
+    A cut plan usually covers particular styles rather than a whole contract,
+    and nothing in the files connects the plan's CAD style names to the PO's
+    style codes — so the style has to be chosen here.
     """
     store = get_sky_east_store()
     df_contracts = store.list_contracts()
     if df_contracts is None or df_contracts.empty:
         st.info(t("No Sky East contracts saved yet. Upload files in the "
                   "🛍 Sky East tab first."))
-        return [], [], pd.DataFrame()
+        return POSelection([], [], [], pd.DataFrame())
 
     pc_options = [pc for pc in df_contracts["pc_no"].tolist()
                   if pc and str(pc).strip()]
@@ -71,12 +86,12 @@ def select_pos(key_prefix: str, *,
                   use_container_width=True)
 
     if not pc_nos:
-        return [], [], pd.DataFrame()
+        return POSelection([], [], [], pd.DataFrame())
 
     items = load_sky_east_items(pc_nos)
     if items.empty:
         st.warning(t("No items found for the selected PC No.(s)."))
-        return pc_nos, [], items
+        return POSelection(pc_nos, [], [], items)
 
     po_options = sorted({str(p).strip() for p in
                          items.get("zalando_po", pd.Series(dtype=str)).tolist()
@@ -93,37 +108,75 @@ def select_pos(key_prefix: str, *,
         if po_nos:
             items = items[items["zalando_po"].astype(str).str.strip()
                           .isin(po_nos)].copy()
-    return pc_nos, po_nos, items
+
+    style_options = sorted({str(s).strip() for s in
+                            items.get("style", pd.Series(dtype=str)).tolist()
+                            if s and str(s).strip()})
+    styles: list[str] = []
+    if style_options:
+        style_key = f"{key_prefix}_styles"
+        guard_multiselect_state(style_key, style_options)
+        styles = st.multiselect(
+            t("Style(s) inside those PO(s) — leave empty for all styles"),
+            style_options, key=style_key,
+            placeholder=t("All styles"),
+            help=t("The plan's own style names come from the CAD files and "
+                   "won't match the PO's style codes — pick the PO styles "
+                   "this plan cuts."),
+        )
+        if styles:
+            items = items[items["style"].astype(str).str.strip()
+                          .isin(styles)].copy()
+        _show_style_summary(items, style_options, styles)
+    return POSelection(pc_nos, po_nos, styles, items)
 
 
-def link_rows(pc_nos: list[str], po_nos: list[str],
-              items: pd.DataFrame) -> list[dict]:
-    """Expand a selection into concrete ``{pc_no, po_no}`` link rows.
+def _show_style_summary(items: pd.DataFrame, all_styles: list[str],
+                        picked: list[str]) -> None:
+    """One line telling the user how much of the PO the selection covers."""
+    if items is None or items.empty:
+        return
+    qty = int(pd.to_numeric(items.get("total_qty"), errors="coerce")
+              .fillna(0).sum())
+    n = len(picked) if picked else len(all_styles)
+    st.caption(
+        t("{n} of {total} style(s) selected · {qty:,} pcs").format(
+            n=n, total=len(all_styles), qty=qty))
 
-    Always concrete pairs — never "the whole PC No." as a wildcard — so a
-    later query for one PO number finds its plan without having to re-expand
-    the contract.
+
+def link_rows(selection: POSelection) -> list[dict]:
+    """Expand a selection into concrete ``{pc_no, po_no, style}`` link rows.
+
+    Always concrete triples — never "the whole PC No." as a wildcard — so a
+    later query for one PO number or style finds its plan without having to
+    re-expand the contract.  Leaving the style picker empty therefore links
+    every style currently in the selection, which is what "all styles" means
+    at the moment of linking.
     """
+    pc_nos, po_nos, styles, items = selection
     rows: list[dict] = []
     if items is not None and not items.empty and "pc_no" in items.columns:
         seen = set()
         for _, r in items.iterrows():
             pc = str(r.get("pc_no") or "").strip()
             po = str(r.get("zalando_po") or "").strip()
+            style = str(r.get("style") or "").strip()
             if not pc and not po:
                 continue
-            if (pc, po) in seen:
+            if (pc, po, style) in seen:
                 continue
-            seen.add((pc, po))
-            rows.append({"pc_no": pc, "po_no": po})
+            seen.add((pc, po, style))
+            rows.append({"pc_no": pc, "po_no": po, "style": style})
     if rows:
         return rows
     # No item rows (e.g. a contract saved without items) — fall back to the
     # raw selection so the link isn't silently dropped.
+    base_pc = pc_nos[0] if len(pc_nos) == 1 else ""
     if po_nos:
-        return [{"pc_no": pc_nos[0] if len(pc_nos) == 1 else "", "po_no": po}
-                for po in po_nos]
-    return [{"pc_no": pc, "po_no": ""} for pc in pc_nos]
+        return [{"pc_no": base_pc, "po_no": po, "style": st_}
+                for po in po_nos for st_ in (styles or [""])]
+    return [{"pc_no": pc, "po_no": "", "style": st_}
+            for pc in pc_nos for st_ in (styles or [""])]
 
 
 def demand_matrix(items: pd.DataFrame) -> tuple[

@@ -57,27 +57,30 @@ def show_upload_section() -> None:
         return
 
     st.divider()
-    st.markdown(f"**{t('Link to PO(s)')}**")
+    st.markdown(f"**{t('Link to PO(s) and styles')}**")
     st.caption(t(
-        "A cut plan usually covers several POs at once. Pick every PO it "
-        "covers — the link is what makes the plan show up against those POs."
+        "A cut plan usually covers several POs at once, and only some of the "
+        "styles inside them. Pick everything it covers — the link is what "
+        "makes the plan show up against those POs and styles."
     ))
-    pc_nos, po_nos, items = select_pos("cp_up")
+    selection = select_pos("cp_up")
+    items = selection.items
 
     if items is not None and not items.empty:
         groups, colors, qty = demand_matrix(items)
         df = demand_frame(groups, colors, qty)
         if not df.empty:
-            with st.expander(t("PO quantities for the selected PO(s)"),
+            with st.expander(t("PO quantities for the selection"),
                              expanded=False):
                 st.dataframe(df, use_container_width=True, hide_index=True)
             _show_coverage(ok, groups, colors, qty)
 
-    links = link_rows(pc_nos, po_nos, items)
+    links = link_rows(selection)
     if links:
         st.caption(t("Will link to:") + " " +
-                   ", ".join(po_label(l["pc_no"], l["po_no"]) for l in links[:12])
-                   + (" …" if len(links) > 12 else ""))
+                   ", ".join(po_label(l["pc_no"], l["po_no"], l["style"])
+                             for l in links[:10])
+                   + (" …" if len(links) > 10 else ""))
 
     notes = st.text_input(t("Notes (optional)"), key="cp_up_notes")
 
@@ -87,7 +90,7 @@ def show_upload_section() -> None:
     if st.button(t("Save cut plan(s)"), type="primary",
                  use_container_width=True, key="cp_save",
                  disabled=disabled):
-        _save(ok, links, notes)
+        _save(ok, links, notes, selection.styles)
 
 
 def _parse_all(files) -> list[dict]:
@@ -197,7 +200,8 @@ def _show_coverage(entries: list[dict], groups, colors, qty) -> None:
                 ).format(plan=plan_qty, po=po_per_style))
 
 
-def _save(entries: list[dict], links: list[dict], notes: str) -> None:
+def _save(entries: list[dict], links: list[dict], notes: str,
+          styles: list[str] | None = None) -> None:
     store = get_cutting_plan_store()
     saved = 0
     for entry in entries:
@@ -214,10 +218,12 @@ def _save(entries: list[dict], links: list[dict], notes: str) -> None:
         except Exception as exc:                       # noqa: BLE001
             st.error(f"{entry.get('name')}: {type(exc).__name__}: {exc}")
     if saved:
+        n_pos = len({(l["pc_no"], l["po_no"]) for l in links})
+        n_styles = len({l["style"] for l in links if l["style"]})
         st.session_state[SK.CP_FLASH] = (
             "success",
-            t("Saved {n} cut plan(s), linked to {m} PO(s).").format(
-                n=saved, m=len(links)),
+            t("Saved {n} cut plan(s), linked to {m} PO(s) and "
+              "{s} style(s).").format(n=saved, m=n_pos, s=n_styles),
         )
         # Clear the staged uploads so a rerun doesn't offer to save them twice.
         st.session_state[SK.CP_PARSED] = []

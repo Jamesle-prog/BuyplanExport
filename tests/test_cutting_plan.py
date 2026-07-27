@@ -383,7 +383,8 @@ def test_export_demands_come_from_the_po_not_the_plan(exact):
 def test_save_and_get_plan(store, exact):
     pid = store.save_plan(exact, source_file="plan.xlsx", file_bytes=b"xyz",
                           uploaded_by="jl", notes="first run",
-                          links=[{"pc_no": "PC1", "po_no": "PO1"}])
+                          links=[{"pc_no": "PC1", "po_no": "PO1",
+                                  "style": "TP5016"}])
     rec = store.get_plan(pid)
     assert rec["plan_name"] == "003_060_20260723_JH"
     assert rec["order_qty"] == 500
@@ -391,43 +392,131 @@ def test_save_and_get_plan(store, exact):
     assert rec["parsed"]["materials"][0]["material"] == "A"
     assert rec["links"] == [
         {"source": "sky_east", "pc_no": "PC1", "po_no": "PO1",
-         "linked_at": rec["links"][0]["linked_at"], "linked_by": "jl"}]
+         "style": "TP5016", "linked_at": rec["links"][0]["linked_at"],
+         "linked_by": "jl"}]
 
 
-def test_list_plans_counts_links(store, exact):
+def test_list_plans_counts_distinct_pos_not_link_rows(store, exact):
+    # One PO linked for three styles is still one PO.
     store.save_plan(exact, source_file="a.xlsx", links=[
-        {"pc_no": "PC1", "po_no": "PO1"}, {"pc_no": "PC1", "po_no": "PO2"}])
-    df = store.list_plans()
-    assert len(df) == 1
-    assert int(df.iloc[0]["linked_pos"]) == 2
+        {"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"},
+        {"pc_no": "PC1", "po_no": "PO1", "style": "DR5004"},
+        {"pc_no": "PC1", "po_no": "PO1", "style": "DR5118"},
+        {"pc_no": "PC1", "po_no": "PO2", "style": "TP5016"}])
+    row = store.list_plans().iloc[0]
+    assert int(row["linked_pos"]) == 2
+    assert sorted(row["linked_styles"].split(", ")) == [
+        "DR5004", "DR5118", "TP5016"]
 
 
 def test_one_plan_links_to_many_pos_and_lookup_works_either_way(store, exact):
     pid = store.save_plan(exact, source_file="a.xlsx", links=[
-        {"pc_no": "PC1", "po_no": "PO1"},
-        {"pc_no": "PC2", "po_no": "PO2"},
+        {"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"},
+        {"pc_no": "PC2", "po_no": "PO2", "style": "DR5004"},
     ])
-    by_pc = store.plans_for_pos(pc_nos=["PC2"])
-    by_po = store.plans_for_pos(po_nos=["PO1"])
-    assert by_pc.iloc[0]["plan_id"] == pid
-    assert by_po.iloc[0]["plan_id"] == pid
+    assert store.plans_for_pos(pc_nos=["PC2"]).iloc[0]["plan_id"] == pid
+    assert store.plans_for_pos(po_nos=["PO1"]).iloc[0]["plan_id"] == pid
+    assert store.plans_for_pos(styles=["DR5004"]).iloc[0]["plan_id"] == pid
     assert store.plans_for_pos(pc_nos=["NOPE"]).empty
+    assert store.plans_for_pos(styles=["NOPE"]).empty
+
+
+def test_style_narrows_a_po_lookup(store, exact):
+    """Two plans on the same PO, one per style — asking for a style must not
+    return the other style's plan."""
+    tops = store.save_plan(exact, source_file="tops.xlsx", links=[
+        {"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"}])
+    dresses = store.save_plan(exact, source_file="dresses.xlsx", links=[
+        {"pc_no": "PC1", "po_no": "PO1", "style": "DR5004"}])
+
+    both = store.plans_for_pos(pc_nos=["PC1"])
+    assert set(both["plan_id"]) == {tops, dresses}
+
+    only_tops = store.plans_for_pos(pc_nos=["PC1"], styles=["TP5016"])
+    assert set(only_tops["plan_id"]) == {tops}
+
+
+def test_whole_po_links_still_match_a_style_query(store, exact):
+    """A link with no style means the whole PO, so it covers every style —
+    including ones recorded before styles existed."""
+    pid = store.save_plan(exact, source_file="a.xlsx",
+                          links=[{"pc_no": "PC1", "po_no": "PO1"}])
+    hit = store.plans_for_pos(pc_nos=["PC1"], styles=["ANYTHING"])
+    assert hit.iloc[0]["plan_id"] == pid
 
 
 def test_set_links_replaces_previous_links(store, exact):
     pid = store.save_plan(exact, source_file="a.xlsx",
-                          links=[{"pc_no": "PC1", "po_no": "PO1"}])
-    store.set_links(pid, [{"pc_no": "PC9", "po_no": "PO9"}], "jl")
+                          links=[{"pc_no": "PC1", "po_no": "PO1",
+                                  "style": "TP5016"}])
+    store.set_links(pid, [{"pc_no": "PC9", "po_no": "PO9",
+                           "style": "DR5004"}], "jl")
     links = store.get_plan(pid)["links"]
-    assert [(l["pc_no"], l["po_no"]) for l in links] == [("PC9", "PO9")]
+    assert [(l["pc_no"], l["po_no"], l["style"]) for l in links] == [
+        ("PC9", "PO9", "DR5004")]
+
+
+def test_same_po_different_styles_are_separate_links(store, exact):
+    pid = store.save_plan(exact, source_file="a.xlsx", links=[
+        {"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"},
+        {"pc_no": "PC1", "po_no": "PO1", "style": "DR5004"},
+    ])
+    assert len(store.get_plan(pid)["links"]) == 2
 
 
 def test_duplicate_links_are_collapsed(store, exact):
     pid = store.save_plan(exact, source_file="a.xlsx", links=[
-        {"pc_no": "PC1", "po_no": "PO1"},
-        {"pc_no": "PC1", "po_no": "PO1"},
+        {"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"},
+        {"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"},
     ])
     assert len(store.get_plan(pid)["links"]) == 1
+
+
+def test_links_table_migrates_from_the_pre_style_schema(tmp_path):
+    """A DB written before v2.106.0 keeps its links, gains the style column,
+    and can then hold two styles for the same PO."""
+    import sqlite3
+
+    db = str(tmp_path / "po_history.db")
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE cutting_plan_links (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id   INTEGER NOT NULL,
+            source    TEXT NOT NULL DEFAULT 'sky_east',
+            pc_no     TEXT DEFAULT '',
+            po_no     TEXT DEFAULT '',
+            linked_at TEXT,
+            linked_by TEXT,
+            UNIQUE(plan_id, source, pc_no, po_no)
+        );
+        CREATE INDEX idx_cpl_plan ON cutting_plan_links(plan_id);
+        CREATE INDEX idx_cpl_pc   ON cutting_plan_links(pc_no);
+        CREATE INDEX idx_cpl_po   ON cutting_plan_links(po_no);
+        INSERT INTO cutting_plan_links
+               (plan_id, source, pc_no, po_no, linked_at, linked_by)
+        VALUES (7, 'sky_east', 'PC1', 'PO1', '2026-07-01T00:00:00', 'jl');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    CuttingPlanStore._checked_paths.clear()
+    store = CuttingPlanStore(db)
+
+    with store._conn() as c:
+        rows = [dict(r) for r in c.execute(
+            "SELECT plan_id, pc_no, po_no, style, linked_by "
+            "FROM cutting_plan_links")]
+    assert rows == [{"plan_id": 7, "pc_no": "PC1", "po_no": "PO1",
+                     "style": "", "linked_by": "jl"}]
+
+    store.set_links(7, [{"pc_no": "PC1", "po_no": "PO1", "style": "A"},
+                        {"pc_no": "PC1", "po_no": "PO1", "style": "B"}], "jl")
+    with store._conn() as c:
+        assert c.execute("SELECT COUNT(*) FROM cutting_plan_links "
+                         "WHERE plan_id=7").fetchone()[0] == 2
 
 
 def test_demands_table_records_ordered_and_cut(store, overcut):
@@ -451,9 +540,40 @@ def test_find_by_hash_flags_a_re_upload(store, exact):
     assert store.find_by_hash(b"other") is None
 
 
+def test_link_rows_expand_to_concrete_pc_po_style_triples():
+    """The UI helper turns a selection into one row per (PC, PO, style) so a
+    later lookup by any one of them finds the plan."""
+    import pandas as pd
+
+    from ui.cutting_plan._shared import POSelection, link_rows
+
+    items = pd.DataFrame([
+        {"pc_no": "PC1", "zalando_po": "PO1", "style": "TP5016"},
+        {"pc_no": "PC1", "zalando_po": "PO1", "style": "DR5004"},
+        {"pc_no": "PC1", "zalando_po": "PO2", "style": "TP5016"},
+        {"pc_no": "PC1", "zalando_po": "PO2", "style": "TP5016"},   # dupe
+    ])
+    rows = link_rows(POSelection(["PC1"], [], [], items))
+    assert rows == [
+        {"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"},
+        {"pc_no": "PC1", "po_no": "PO1", "style": "DR5004"},
+        {"pc_no": "PC1", "po_no": "PO2", "style": "TP5016"},
+    ]
+
+
+def test_link_rows_fall_back_to_the_raw_selection_without_items():
+    import pandas as pd
+
+    from ui.cutting_plan._shared import POSelection, link_rows
+
+    rows = link_rows(POSelection(["PC1"], ["PO1"], ["TP5016"], pd.DataFrame()))
+    assert rows == [{"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"}]
+
+
 def test_delete_plan_removes_links_and_demands(store, exact):
     pid = store.save_plan(exact, source_file="a.xlsx",
-                          links=[{"pc_no": "PC1", "po_no": "PO1"}])
+                          links=[{"pc_no": "PC1", "po_no": "PO1",
+                                  "style": "TP5016"}])
     assert store.delete_plan(pid) is True
     assert store.get_plan(pid) is None
     assert store.list_demands(pid).empty

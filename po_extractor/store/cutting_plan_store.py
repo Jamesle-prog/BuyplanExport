@@ -33,7 +33,58 @@ class CuttingPlanStore(BaseSQLiteStore):
 
     def _ensure_schema(self) -> None:
         with self._conn() as conn:
+            # Migrate BEFORE the schema script: that script indexes
+            # cutting_plan_links(style), which fails on a pre-v2.106.0 DB
+            # where CREATE TABLE IF NOT EXISTS is a no-op and the column
+            # doesn't exist yet.  On a fresh DB the table isn't there and the
+            # migration no-ops.
+            self._migrate_links_add_style(conn)
             conn.executescript(_CUTTING_PLAN_SCHEMA)
+
+    @staticmethod
+    def _migrate_links_add_style(conn) -> None:
+        """Add ``style`` to cutting_plan_links (v2.106.0).
+
+        A plain ADD COLUMN isn't enough: the uniqueness key has to widen to
+        include the style, or two rows for different styles of the same PO
+        collide.  SQLite can't alter a constraint, so the table is rebuilt.
+        Existing rows get ``style=''`` — "the whole PO", which is what they
+        meant before styles were recorded.
+        """
+        cols = {r[1] for r in conn.execute(
+            "PRAGMA table_info(cutting_plan_links)")}
+        if not cols or "style" in cols:
+            return
+        conn.executescript(
+            """
+            DROP INDEX IF EXISTS idx_cpl_plan;
+            DROP INDEX IF EXISTS idx_cpl_pc;
+            DROP INDEX IF EXISTS idx_cpl_po;
+            ALTER TABLE cutting_plan_links RENAME TO _cpl_pre_style;
+
+            CREATE TABLE cutting_plan_links (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_id   INTEGER NOT NULL,
+                source    TEXT NOT NULL DEFAULT 'sky_east',
+                pc_no     TEXT DEFAULT '',
+                po_no     TEXT DEFAULT '',
+                style     TEXT DEFAULT '',
+                linked_at TEXT,
+                linked_by TEXT,
+                UNIQUE(plan_id, source, pc_no, po_no, style)
+            );
+            INSERT INTO cutting_plan_links
+                   (plan_id, source, pc_no, po_no, style, linked_at, linked_by)
+            SELECT plan_id, source, pc_no, po_no, '', linked_at, linked_by
+              FROM _cpl_pre_style;
+            DROP TABLE _cpl_pre_style;
+
+            CREATE INDEX IF NOT EXISTS idx_cpl_plan  ON cutting_plan_links(plan_id);
+            CREATE INDEX IF NOT EXISTS idx_cpl_pc    ON cutting_plan_links(pc_no);
+            CREATE INDEX IF NOT EXISTS idx_cpl_po    ON cutting_plan_links(po_no);
+            CREATE INDEX IF NOT EXISTS idx_cpl_style ON cutting_plan_links(style);
+            """
+        )
 
     # ── Write ───────────────────────────────────────────────────────────────
 
@@ -116,19 +167,21 @@ class CuttingPlanStore(BaseSQLiteStore):
         for ln in links:
             pc = str(ln.get("pc_no") or "").strip()
             po = str(ln.get("po_no") or "").strip()
+            style = str(ln.get("style") or "").strip()
             src = str(ln.get("source") or SOURCE_SKY_EAST).strip()
             if not pc and not po:
                 continue
-            key = (src, pc, po)
+            key = (src, pc, po, style)
             if key in seen:
                 continue
             seen.add(key)
-            rows.append((plan_id, src, pc, po, now, linked_by or ""))
+            rows.append((plan_id, src, pc, po, style, now, linked_by or ""))
         if rows:
             conn.executemany(
                 """INSERT OR IGNORE INTO cutting_plan_links
-                      (plan_id, source, pc_no, po_no, linked_at, linked_by)
-                   VALUES (?,?,?,?,?,?)""",
+                      (plan_id, source, pc_no, po_no, style, linked_at,
+                       linked_by)
+                   VALUES (?,?,?,?,?,?,?)""",
                 rows,
             )
 
@@ -165,18 +218,34 @@ class CuttingPlanStore(BaseSQLiteStore):
     )
 
     def list_plans(self) -> pd.DataFrame:
-        """One row per plan, newest first, with the count of linked POs."""
+        """One row per plan, newest first, with its PO and style links.
+
+        ``linked_pos`` counts distinct PO numbers, not link rows — one PO
+        linked for three styles is still one PO.  ``linked_styles`` lists the
+        PO-side style codes the plan covers, which is what tells you at a
+        glance whether a plan is for the whole PO or part of it.
+        """
         with self._conn() as conn:
             rows = conn.execute(
                 f"""SELECT {self._LIST_COLS},
-                       (SELECT COUNT(*) FROM cutting_plan_links l
-                         WHERE l.plan_id = p.id) AS linked_pos
+                       (SELECT COUNT(DISTINCT l.pc_no || '|' || l.po_no)
+                          FROM cutting_plan_links l
+                         WHERE l.plan_id = p.id) AS linked_pos,
+                       (SELECT GROUP_CONCAT(s, ', ') FROM (
+                            SELECT DISTINCT l2.style AS s
+                              FROM cutting_plan_links l2
+                             WHERE l2.plan_id = p.id AND l2.style <> ''
+                             ORDER BY l2.style)) AS linked_styles
                     FROM cutting_plans p
                     ORDER BY datetime(uploaded_at) DESC, id DESC"""
             ).fetchall()
-        cols = [c.strip() for c in self._LIST_COLS.split(",")] + ["linked_pos"]
-        return (pd.DataFrame([dict(r) for r in rows]) if rows
-                else pd.DataFrame(columns=cols))
+        cols = ([c.strip() for c in self._LIST_COLS.split(",")]
+                + ["linked_pos", "linked_styles"])
+        if not rows:
+            return pd.DataFrame(columns=cols)
+        df = pd.DataFrame([dict(r) for r in rows])
+        df["linked_styles"] = df["linked_styles"].fillna("")
+        return df
 
     def get_plan(self, plan_id: int) -> dict[str, Any] | None:
         """Full plan record: summary columns + parsed structure + links."""
@@ -190,9 +259,9 @@ class CuttingPlanStore(BaseSQLiteStore):
                 return None
             rec = dict(row)
             rec["links"] = [dict(r) for r in conn.execute(
-                "SELECT source, pc_no, po_no, linked_at, linked_by "
+                "SELECT source, pc_no, po_no, style, linked_at, linked_by "
                 "FROM cutting_plan_links WHERE plan_id=? "
-                "ORDER BY pc_no, po_no", (plan_id,)).fetchall()]
+                "ORDER BY pc_no, po_no, style", (plan_id,)).fetchall()]
         try:
             rec["parsed"] = json.loads(rec.pop("parsed_json") or "{}")
         except json.JSONDecodeError:
@@ -234,12 +303,20 @@ class CuttingPlanStore(BaseSQLiteStore):
 
     def plans_for_pos(self, pc_nos: list[str] | None = None,
                       po_nos: list[str] | None = None,
+                      styles: list[str] | None = None,
                       source: str = SOURCE_SKY_EAST) -> pd.DataFrame:
-        """Plans linked to any of the given PC No.s / PO numbers."""
+        """Plans linked to any of the given PC No.s / PO numbers / styles.
+
+        *styles* narrows to plans covering those PO-side styles; links made
+        before styles were recorded (``style=''``, meaning the whole PO) match
+        any style filter rather than disappearing from the results.
+        """
         pc_nos = [p for p in (pc_nos or []) if p]
         po_nos = [p for p in (po_nos or []) if p]
-        if not pc_nos and not po_nos:
-            return pd.DataFrame(columns=["plan_id", "pc_no", "po_no"])
+        styles = [s for s in (styles or []) if s]
+        cols = ["plan_id", "pc_no", "po_no", "style"]
+        if not pc_nos and not po_nos and not styles:
+            return pd.DataFrame(columns=cols)
         clauses, params = [], [source]
         if pc_nos:
             clauses.append(f"l.pc_no IN ({','.join('?' * len(pc_nos))})")
@@ -247,18 +324,31 @@ class CuttingPlanStore(BaseSQLiteStore):
         if po_nos:
             clauses.append(f"l.po_no IN ({','.join('?' * len(po_nos))})")
             params += po_nos
+        if styles and clauses:
+            # Narrowing a PO match: a link made before styles were recorded
+            # ('' = the whole PO) still covers the style being asked about.
+            where = (f"({' OR '.join(clauses)}) AND (l.style = '' OR "
+                     f"l.style IN ({','.join('?' * len(styles))}))")
+            params += styles
+        elif styles:
+            # Searching by style alone — only an explicit style match counts,
+            # or every whole-PO link in the database would come back.
+            where = f"l.style IN ({','.join('?' * len(styles))})"
+            params += styles
+        else:
+            where = f"({' OR '.join(clauses)})"
         with self._conn() as conn:
             rows = conn.execute(
                 f"""SELECT DISTINCT l.plan_id AS plan_id, l.pc_no, l.po_no,
-                           p.plan_name, p.order_qty, p.cut_qty, p.colors,
-                           p.styles, p.uploaded_at
+                           l.style, p.plan_name, p.order_qty, p.cut_qty,
+                           p.colors, p.styles, p.uploaded_at
                     FROM cutting_plan_links l
                     JOIN cutting_plans p ON p.id = l.plan_id
-                    WHERE l.source = ? AND ({' OR '.join(clauses)})
+                    WHERE l.source = ? AND {where}
                     ORDER BY datetime(p.uploaded_at) DESC""",
                 params).fetchall()
         return (pd.DataFrame([dict(r) for r in rows]) if rows
-                else pd.DataFrame(columns=["plan_id", "pc_no", "po_no"]))
+                else pd.DataFrame(columns=cols))
 
     def count(self) -> int:
         with self._conn() as conn:

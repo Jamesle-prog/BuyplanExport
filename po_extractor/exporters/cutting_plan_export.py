@@ -148,6 +148,12 @@ def _write_header(ws, row: int, header: dict[str, Any]) -> int:
         _put(ws, row, 1, "PC No.(s)", bold=True)
         _put(ws, row, 2, header["pc_summary"])
         row += 1
+    if header.get("style_summary"):
+        # The PO's own style codes — the plan's CAD style names above don't
+        # match them, so the cutting room needs both on the sheet.
+        _put(ws, row, 1, "PO Style(s)", bold=True)
+        _put(ws, row, 2, header["style_summary"])
+        row += 1
     if header.get("output_folder"):
         row += 1
         _put(ws, row, 1, "Output folder path", bold=True)

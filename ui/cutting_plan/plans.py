@@ -22,8 +22,8 @@ _LIST_RENAME = {
     "order_qty": "Order qty", "cut_qty": "Cut qty",
     "total_markers": "Markers", "total_tables": "Tables",
     "fabric_length_m": "Fabric (m)", "efficiency_pct": "Efficiency %",
-    "linked_pos": "Linked POs", "uploaded_at": "Uploaded",
-    "uploaded_by": "By",
+    "linked_pos": "Linked POs", "linked_styles": "Linked styles",
+    "uploaded_at": "Uploaded", "uploaded_by": "By",
 }
 
 
@@ -69,17 +69,19 @@ def _filter_plans(df: pd.DataFrame, search: str, store) -> pd.DataFrame:
     if not q:
         return df
     text_cols = ["plan_name", "styles", "colors", "materials", "source_file",
-                 "notes", "uploaded_by"]
+                 "notes", "uploaded_by", "linked_styles"]
     mask = pd.Series(False, index=df.index)
     for col in text_cols:
         if col in df.columns:
             mask |= df[col].fillna("").astype(str).str.lower().str.contains(
                 q, regex=False)
-    # Also match on a linked PC/PO number — that's how the cutting room looks
-    # a plan up.
-    hits = store.plans_for_pos(pc_nos=[search.strip()], po_nos=[search.strip()])
-    if not hits.empty:
-        mask |= df["id"].isin(hits["plan_id"].tolist())
+    # Also match on a linked PC/PO number or PO style — that's how the cutting
+    # room looks a plan up.
+    term = search.strip()
+    for hits in (store.plans_for_pos(pc_nos=[term], po_nos=[term]),
+                 store.plans_for_pos(styles=[term])):
+        if not hits.empty:
+            mask |= df["id"].isin(hits["plan_id"].tolist())
     return df[mask]
 
 
@@ -145,32 +147,37 @@ def _show_links(store, plan: dict) -> None:
             pd.DataFrame([{
                 _th("PC No."): l.get("pc_no", ""),
                 _th("PO No."): l.get("po_no", ""),
+                _th("Style"): l.get("style", "") or t("(all styles)"),
                 _th("Linked"): l.get("linked_at", ""),
                 _th("By"): l.get("linked_by", ""),
             } for l in links]),
             use_container_width=True, hide_index=True)
+        styles = sorted({l.get("style", "") for l in links if l.get("style")})
+        if styles:
+            st.caption(f"{t('Styles covered')}: {', '.join(styles)}")
     else:
         st.warning(t("This plan isn't linked to any PO yet."))
 
     plan_id = int(plan["id"])
     editing = st.session_state.get(SK.CP_EDIT_ID) == plan_id
     if not editing:
-        if st.button(t("Edit linked POs"), key=f"cp_edit_{plan_id}"):
+        if st.button(t("Edit linked POs & styles"), key=f"cp_edit_{plan_id}"):
             st.session_state[SK.CP_EDIT_ID] = plan_id
             # Seed the editor with the plan's current PC No.s.
             st.session_state["cp_edit_pcs"] = sorted(
                 {l.get("pc_no", "") for l in links if l.get("pc_no")})
             st.session_state.pop("cp_edit_pos", None)
+            st.session_state.pop("cp_edit_styles", None)
             fragment_rerun()
         return
 
-    st.markdown(f"**{t('Edit linked POs')}**")
-    pc_nos, po_nos, items = select_pos("cp_edit")
-    rows = link_rows(pc_nos, po_nos, items)
+    st.markdown(f"**{t('Edit linked POs & styles')}**")
+    rows = link_rows(select_pos("cp_edit"))
     if rows:
         st.caption(t("Will link to:") + " " +
-                   ", ".join(po_label(r["pc_no"], r["po_no"]) for r in rows[:12])
-                   + (" …" if len(rows) > 12 else ""))
+                   ", ".join(po_label(r["pc_no"], r["po_no"], r["style"])
+                             for r in rows[:10])
+                   + (" …" if len(rows) > 10 else ""))
     col_save, col_cancel = st.columns(2)
     with col_save:
         if st.button(t("Save links"), type="primary", disabled=not rows,
@@ -298,10 +305,15 @@ def _build_standard_for_plan(store, plan: dict) -> None:
     links = plan.get("links") or []
     pc_nos = sorted({l.get("pc_no", "") for l in links if l.get("pc_no")})
     po_nos = sorted({l.get("po_no", "") for l in links if l.get("po_no")})
+    styles = sorted({l.get("style", "") for l in links if l.get("style")})
 
     items = load_sky_east_items(pc_nos)
     if not items.empty and po_nos:
         items = items[items["zalando_po"].astype(str).str.strip().isin(po_nos)]
+    if not items.empty and styles:
+        # Only the styles this plan actually cuts — a PO's other styles are
+        # someone else's cut plan.
+        items = items[items["style"].astype(str).str.strip().isin(styles)]
     groups, colors, qty = demand_matrix(items)
 
     if not groups:
@@ -314,6 +326,7 @@ def _build_standard_for_plan(store, plan: dict) -> None:
     header = plan_header_from_parsed(parsed)
     header["pc_summary"] = ", ".join(pc_nos)
     header["po_summary"] = ", ".join(po_nos)
+    header["style_summary"] = ", ".join(styles)
     data = build_standard_cut_plan(
         header=header, groups=groups, colors=colors, demand_qty=qty,
         materials=parsed.get("materials") or [],

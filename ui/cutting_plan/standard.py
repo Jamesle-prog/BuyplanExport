@@ -31,10 +31,9 @@ def show_standard_section() -> None:
         "those POs."
     ))
 
-    pc_nos, po_nos, items = select_pos("cp_std")
-    if not pc_nos:
-        return
-    if items is None or items.empty:
+    selection = select_pos("cp_std")
+    pc_nos, po_nos, styles, items = selection
+    if not pc_nos or items is None or items.empty:
         return
 
     groups, colors, qty = demand_matrix(items)
@@ -47,13 +46,13 @@ def show_standard_section() -> None:
     st.dataframe(df, use_container_width=True, hide_index=True)
 
     store = get_cutting_plan_store()
-    linked = store.plans_for_pos(pc_nos=pc_nos, po_nos=po_nos)
+    linked = store.plans_for_pos(pc_nos=pc_nos, po_nos=po_nos, styles=styles)
     plan_ids: list[int] = []
     if linked.empty:
         st.info(t(
-            "No cut plan is linked to these POs yet. The download will use "
-            "the standard layout with the marker sections left blank for the "
-            "cutting room to fill in."))
+            "No cut plan is linked to this selection yet. The download will "
+            "use the standard layout with the marker sections left blank for "
+            "the cutting room to fill in."))
     else:
         options = linked.drop_duplicates(subset=["plan_id"])
         labels = {
@@ -73,7 +72,8 @@ def show_standard_section() -> None:
 
     if st.button(f"📄 {t('Build standard cut plan')}", type="primary",
                  use_container_width=True, key="cp_std_build"):
-        _build(store, plan_ids, pc_nos, po_nos, items, groups, colors, qty)
+        _build(store, plan_ids, pc_nos, po_nos, styles, items,
+               groups, colors, qty)
 
     if st.session_state.get(SK.CP_STD_BYTES):
         st.download_button(
@@ -88,7 +88,7 @@ def show_standard_section() -> None:
 
 
 def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
-           items, groups, colors, qty) -> None:
+           styles: list[str], items, groups, colors, qty) -> None:
     materials: list[dict] = []
     newest_parsed: dict | None = None
     for pid in plan_ids:
@@ -113,6 +113,8 @@ def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
         header = today_header(order_name, client=buyer, styles=styles)
     header["pc_summary"] = ", ".join(pc_nos)
     header["po_summary"] = ", ".join(po_nos) if po_nos else t("All POs")
+    header["style_summary"] = (", ".join(styles) if styles
+                               else ", ".join(s for s, _sizes in groups))
 
     data = build_standard_cut_plan(
         header=header, groups=groups, colors=colors, demand_qty=qty,

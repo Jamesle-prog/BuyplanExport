@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.106.0",
+        "date": "2026-07-27",
+        "entries": [
+            {"type": "feat", "text": "**Cut plans link to the styles inside a PO, not just the PO.** A Sky East contract carries several styles and a cut plan usually cuts only some of them, so linking now has a third level: PC No. → PO No. → style. Leave the style picker empty and every style in the selection is linked, as before. This is also where the naming gap gets bridged: the plan names its styles after the CAD files (`S24DTR003`) while the PO uses the client's style codes (`TP5016`), and nothing in either file connects the two — the link is the mapping."},
+            {"type": "feat", "text": "**Two plans can now cover one PO without colliding.** Look a plan up by PC No., PO No. *or* style, and the standard output for a plan shows only the styles that plan actually cuts — a PO's other styles belong to someone else's cut plan. The saved-plans list gained a **Linked styles** column, the linked-PO count is now distinct POs rather than link rows, and the search box matches on style too."},
+            {"type": "fix", "text": "Existing links are migrated automatically: the links table is rebuilt with the wider uniqueness key and old rows become \"the whole PO\", which still matches any style they're queried for, so nothing that was linked before stops being found."},
+        ],
+    },
+    {
         "version": "2.105.0",
         "date": "2026-07-27",
         "entries": [

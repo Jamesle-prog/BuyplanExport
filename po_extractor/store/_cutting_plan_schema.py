@@ -4,8 +4,9 @@ Three tables:
   - ``cutting_plans``         — one row per uploaded plan file (summary columns
     for the list view, the full parse as JSON, and the original bytes so the
     file the factory sent can always be handed back unchanged)
-  - ``cutting_plan_links``    — many-to-many: a plan covers one or more POs,
-    and a PO can be re-cut under a later plan
+  - ``cutting_plan_links``    — many-to-many, down to the style: a plan
+    covers one or more POs and specific styles inside them, and a PO can be
+    re-cut under a later plan
   - ``cutting_plan_demands``  — the plan's colour/size matrix, flattened, so a
     plan can be compared against PO quantities in SQL instead of by unpacking
     JSON
@@ -47,19 +48,25 @@ CREATE TABLE IF NOT EXISTS cutting_plans (
     uploaded_by     TEXT
 );
 
+-- ``style`` is the style as the PO names it, not as the plan names it: the
+-- plan carries CAD style names (S24DTR003) while the PO carries the client's
+-- style codes (TP5016), and nothing in either file connects the two. The link
+-- is where that mapping is recorded. '' means the whole PO.
 CREATE TABLE IF NOT EXISTS cutting_plan_links (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     plan_id   INTEGER NOT NULL,
     source    TEXT NOT NULL DEFAULT 'sky_east',
     pc_no     TEXT DEFAULT '',
     po_no     TEXT DEFAULT '',
+    style     TEXT DEFAULT '',
     linked_at TEXT,
     linked_by TEXT,
-    UNIQUE(plan_id, source, pc_no, po_no)
+    UNIQUE(plan_id, source, pc_no, po_no, style)
 );
-CREATE INDEX IF NOT EXISTS idx_cpl_plan ON cutting_plan_links(plan_id);
-CREATE INDEX IF NOT EXISTS idx_cpl_pc   ON cutting_plan_links(pc_no);
-CREATE INDEX IF NOT EXISTS idx_cpl_po   ON cutting_plan_links(po_no);
+CREATE INDEX IF NOT EXISTS idx_cpl_plan  ON cutting_plan_links(plan_id);
+CREATE INDEX IF NOT EXISTS idx_cpl_pc    ON cutting_plan_links(pc_no);
+CREATE INDEX IF NOT EXISTS idx_cpl_po    ON cutting_plan_links(po_no);
+CREATE INDEX IF NOT EXISTS idx_cpl_style ON cutting_plan_links(style);
 
 CREATE TABLE IF NOT EXISTS cutting_plan_demands (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
