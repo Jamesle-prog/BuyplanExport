@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.114.0",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "feat", "text": "**裁剪长度 and 材料成本 are gone from the cleaned cut plan too.** Both columns are now emptied on the PDF of the original file as well as on the standard sheet — heading and every figure under it, in each marker block. The cells are cleared, not the columns removed, so 面料长度, 利用率 and 版长 stay exactly where they were."},
+            {"type": "fix", "text": "**The plan’s identifying rows are back.** Date, Order name, Style file 1 and 2, Cut plan operator and Client are kept on the cleaned sheet — they are how the cutting room tells one plan from another. Only the duplicate \"Style name\" rows (the file rows above already carry the style) and the output folder path are removed."},
+        ],
+    },
+    {
         "version": "2.113.2",
         "date": "2026-07-28",
         "entries": [

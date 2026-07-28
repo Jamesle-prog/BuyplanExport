@@ -237,15 +237,63 @@ def clean_value(value: Any, color_map: dict[str, str] | None = None,
 # only — the canonical sheet keeps them because parsers.cutting_plan reads
 # Order name / Date / Time back out of it. Matched on the label in column A,
 # before translation, so these are the English originals.
+# Kept on the sheet: Date, Order name, Style file N, Cut plan operator, Client
+# — the cutting room uses those to identify the plan.
 HEADER_ROWS_DROPPED = (
-    "date", "time", "order name", "output folder path",
+    "output folder path",
 )
 
 
 def _is_dropped_header(label: str) -> bool:
     s = " ".join(str(label).split()).casefold()
-    # "Style name 1", "Style name 2", … — the file rows above already name them
+    # "Style name 1", "Style name 2", … — the "Style file N" rows kept above
+    # already carry the style, so this is a duplicate of it.
     return s in HEADER_ROWS_DROPPED or s.startswith("style name")
+
+
+# Metric columns the cutting room doesn't use. Matched on the heading before
+# translation, so these are the English originals as the marker software wrote
+# them. The cost column also repeats the fabric length rather than a cost.
+COLUMNS_DROPPED = ("cut length", "material cost")
+
+
+def _is_dropped_column(label: str) -> bool:
+    s = " ".join(str(label).split()).casefold()
+    return any(s.startswith(h) for h in COLUMNS_DROPPED)
+
+
+def blank_dropped_columns(ws) -> int:
+    """Empty the unwanted metric columns wherever they appear. Returns cells cleared.
+
+    **Clears cells; never deletes columns** — deleting one would drag every
+    column to its right out from under its heading.
+
+    These headings repeat once per marker block rather than sitting in a single
+    header row, so each occurrence is handled on its own: the heading is
+    cleared, then the figures directly beneath it, stopping at the first cell
+    that isn't a number (one blank row is stepped over, which is what separates
+    a block's value row from its 合计 row).
+    """
+    cleared = 0
+    for row in ws.iter_rows():
+        for cell in row:
+            if not isinstance(cell.value, str) or not _is_dropped_column(cell.value):
+                continue
+            cell.value = None
+            cleared += 1
+            # Walk down clearing this column's figures. Blank rows are stepped
+            # OVER, not treated as the end — the value row sits a few rows
+            # below its heading, with empty rows between. The block ends at the
+            # next text cell in the column, which is the next block's heading.
+            for r in range(cell.row + 1, ws.max_row + 1):
+                below = ws.cell(r, cell.column)
+                if below.value is None:
+                    continue
+                if isinstance(below.value, str):
+                    break
+                below.value = None
+                cleared += 1
+    return cleared
 
 
 def drop_header_rows(ws) -> int:
@@ -274,8 +322,9 @@ def drop_header_rows(ws) -> int:
 def clean_worksheet(ws, color_map: dict[str, str] | None = None,
                     cn_overrides: dict[str, str] | None = None) -> int:
     """Clean every cell of *ws* in place. Returns the number of cells changed."""
-    # Drop rows FIRST, while the labels are still their English originals.
-    changed = drop_header_rows(ws)
+    # Blank rows and columns FIRST, while the labels are still their English
+    # originals — the matchers key on the English text.
+    changed = drop_header_rows(ws) + blank_dropped_columns(ws)
     for row in ws.iter_rows():
         for cell in row:
             old = cell.value

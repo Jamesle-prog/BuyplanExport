@@ -362,9 +362,11 @@ def test_export_translates_colours_from_the_po_data():
 def test_cleaned_header_keeps_only_what_the_cutting_room_reads():
     vals = _build(clean=True)
     # Kept — and translated, since every fixed heading is Chinese now.
-    assert "款式文件 1" in vals and "裁剪计划员" in vals and "客户" in vals
-    for gone in ("Date", "Time", "Order name", "Style name 1", "Style name 2",
-                 "Output folder path", "款式名称 1", "订单名称"):
+    for kept in ("日期", "订单名称", "款式文件 1", "裁剪计划员", "客户"):
+        assert kept in vals, kept
+    # Only the duplicate "Style name N" and the output folder go.
+    for gone in ("Style name 1", "Style name 2", "款式名称 1",
+                 "Output folder path", "输出文件夹路径"):
         assert gone not in vals, gone
 
 
@@ -383,7 +385,7 @@ def test_header_rows_are_blanked_not_deleted():
     from po_extractor.exporters.cutting_plan_clean import drop_header_rows
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.cell(1, 1, "Date"); ws.cell(1, 2, "2026-07-23")
+    ws.cell(1, 1, "Style name 1"); ws.cell(1, 2, "S24DTR003")
     ws.cell(2, 1, "Colors"); ws.cell(3, 1, "Marker Ratio")
     before_rows = ws.max_row
     assert drop_header_rows(ws) == 1
@@ -399,12 +401,12 @@ def test_row_blanking_only_scans_the_header():
     from po_extractor.exporters.cutting_plan_clean import drop_header_rows
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.cell(1, 1, "Date")
+    ws.cell(1, 1, "Style name 1")
     for r in range(2, 45):
         ws.cell(r, 1, "Colors")
-    ws.cell(44, 1, "Date")            # far below the header block
+    ws.cell(44, 1, "Style name 1")    # far below the header block
     assert drop_header_rows(ws) == 1          # only the header one
-    assert ws.cell(44, 1).value == "Date"     # untouched, and still on row 44
+    assert ws.cell(44, 1).value == "Style name 1"   # untouched, still row 44
 
 
 def test_export_default_stays_english_and_reparseable():
@@ -441,3 +443,24 @@ def test_save_copy_cannot_escape_the_folder(tmp_path):
 def test_missing_folder_does_not_raise(tmp_path):
     from ui.cutting_plan._shared import save_copy_to_folder
     save_copy_to_folder(b"x", "p.xlsx", str(tmp_path / "nope"))   # warns only
+
+
+def test_dropped_columns_are_cleared_heading_and_figures():
+    """The heading sits several rows above its figures with blank rows in
+    between, so the walk must step over blanks and stop only at the next
+    block's heading."""
+    from po_extractor.exporters.cutting_plan_clean import blank_dropped_columns
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.cell(1, 1, "Cut Length,m"); ws.cell(1, 2, "Fabric Length,m")
+    ws.cell(4, 1, 110.65);         ws.cell(4, 2, 1022.16)   # blank rows 2-3
+    ws.cell(5, 1, 110.65);         ws.cell(5, 2, 1022.16)   # the 合计 row
+    ws.cell(9, 1, "Cut Length,m")                            # next block
+    ws.cell(11, 1, 55.5)
+    cleared = blank_dropped_columns(ws)
+    assert [ws.cell(r, 1).value for r in (1, 4, 5, 9, 11)] == [None] * 5
+    # the neighbouring kept column is untouched
+    assert ws.cell(1, 2).value == "Fabric Length,m"
+    assert ws.cell(4, 2).value == 1022.16
+    assert ws.max_column == 2                # column never removed
+    assert cleared == 5
