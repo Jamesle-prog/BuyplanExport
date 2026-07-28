@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.116.0",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "feat", "text": "**The PDF can be built for one fabric too.** The fabric picker now appears on the PDF of the original file, alongside the cleanup tick-box — so the sheet the cutting room gets for the shell doesn’t carry the lining’s markers. The fabrics are read from the workbook itself: each one’s 版定义 / 裁剪配比 / 铺布层数 / 排版结果 blocks are removed together, with merged headings carried along."},
+            {"type": "fix", "text": "**The plan total matches what’s on the page.** Exporting one fabric used to leave the plan-wide 总台数 counting every fabric — a sheet showing four tables printed six. It is re-added from the blocks actually left on the sheet. The order-demands block and the header are never touched, and a selection that matches no fabric on the plan leaves it whole rather than producing an empty sheet."},
+        ],
+    },
+    {
         "version": "2.115.0",
         "date": "2026-07-28",
         "entries": [

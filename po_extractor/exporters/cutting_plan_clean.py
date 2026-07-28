@@ -332,6 +332,89 @@ def _delete_line(ws, *, at: int, axis: str) -> None:
             f"{get_column_letter(b['max_col'])}{b['max_row']}")
 
 
+def find_fabric_blocks(ws) -> list[tuple[str, int, int]]:
+    """Locate each fabric's section: ``[(material, first_row, last_row), …]``.
+
+    The sheet repeats one section per fabric — ``Marker Definition`` (whose
+    table names the material), then Marker Ratio, Spreading Plies, Solution
+    and that fabric's own totals, ending at its ``Total Tables`` row. The very
+    last ``Total Tables`` on the sheet is the plan-wide grand total and belongs
+    to no fabric, so it is never part of a block.
+
+    Matched on the English anchors, i.e. before translation.
+    """
+    def label(r: int) -> str:
+        return " ".join(str(ws.cell(r, 1).value or "").split()).casefold()
+
+    starts = [r for r in range(1, ws.max_row + 1)
+              if label(r) == "marker definition"]
+    totals = [r for r in range(1, ws.max_row + 1) if label(r) == "total tables"]
+    if not starts:
+        return []
+
+    # The sheet carries one Total Tables per fabric plus a plan-wide one at the
+    # end. When there is one more than there are fabrics, that last one is the
+    # grand total and must stay out of every block — otherwise removing the
+    # final fabric takes the plan's own total with it.
+    grand = totals[-1] if len(totals) > len(starts) else None
+
+    blocks: list[tuple[str, int, int]] = []
+    for i, first in enumerate(starts):
+        limit = starts[i + 1] - 1 if i + 1 < len(starts) else ws.max_row
+        if grand is not None and first < grand <= limit:
+            limit = grand - 1
+        ends = [t for t in totals if first < t <= limit and t != grand]
+        last = ends[-1] if ends else limit
+        # material name: first non-empty column-A cell below the block's own
+        # header row that isn't the header label itself
+        name = ""
+        for r in range(first + 1, last + 1):
+            v = ws.cell(r, 1).value
+            if v is None:
+                continue
+            s = " ".join(str(v).split())
+            if s.casefold() in ("material", "marker definition"):
+                continue
+            name = s
+            break
+        blocks.append((name or "—", first, last))
+    return blocks
+
+
+def keep_only_fabrics(ws, keep: set[str]) -> int:
+    """Remove the sections of fabrics not in *keep*. Returns blocks removed.
+
+    Rows are deleted through :func:`_delete_line`, so merged ranges move with
+    them. Bottom-up, so the earlier blocks' row numbers stay valid. Anything
+    outside the fabric sections — the header, Order demands and the grand
+    total — is untouched.
+    """
+    blocks = find_fabric_blocks(ws)
+    if not blocks or not keep:
+        return 0
+    drop = [b for b in blocks if b[0] not in keep]
+    if len(drop) == len(blocks):
+        return 0                      # never blank the sheet entirely
+    for _name, first, last in sorted(drop, key=lambda b: b[1], reverse=True):
+        for _ in range(last - first + 1):
+            _delete_line(ws, at=first, axis="row")
+
+    # The plan-wide Total Tables counted every fabric. Leaving it would print
+    # "6" on a sheet showing one fabric's four tables, so re-add the totals of
+    # the blocks that are actually still on the sheet.
+    def _label(r):
+        return " ".join(str(ws.cell(r, 1).value or "").split()).casefold()
+    totals = [r for r in range(1, ws.max_row + 1) if _label(r) == "total tables"]
+    kept = find_fabric_blocks(ws)
+    if totals and len(totals) > len(kept):
+        per_block = [ws.cell(t, 2).value for t in totals[:-1]]
+        nums = [v for v in per_block if isinstance(v, (int, float))
+                and not isinstance(v, bool)]
+        if nums:
+            ws.cell(totals[-1], 2).value = sum(nums)
+    return len(drop)
+
+
 def _is_blank_line(ws, idx: int, axis: str) -> bool:
     """True when the row/column holds no value AND no merged range needs it.
 

@@ -528,3 +528,59 @@ def test_only_the_chosen_fabrics_reach_the_sheet():
     assert "m1" in only_a and "m2" not in only_a
     only_lining = build([m for m in mats if m["material"] == "里"])
     assert "m2" in only_lining and "m1" not in only_lining
+
+
+def _two_fabric_ws():
+    """Minimal stand-in for the marker software's layout: two fabric sections,
+    each ending in its own Total Tables, then a plan-wide grand total."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    rows = [
+        (1, "Order demands", None),
+        (5, "Marker Definition", None), (6, "Material", "N Markers"),
+        (7, "A", 4), (8, "Total Tables", 4),
+        (10, "Marker Definition", None), (11, "Material", "N Markers"),
+        (12, "里", 2), (13, "Total Tables", 2),
+        (15, "Total Tables", 6),                 # grand total
+    ]
+    for r, a, b in rows:
+        ws.cell(r, 1, a)
+        if b is not None:
+            ws.cell(r, 2, b)
+    return ws
+
+
+def test_fabric_blocks_exclude_the_grand_total():
+    """The last Total Tables belongs to the plan, not to the final fabric —
+    including it would delete the plan's own total with that fabric."""
+    from po_extractor.exporters.cutting_plan_clean import find_fabric_blocks
+    assert find_fabric_blocks(_two_fabric_ws()) == [("A", 5, 8), ("里", 10, 13)]
+
+
+def test_keeping_one_fabric_removes_only_the_other_block():
+    from po_extractor.exporters.cutting_plan_clean import (
+        find_fabric_blocks, keep_only_fabrics)
+    ws = _two_fabric_ws()
+    assert keep_only_fabrics(ws, {"A"}) == 1
+    assert [b[0] for b in find_fabric_blocks(ws)] == ["A"]
+    # Order demands survives, and the grand total is re-added from what's left
+    labels = [ws.cell(r, 1).value for r in range(1, ws.max_row + 1)]
+    assert "Order demands" in labels
+    totals = [ws.cell(r, 2).value for r in range(1, ws.max_row + 1)
+              if ws.cell(r, 1).value == "Total Tables"]
+    assert totals == [4, 4], totals      # 6 would be the two-fabric total
+
+
+def test_keeping_every_fabric_changes_nothing():
+    from po_extractor.exporters.cutting_plan_clean import keep_only_fabrics
+    ws = _two_fabric_ws()
+    assert keep_only_fabrics(ws, {"A", "里"}) == 0
+    assert ws.max_row == 15
+
+
+def test_keeping_no_known_fabric_never_blanks_the_sheet():
+    """A stale selection must not produce a sheet with no fabrics on it."""
+    from po_extractor.exporters.cutting_plan_clean import keep_only_fabrics
+    ws = _two_fabric_ws()
+    assert keep_only_fabrics(ws, {"NOPE"}) == 0
+    assert ws.max_row == 15

@@ -62,6 +62,37 @@ def fabric_picker(materials: list[dict], key: str) -> list[dict]:
     return [m for m, n in zip(materials, names) if n in chosen]
 
 
+def workbook_fabric_picker(xlsx_bytes: bytes, key: str) -> set:
+    """Fabric picker read from the workbook itself, for the PDF of the original.
+
+    The standard sheet filters a parsed materials list; this one has only the
+    workbook, so the fabrics are found by locating each fabric section in it.
+    Returns the names to keep — empty means all, so a read failure or a
+    single-fabric plan simply exports everything.
+    """
+    from io import BytesIO
+    try:
+        import openpyxl
+        from po_extractor.exporters.cutting_plan_clean import find_fabric_blocks
+        ws = openpyxl.load_workbook(BytesIO(xlsx_bytes), data_only=True).active
+        names = list(dict.fromkeys(b[0] for b in find_fabric_blocks(ws)))
+    except Exception:
+        return set()
+    if len(names) < 2:
+        return set()
+
+    guard_multiselect_state(key, names)
+    st.session_state.setdefault(key, names)
+    picked = st.multiselect(
+        t("Fabric(s) to include"), names, key=key,
+        help=t("Leave all selected to export the whole plan. Each fabric "
+               "keeps its own marker, spreading and solution blocks."))
+    chosen = set(picked) or set(names)
+    if chosen != set(names):
+        st.caption(f"{t('Exporting')} {len(chosen)}/{len(names)} {t('fabric(s)')}")
+    return chosen
+
+
 def output_folder_input(key: str) -> str:
     """Optional folder to drop a copy of the generated file into.
 
@@ -98,7 +129,8 @@ def save_copy_to_folder(data: bytes, filename: str, folder: str) -> None:
         st.warning(f"{t('Could not save to')} {folder} — {exc}")
 
 
-def _cleaned_copy(xlsx_bytes: bytes, client: str = "") -> bytes:
+def _cleaned_copy(xlsx_bytes: bytes, client: str = "",
+                  keep_fabrics: set | None = None) -> bytes:
     """A cutting-room-cleaned copy of a workbook, for rendering only.
 
     Works on the bytes in memory — the stored original is never touched. If
@@ -115,6 +147,10 @@ def _cleaned_copy(xlsx_bytes: bytes, client: str = "") -> bytes:
         # and the PDF renderer (which reads values) printed every total blank.
         # Loading values bakes each formula down to its number first.
         wb = openpyxl.load_workbook(BytesIO(xlsx_bytes), data_only=True)
+        if keep_fabrics:
+            from po_extractor.exporters.cutting_plan_clean import keep_only_fabrics
+            for _ws in wb.worksheets:
+                keep_only_fabrics(_ws, keep_fabrics)
         clean_workbook(wb, cleanup_color_map(client))
         buf = BytesIO()
         wb.save(buf)
@@ -423,7 +459,9 @@ def pdf_export_block(xlsx_bytes: bytes | None, base_name: str, key: str, *,
             key=f"{key}_pdf_orient")
 
         clean = False
+        keep_fabrics: set = set()
         if allow_clean:
+            keep_fabrics = workbook_fabric_picker(xlsx_bytes, f"{key}_pdf_fab")
             clean = st.checkbox(
                 t("Clean for the cutting room (Chinese labels, marker names only)"),
                 value=True, key=f"{key}_pdf_clean",
@@ -437,7 +475,8 @@ def pdf_export_block(xlsx_bytes: bytes | None, base_name: str, key: str, *,
         if st.button(f"📕 {t('Build PDF')}", key=f"{key}_pdf_build",
                      use_container_width=True):
             try:
-                src = _cleaned_copy(xlsx_bytes, client) if clean else xlsx_bytes
+                src = (_cleaned_copy(xlsx_bytes, client, keep_fabrics)
+                       if clean else xlsx_bytes)
                 data = xlsx_bytes_to_pdf(src, page_size=page_size,
                                          orientation=orientation)
                 name = f"{base_name}{'_clean' if clean else ''}.pdf"
