@@ -415,6 +415,48 @@ def keep_only_fabrics(ws, keep: set[str]) -> int:
     return len(drop)
 
 
+# Block titles that should each start on their own, one blank row clear of
+# whatever precedes them. Matched after translation, so these are the Chinese.
+_BLOCK_TITLES = ("订单需求", "版定义", "裁剪配比", "铺布层数", "排版结果")
+
+
+def space_out_blocks(ws) -> int:
+    """Put exactly one blank row above each block title. Returns rows inserted.
+
+    Trimming and fabric removal can leave a block butted straight up against
+    the one before it, which reads as one run-on table. Rows are inserted
+    bottom-up so earlier row numbers stay valid, and merged ranges are shifted
+    with them — openpyxl's insert_rows moves the cells but not the merges,
+    the same trap as deleting.
+    """
+    from openpyxl.utils import get_column_letter
+
+    def title_row(r: int) -> bool:
+        # Some blocks are indented — "Order demands" starts in column B — so
+        # look at the first couple of columns, not just column A.
+        return any(" ".join(str(ws.cell(r, c).value or "").split()) in _BLOCK_TITLES
+                   for c in (1, 2))
+
+    targets = [r for r in range(2, ws.max_row + 1)
+               if title_row(r) and not _is_blank_line(ws, r - 1, "row")]
+    for r in sorted(targets, reverse=True):
+        saved = [dict(min_row=g.min_row, max_row=g.max_row,
+                      min_col=g.min_col, max_col=g.max_col)
+                 for g in list(ws.merged_cells.ranges)]
+        for g in list(ws.merged_cells.ranges):
+            ws.unmerge_cells(str(g))
+        ws.insert_rows(r)
+        for b in saved:
+            if b["min_row"] >= r:
+                b["min_row"] += 1
+            if b["max_row"] >= r:
+                b["max_row"] += 1
+            ws.merge_cells(
+                f"{get_column_letter(b['min_col'])}{b['min_row']}:"
+                f"{get_column_letter(b['max_col'])}{b['max_row']}")
+    return len(targets)
+
+
 def _is_blank_line(ws, idx: int, axis: str) -> bool:
     """True when the row/column holds no value AND no merged range needs it.
 
@@ -425,7 +467,11 @@ def _is_blank_line(ws, idx: int, axis: str) -> bool:
     for rng in ws.merged_cells.ranges:
         lo, hi = ((rng.min_row, rng.max_row) if axis == "row"
                   else (rng.min_col, rng.max_col))
-        if lo <= idx <= hi:
+        # A merge confined to this line alone is the line's OWN heading merge —
+        # a dropped column keeps one after its text is cleared, and treating
+        # that as structural pinned the empty column open. Only a merge that
+        # reaches beyond the line is holding the layout.
+        if lo <= idx <= hi and not (lo == hi == idx):
             return False
     if axis == "row":
         return all(ws.cell(idx, c).value is None
@@ -501,10 +547,11 @@ def clean_workbook(wb, color_map: dict[str, str] | None = None,
     total = 0
     for ws in wb.worksheets:
         total += clean_worksheet(ws, color_map, cn_overrides)
-        # Last: close the empty column/rows the blanking left, so the sheet
-        # doesn't carry a gap where the dropped metric column and the "Style
-        # name" rows used to be.
+        # Close the empty column/rows the blanking left, then give each block
+        # one clear row above it. Order matters: closing first collapses
+        # everything, spacing then re-opens exactly one row per block.
         close_blanked_gaps(ws)
+        space_out_blocks(ws)
     return total
 
 

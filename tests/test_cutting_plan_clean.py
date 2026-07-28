@@ -584,3 +584,40 @@ def test_keeping_no_known_fabric_never_blanks_the_sheet():
     ws = _two_fabric_ws()
     assert keep_only_fabrics(ws, {"NOPE"}) == 0
     assert ws.max_row == 15
+
+
+def test_a_columns_own_heading_merge_does_not_pin_it_open():
+    """A dropped column keeps a 1-cell merge after its text is cleared. Treating
+    that as structural left the empty column on the sheet."""
+    from po_extractor.exporters.cutting_plan_clean import close_blanked_gaps
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.cell(1, 1, "keep"); ws.cell(1, 3, "also keep")
+    ws.merge_cells("B1:B1")           # the emptied column's own merge
+    rows, cols = close_blanked_gaps(ws)
+    assert cols == 1
+    assert ws.cell(1, 2).value == "also keep"
+
+
+def test_each_block_gets_one_clear_row_above_it():
+    from po_extractor.exporters.cutting_plan_clean import space_out_blocks
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.cell(1, 1, "header"); ws.cell(2, 1, "版定义"); ws.cell(3, 1, "x")
+    ws.cell(4, 1, "裁剪配比")
+    assert space_out_blocks(ws) == 2
+    for r in range(1, ws.max_row + 1):
+        if str(ws.cell(r, 1).value or "") in ("版定义", "裁剪配比"):
+            assert all(ws.cell(r - 1, c).value is None
+                       for c in range(1, ws.max_column + 1))
+
+
+def test_spacing_is_not_added_twice():
+    """A block already clear of the one above keeps exactly one blank row."""
+    from po_extractor.exporters.cutting_plan_clean import space_out_blocks
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.cell(1, 1, "header"); ws.cell(3, 1, "版定义")
+    before = ws.max_row
+    assert space_out_blocks(ws) == 0
+    assert ws.max_row == before

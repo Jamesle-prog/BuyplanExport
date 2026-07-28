@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.116.1",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "fix", "text": "**The empty column really is gone this time.** Clearing a column left its own one-cell heading merge behind, and the rule that protects merged headings was holding the emptied column open. A merge confined to a single line is that line’s own, not structure, so it no longer pins it — 面料长度, 利用率 and 版长 now sit side by side and the sheet is 15 columns wide instead of 17."},
+            {"type": "feat", "text": "**One clear row above every box.** 订单需求, 版定义, 裁剪配比, 铺布层数 and 排版结果 each get exactly one blank row above them, so the blocks read as separate tables rather than one run-on grid. Blocks that already had a gap are left alone, and merged headings move with the inserted row."},
+        ],
+    },
+    {
         "version": "2.116.0",
         "date": "2026-07-28",
         "entries": [
