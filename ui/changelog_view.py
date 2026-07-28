@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.113.2",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "fix", "text": "**The cleaned cut plan’s layout no longer shifts.** Trimming the header was removing whole rows, which pulled everything underneath it up the sheet — the marker blocks ended up sitting under the wrong headings. Those cells are emptied in place now, so the unwanted labels disappear and every other cell stays exactly where the marker software put it. The cleaned sheet is the same size as the original, row for row and column for column."},
+        ],
+    },
+    {
         "version": "2.113.1",
         "date": "2026-07-28",
         "entries": [

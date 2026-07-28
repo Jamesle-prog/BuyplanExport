@@ -377,8 +377,25 @@ def test_canonical_header_keeps_every_row():
         assert kept in vals, kept
 
 
-def test_row_drop_only_scans_the_header():
-    """A data cell reading 'Date' further down must not take its row away."""
+def test_header_rows_are_blanked_not_deleted():
+    """Deleting a row pulls everything below it up and slides the marker blocks
+    out from under their headings. The cells are emptied in place instead."""
+    from po_extractor.exporters.cutting_plan_clean import drop_header_rows
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.cell(1, 1, "Date"); ws.cell(1, 2, "2026-07-23")
+    ws.cell(2, 1, "Colors"); ws.cell(3, 1, "Marker Ratio")
+    before_rows = ws.max_row
+    assert drop_header_rows(ws) == 1
+    assert ws.cell(1, 1).value is None and ws.cell(1, 2).value is None
+    # everything else stays exactly where it was
+    assert ws.max_row == before_rows
+    assert ws.cell(2, 1).value == "Colors"
+    assert ws.cell(3, 1).value == "Marker Ratio"
+
+
+def test_row_blanking_only_scans_the_header():
+    """A data cell reading 'Date' further down must not be cleared."""
     from po_extractor.exporters.cutting_plan_clean import drop_header_rows
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -387,8 +404,7 @@ def test_row_drop_only_scans_the_header():
         ws.cell(r, 1, "Colors")
     ws.cell(44, 1, "Date")            # far below the header block
     assert drop_header_rows(ws) == 1          # only the header one
-    # Deleting row 1 shifts everything up, so the far-down "Date" survives at 43.
-    assert ws.cell(43, 1).value == "Date"
+    assert ws.cell(44, 1).value == "Date"     # untouched, and still on row 44
 
 
 def test_export_default_stays_english_and_reparseable():

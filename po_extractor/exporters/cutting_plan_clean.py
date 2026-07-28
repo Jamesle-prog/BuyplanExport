@@ -249,18 +249,26 @@ def _is_dropped_header(label: str) -> bool:
 
 
 def drop_header_rows(ws) -> int:
-    """Delete the header rows the cutting room doesn't read. Returns the count.
+    """Blank the header rows the cutting room doesn't read. Returns the count.
 
-    Only scans the top of the sheet, so a data cell that happens to read
-    "Date" further down can't take its row with it. Deletes bottom-up because
-    each deletion shifts everything below it up by one.
+    **Clears cells; never deletes rows.** Deleting a row pulls everything below
+    it up one, which slid the marker blocks out from under their own headings
+    and wrecked the layout. Emptying the cells leaves every other cell exactly
+    where it was — the row is simply blank.
+
+    Only scans the top of the sheet, so a data cell that happens to read "Date"
+    further down is left alone.
     """
     limit = min(ws.max_row, 30)
-    victims = [r for r in range(1, limit + 1)
-               if _is_dropped_header(ws.cell(r, 1).value or "")]
-    for r in reversed(victims):
-        ws.delete_rows(r)
-    return len(victims)
+    cleared = 0
+    for r in range(1, limit + 1):
+        if not _is_dropped_header(ws.cell(r, 1).value or ""):
+            continue
+        for c in range(1, ws.max_column + 1):
+            if ws.cell(r, c).value is not None:
+                ws.cell(r, c).value = None
+        cleared += 1
+    return cleared
 
 
 def clean_worksheet(ws, color_map: dict[str, str] | None = None,
