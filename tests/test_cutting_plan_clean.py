@@ -464,3 +464,40 @@ def test_dropped_columns_are_cleared_heading_and_figures():
     assert ws.cell(4, 2).value == 1022.16
     assert ws.max_column == 2                # column never removed
     assert cleared == 5
+
+
+def test_gap_closing_carries_merged_ranges_with_it():
+    """Deleting a line moves the CELLS but leaves merged ranges behind — that
+    is what slid the marker blocks out from under their headings. The ranges
+    must follow."""
+    from po_extractor.exporters.cutting_plan_clean import close_blanked_gaps
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.cell(1, 1, "A"); ws.cell(1, 3, "C")     # column 2 entirely empty
+    ws.cell(2, 1, "x"); ws.cell(2, 3, "y")
+    ws.merge_cells("C1:D1")                    # a range to the RIGHT of the gap
+    rows, cols = close_blanked_gaps(ws)
+    assert (rows, cols) == (0, 1)              # col 4 is blank but merged — kept
+    assert ws.cell(1, 2).value == "C"          # C moved left into the gap
+    assert str(list(ws.merged_cells.ranges)[0]) == "B1:C1"   # merge followed it
+
+
+def test_a_blank_line_inside_a_merge_is_not_a_gap():
+    """The second half of a merged heading holds no value but is structural."""
+    from po_extractor.exporters.cutting_plan_clean import close_blanked_gaps
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.cell(1, 1, "spans two columns")
+    ws.merge_cells("A1:B1")                    # col 2 empty, but part of it
+    assert close_blanked_gaps(ws) == (0, 0)
+    assert str(list(ws.merged_cells.ranges)[0]) == "A1:B1"
+
+
+def test_gap_closing_leaves_populated_lines_alone():
+    from po_extractor.exporters.cutting_plan_clean import close_blanked_gaps
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for r in range(1, 4):
+        ws.cell(r, 1, f"r{r}")
+    assert close_blanked_gaps(ws) == (0, 0)
+    assert [ws.cell(r, 1).value for r in (1, 2, 3)] == ["r1", "r2", "r3"]

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.114.1",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "fix", "text": "**No empty column or rows left behind on the cleaned cut plan.** Emptying the dropped column and the duplicate style rows left gaps where they used to be. Those now close up — 面料长度, 利用率 and 版长 sit next to each other, and the header block runs straight down from 日期 to 客户. Merged headings are carried along with the shift, which is what went wrong the first time this was tried; a blank line that is part of a merged heading is left in place, because it is holding the layout rather than being a gap."},
+        ],
+    },
+    {
         "version": "2.114.0",
         "date": "2026-07-28",
         "entries": [

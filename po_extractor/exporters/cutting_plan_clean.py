@@ -296,6 +296,81 @@ def blank_dropped_columns(ws) -> int:
     return cleared
 
 
+def _delete_line(ws, *, at: int, axis: str) -> None:
+    """Delete one row/column and carry the merged ranges with it.
+
+    openpyxl's ``delete_rows``/``delete_cols`` move the CELLS but leave merged
+    ranges on their old coordinates — which is what slid the marker blocks out
+    from under their headings the first time this was tried. The ranges have to
+    be released BEFORE the delete (afterwards the cells they name no longer
+    exist and unmerge raises), then re-laid on the new coordinates: ranges after
+    the deleted line move back one, ranges spanning it shrink by one, ranges
+    before it are untouched.
+    """
+    from openpyxl.utils import get_column_letter
+    lo_a, hi_a = ("min_row", "max_row") if axis == "row" else ("min_col", "max_col")
+
+    saved = [dict(min_row=r.min_row, max_row=r.max_row,
+                  min_col=r.min_col, max_col=r.max_col)
+             for r in list(ws.merged_cells.ranges)]
+    for rng in list(ws.merged_cells.ranges):
+        ws.unmerge_cells(str(rng))
+
+    (ws.delete_rows if axis == "row" else ws.delete_cols)(at)
+
+    for b in saved:
+        if b[hi_a] >= at:
+            if b[lo_a] > at:
+                b[lo_a] -= 1
+            b[hi_a] -= 1
+        if b["min_row"] > b["max_row"] or b["min_col"] > b["max_col"]:
+            continue                               # collapsed to nothing
+        if b["min_row"] == b["max_row"] and b["min_col"] == b["max_col"]:
+            continue                               # a 1x1 "merge" is not one
+        ws.merge_cells(
+            f"{get_column_letter(b['min_col'])}{b['min_row']}:"
+            f"{get_column_letter(b['max_col'])}{b['max_row']}")
+
+
+def _is_blank_line(ws, idx: int, axis: str) -> bool:
+    """True when the row/column holds no value AND no merged range needs it.
+
+    A line can be empty of values and still be structural — the second half of
+    a merged heading carries no value of its own. Removing it would close a gap
+    that isn't there.
+    """
+    for rng in ws.merged_cells.ranges:
+        lo, hi = ((rng.min_row, rng.max_row) if axis == "row"
+                  else (rng.min_col, rng.max_col))
+        if lo <= idx <= hi:
+            return False
+    if axis == "row":
+        return all(ws.cell(idx, c).value is None
+                   for c in range(1, ws.max_column + 1))
+    return all(ws.cell(r, idx).value is None
+               for r in range(1, ws.max_row + 1))
+
+
+def close_blanked_gaps(ws, *, header_limit: int = 30) -> tuple[int, int]:
+    """Close the gaps the blanking left behind. Returns (rows, cols) removed.
+
+    Only fully empty lines are removed, and only ones this cleanup emptied:
+    columns anywhere (the dropped metric columns), rows only within the header
+    block — a blank row further down separates the marker blocks and is part of
+    the layout. Deleting bottom-up/right-to-left so earlier indices stay valid,
+    and merged ranges are re-laid after each one.
+    """
+    cols = [c for c in range(ws.max_column, 0, -1)
+            if _is_blank_line(ws, c, "col")]
+    for c in cols:
+        _delete_line(ws, at=c, axis="col")
+    rows = [r for r in range(min(ws.max_row, header_limit), 0, -1)
+            if _is_blank_line(ws, r, "row")]
+    for r in rows:
+        _delete_line(ws, at=r, axis="row")
+    return len(rows), len(cols)
+
+
 def drop_header_rows(ws) -> int:
     """Blank the header rows the cutting room doesn't read. Returns the count.
 
@@ -340,8 +415,14 @@ def clean_worksheet(ws, color_map: dict[str, str] | None = None,
 def clean_workbook(wb, color_map: dict[str, str] | None = None,
                    cn_overrides: dict[str, str] | None = None) -> int:
     """Clean every worksheet of *wb* in place. Returns total cells changed."""
-    return sum(clean_worksheet(ws, color_map, cn_overrides)
-               for ws in wb.worksheets)
+    total = 0
+    for ws in wb.worksheets:
+        total += clean_worksheet(ws, color_map, cn_overrides)
+        # Last: close the empty column/rows the blanking left, so the sheet
+        # doesn't carry a gap where the dropped metric column and the "Style
+        # name" rows used to be.
+        close_blanked_gaps(ws)
+    return total
 
 
 # ── working on an already-built workbook (the UI's approve-then-apply path) ──
