@@ -48,7 +48,7 @@ def _parse_infornexus_pdf(pdf_bytes: bytes) -> dict:
     # ── PO Number + Issue Date ────────────────────────────────────────────────
     # Line format: "LSKHHN009R 2026-05-12 2026-05-14T00:36:35Z"
     po_m    = grep(r'^(LS\w+R)\s+(\d{4}-\d{2}-\d{2})')
-    po_num  = po_m.group(1)            if po_m else '?'
+    po_number  = po_m.group(1)            if po_m else '?'
     po_date = po_m.group(2)            if po_m else '?'
 
     # ── Style / Color / Units from line-item row ──────────────────────────────
@@ -125,8 +125,8 @@ def _parse_infornexus_pdf(pdf_bytes: bytes) -> dict:
     # ── Hanger Info ───────────────────────────────────────────────────────────
     # "LSKHHN009R KL SEE SPECIAL INSTRUCTIONS 0.75% China"
     hanger_m = None
-    if po_num != '?':
-        hanger_m = grep(re.escape(po_num) + r'\s+\S+\s+(.+?)\s+[\d.]+%')
+    if po_number != '?':
+        hanger_m = grep(re.escape(po_number) + r'\s+\S+\s+(.+?)\s+[\d.]+%')
     hanger_info = hanger_m.group(1).strip() if hanger_m else '?'
 
     # ── Pack Ratio ────────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ def _parse_infornexus_pdf(pdf_bytes: bytes) -> dict:
     }] if sizes_list else []
 
     return dict(
-        po_number=po_num, style=style, po_date=po_date, ship_date=ship_date,
+        po_number=po_number, style=style, po_date=po_date, ship_date=ship_date,
         etd=etd, vendor=vendor, factory=factory, fob_price=fob_price,
         description=description, line_items=line_items,
         customer_name=customer_name, ship_to=ship_to,
@@ -296,16 +296,16 @@ def build_comparison_excel(kl_results: list[dict], in_results: list[dict]) -> by
     _hdr(ws.cell(1, 5), 'Match?')
 
     row = 2
-    for po_num in all_pos:
-        kl = kl_by_po.get(po_num)
-        nx = in_by_po.get(po_num)
+    for po_number in all_pos:
+        kl = kl_by_po.get(po_number)
+        nx = in_by_po.get(po_number)
 
         # Group header for the PO
         for ci in range(1, 6):
             ws.cell(row, ci).fill   = _fill(_GREY)
             ws.cell(row, ci).border = _border()
             ws.cell(row, ci).font   = Font(name='Arial', bold=True, size=10)
-        ws.cell(row, 1, po_num)
+        ws.cell(row, 1, po_number)
         row += 1
 
         for label, key in _CMP_FIELDS:

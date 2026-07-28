@@ -44,7 +44,7 @@ def _parse_kl_pdf(pdf_bytes: bytes) -> dict:
 
     # ── Standard header fields ────────────────────────────────────────────────
     m = grep(r'PO NUMBER\s+(\S+)')
-    po_num  = _undouble(m.group(1)) if m else '?'
+    po_number  = _undouble(m.group(1)) if m else '?'
     m = grep(r'S T Y L E #\s+(\S+)')
     style   = _undouble(m.group(1)) if m else '?'
     m = grep(r'PO DATE\s+([\d/]+)')
@@ -173,7 +173,7 @@ def _parse_kl_pdf(pdf_bytes: bytes) -> dict:
             cur_item['sizes'].append((m2.group(1), int(m2.group(2)), m2.group(3), None))
 
     return dict(
-        po_number=po_num, style=style, po_date=po_date, ship_date=ship,
+        po_number=po_number, style=style, po_date=po_date, ship_date=ship,
         etd=etd, vendor=vendor, factory=factory, fob_price=fob,
         description=description, line_items=line_items,
         customer_name=customer_name, ship_to=ship_to,

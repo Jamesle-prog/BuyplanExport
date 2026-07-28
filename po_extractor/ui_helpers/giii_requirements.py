@@ -524,10 +524,10 @@ def build_requirements_api_requests(pos) -> tuple[list[dict], list[str]]:
     warnings: list[str] = []
     for po in pos:
         m = po.metadata
-        po_no = m.po_number or "?"
+        po_number = m.po_number or "?"
         brand = brand_of(m.po_number, m.division_name or getattr(m, "division", ""))
         if not brand:
-            warnings.append(f"PO {po_no}: no brand on the PO — not in the API "
+            warnings.append(f"PO {po_number}: no brand on the PO — not in the API "
                             f"requirements document.")
             continue
         ctx = raw_po_context(m, brand)
@@ -545,8 +545,8 @@ def build_requirements_api_requests(pos) -> tuple[list[dict], list[str]]:
                 sizes.append(f"{s}×{u}")
 
         row = {
-            "order":          po_no,
-            "giiiSalesOrder": po_no,
+            "order":          po_number,
+            "giiiSalesOrder": po_number,
             "style":          str(m.style or ""),
             "color":          " / ".join(colors),
             "qty":            total_units,
@@ -604,11 +604,11 @@ def api_requests_from_stored(meta_df, sizes_df) -> tuple[list[dict], list[str]]:
     sizes_by_po: dict[str, list] = {}
     if sizes_df is not None and len(sizes_df):
         for _, r in sizes_df.iterrows():
-            po_no = _s(r, "PO Number") or _s(r, "po_number")
-            if not po_no:
+            po_number = _s(r, "PO Number") or _s(r, "po_number")
+            if not po_number:
                 continue
-            sizes_by_po.setdefault(po_no, []).append(SizeRow(
-                po_number=po_no,
+            sizes_by_po.setdefault(po_number, []).append(SizeRow(
+                po_number=po_number,
                 style=_s(r, "Style") or _s(r, "style"),
                 color=_s(r, "Color") or _s(r, "color"),
                 size=_s(r, "Size") or _s(r, "size"),
@@ -619,11 +619,11 @@ def api_requests_from_stored(meta_df, sizes_df) -> tuple[list[dict], list[str]]:
 
     pos = []
     for _, row in meta_df.iterrows():
-        po_no = _s(row, "po_number")
-        if not po_no:
+        po_number = _s(row, "po_number")
+        if not po_number:
             continue
         m = POMetadata(
-            po_number=po_no,
+            po_number=po_number,
             style=_s(row, "style"),
             customer=_s(row, "customer"),
             destination_code=_s(row, "destination_code"),
@@ -638,7 +638,7 @@ def api_requests_from_stored(meta_df, sizes_df) -> tuple[list[dict], list[str]]:
             division=_s(row, "division_code"),
             division_name=_s(row, "division_name"),
         )
-        pos.append(POData(metadata=m, size_rows=sizes_by_po.get(po_no, [])))
+        pos.append(POData(metadata=m, size_rows=sizes_by_po.get(po_number, [])))
     return build_requirements_api_requests(pos)
 
 
@@ -690,13 +690,13 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
 
     for po in pos:
         m = po.metadata
-        po_no = m.po_number or "?"
+        po_number = m.po_number or "?"
         # Brand off the PO only, normalized to a name CPRS accepts — the parsed
         # division is often a raw code ("DW") that CPRS 400s on, so brand_of()
         # prefers the documented PO-prefix → canonical-brand map. No guessing.
         brand = brand_of(m.po_number, m.division_name or getattr(m, "division", ""))
         if not brand:
-            warnings.append(f"PO {po_no}: no brand on the PO — skipped in the "
+            warnings.append(f"PO {po_number}: no brand on the PO — skipped in the "
                             f"requirements document.")
             continue
 
@@ -706,17 +706,17 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
 
         po_ev = _evaluate_po_resilient(cprs, raw)
         if not po_ev:
-            warnings.append(f"PO {po_no}: CPRS returned no evaluation — skipped "
+            warnings.append(f"PO {po_number}: CPRS returned no evaluation — skipped "
                             f"(transient error, or CPRS went down mid-run).")
             continue
         decoded = po_ev.get("decoded") or {}
         results = (po_ev.get("evaluation") or {}).get("results") or []
         if not decoded.get("clientId"):
-            warnings.append(f"PO {po_no}: brand '{brand}' not decoded by CPRS "
+            warnings.append(f"PO {po_number}: brand '{brand}' not decoded by CPRS "
                             f"— skipped in the requirements document.")
             continue
         for w in (decoded.get("warnings") or []):
-            warnings.append(f"PO {po_no}: {w}")
+            warnings.append(f"PO {po_number}: {w}")
 
         # Attach ALL linked artwork bytes to each result (deduped, idempotent).
         for res in results or []:
@@ -730,7 +730,7 @@ def resolve_po_requirements(cprs, pos) -> tuple[list[dict], list[str]]:
             str(getattr(m, "hanger", "") or "").strip()) if p)
 
         contexts.append({
-            "po_number": po_no, "style": m.style or "", "brand": brand,
+            "po_number": po_number, "style": m.style or "", "brand": brand,
             # decoded context — CPRS resolved these
             "warehouse": str(decoded.get("warehouseCode") or ""),
             "account": str(decoded.get("accountCode") or ""),

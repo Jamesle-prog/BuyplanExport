@@ -483,8 +483,8 @@ def _write_style_sheet(
 
     requirements = requirements or {}
 
-    def _req_for(po_num):
-        return requirements.get(str(po_num).strip())
+    def _req_for(po_number):
+        return requirements.get(str(po_number).strip())
 
     # Column index map
     C_CONTRACT  = 1          # A  合同号
@@ -655,15 +655,15 @@ def _write_style_sheet(
     records: list[dict] = []
 
     for _, po_row in style_df.iterrows():
-        po_num    = po_row["po_number"]
+        po_number    = po_row["po_number"]
         # Brand strictly off the PO: its division field, else the documented
         # PO-number division prefix (CS/LS/DW). Unknown → flagged, not guessed.
-        brand     = _safe(po_row.get("division_name")) or brand_from_po(po_num)
+        brand     = _safe(po_row.get("division_name")) or brand_from_po(po_number)
         cpo       = _safe(po_row.get("cpo"))
         wh_code   = _safe(po_row.get("destination_code"))
         if not wh_code:
             # CPRS resolved the warehouse from the ship-to address.
-            wh_code = str(getattr(_req_for(po_num), "warehouse", "") or "")
+            wh_code = str(getattr(_req_for(po_number), "warehouse", "") or "")
         buyer     = _safe(po_row.get("customer")) or _safe(po_row.get("buyer"))
         # The stored date is the ETD — 离厂时间 shows ETD − 10 days.
         ship_date = _ex_factory_date(
@@ -672,7 +672,7 @@ def _write_style_sheet(
         ship_to   = _dest_address(ship_raw, buyer)
         # 目的地国家 — the CPRS warehouse region when resolved, else parsed
         # from unambiguous markers in the address itself.
-        country   = str(getattr(_req_for(po_num), "region", "") or "") \
+        country   = str(getattr(_req_for(po_number), "region", "") or "") \
             or _dest_country(ship_raw)
         packaging = _safe(po_row.get("packaging"))
         hanger    = _safe(po_row.get("hanger"))
@@ -687,7 +687,7 @@ def _write_style_sheet(
         packaging  = strip_ratio(packaging)
         hanger     = strip_ratio(hanger)
 
-        po_sizes = sizes_df[sizes_df["po_number"] == po_num].copy()
+        po_sizes = sizes_df[sizes_df["po_number"] == po_number].copy()
         if po_sizes.empty:
             continue
 
@@ -737,7 +737,7 @@ def _write_style_sheet(
             records.append({
                 "row":          current_row,
                 "po_start":     po_start_row,
-                "po_num":       po_num,
+                "po_number":       po_number,
                 "brand":        brand,
                 "cpo":          cpo,
                 "wh_code":      wh_code,
@@ -790,7 +790,7 @@ def _write_style_sheet(
 
     po_groups: dict[str, list[dict]] = {}
     for rec in records:
-        po_groups.setdefault(rec["po_num"], []).append(rec)
+        po_groups.setdefault(rec["po_number"], []).append(rec)
 
     sum_contracts: list[str] = []
     sum_reds: list[str] = []
@@ -802,19 +802,19 @@ def _write_style_sheet(
     sum_wtl: list[str] = []
     sum_msrp: list[str] = []
     sum_rfid: list[str] = []
-    contract_map: dict[str, str] = {}   # po_num → 合同号, for the UPC 汇总 sheet
+    contract_map: dict[str, str] = {}   # po_number → 合同号, for the UPC 汇总 sheet
 
-    for po_num, grp in po_groups.items():
+    for po_number, grp in po_groups.items():
         r0, r1 = grp[0]["row"], grp[-1]["row"]
         rep    = grp[0]
         # 合同号 from the 大货进度表 (by PO, falling back to by style).
-        contract = (contract_by_po.get(_norm_key(str(po_num)))
+        contract = (contract_by_po.get(_norm_key(str(po_number)))
                     or contract_by_style.get(_norm_key(style)) or "")
-        contract_map[po_num] = contract
+        contract_map[po_number] = contract
         # 红色箱贴纸 / 主箱唛 / MSRP / RFID / pack-out from CPRS resolution.
         # No resolution (no brand on the PO / CPRS off) → cells stay EMPTY,
         # never a claim like 无.
-        req = _req_for(po_num)
+        req = _req_for(po_number)
         red_txt  = str(getattr(req, "red_sticker", "") or "") if req else ""
         mark_txt = str(getattr(req, "carton_mark", "") or "") if req else ""
         # Ratio printed on the PO wins; CPRS's per-account ratio is fallback.
@@ -847,7 +847,7 @@ def _write_style_sheet(
                       value=rep["brand"] or "⚠ 无品牌",
                       font=_FONT_NORMAL if rep["brand"] else _FONT_FLAG,
                       border=_BORDER, align=_CENTER)
-        _merge_or_set(ws, r0, C_PO,    r1, C_PO,    value=rep["po_num"],   font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
+        _merge_or_set(ws, r0, C_PO,    r1, C_PO,    value=rep["po_number"],   font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_CPO,   r1, C_CPO,   value=rep["cpo"],      font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_WH,    r1, C_WH,    value=rep["wh_code"],  font=_FONT_NORMAL, border=_BORDER, align=_CENTER)
         _merge_or_set(ws, r0, C_DEST,  r1, C_DEST,  value=rep["ship_to"],  font=_FONT_NORMAL, border=_BORDER, align=_LEFT)
@@ -925,11 +925,11 @@ def _write_style_sheet(
     # here (deduped — POs sharing artwork are listed on one label).
     for kind, attr in (("红色箱贴纸图示", "red_img"), ("主箱唛图示", "mark_img")):
         by_img: dict[bytes, list[str]] = {}
-        for po_num in po_groups:
-            req = _req_for(po_num)
+        for po_number in po_groups:
+            req = _req_for(po_number)
             img = getattr(req, attr, None) if req else None
             if img:
-                by_img.setdefault(img, []).append(str(po_num))
+                by_img.setdefault(img, []).append(str(po_number))
         for img, po_list in by_img.items():
             pos_txt = "、".join(po_list[:4]) + ("…" if len(po_list) > 4 else "")
             _merge(ws, fr, 1, fr, N_COLS, f"{kind}（{pos_txt}）：",
@@ -975,8 +975,8 @@ def _write_style_sheet(
             upc_rows.append({
                 "style":    style,
                 "brand":    rec["brand"],
-                "po":       rec["po_num"],
-                "contract": contract_map.get(rec["po_num"], ""),
+                "po":       rec["po_number"],
+                "contract": contract_map.get(rec["po_number"], ""),
                 "color_en": rec["color_en"],
                 "color_cn": rec["color_cn"],
                 "size":     sz,

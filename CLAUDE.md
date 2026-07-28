@@ -54,6 +54,28 @@
 
 ## Conventions (follow these when editing)
 
+- **PO / PC naming — three different things that look alike.** Getting these
+  confused silently returns zero rows (a lookup that used the PO number against
+  Sky East items found nothing, because Sky East is keyed by PC No.).
+
+  | Concept | Canonical name | What it is | Keyed in |
+  |---|---|---|---|
+  | GIII purchase order | `po_number` | our own PO number | `po_metadata`, `po_size_rows`, `production_tracking`, `po_exceptions`, `po_version_history`, `cmpt_contract_lines`, `factory_progress_reports` |
+  | Sky East contract | `pc_no` | contract/PC number — **not** a PO | `sky_east_contracts`, `sky_east_items`, `sky_east_item_history`, `progress_records` |
+  | Client's own PO | `zalando_po` | the buyer's PO printed on a Sky East item | `sky_east_items`, `sky_east_item_history` |
+
+  - Use **`po_number`** for a GIII PO everywhere in new code — never `po_num`
+    or `po_no`. User-facing label is **"PO Number"**.
+  - `pc_no` and `zalando_po` are *not* synonyms for `po_number`. To look up a
+    Sky East order you need the **PC No.**; `po_number`/`zalando_po` will not
+    match it.
+  - **Existing DB column names are frozen.** Two tables still use `po_no`
+    (`cutting_plan_links`, `sky_east_color_misses`). They are not renamed
+    because `Merchandising_System/app/connectors/po_automation.py` reads
+    `data/po_history.db` read-only, as does the in-repo `web_scan` service —
+    a column rename breaks them silently. Keep the column name at the SQL
+    boundary and name the Python variable `po_number`.
+
 - **Stores go through factories, never direct construction.**
   - `po_extractor/store/__init__.py` = canonical, non-Streamlit factories (`get_po_store()`, `get_sky_east_store()`, …).
   - `ui/stores.py` is the **only** place `@st.cache_resource` may appear — every Streamlit caller imports from there. (A past class of silent-failure bugs came from duplicate factory paths; don't reintroduce them.)

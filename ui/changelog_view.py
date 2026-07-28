@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.110.3",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "refactor", "text": "**One name for a PO number in the code.** The same value was being called `po_number` in most of the codebase, `po_num` in the production-plan and fax extractors, and `po_no` in the requirements resolver — 57 places now all say `po_number`. Nothing users see changed: the \"PO No.\" column headings on the buy plan and the other workbooks are the layout the factory reads and were deliberately left alone, as were the database column names."},
+            {"type": "docs", "text": "**Written down which identifier is which.** PO number, Sky East PC No. and the client's own PO look interchangeable and are not — a lookup using the wrong one silently returns nothing rather than failing, which is exactly how a recent bug behaved. The project notes now record all three, where each is keyed, and why two database columns keep their older spelling: an outside service reads this database directly, so renaming a column would quietly break it."},
+        ],
+    },
+    {
         "version": "2.110.2",
         "date": "2026-07-28",
         "entries": [

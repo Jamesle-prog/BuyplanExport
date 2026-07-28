@@ -250,7 +250,7 @@ def generate_po_summary_excel(
     ri = DATA_START
 
     for _, po_row in df_pos.iterrows():
-        po_num = _v(po_row, "po_number")
+        po_number = _v(po_row, "po_number")
         style  = _v(po_row, "style")
         fob    = _v(po_row, "unit_cost")
         cpu    = _v(po_row, "line_extended_cost")
@@ -267,7 +267,7 @@ def generate_po_summary_excel(
 
         # Get size data for this PO
         if size_pivot is not None and not size_pivot.empty:
-            po_sizes = size_pivot[size_pivot["po_number"] == po_num]
+            po_sizes = size_pivot[size_pivot["po_number"] == po_number]
         else:
             po_sizes = pd.DataFrame()
 
@@ -279,7 +279,7 @@ def generate_po_summary_excel(
             # as the whole-PO total, so units × that inflates the figure.
             ext_c = round(total_u * fob_f, 2)
 
-            row_data = [po_num, style, "", "", fob_f or fob, cpu_f or cpu]
+            row_data = [po_number, style, "", "", fob_f or fob, cpu_f or cpu]
             row_data += [0] * len(active_sizes)
             row_data += [total_u, ext_c]
 
@@ -309,7 +309,7 @@ def generate_po_summary_excel(
                 total_u   = sum(size_vals)
                 ext_c     = round(total_u * fob_f, 2)   # units × unit cost
 
-                row_data = [po_num, style, color_code, color_name,
+                row_data = [po_number, style, color_code, color_name,
                             fob_f or fob, cpu_f or cpu]
                 row_data += size_vals
                 row_data += [total_u, ext_c]
