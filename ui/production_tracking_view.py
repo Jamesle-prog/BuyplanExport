@@ -53,7 +53,7 @@ import streamlit as st
 
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import fragment_rerun, guard_multiselect_state, XLSX_MIME
+from ui.shared import lazy_sections, fragment_rerun, guard_multiselect_state, XLSX_MIME
 from ui.stores import get_production_tracking_store, get_store
 
 # ── Schema constants — imported once at module load, not on every render ──────
@@ -1166,12 +1166,10 @@ def _render_autoplan_section(records, store, username, today) -> None:
                    else list(records))
         st.caption(f"{len(targets)} {t('row(s) selected')}")
 
-        tab_plan, tab_bulk, tab_lead = st.tabs(
-            [t("Draft a plan"), t("Bulk edits"), t("Lead times")]
-        )
+        # Only the selected panel is built (st.tabs ran all three).
 
         # ── Draft a plan ───────────────────────────────────────────────────
-        with tab_plan:
+        def _plan_panel():
             direction = st.radio(
                 "Direction",
                 ["backward", "forward"],
@@ -1246,7 +1244,7 @@ def _render_autoplan_section(records, store, username, today) -> None:
                 fragment_rerun()
 
         # ── Bulk edits ─────────────────────────────────────────────────────
-        with tab_bulk:
+        def _bulk_panel():
             b1, b2 = st.columns(2)
 
             with b1:
@@ -1330,7 +1328,7 @@ def _render_autoplan_section(records, store, username, today) -> None:
                     fragment_rerun()
 
         # ── Lead times ─────────────────────────────────────────────────────
-        with tab_lead:
+        def _lead_panel():
             st.caption(t(
                 "Days before 离厂时间 that each milestone should be complete. "
                 "Used by both plan directions — tune once per client/factory "
@@ -1355,6 +1353,12 @@ def _render_autoplan_section(records, store, username, today) -> None:
                 })
                 st.success(f"✅ {t('Lead times saved.')}")
                 fragment_rerun()
+
+        lazy_sections([
+            (t("Draft a plan"), _plan_panel),
+            (t("Bulk edits"),   _bulk_panel),
+            (t("Lead times"),   _lead_panel),
+        ], key="pt_autoplan_nav")
 
 
 def _render_grid_excel_io(filtered, store, username, scope: "TrackScope") -> None:

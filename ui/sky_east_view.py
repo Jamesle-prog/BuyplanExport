@@ -3,7 +3,7 @@ from __future__ import annotations
 import streamlit as st
 from ui.i18n import t
 from ui.session_keys import SK, COLOR_SOURCE_DB, COLOR_SOURCE_PROGRESS
-from ui.shared import ZIP_MIME, show_image_folder_expander, show_processing_log
+from ui.shared import lazy_sections, ZIP_MIME, show_image_folder_expander, show_processing_log
 from ui.sky_east._shared import live_label, show_color_source_radio
 from ui.sky_east.processing import _run_sky_east_processing, _compute_se_missing_df
 from ui.sky_east.items_view import (
@@ -163,13 +163,11 @@ def show_sky_east_tab(restrict_to_buyplan: bool = False) -> None:
     ))
 
     if restrict_to_buyplan:
-        se_tab_upload, se_tab_reports = st.tabs(
-            [t("New Contracts"), f"📦 {t('Generate / Export')}"]
-        )
-        with se_tab_upload:
-            _show_se_upload_section()
-        with se_tab_reports:
-            _show_se_reports_tab(pin_mode=PIN_BUYPLAN)
+        lazy_sections([
+            (t("New Contracts"),            _show_se_upload_section),
+            (f"📦 {t('Generate / Export')}",
+             lambda: _show_se_reports_tab(pin_mode=PIN_BUYPLAN)),
+        ], key="se_bp_section_nav")
         return
 
     _missing_df = _compute_se_missing_df()
@@ -180,19 +178,10 @@ def show_sky_east_tab(restrict_to_buyplan: bool = False) -> None:
     # "Generate / Export" sits right after "New Contracts" so the natural flow
     # is Upload → Generate; it's the primary output step and shouldn't be buried
     # behind Contract History.
-    se_tab_upload, se_tab_reports, se_tab_history, se_tab_missing = st.tabs(
-        [t("New Contracts"), f"📦 {t('Generate / Export')}",
-         t("Contract History"), missing_label]
-    )
-
-    with se_tab_upload:
-        _show_se_upload_section()
-
-    with se_tab_reports:
-        _show_se_reports_tab()
-
-    with se_tab_history:
-        _show_se_history_section()
-
-    with se_tab_missing:
-        _show_se_missing_fields_section(_missing_df)
+    lazy_sections([
+        (t("New Contracts"),               _show_se_upload_section),
+        (f"📦 {t('Generate / Export')}",    _show_se_reports_tab),
+        (t("Contract History"),            _show_se_history_section),
+        (missing_label,
+         lambda: _show_se_missing_fields_section(_missing_df)),
+    ], key="se_section_nav")

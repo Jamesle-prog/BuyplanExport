@@ -1,6 +1,5 @@
 ﻿"""GIII results display and download panels."""
 from __future__ import annotations
-import base64
 import io
 import streamlit as st
 import pandas as pd
@@ -11,7 +10,7 @@ from po_extractor.ui_helpers import (
     generate_kl_format_excel as _generate_kl_format_excel_impl,
 )
 from ui.i18n import t
-from ui.shared import build_image_cache_for_ids as _build_image_cache_for_ids
+from ui.shared import build_thumbnail_data_urls as _build_thumbnail_data_urls
 from ui.shared import persisted_download
 from ui.shared import ZIP_MIME, HTML_MIME, CSV_MIME
 from auth.companies import COMPANY_SKY_EAST
@@ -96,11 +95,7 @@ def _build_master_display_df() -> pd.DataFrame:
 
     # ── Load photos from disk / session cache ─────────────────────────────────
     all_pids = [p for p in df["_pid"].unique() if p]
-    loaded   = _build_image_cache_for_ids(all_pids)
-    pid_to_b64 = {
-        pid: f"data:image/png;base64,{base64.b64encode(b).decode()}"
-        for pid, b in loaded.items()
-    }
+    pid_to_b64 = _build_thumbnail_data_urls(all_pids)
 
     display_df = df[["Company", "Style", "COO", "X-Fty Date", "Total Units"]].copy()
     photo_col  = df["_pid"].map(lambda p: pid_to_b64.get(p, None))

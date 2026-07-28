@@ -16,7 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.i18n import clear_cache, supported_langs, t
-from ui.shared import CSV_MIME
+from ui.shared import lazy_sections, CSV_MIME
 from ui.stores import get_ui_translation_store
 
 
@@ -45,22 +45,12 @@ def show_i18n_admin() -> None:
         + t("Changes take effect immediately after saving.")
     )
 
-    tab_browse, tab_add, tab_import, tab_seed = st.tabs(
-        [f"📋 {t('Browse & Edit')}", f"➕ {t('Add Key')}",
-         f"📤 {t('Import / Export')}", f"🌱 {t('Seed Defaults')}"]
-    )
-
-    with tab_browse:
-        _show_browse_tab(store)
-
-    with tab_add:
-        _show_add_tab(store)
-
-    with tab_import:
-        _show_import_export_tab(store)
-
-    with tab_seed:
-        _show_seed_tab(store)
+    lazy_sections([
+        (f"📋 {t('Browse & Edit')}",    lambda: _show_browse_tab(store)),
+        (f"➕ {t('Add Key')}",             lambda: _show_add_tab(store)),
+        (f"📤 {t('Import / Export')}", lambda: _show_import_export_tab(store)),
+        (f"🌱 {t('Seed Defaults')}",   lambda: _show_seed_tab(store)),
+    ], key="admin_i18n_section_nav")
 
 
 # ── Browse & Edit ─────────────────────────────────────────────────────────────

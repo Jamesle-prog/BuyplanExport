@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.111.0",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "perf", "text": "**Every screen now builds only the panel you are looking at.** The remaining tab bars have been converted: GIII and Sky East (four panels each), Summary, Email, Reference Data, the GIII Generate/Export pair, the tracking planner and the Translations admin. Before this, opening any of them ran every panel behind it — all the list queries, tables and export builders — to display one. The heaviest were GIII and Sky East, which each rebuilt uploads, generate/export, contract history and missing-fields on every interaction."},
+            {"type": "refactor", "text": "**One helper does it, so it cannot drift back.** `lazy_sections()` in `ui/shared.py` replaces nine hand-written tab blocks and carries the reasoning with it: a tab bar that shows one panel should not build the others, the choice must survive the reruns buttons cause, and a stored choice has to be dropped when the language toggle changes the labels. The app now has no `st.tabs` left in it."},
+        ],
+    },
+    {
         "version": "2.110.5",
         "date": "2026-07-28",
         "entries": [

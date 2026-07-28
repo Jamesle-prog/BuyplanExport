@@ -15,7 +15,7 @@ from po_extractor.ui_helpers.combined_summary import (
 )
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import _th, _tr, guard_multiselect_state, XLSX_MIME
+from ui.shared import lazy_sections, _th, _tr, guard_multiselect_state, XLSX_MIME
 from ui.stores import get_store, get_sky_east_store
 
 
@@ -268,19 +268,13 @@ def show_summary_tab(user_cos: list[str], admin_mode: bool) -> None:
                            se_items=se_items if can_see_zalando else None,
                        ))
 
-    tab_overview, tab_tracker, tab_all = st.tabs([
-        f"📊 {t('Overview')}", f"📋 {t('PO Tracker')}", f"🧾 {t('All Orders')}",
-    ])
-
-    with tab_tracker:
-        _show_po_tracker(tracker_df)
-
-    with tab_overview:
-        _show_overview(user_cos, admin_mode, overview_giii_df, se_items,
-                       std_overview_df)
-
-    with tab_all:
-        _show_all_orders(std_all_df)
+    lazy_sections([
+        (f"📊 {t('Overview')}",
+         lambda: _show_overview(user_cos, admin_mode, overview_giii_df,
+                                se_items, std_overview_df)),
+        (f"📋 {t('PO Tracker')}", lambda: _show_po_tracker(tracker_df)),
+        (f"🧾 {t('All Orders')}", lambda: _show_all_orders(std_all_df)),
+    ], key="summary_section_nav")
 
 
 def _show_all_orders(df: pd.DataFrame) -> None:

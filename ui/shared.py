@@ -7,6 +7,7 @@ import time.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import time
@@ -218,6 +219,38 @@ def fragment_rerun() -> None:
         st.rerun(scope="fragment")
     except StreamlitAPIException:
         st.rerun()
+
+
+def lazy_sections(sections: list[tuple], key: str) -> None:
+    """Render ONE of *sections* — a tab bar that doesn't build what it hides.
+
+    ``sections`` is ``[(label, render_fn), ...]``; only the selected entry's
+    function is called.
+
+    Use this instead of ``st.tabs`` for anything whose panels do real work.
+    ``st.tabs`` executes **every** tab body on **every** script run — wrapping
+    a tab in ``@st.fragment`` does not change that, a fragment only narrows
+    reruns triggered from inside it. Screens with four data-loading panels were
+    therefore doing four panels' work to show one.
+
+    Selection is held in session state under *key* so it survives the reruns
+    that buttons inside a panel trigger — with ``st.tabs`` those reruns snapped
+    the user back to the first tab, which made freshly created download buttons
+    look like they had never appeared.
+
+    Labels are translated and the language toggle changes them, so a stored
+    value that is no longer an option is dropped rather than allowed to raise.
+    """
+    labels = [lbl for lbl, _ in sections]
+    if not labels:
+        return
+    if st.session_state.get(key) not in labels:
+        st.session_state[key] = labels[0]
+    active = st.segmented_control(
+        "", labels, key=key, label_visibility="collapsed")
+    if active not in labels:            # deselected — keep showing something
+        active = st.session_state[key]
+    sections[labels.index(active)][1]()
 
 
 def guard_multiselect_state(key: str, options) -> None:
@@ -694,15 +727,108 @@ def save_images_to_disk(image_dict: dict,
         )
 
 
+# Ceiling on how many bytes of full-resolution photos one call may hold in
+# memory at once.  Source photos run to ~15 MB each here, so an unbounded load
+# of a few hundred styles is hundreds of MB — enough to raise MemoryError on a
+# busy machine and take the whole tab down with it.  Loading stops at the
+# ceiling and the skipped IDs are reported rather than silently dropped.
+_IMAGE_CACHE_BUDGET_BYTES = 192 * 1024 * 1024
+
+# Longest edge of a table thumbnail, in pixels.  Table cells render these a
+# few dozen pixels wide; anything larger is bytes nobody sees.
+_THUMB_MAX_PX = 160
+
+# Picture IDs the most recent load skipped, and why.
+_last_image_skips: list[str] = []
+
+
+def get_last_image_skips() -> list[str]:
+    """Picture IDs the last image load skipped (budget or read failure)."""
+    return list(_last_image_skips)
+
+
+def _photo_path(pid, img_dir: str | None = None) -> str | None:
+    """Resolve a picture ID to a file, configured folder first."""
+    primary = img_dir if img_dir is not None else images_dir()
+    for folder in (primary, EXTRACTED_IMAGES_DIR):
+        path = os.path.join(folder, f"{os.path.basename(str(pid))}.png")
+        if os.path.exists(path):
+            return path
+    return None
+
+
 def build_image_cache_for_ids(picture_ids,
                               session_cache_key: str = "se_image_cache",
-                              img_dir: str | None = None) -> dict:
+                              img_dir: str | None = None,
+                              budget_bytes: int = _IMAGE_CACHE_BUDGET_BYTES) -> dict:
     """Return {picture_id: bytes} for the given IDs, loading from session then disk.
+
+    Full-resolution bytes — this feeds Excel embedding, so images are never
+    downscaled here.  For a table thumbnail use
+    :func:`build_thumbnail_data_urls` instead; inlining these as base64 costs
+    a third again on top of already-large files.
 
     Already-loaded images are served from the session-state cache so repeated
     Generate presses skip all disk I/O for images that were loaded previously.
     Newly loaded images are written back into the session cache so future calls
     (within the same session) are instant.
+
+    Loading stops once *budget_bytes* of newly-read data is reached; a read
+    that fails — including MemoryError, which a bare ``except OSError`` used
+    to let escape and kill the calling tab — skips that image only.  Skipped
+    IDs are available from :func:`get_last_image_skips`.
+    """
+    global _last_image_skips
+    _last_image_skips = []
+    session_cache: dict = st.session_state.setdefault(session_cache_key, {})
+    result: dict = {}
+    spent = 0
+    for pid in picture_ids:
+        pid = str(pid).strip() if pid else ""
+        if not pid:
+            continue
+        if pid in session_cache:
+            # Already in session — free hit, and not charged to the budget.
+            result[pid] = session_cache[pid]
+            continue
+        path = _photo_path(pid, img_dir)
+        if path is None:
+            continue
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            size = 0
+        if spent + size > budget_bytes and result:
+            _last_image_skips.append(f"{pid} (memory budget reached)")
+            continue
+        try:
+            with open(path, "rb") as _f:
+                b = _f.read()
+        except (OSError, MemoryError) as exc:
+            _last_image_skips.append(f"{pid} ({type(exc).__name__})")
+            continue
+        spent += len(b)
+        session_cache[pid] = b
+        result[pid] = b
+    return result
+
+
+def build_thumbnail_data_urls(picture_ids,
+                              session_cache_key: str = "photo_thumb_cache",
+                              img_dir: str | None = None,
+                              max_px: int = _THUMB_MAX_PX) -> dict:
+    """Return {picture_id: data-URL} of small thumbnails for table columns.
+
+    Downscaling before base64 is the whole point.  A source photo here can be
+    15 MB; inlined as a data URL that becomes ~20 MB of string, and a page of
+    them is hundreds of MB held in the server *and* shipped to the browser —
+    for cells rendered a few dozen pixels wide.  A ``max_px`` thumbnail is a
+    few tens of KB.
+
+    Thumbnails are cached in their own session key so the full-resolution
+    originals aren't retained alongside them.  An image that can't be read or
+    decoded is skipped, never raised — a broken photo must not take down the
+    table it appears in.
     """
     session_cache: dict = st.session_state.setdefault(session_cache_key, {})
     result: dict = {}
@@ -711,21 +837,44 @@ def build_image_cache_for_ids(picture_ids,
         if not pid:
             continue
         if pid in session_cache:
-            # Already in session — free hit
             result[pid] = session_cache[pid]
             continue
-        # Not cached yet — try the configured folder, then the persistent
-        # extracted-images fallback; populate the session cache on a hit.
-        primary = img_dir if img_dir is not None else images_dir()
-        for folder in (primary, EXTRACTED_IMAGES_DIR):
-            path = os.path.join(folder, f"{os.path.basename(str(pid))}.png")
-            if os.path.exists(path):
-                try:
-                    with open(path, "rb") as _f:
-                        b = _f.read()
-                    session_cache[pid] = b
-                    result[pid] = b
-                    break
-                except OSError:
-                    pass
+        path = _photo_path(pid, img_dir)
+        if path is None:
+            continue
+        url = _thumbnail_data_url(path, max_px)
+        if url:
+            session_cache[pid] = url
+            result[pid] = url
+        else:
+            _last_image_skips.append(pid)
     return result
+
+
+def _thumbnail_data_url(path: str, max_px: int) -> str | None:
+    """Downscale *path* to a base64 PNG data URL, or None if it can't be read."""
+    try:
+        from PIL import Image
+    except ImportError:
+        # No PIL — fall back to the original bytes, but only for files small
+        # enough that inlining them is harmless.
+        try:
+            if os.path.getsize(path) > 256 * 1024:
+                return None
+            with open(path, "rb") as fh:
+                return ("data:image/png;base64,"
+                        + base64.b64encode(fh.read()).decode())
+        except (OSError, MemoryError):
+            return None
+
+    buf = io.BytesIO()
+    try:
+        with Image.open(path) as im:
+            im.draft("RGB", (max_px, max_px))   # cheap pre-scale where supported
+            im = im.convert("RGBA") if im.mode in ("RGBA", "LA", "P") else im.convert("RGB")
+            im.thumbnail((max_px, max_px))
+            im.save(buf, format="PNG", optimize=True)
+    except (OSError, MemoryError, ValueError) as exc:
+        _last_image_skips.append(f"{os.path.basename(path)} ({type(exc).__name__})")
+        return None
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()

@@ -28,6 +28,7 @@ from po_extractor.store.app_settings_store import (
 from auth.users import get_user_companies, is_admin
 
 from ui.shared import (
+    lazy_sections,
     show_image_folder_expander as _show_image_folder_expander,
     show_processing_log as _show_processing_log,
 )
@@ -403,12 +404,10 @@ def show_smart_upload_tab():
     _mf = t("Missing Fields")
     missing_label  = (f"{_mf}  {_missing_count}" if _missing_count else _mf)
 
-    tab_upload, tab_reports, tab_history, tab_missing = st.tabs(
-        [t("New Contracts"), f"📦 {t('Generate / Export')}",
-         history_label, missing_label]
-    )
-
-    with tab_upload:
+    # Each of these panels loads data, so only the selected one is built
+    # (st.tabs would run all four on every rerun). The upload panel is a local
+    # function purely so it can be passed in like the others.
+    def _upload_panel():
         _show_giii_upload_section()
 
         # Combined specialized-PO uploader: one drop zone, each file's type
@@ -448,11 +447,12 @@ def show_smart_upload_tab():
                 with st.expander(f"{icon} {t(label)} ({len(subset)})", expanded=True):
                     renderer(files=subset)
 
-    with tab_history:
-        _show_history(exc_df=_exc_df, pos_df=_pos_df)
-
-    with tab_reports:
-        _show_reports_tab(pos_df=_pos_df)
-
-    with tab_missing:
-        _show_giii_missing_fields_section(_missing_df)
+    lazy_sections([
+        (t("New Contracts"),               _upload_panel),
+        (f"📦 {t('Generate / Export')}",
+         lambda: _show_reports_tab(pos_df=_pos_df)),
+        (history_label,
+         lambda: _show_history(exc_df=_exc_df, pos_df=_pos_df)),
+        (missing_label,
+         lambda: _show_giii_missing_fields_section(_missing_df)),
+    ], key="giii_section_nav")

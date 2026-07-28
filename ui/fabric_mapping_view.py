@@ -8,7 +8,7 @@ import streamlit as st
 
 from auth.companies import list_company_names, COMPANY_SKY_EAST
 from ui.i18n import t
-from ui.shared import fragment_rerun, XLSX_MIME
+from ui.shared import lazy_sections, fragment_rerun, XLSX_MIME
 from ui.sky_east._shared import _parse_fabric_mapping_bytes
 from ui.sky_east.processing import _enrich_fabric_parts_from_cache
 from ui.stores import get_store
@@ -117,12 +117,14 @@ def show_fabric_mapping_tab() -> None:
           "live in **🧵 Fabric DB**; colour translations live in **🎨 Colors**.")
     )
 
-    fm_tab, pm_tab = st.tabs([f"🧵 {t('Style-Fabric Mapping')}", f"📋 {t('HHN Contract Progress (大货进度表)')}"])
-    with fm_tab:
-        _show_fabric_mapping_section()
-    with pm_tab:
+    def _progress_panel():
         from ui.progress_mapping_view import show_progress_mapping_section
         show_progress_mapping_section()
+
+    lazy_sections([
+        (f"🧵 {t('Style-Fabric Mapping')}", _show_fabric_mapping_section),
+        (f"📋 {t('HHN Contract Progress (大货进度表)')}", _progress_panel),
+    ], key="refdata_section_nav")
 
 
 def _show_fabric_mapping_section() -> None:

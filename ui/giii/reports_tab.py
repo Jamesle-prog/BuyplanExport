@@ -7,7 +7,7 @@ import pandas as pd
 from auth.users import get_user_companies, is_admin
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import guard_multiselect_state
+from ui.shared import lazy_sections, guard_multiselect_state
 from ui.stores import get_store
 from ui.giii._shared import _XLSX_MIME
 from ui.giii.extraction import _run_from_history
@@ -48,13 +48,12 @@ def _show_reports_tab(pos_df: pd.DataFrame | None = None) -> None:
     df = (pos_df if pos_df is not None
           else store.list_pos(companies=user_cos if user_cos else None))
 
-    sub_gen, sub_tracker = st.tabs([f"📥 {t('Generate Outputs')}", f"📋 {t('PO Tracker')}"])
-
-    with sub_gen:
-        _show_generate_section(df, store)
-
-    with sub_tracker:
-        _show_tracker_section(df, user_cos, admin)
+    lazy_sections([
+        (f"📥 {t('Generate Outputs')}",
+         lambda: _show_generate_section(df, store)),
+        (f"📋 {t('PO Tracker')}",
+         lambda: _show_tracker_section(df, user_cos, admin)),
+    ], key="giii_reports_section_nav")
 
 
 # ---------------------------------------------------------------------------

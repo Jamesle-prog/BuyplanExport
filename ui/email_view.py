@@ -26,7 +26,7 @@ import streamlit as st
 
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import fragment_rerun, XLSX_MIME
+from ui.shared import lazy_sections, fragment_rerun, XLSX_MIME
 from ui.stores import get_email_inbox_store
 
 from po_extractor.store.email_inbox_store import (
@@ -359,18 +359,11 @@ def show_email_tab(username: str = "", admin_mode: bool = False) -> None:
             with st.spinner(t("Checking mailbox…")):
                 st.session_state[SK.EMAIL_FETCH_FLASH] = _check_mailbox()
 
-    labels = [f"📥 {t('Inbox')}", f"✉️ {t('Compose')}",
-              f"🔔 {t('Notifications')}"]
+    sections = [
+        (f"📥 {t('Inbox')}",         lambda: _render_inbox(username)),
+        (f"✉️ {t('Compose')}",       _render_compose),
+        (f"🔔 {t('Notifications')}", lambda: _render_notifications(username)),
+    ]
     if admin_mode:
-        labels.append(f"⚙️ {t('Mailbox')}")
-    tabs = st.tabs(labels)
-
-    with tabs[0]:
-        _render_inbox(username)
-    with tabs[1]:
-        _render_compose()
-    with tabs[2]:
-        _render_notifications(username)
-    if admin_mode:
-        with tabs[3]:
-            _render_mailbox_settings()
+        sections.append((f"⚙️ {t('Mailbox')}", _render_mailbox_settings))
+    lazy_sections(sections, key="email_section_nav")
