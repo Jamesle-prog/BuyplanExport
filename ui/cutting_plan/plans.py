@@ -316,33 +316,74 @@ def _render_po_details(po_no: str, pc_no: str) -> None:
     """
     from ui.stores import get_store, get_sky_east_store
 
-    if po_no:
-        try:
-            giii = get_store().load_size_rows([po_no])
-        except Exception:
-            giii = None
-        if giii is not None and not giii.empty:
-            st.caption(f"{t('PO')} {po_no}")
-            st.dataframe(giii, use_container_width=True, hide_index=True)
-            return
-
     if pc_no:
         try:
             se = get_sky_east_store().list_items(pc_nos=[pc_no])
         except Exception:
             se = None
         if se is not None and not se.empty:
-            _cols = [c for c in ("pc_no", "zalando_po", "style", "color_name",
-                                 "article_name", "total_qty", "fob_usd",
-                                 "fabric_item_no", "fabrication")
-                     if c in se.columns]
-            st.caption(f"{t('PC No.')} {pc_no}")
-            st.dataframe(se[_cols] if _cols else se,
-                         use_container_width=True, hide_index=True)
+            _render_se_breakdown(se, pc_no)
+            return
+
+    if po_no:
+        try:
+            giii = get_store().load_size_rows([po_no])
+        except Exception:
+            giii = None
+        if giii is not None and not giii.empty:
+            _render_giii_breakdown(giii, po_no)
             return
 
     st.caption(t("No order details found — it may have been deleted since "
                  "the plan was linked."))
+
+
+def _render_se_breakdown(se, pc_no: str) -> None:
+    """Sky East order lines: one row per style+colour, a column per size.
+
+    The store already holds one size column per bucket, so the breakdown is a
+    projection rather than a pivot.
+    """
+    size_cols = [c for c in ("xs", "s", "m", "l", "xl", "xxl")
+                 if c in se.columns]
+    cols = [c for c in ("style", "color_name", "colour_code")
+            if c in se.columns] + size_cols
+    if "total_qty" in se.columns:
+        cols.append("total_qty")
+    view = se[cols].rename(columns={
+        "style": _th("Style"), "color_name": _th("Color"),
+        "colour_code": _th("Color Code"), "total_qty": _th("Total Qty"),
+        **{c: c.upper().replace("XXL", "2XL") for c in size_cols},
+    })
+    st.caption(f"{t('PC No.')} {pc_no} · {len(se)} {t('line(s)')}")
+    st.dataframe(view, use_container_width=True, hide_index=True)
+
+
+def _render_giii_breakdown(rows, po_number: str) -> None:
+    """GIII size rows: pivoted to one row per style+colour, a column per size.
+
+    Stored one row per style/colour/size, so unlike Sky East this needs the
+    pivot. Falls back to the flat rows if the expected columns aren't there.
+    """
+    # load_size_rows returns display-cased headers ("Style", "Color", "Size",
+    # "Units"), not the snake_case DB names — resolve case-insensitively so a
+    # change on either side can't silently drop us to the flat table.
+    lower = {str(c).lower(): c for c in rows.columns}
+    try:
+        c_style, c_color = lower["style"], lower["color"]
+        c_size, c_units = lower["size"], lower["units"]
+    except KeyError:
+        st.caption(f"{t('PO Number')} {po_number}")
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+        return
+    grid = (rows.pivot_table(index=[c_style, c_color], columns=c_size,
+                             values=c_units, aggfunc="sum", fill_value=0)
+                .reset_index())
+    grid[_th("Total Qty")] = grid.drop(columns=[c_style, c_color]).sum(axis=1)
+    grid = grid.rename(columns={c_style: _th("Style"), c_color: _th("Color")})
+    grid.columns.name = None
+    st.caption(f"{t('PO Number')} {po_number} · {len(grid)} {t('line(s)')}")
+    st.dataframe(grid, use_container_width=True, hide_index=True)
 
 
 def _show_links(store, plan: dict) -> None:

@@ -44,8 +44,20 @@ _CENTER = Alignment(horizontal="center", vertical="center")
 # Fallback ordering for sizes when neither the plan nor the PO can supply one.
 CANONICAL_SIZES = ["XXS", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"]
 
-_METRIC_HEADERS = ["Fabric Length,m", "Efficiency,%", "Cut Length,m",
-                   "Marker Length,cm", "Material Cost,CNY"]
+# (heading, key on the spread row) — ONE list, because the heading row and the
+# value row are written from it in the same order; they were two parallel lists
+# indexed together, so dropping a column meant editing both in step or silently
+# shifting every value one cell left.
+#
+# "Cut Length,m" and "Material Cost,CNY" are deliberately not here: the cutting
+# room doesn't use them, and the cost column was repeating the fabric length
+# rather than a cost.
+_METRICS: list[tuple[str, str]] = [
+    ("Fabric Length,m",  "fabric_length_m"),
+    ("Efficiency,%",     "efficiency_pct"),
+    ("Marker Length,cm", "marker_length_cm"),
+]
+_METRIC_HEADERS = [h for h, _ in _METRICS]
 _MARKER_DEF_HEADERS = ["Material", "N Markers", "Spreading", "Width, cm",
                        "Length, cm", "Min Plies", "Max Plies",
                        "Waste Limits, cm"]
@@ -119,6 +131,10 @@ def _num_fmt(value: float | None, digits: int = 2) -> float | None:
 # ---------------------------------------------------------------------------
 
 def _write_header(ws, row: int, header: dict[str, Any]) -> int:
+    # The canonical sheet keeps every row: parsers.cutting_plan reads Order
+    # name / Date / Time back out of it, and the app re-parses its own export.
+    # Trimming for the cutting room happens in the cleanup pass instead — see
+    # cutting_plan_clean.HEADER_ROWS_DROPPED.
     _put(ws, row, 1, "Date", bold=True)
     _put(ws, row, 2, header.get("plan_date", ""))
     _put(ws, row, 4, "Time", bold=True)
@@ -300,9 +316,7 @@ def _write_material(ws, row: int, mat: dict[str, Any],
                 _put(ws, row, 3 + i, val, box=True, center=True)
                 if val:
                     sums[key] = sums.get(key, 0) + int(val)
-            for i, key in enumerate(["fabric_length_m", "efficiency_pct",
-                                     "cut_length_m", "marker_length_cm",
-                                     "cost"]):
+            for i, (_h, key) in enumerate(_METRICS):
                 _put(ws, row, metric_col + i, _num_fmt(line.get(key), 4),
                      box=True, center=True, fmt="0.00")
             row += 1

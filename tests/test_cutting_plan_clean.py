@@ -331,7 +331,11 @@ def _build(clean: bool, color_map=None) -> list[str]:
 def test_export_cleaned_when_requested():
     vals = _build(clean=True)
     assert "颜色" in vals and "裁剪配比" in vals and "层数" in vals
-    assert "裁剪长度,m" in vals and "材料成本,CNY" in vals
+    # Cut Length / Material Cost are no longer emitted at all (see _METRICS),
+    # so the cleaned sheet must not carry them in either language.
+    assert not any(v.startswith(("Cut Length", "裁剪长度,",
+                                 "Material Cost", "材料成本")) for v in vals)
+    assert "面料长度,m" in vals and "版长,cm" in vals   # the ones kept
     assert "ABC-1234" in vals                       # marker path reduced
     assert not any(".mrk" in v for v in vals)
     assert not any(v == "Marker Ratio" for v in vals)
@@ -343,6 +347,38 @@ def test_export_translates_colours_from_the_po_data():
     cmap = build_color_map(_LOOKUP, client="GIII")
     assert "藏青" in _build(clean=True, color_map=cmap)
     assert "NAVY" in _build(clean=True, color_map=None)
+
+
+def test_cleaned_header_keeps_only_what_the_cutting_room_reads():
+    vals = _build(clean=True)
+    assert "Style file 1" in vals and "Cut plan operator" in vals
+    assert "Client" in vals
+    for gone in ("Date", "Time", "Order name", "Style name 1", "Style name 2",
+                 "Output folder path"):
+        assert gone not in vals, gone
+
+
+def test_canonical_header_keeps_every_row():
+    """The unclean sheet must stay complete — the parser reads Order name /
+    Date / Time back out of it and the app round-trips its own export."""
+    vals = _build(clean=False)
+    for kept in ("Date", "Order name", "Style file 1", "Style name 1",
+                 "Cut plan operator", "Client"):
+        assert kept in vals, kept
+
+
+def test_row_drop_only_scans_the_header():
+    """A data cell reading 'Date' further down must not take its row away."""
+    from po_extractor.exporters.cutting_plan_clean import drop_header_rows
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.cell(1, 1, "Date")
+    for r in range(2, 45):
+        ws.cell(r, 1, "Colors")
+    ws.cell(44, 1, "Date")            # far below the header block
+    assert drop_header_rows(ws) == 1          # only the header one
+    # Deleting row 1 shifts everything up, so the far-down "Date" survives at 43.
+    assert ws.cell(43, 1).value == "Date"
 
 
 def test_export_default_stays_english_and_reparseable():

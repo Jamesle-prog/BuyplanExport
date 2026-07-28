@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.112.0",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "feat", "text": "**The cut plan handed to the cutting room is trimmed to what it uses.** Two marker columns are gone — *Cut Length,m* and *Material Cost,CNY* (the cost column was repeating the fabric length rather than a cost). The header block now shows only the style files, the cut plan operator and the client; Date, Time, Order name, the \"Style name\" echo of each file and the output folder path are dropped. The PO / PC / PO-style rows stay, since they are what ties the sheet to its order."},
+            {"type": "fix", "text": "**Linked orders now open with the full size and colour breakdown.** Expanding a linked order on a cut plan shows one row per style and colour with a column per size and the line total, instead of a flat list. Sky East orders read their size columns directly; GIII orders are pivoted from their per-size rows."},
+            {"type": "refactor", "text": "**Header trimming happens on the delivered copy, not the stored one.** The saved sheet keeps every row because the app re-parses its own export and reads the order name back out of it — removing those rows outright broke that round-trip, which the existing tests caught. The trim now runs in the same cleanup pass as the Chinese headings, so the file you hand over is short and the file the app reads stays complete."},
+        ],
+    },
+    {
         "version": "2.111.0",
         "date": "2026-07-28",
         "entries": [

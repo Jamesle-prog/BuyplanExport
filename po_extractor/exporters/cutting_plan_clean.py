@@ -195,10 +195,41 @@ def clean_value(value: Any, color_map: dict[str, str] | None = None,
     return strip_path_and_ext(translate_text(value))
 
 
+# Header rows the cutting room doesn't use. Dropped from the delivered copy
+# only — the canonical sheet keeps them because parsers.cutting_plan reads
+# Order name / Date / Time back out of it. Matched on the label in column A,
+# before translation, so these are the English originals.
+HEADER_ROWS_DROPPED = (
+    "date", "time", "order name", "output folder path",
+)
+
+
+def _is_dropped_header(label: str) -> bool:
+    s = " ".join(str(label).split()).casefold()
+    # "Style name 1", "Style name 2", … — the file rows above already name them
+    return s in HEADER_ROWS_DROPPED or s.startswith("style name")
+
+
+def drop_header_rows(ws) -> int:
+    """Delete the header rows the cutting room doesn't read. Returns the count.
+
+    Only scans the top of the sheet, so a data cell that happens to read
+    "Date" further down can't take its row with it. Deletes bottom-up because
+    each deletion shifts everything below it up by one.
+    """
+    limit = min(ws.max_row, 30)
+    victims = [r for r in range(1, limit + 1)
+               if _is_dropped_header(ws.cell(r, 1).value or "")]
+    for r in reversed(victims):
+        ws.delete_rows(r)
+    return len(victims)
+
+
 def clean_worksheet(ws, color_map: dict[str, str] | None = None,
                     cn_overrides: dict[str, str] | None = None) -> int:
     """Clean every cell of *ws* in place. Returns the number of cells changed."""
-    changed = 0
+    # Drop rows FIRST, while the labels are still their English originals.
+    changed = drop_header_rows(ws)
     for row in ws.iter_rows():
         for cell in row:
             old = cell.value
