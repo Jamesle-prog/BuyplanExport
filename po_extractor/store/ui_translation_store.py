@@ -1334,6 +1334,14 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Section', '模块', 'label', 'admin'),
     ('Admin section', '管理模块', 'label', 'admin'),
 
+    # Cut plan — fabric selection for export (v2.115.0)
+    ('Fabric(s) to include', '导出的面料', 'label', 'tracking'),
+    ('Leave all selected to export the whole plan. Each fabric keeps its own '
+     'marker, spreading and solution blocks.',
+     '全选即导出整份计划。每种面料保留各自的排版、铺布与排版结果区块。', 'label', 'tracking'),
+    ('Exporting', '将导出', 'label', 'tracking'),
+    ('fabric(s)', '种面料', 'label', 'tracking'),
+
     # Cut plan — optional output folder (v2.113.0)
     ('Also save a copy to this folder (optional)', '同时保存副本到此文件夹（可选）', 'label', 'tracking'),
     ('Leave blank to just download. The folder must already exist and be writable from this machine.',

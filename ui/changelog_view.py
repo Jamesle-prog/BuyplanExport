@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.115.0",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "feat", "text": "**Export one fabric of a cut plan, or all of them.** A plan covering shell and lining now offers a fabric picker before the build, on both the saved-plan screen and the standard output. Shell and lining are cut at different widths on different tables, so the sheet often only needs one of them. Everything is selected by default and clearing the selection means all of them — it never produces an empty sheet. Each chosen fabric keeps its own marker, spreading and solution blocks. A plan with a single fabric shows no picker, because there is nothing to choose."},
+        ],
+    },
+    {
         "version": "2.114.1",
         "date": "2026-07-28",
         "entries": [

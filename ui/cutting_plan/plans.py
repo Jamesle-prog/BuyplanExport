@@ -14,7 +14,7 @@ from ui.shared import _th, _tr, fragment_rerun
 from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
     XLSX_MIME, cleanup_color_map, demand_matrix, detect_color_conflicts,
-    output_folder_input, save_copy_to_folder,
+    fabric_picker, output_folder_input, save_copy_to_folder,
     link_rows, load_sky_east_items, pdf_export_block, po_label,
     render_color_conflicts, safe_filename, select_pos,
 )
@@ -536,10 +536,13 @@ def _show_files(store, plan: dict) -> None:
     # No second "clean" tick-box here — the standard sheet is always built for
     # the cutting room. The PDF section above keeps its own, because that one
     # renders the ORIGINAL workbook and is the copy people sometimes want raw.
+    _mats = fabric_picker((plan.get("parsed") or {}).get("materials") or [],
+                          key=f"cp_std_fab_{plan_id}")
     _folder = output_folder_input(f"cp_std_dir_{plan_id}")
     if st.button(f"📄 {t('Build standard cut plan')}",
                  key=f"cp_std_{plan_id}", use_container_width=True):
-        _build_standard_for_plan(store, plan, clean=True, folder=_folder)
+        _build_standard_for_plan(store, plan, clean=True, folder=_folder,
+                                 materials=_mats)
 
     if st.session_state.get(f"cp_std_{plan_id}_bytes"):
         render_color_conflicts(
@@ -560,7 +563,8 @@ def _show_files(store, plan: dict) -> None:
 
 
 def _build_standard_for_plan(store, plan: dict, clean: bool = True,
-                             folder: str = "") -> None:
+                             folder: str = "",
+                             materials: list | None = None) -> None:
     parsed = plan.get("parsed") or {}
     plan_id = int(plan["id"])
     links = plan.get("links") or []
@@ -590,7 +594,7 @@ def _build_standard_for_plan(store, plan: dict, clean: bool = True,
     header["style_summary"] = ", ".join(styles)
     data = build_standard_cut_plan(
         header=header, groups=groups, colors=colors, demand_qty=qty,
-        materials=parsed.get("materials") or [],
+        materials=(parsed.get("materials") or []) if materials is None else materials,
         sheet_name=plan.get("plan_name") or "Cut Plan", clean=clean,
         color_map=cleanup_color_map() if clean else None)
     st.session_state[f"cp_std_{plan_id}_bytes"] = data

@@ -37,6 +37,31 @@ def cleanup_color_map(client: str = "") -> dict[str, str]:
         return {}
 
 
+def fabric_picker(materials: list[dict], key: str) -> list[dict]:
+    """Let the user narrow a multi-fabric plan to the fabric(s) they want.
+
+    Shell and lining are separate fabrics at different widths and go to
+    different cutting tables, so one fabric's blocks are often all that's
+    wanted. A single-fabric plan shows no picker — there is nothing to choose.
+    Clearing the selection means "all", rather than producing an empty sheet.
+    """
+    names = [str(m.get("material") or "—") for m in (materials or [])]
+    uniq = list(dict.fromkeys(names))
+    if len(uniq) < 2:
+        return materials or []
+
+    guard_multiselect_state(key, uniq)          # drop names no longer present
+    st.session_state.setdefault(key, uniq)
+    picked = st.multiselect(
+        t("Fabric(s) to include"), uniq, key=key,
+        help=t("Leave all selected to export the whole plan. Each fabric "
+               "keeps its own marker, spreading and solution blocks."))
+    chosen = set(picked) or set(uniq)
+    if chosen != set(uniq):
+        st.caption(f"{t('Exporting')} {len(chosen)}/{len(uniq)} {t('fabric(s)')}")
+    return [m for m, n in zip(materials, names) if n in chosen]
+
+
 def output_folder_input(key: str) -> str:
     """Optional folder to drop a copy of the generated file into.
 

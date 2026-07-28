@@ -501,3 +501,30 @@ def test_gap_closing_leaves_populated_lines_alone():
         ws.cell(r, 1, f"r{r}")
     assert close_blanked_gaps(ws) == (0, 0)
     assert [ws.cell(r, 1).value for r in (1, 2, 3)] == ["r1", "r2", "r3"]
+
+
+# ── fabric selection ─────────────────────────────────────────────────────────
+
+def test_only_the_chosen_fabrics_reach_the_sheet():
+    """A plan with shell and lining can be exported one fabric at a time."""
+    from po_extractor.exporters.cutting_plan_export import build_standard_cut_plan
+    mats = [
+        {"material": "A",  "markers": [{"marker_no": 1, "file_name": "m1.mrk",
+                                        "ratio": []}], "spreads": []},
+        {"material": "里", "markers": [{"marker_no": 2, "file_name": "m2.mrk",
+                                        "ratio": []}], "spreads": []},
+    ]
+    def build(sel):
+        data = build_standard_cut_plan(
+            header={}, groups=[("ST1", ["S"])], colors=["NAVY"],
+            demand_qty={("ST1", "NAVY", "S"): 1}, materials=sel, clean=True)
+        ws = openpyxl.load_workbook(io.BytesIO(data)).active
+        return [str(c.value) for r in ws.iter_rows() for c in r
+                if isinstance(c.value, str)]
+
+    both = build(mats)
+    assert "m1" in both and "m2" in both
+    only_a = build([m for m in mats if m["material"] == "A"])
+    assert "m1" in only_a and "m2" not in only_a
+    only_lining = build([m for m in mats if m["material"] == "里"])
+    assert "m2" in only_lining and "m1" not in only_lining

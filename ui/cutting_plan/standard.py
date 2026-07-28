@@ -19,7 +19,7 @@ from ui.shared import guard_multiselect_state
 from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
     XLSX_MIME, cleanup_color_map, demand_frame, demand_matrix,
-    output_folder_input, save_copy_to_folder,
+    fabric_picker, output_folder_input, save_copy_to_folder,
     detect_color_conflicts, pdf_export_block, render_color_conflicts,
     safe_filename, select_pos,
 )
@@ -72,6 +72,15 @@ def show_standard_section() -> None:
             help=t("Each plan contributes its own material blocks. Clear the "
                    "selection to produce a blank standard template."))
 
+    # Gather the fabrics across every selected plan so they can be narrowed
+    # before the build (shell and lining go to different cutting tables).
+    _all_mats: list[dict] = []
+    for _pid in plan_ids:
+        _rec = store.get_plan(int(_pid)) or {}
+        _all_mats.extend((_rec.get("parsed") or {}).get("materials") or [])
+    keep_names = {str(m.get("material") or "—")
+                  for m in fabric_picker(_all_mats, key="cp_std_fab")}
+
     # One tick-box for this, not two — the standard sheet is always built for
     # the cutting room. The PDF section keeps its own because that one renders
     # the ORIGINAL workbook, which people sometimes want raw.
@@ -80,7 +89,8 @@ def show_standard_section() -> None:
     if st.button(f"📄 {t('Build standard cut plan')}", type="primary",
                  use_container_width=True, key="cp_std_build"):
         _build(store, plan_ids, pc_nos, po_nos, styles, items,
-               groups, colors, qty, clean=True, folder=folder)
+               groups, colors, qty, clean=True, folder=folder,
+               keep_fabrics=keep_names)
 
     if st.session_state.get(SK.CP_STD_BYTES):
         render_color_conflicts(
@@ -99,7 +109,8 @@ def show_standard_section() -> None:
 
 def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
            styles: list[str], items, groups, colors, qty,
-           clean: bool = True, folder: str = "") -> None:
+           clean: bool = True, folder: str = "",
+           keep_fabrics: set | None = None) -> None:
     materials: list[dict] = []
     newest_parsed: dict | None = None
     for pid in plan_ids:
@@ -109,7 +120,10 @@ def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
         parsed = rec.get("parsed") or {}
         if newest_parsed is None:
             newest_parsed = parsed
-        materials.extend(parsed.get("materials") or [])
+        materials.extend(
+            m for m in (parsed.get("materials") or [])
+            if keep_fabrics is None
+            or str(m.get("material") or "—") in keep_fabrics)
 
     order_name = " + ".join(pc_nos) if pc_nos else "Cut Plan"
     if newest_parsed:
