@@ -109,3 +109,50 @@ def test_get_batch_by_po_styles_dedupes_and_strips(store):
 def test_get_batch_by_po_styles_empty_input(store):
     assert store.get_batch_by_po_styles([]) == {}
     assert store.get_batch_by_po_styles([("", "")]) == {}
+
+
+# ── list_all(columns=…) projection ───────────────────────────────────────────
+# The table is ~175 columns wide and the per-row dict() build dominates the
+# cost, so callers that need two fields may project. These lock in that the
+# projection changes nothing observable except the keys returned.
+
+def test_list_all_projection_matches_full_rows(store):
+    _upsert(store, "PO1", "STY1", factory="F1")
+    _upsert(store, "PO2", "STY2", factory="F2")
+
+    full = store.list_all(allow_all=True)
+    narrow = store.list_all(allow_all=True, columns=["po_number", "style"])
+
+    # Same rows, same order — only the column set differs.
+    assert len(narrow) == len(full)
+    assert [r["po_number"] for r in narrow] == [r["po_number"] for r in full]
+    assert [r["style"] for r in narrow] == [r["style"] for r in full]
+    assert set(narrow[0]) == {"po_number", "style"}
+
+
+def test_list_all_default_is_unprojected(store):
+    """Omitting columns must keep the full-width behaviour callers rely on."""
+    _upsert(store, "PO1", "STY1", factory="F1")
+    row = store.list_all(allow_all=True)[0]
+    assert "factory" in row and "company" in row
+    assert len(row) > 100          # still the wide record
+
+
+def test_list_all_projection_rejects_unknown_columns(store):
+    """Column names are interpolated into the SQL, so they must be validated."""
+    _upsert(store, "PO1", "STY1")
+    with pytest.raises(ValueError):
+        store.list_all(allow_all=True, columns=["po_number; DROP TABLE x"])
+    with pytest.raises(ValueError):
+        store.list_all(allow_all=True, columns=["no_such_column"])
+
+
+def test_list_all_projection_still_respects_company_scope(store):
+    """Projection must not bypass the access-control filter."""
+    _upsert(store, "PO1", "STY1", company="GIII")
+    _upsert(store, "PO2", "STY2", company="OTHER")
+
+    scoped = store.list_all(companies=["GIII"], columns=["po_number", "style"])
+    assert [r["po_number"] for r in scoped] == ["PO1"]
+    # and the empty-companies contract is unchanged
+    assert store.list_all(companies=[], columns=["po_number"]) == []

@@ -191,7 +191,11 @@ def _new_contract_section(store, username: str) -> None:
         notes = st.text_input(t("Notes"), key="cmpt_new_notes")
 
         # Optional prefill from tracked PO/styles (qty from the order data).
-        pt_records = get_production_tracking_store().list_all(allow_all=True)
+        # Only the PO/style pair is ever read from these records (the picker
+        # label and the prefill pairs below), so don't drag all ~175 tracking
+        # columns across on every rerun of this form.
+        pt_records = get_production_tracking_store().list_all(
+            allow_all=True, columns=["po_number", "style"])
         if pt_records:
             opts = list(range(len(pt_records)))
             sel = st.multiselect(

@@ -183,6 +183,7 @@ class ProductionTrackingStore(BaseSQLiteStore):
         self,
         companies: list[str] | None = None,
         allow_all: bool = False,
+        columns: list[str] | None = None,
     ) -> list[dict]:
         """Return tracking records, filtered by company unless ``allow_all``.
 
@@ -191,11 +192,28 @@ class ProductionTrackingStore(BaseSQLiteStore):
           - ``allow_all=False`` + empty/None companies → return ``[]``
             (do NOT run ``IN ()`` — that's a SQL error in SQLite)
           - ``allow_all=False`` + non-empty companies → ``WHERE company IN (?…)``
+
+        *columns* optionally narrows the projection. This table is ~175 columns
+        wide, and the per-row ``dict()`` build — not the query — dominates the
+        cost (measured: 2.9 ms to fetch, ~16 ms to convert). A caller that only
+        needs a couple of fields should say so. ``None`` keeps ``SELECT *`` so
+        existing callers are unaffected. Names are validated against the live
+        schema because they are interpolated into the SQL.
         """
         if not allow_all and not companies:
             return []
 
-        sql = "SELECT * FROM production_tracking"
+        select_list = "*"
+        if columns:
+            with self._conn() as conn:
+                valid = {r[1] for r in conn.execute(
+                    "PRAGMA table_info(production_tracking)").fetchall()}
+            bad = [c for c in columns if c not in valid]
+            if bad:
+                raise ValueError(f"Unknown production_tracking columns: {bad}")
+            select_list = ", ".join(columns)
+
+        sql = f"SELECT {select_list} FROM production_tracking"
         params: list[Any] = []
         if not allow_all:
             ph = ",".join("?" * len(companies))
