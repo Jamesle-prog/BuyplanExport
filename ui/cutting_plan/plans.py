@@ -218,18 +218,26 @@ def _show_plan_detail(store, plan_id: int) -> None:
     if plan.get("notes"):
         st.info(plan["notes"])
 
-    tab_pos, tab_qty, tab_mat, tab_files = st.tabs(
-        [t("Linked POs"), t("Quantities"), t("Materials & markers"),
-         t("Files")])
-
-    with tab_pos:
-        _show_links(store, plan)
-    with tab_qty:
-        _show_quantities(store, plan_id)
-    with tab_mat:
-        _show_materials(plan)
-    with tab_files:
-        _show_files(store, plan)
+    # NOT st.tabs. Every button in here (Build PDF, Build standard cut plan)
+    # triggers a rerun, and st.tabs resets to its first tab on rerun — so the
+    # download the button had just produced was created on a panel that was no
+    # longer on screen, which looked exactly like "the button does nothing".
+    # A keyed selector keeps the panel you were on.
+    _panels = [
+        (t("Linked POs"),          lambda: _show_links(store, plan)),
+        (t("Quantities"),          lambda: _show_quantities(store, plan_id)),
+        (t("Materials & markers"), lambda: _show_materials(plan)),
+        (t("Files"),               lambda: _show_files(store, plan)),
+    ]
+    _labels = [lbl for lbl, _ in _panels]
+    _key = f"cp_detail_nav_{plan_id}"
+    if st.session_state.get(_key) not in _labels:      # language toggle etc.
+        st.session_state[_key] = _labels[0]
+    _active = st.segmented_control(
+        t("Section"), _labels, key=_key, label_visibility="collapsed")
+    if _active not in _labels:
+        _active = st.session_state[_key]
+    _panels[_labels.index(_active)][1]()
 
     st.divider()
     with st.expander(f"🗑 {t('Delete this plan')}"):
@@ -275,6 +283,68 @@ def _show_fabric_summary(store, plan_id: int) -> None:
     )
 
 
+def _show_linked_po_details(links: list[dict]) -> None:
+    """Open a linked order straight from the plan, without hunting for it.
+
+    One expander per link; the lookup only runs for the order actually opened,
+    so a plan linked to many POs costs nothing until one is clicked.
+    """
+    seen: set[tuple[str, str]] = set()
+    rows: list[tuple[str, str]] = []
+    for l in links:
+        pair = ((l.get("po_no") or "").strip(), (l.get("pc_no") or "").strip())
+        if any(pair) and pair not in seen:
+            seen.add(pair)
+            rows.append(pair)
+    if not rows:
+        return
+
+    st.caption(t("Open a linked order to see its details:"))
+    for po_no, pc_no in rows:
+        label = " · ".join(x for x in (po_no, pc_no) if x)
+        with st.expander(f"🔗 {label}", expanded=False):
+            _render_po_details(po_no, pc_no)
+
+
+def _render_po_details(po_no: str, pc_no: str) -> None:
+    """Size breakdown for one linked order.
+
+    The two pipelines key their rows differently — GIII size rows by PO
+    number, Sky East items by PC No. — so each is looked up with the
+    identifier it actually uses. Best-effort by design: a plan can outlive
+    the order it was linked to.
+    """
+    from ui.stores import get_store, get_sky_east_store
+
+    if po_no:
+        try:
+            giii = get_store().load_size_rows([po_no])
+        except Exception:
+            giii = None
+        if giii is not None and not giii.empty:
+            st.caption(f"{t('PO')} {po_no}")
+            st.dataframe(giii, use_container_width=True, hide_index=True)
+            return
+
+    if pc_no:
+        try:
+            se = get_sky_east_store().list_items(pc_nos=[pc_no])
+        except Exception:
+            se = None
+        if se is not None and not se.empty:
+            _cols = [c for c in ("pc_no", "zalando_po", "style", "color_name",
+                                 "article_name", "total_qty", "fob_usd",
+                                 "fabric_item_no", "fabrication")
+                     if c in se.columns]
+            st.caption(f"{t('PC No.')} {pc_no}")
+            st.dataframe(se[_cols] if _cols else se,
+                         use_container_width=True, hide_index=True)
+            return
+
+    st.caption(t("No order details found — it may have been deleted since "
+                 "the plan was linked."))
+
+
 def _show_links(store, plan: dict) -> None:
     links = plan.get("links") or []
     if links:
@@ -290,6 +360,7 @@ def _show_links(store, plan: dict) -> None:
         styles = sorted({l.get("style", "") for l in links if l.get("style")})
         if styles:
             st.caption(f"{t('Styles covered')}: {', '.join(styles)}")
+        _show_linked_po_details(links)
     else:
         st.warning(t("This plan isn't linked to any PO yet."))
 
@@ -405,9 +476,13 @@ def _show_files(store, plan: dict) -> None:
             f"⬇️ {t('Download original file')} ({fname})",
             data=data, file_name=fname, mime=XLSX_MIME,
             key=f"cp_dl_orig_{plan_id}", use_container_width=True)
+        # The original workbook is the one the cutting room actually reads, so
+        # the cleanup is offered here, on its PDF.
         pdf_export_block(data, safe_filename(fname.removesuffix(".xlsx")),
                          key=f"cp_orig_{plan_id}",
-                         label=t("PDF of the original file"))
+                         label=t("PDF of the original file"),
+                         allow_clean=True,
+                         client=plan.get("client") or "")
     else:
         st.caption(t("The original file wasn't stored with this plan."))
 

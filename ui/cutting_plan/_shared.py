@@ -37,6 +37,26 @@ def cleanup_color_map(client: str = "") -> dict[str, str]:
         return {}
 
 
+def _cleaned_copy(xlsx_bytes: bytes, client: str = "") -> bytes:
+    """A cutting-room-cleaned copy of a workbook, for rendering only.
+
+    Works on the bytes in memory — the stored original is never touched. If
+    anything goes wrong the untouched bytes come back, so a cleanup problem
+    can only cost the translation, never the PDF.
+    """
+    from io import BytesIO
+    try:
+        import openpyxl
+        from po_extractor.exporters.cutting_plan_clean import clean_workbook
+        wb = openpyxl.load_workbook(BytesIO(xlsx_bytes))
+        clean_workbook(wb, cleanup_color_map(client))
+        buf = BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+    except Exception:
+        return xlsx_bytes
+
+
 def detect_color_conflicts(data: bytes, client: str = "") -> list[dict]:
     """Colours the plan already names in Chinese that disagree with the PO.
 
@@ -306,12 +326,19 @@ def demand_frame(groups: list[tuple[str, list[str]]], colors: list[str],
 
 
 def pdf_export_block(xlsx_bytes: bytes | None, base_name: str, key: str, *,
-                     label: str | None = None) -> None:
+                     label: str | None = None,
+                     allow_clean: bool = False,
+                     client: str = "") -> None:
     """PDF options + build/download for a cutting-plan workbook.
 
     The PDF always fits every column onto one page width with minimal
     margins; page size and orientation are offered because a plan with many
     styles needs A3 to stay comfortably readable.
+
+    *allow_clean* offers the cutting-room cleanup as a PDF option: ticked, the
+    workbook is cleaned (Chinese headings, marker names, PO colour names) into
+    a throwaway copy before rendering; unticked, the full workbook is rendered
+    exactly as it is. Either way the stored file is never modified.
     """
     if not xlsx_bytes:
         return
@@ -329,12 +356,24 @@ def pdf_export_block(xlsx_bytes: bytes | None, base_name: str, key: str, *,
             format_func=lambda o: t(_ORIENTATIONS[o]),
             key=f"{key}_pdf_orient")
 
+        clean = False
+        if allow_clean:
+            clean = st.checkbox(
+                t("Clean for the cutting room (Chinese labels, marker names only)"),
+                value=True, key=f"{key}_pdf_clean",
+                help=t("Ticked: headings become Chinese, marker paths are "
+                       "reduced to the marker name and colours use the PO's "
+                       "names. Unticked: the workbook is rendered exactly as "
+                       "it is. The stored file is never changed either way."))
+
         if st.button(f"📕 {t('Build PDF')}", key=f"{key}_pdf_build",
                      use_container_width=True):
             try:
+                src = _cleaned_copy(xlsx_bytes, client) if clean else xlsx_bytes
                 st.session_state[f"{key}_pdf_bytes"] = xlsx_bytes_to_pdf(
-                    xlsx_bytes, page_size=page_size, orientation=orientation)
-                st.session_state[f"{key}_pdf_name"] = f"{base_name}.pdf"
+                    src, page_size=page_size, orientation=orientation)
+                st.session_state[f"{key}_pdf_name"] = (
+                    f"{base_name}{'_clean' if clean else ''}.pdf")
             except PdfRenderError as exc:
                 st.error(str(exc))
             except Exception as exc:                    # noqa: BLE001

@@ -1334,6 +1334,16 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Section', '模块', 'label', 'admin'),
     ('Admin section', '管理模块', 'label', 'admin'),
 
+    # Cut plan — PDF cleanup option + linked-order details (v2.110.2)
+    ('Ticked: headings become Chinese, marker paths are reduced to the marker '
+     'name and colours use the PO\'s names. Unticked: the workbook is rendered '
+     'exactly as it is. The stored file is never changed either way.',
+     '勾选：表头转为中文，版文件路径缩减为版名，颜色使用订单名称。'
+     '不勾选：按原样输出工作簿。两种情况下都不会改动已保存的文件。', 'label', 'tracking'),
+    ('Open a linked order to see its details:', '点击查看关联订单明细：', 'label', 'tracking'),
+    ('No order details found — it may have been deleted since the plan was linked.',
+     '未找到订单明细——可能在关联后已被删除。', 'label', 'tracking'),
+
     # Cut plan — plan-vs-PO colour disagreement (v2.109.3)
     ('This cut plan names', '本裁剪计划中有', 'label', 'tracking'),
     ('colour(s) differently from the PO. Nothing has been changed.',

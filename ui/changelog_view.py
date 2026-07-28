@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.110.2",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "fix", "text": "**\"Build PDF\" and \"Build standard cut plan\" appeared to do nothing.** Both buttons worked — the file was being produced — but they sat inside a tab group, and the rerun a button triggers resets that group back to its first tab. The download the button had just created was placed on a panel that was no longer on screen. The plan's Linked POs / Quantities / Materials / Files selector now keeps the panel you were on, so the result appears where you are looking."},
+            {"type": "feat", "text": "**The cutting-room cleanup is now an option on the PDF of the original file.** That workbook is the one the cutting room reads, so the tick-box lives there: ticked, the PDF is rendered from a cleaned copy (Chinese headings, marker names only, PO colour names) and the filename gets a `_clean` suffix; unticked, the full workbook is rendered exactly as it is. The cleanup runs on a throwaway copy in memory — the stored file you can download is never modified, and if the cleanup fails the PDF is still produced from the untouched original."},
+            {"type": "feat", "text": "**Linked orders open from the plan itself.** Each linked order on a cut plan can be expanded in place to show its lines, without going to another tab to find it. The lookup runs only for the order you actually open, and each pipeline is queried by the identifier it really uses — GIII by PO number, Sky East by PC No. — so both resolve. An order deleted since the plan was linked says so rather than showing an empty table."},
+        ],
+    },
+    {
         "version": "2.110.1",
         "date": "2026-07-28",
         "entries": [

@@ -250,6 +250,29 @@ def test_approved_override_rewrites_it():
     assert wb.active["A1"].value == "藏青"
 
 
+def test_cleaned_copy_leaves_the_source_bytes_untouched():
+    """The PDF cleanup works on a throwaway copy — the stored workbook that
+    the user can still download must be byte-identical afterwards."""
+    from ui.cutting_plan._shared import _cleaned_copy
+    wb = _wb_with("Marker Ratio", r"D:\Markers\M1.mrk")
+    buf = io.BytesIO()
+    wb.save(buf)
+    original = buf.getvalue()
+
+    cleaned = _cleaned_copy(original)
+    assert original == buf.getvalue()          # source not mutated
+    ws = openpyxl.load_workbook(io.BytesIO(cleaned)).active
+    assert ws["A1"].value == "裁剪配比"
+    assert ws["A2"].value == "M1"
+
+
+def test_cleaned_copy_falls_back_to_the_original_on_failure():
+    """A cleanup problem must cost the translation, never the PDF."""
+    from ui.cutting_plan._shared import _cleaned_copy
+    junk = b"not a workbook"
+    assert _cleaned_copy(junk) is junk
+
+
 def test_apply_color_overrides_round_trips_through_bytes():
     from po_extractor.exporters.cutting_plan_clean import apply_color_overrides
     wb = _wb_with("深蓝", "Material")
