@@ -1330,6 +1330,21 @@ _SEED: list[tuple[str, str, str, str]] = [
      '取消勾选可保留英文原始格式（该文件可重新上传解析，清理后的文件不可）。',
      'label', 'tracking'),
 
+    # Cut plan — plan-vs-PO colour disagreement (v2.109.3)
+    ('This cut plan names', '本裁剪计划中有', 'label', 'tracking'),
+    ('colour(s) differently from the PO. Nothing has been changed.',
+     '个颜色名称与订单不一致。尚未做任何修改。', 'label', 'tracking'),
+    ('Use the PO colour names instead', '改用订单的颜色名称', 'label', 'tracking'),
+    ('Rewrites only these colour cells in the downloadable file. The stored '
+     'cut plan is not modified.',
+     '仅修改下载文件中的这些颜色单元格，不会改动已保存的裁剪计划。', 'label', 'tracking'),
+    ('Applied the PO colour names to', '已将订单颜色名称应用于', 'label', 'tracking'),
+    ('colour(s).', '个颜色。', 'label', 'tracking'),
+    ('Colour (English)', '颜色（英文）', 'header', 'tracking'),
+    ('On the cut plan', '裁剪计划中', 'header', 'tracking'),
+    ('On the PO', '订单中', 'header', 'tracking'),
+    ('First seen', '首次出现', 'header', 'tracking'),
+
     ('Quantity progress', '数量进度', 'header', 'tracking'),
     ('Ordered', '订单数', 'label', 'tracking'),
     ('Cut', '已裁剪', 'label', 'tracking'),

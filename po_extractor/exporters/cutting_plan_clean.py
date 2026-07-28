@@ -112,26 +112,91 @@ def strip_path_and_ext(text: str) -> str:
     return text
 
 
-def clean_value(value: Any, color_map: dict[str, str] | None = None) -> Any:
+def build_reverse_color_map(lookup: dict) -> dict[str, str]:
+    """``{normalised chinese: normalised english}`` across every client/brand.
+
+    Used to recognise a Chinese colour the *plan* already carries so it can be
+    compared against what the PO calls that colour.
+    """
+    out: dict[str, str] = {}
+    for key, cn in (lookup or {}).items():
+        if not cn:
+            continue
+        en = key[2] if isinstance(key, tuple) and len(key) > 2 else ""
+        if en:
+            out.setdefault(_norm_color(cn), _norm_color(en))
+    return out
+
+
+def find_color_conflicts(wb, color_map: dict[str, str],
+                         reverse_map: dict[str, str]) -> list[dict]:
+    """Report cells where the plan's own Chinese colour disagrees with the PO's.
+
+    **Read-only — changes nothing.** A cut plan that already names a colour in
+    Chinese may be using a different house spelling than the PO (e.g. the plan
+    says 深蓝 where the PO says 藏青 for Navy). Those are surfaced for a human
+    to decide on rather than silently rewritten.
+
+    Returns one entry per distinct disagreement::
+
+        {"plan_cn", "po_cn", "english", "sheet", "cell"}
+    """
+    seen: set[tuple[str, str]] = set()
+    out: list[dict] = []
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                v = cell.value
+                if not isinstance(v, str) or not has_chinese(v):
+                    continue
+                key = _norm_color(v)
+                en = reverse_map.get(key)
+                if not en:
+                    continue          # not a colour we know — leave it be
+                po_cn = (color_map or {}).get(en)
+                if not po_cn or _norm_color(po_cn) == key:
+                    continue          # agrees, or the PO has no name for it
+                sig = (key, _norm_color(po_cn))
+                if sig in seen:
+                    continue
+                seen.add(sig)
+                out.append({"plan_cn": v.strip(), "po_cn": po_cn,
+                            "english": en, "sheet": ws.title,
+                            "cell": cell.coordinate})
+    return out
+
+
+def clean_value(value: Any, color_map: dict[str, str] | None = None,
+                cn_overrides: dict[str, str] | None = None) -> Any:
     """Clean one cell value; non-text and formulas pass through untouched.
 
     When *color_map* is given, a cell whose **whole** value is a known English
     colour becomes its Chinese name from the PO colour data. Whole-cell only —
     a substring rule here would corrupt any text that merely contains a colour
-    word. A colour that is already Chinese is left alone.
+    word.
+
+    A colour that is **already Chinese** is left alone unless *cn_overrides*
+    maps it (``{normalised plan colour: replacement}``) — that only happens
+    once the user has explicitly approved the change.
     """
     if not isinstance(value, str):
         return value
     if value.startswith("="):        # never rewrite a formula
         return value
+    key = _norm_color(value)
+    if cn_overrides:
+        repl = cn_overrides.get(key)
+        if repl:
+            return repl              # user-approved colour rename
     if color_map and not has_chinese(value):
-        cn = color_map.get(_norm_color(value))
+        cn = color_map.get(key)
         if cn:
             return cn                # a colour cell is only ever the colour
     return strip_path_and_ext(translate_text(value))
 
 
-def clean_worksheet(ws, color_map: dict[str, str] | None = None) -> int:
+def clean_worksheet(ws, color_map: dict[str, str] | None = None,
+                    cn_overrides: dict[str, str] | None = None) -> int:
     """Clean every cell of *ws* in place. Returns the number of cells changed."""
     changed = 0
     for row in ws.iter_rows():
@@ -139,13 +204,41 @@ def clean_worksheet(ws, color_map: dict[str, str] | None = None) -> int:
             old = cell.value
             if not isinstance(old, str):
                 continue
-            new = clean_value(old, color_map)
+            new = clean_value(old, color_map, cn_overrides)
             if new != old:
                 cell.value = new
                 changed += 1
     return changed
 
 
-def clean_workbook(wb, color_map: dict[str, str] | None = None) -> int:
+def clean_workbook(wb, color_map: dict[str, str] | None = None,
+                   cn_overrides: dict[str, str] | None = None) -> int:
     """Clean every worksheet of *wb* in place. Returns total cells changed."""
-    return sum(clean_worksheet(ws, color_map) for ws in wb.worksheets)
+    return sum(clean_worksheet(ws, color_map, cn_overrides)
+               for ws in wb.worksheets)
+
+
+# ── working on an already-built workbook (the UI's approve-then-apply path) ──
+
+def conflicts_from_bytes(data: bytes, color_map: dict[str, str],
+                         reverse_map: dict[str, str]) -> list[dict]:
+    """:func:`find_color_conflicts` against built .xlsx bytes."""
+    import openpyxl
+    from io import BytesIO
+    return find_color_conflicts(openpyxl.load_workbook(BytesIO(data)),
+                                color_map, reverse_map)
+
+
+def apply_color_overrides(data: bytes, overrides: dict[str, str]) -> bytes:
+    """Return *data* with approved colour renames applied.
+
+    Re-cleans the finished workbook instead of rebuilding it — the overrides
+    only ever affect the cleanup pass, so nothing else can shift.
+    """
+    import openpyxl
+    from io import BytesIO
+    wb = openpyxl.load_workbook(BytesIO(data))
+    clean_workbook(wb, color_map=None, cn_overrides=overrides)
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

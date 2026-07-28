@@ -8,7 +8,7 @@ import streamlit as st
 
 from po_extractor.config import PDF_MIME, XLSX_MIME
 from ui.i18n import t
-from ui.shared import guard_multiselect_state
+from ui.shared import _th, guard_multiselect_state
 from ui.stores import get_sky_east_store
 
 _PAGE_SIZES = ["A4", "A3", "Letter"]
@@ -35,6 +35,59 @@ def cleanup_color_map(client: str = "") -> dict[str, str]:
             get_color_translation_store().build_lookup_dict(), client)
     except Exception:
         return {}
+
+
+def detect_color_conflicts(data: bytes, client: str = "") -> list[dict]:
+    """Colours the plan already names in Chinese that disagree with the PO.
+
+    Read-only. Best-effort — a colour-table hiccup just means no conflicts are
+    reported, never a failed export.
+    """
+    from po_extractor.exporters.cutting_plan_clean import (
+        build_color_map, build_reverse_color_map, conflicts_from_bytes,
+    )
+    from ui.stores import get_color_translation_store
+    try:
+        lookup = get_color_translation_store().build_lookup_dict()
+        return conflicts_from_bytes(data, build_color_map(lookup, client),
+                                    build_reverse_color_map(lookup))
+    except Exception:
+        return []
+
+
+def render_color_conflicts(conflicts: list[dict], bytes_key: str,
+                           key_prefix: str) -> None:
+    """Warn about plan-vs-PO colour disagreements and offer to apply the PO's.
+
+    Nothing is changed unless the user presses the button — the plan's own
+    colour names are left exactly as they arrived until then.
+    """
+    if not conflicts:
+        return
+    st.warning(
+        f"⚠️ {t('This cut plan names')} {len(conflicts)} "
+        f"{t('colour(s) differently from the PO. Nothing has been changed.')}")
+    st.dataframe(
+        pd.DataFrame([{
+            _th("Colour (English)"): c["english"].title(),
+            _th("On the cut plan"): c["plan_cn"],
+            _th("On the PO"): c["po_cn"],
+            _th("First seen"): f"{c['sheet']}!{c['cell']}",
+        } for c in conflicts]),
+        use_container_width=True, hide_index=True)
+    if st.button(f"✅ {t('Use the PO colour names instead')}",
+                 key=f"{key_prefix}_apply_cn",
+                 help=t("Rewrites only these colour cells in the downloadable "
+                        "file. The stored cut plan is not modified.")):
+        from po_extractor.exporters.cutting_plan_clean import (
+            apply_color_overrides, _norm_color,
+        )
+        overrides = {_norm_color(c["plan_cn"]): c["po_cn"] for c in conflicts}
+        st.session_state[bytes_key] = apply_color_overrides(
+            st.session_state[bytes_key], overrides)
+        st.success(f"{t('Applied the PO colour names to')} "
+                   f"{len(overrides)} {t('colour(s).')}")
+        st.rerun()
 
 
 def po_label(pc_no: str, po_no: str, style: str = "") -> str:

@@ -19,7 +19,8 @@ from ui.shared import guard_multiselect_state
 from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
     XLSX_MIME, cleanup_color_map, demand_frame, demand_matrix,
-    pdf_export_block, safe_filename, select_pos,
+    detect_color_conflicts, pdf_export_block, render_color_conflicts,
+    safe_filename, select_pos,
 )
 
 
@@ -85,6 +86,9 @@ def show_standard_section() -> None:
                groups, colors, qty, clean=clean)
 
     if st.session_state.get(SK.CP_STD_BYTES):
+        render_color_conflicts(
+            st.session_state.get("cp_std_cn_conflicts") or [],
+            bytes_key=SK.CP_STD_BYTES, key_prefix="cp_std")
         st.download_button(
             f"⬇️ {st.session_state.get(SK.CP_STD_FNAME)}",
             data=st.session_state[SK.CP_STD_BYTES],
@@ -134,6 +138,10 @@ def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
     st.session_state[SK.CP_STD_BYTES] = data
     st.session_state[SK.CP_STD_FNAME] = (
         f"{safe_filename(order_name)}_CutPlan_standard.xlsx")
+    # Colours the plan already names in Chinese that disagree with the PO are
+    # reported, never rewritten — the user decides (see render_color_conflicts).
+    st.session_state["cp_std_cn_conflicts"] = (
+        detect_color_conflicts(data) if clean else [])
     # A previously built PDF belongs to the old workbook — drop it so the
     # download button can't hand back a stale sheet.
     st.session_state.pop("cp_std_pdf_bytes", None)

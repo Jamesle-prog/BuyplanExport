@@ -12,8 +12,8 @@ import openpyxl
 import pytest
 
 from po_extractor.exporters.cutting_plan_clean import (
-    build_color_map, clean_value, clean_workbook, has_chinese,
-    strip_path_and_ext, translate_text,
+    build_color_map, build_reverse_color_map, clean_value, clean_workbook,
+    find_color_conflicts, has_chinese, strip_path_and_ext, translate_text,
 )
 
 
@@ -179,6 +179,86 @@ def test_colour_mapping_does_not_disturb_labels():
 
 def test_has_chinese():
     assert has_chinese("藏青") and not has_chinese("Navy")
+
+
+# ── plan-vs-PO colour disagreement (report, don't rewrite) ───────────────────
+
+def _wb_with(*values):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for i, v in enumerate(values, start=1):
+        ws.cell(i, 1, v)
+    return wb
+
+
+def test_reverse_map_recognises_each_clients_spelling():
+    rev = build_reverse_color_map(_LOOKUP)
+    assert rev["藏青"] == "navy" and rev["深蓝"] == "navy"
+    assert rev["泥粉"] == "clay"
+
+
+def test_conflict_reported_when_plan_uses_another_spelling():
+    """Plan says 深蓝; for GIII the PO calls Navy 藏青 — flag it."""
+    cmap = build_color_map(_LOOKUP, client="GIII")
+    rev = build_reverse_color_map(_LOOKUP)
+    got = find_color_conflicts(_wb_with("深蓝"), cmap, rev)
+    assert len(got) == 1
+    assert got[0]["plan_cn"] == "深蓝"
+    assert got[0]["po_cn"] == "藏青"
+    assert got[0]["english"] == "navy"
+
+
+def test_no_conflict_when_names_agree():
+    cmap = build_color_map(_LOOKUP, client="GIII")
+    rev = build_reverse_color_map(_LOOKUP)
+    assert find_color_conflicts(_wb_with("藏青"), cmap, rev) == []
+
+
+def test_unknown_chinese_text_is_not_a_conflict():
+    """Chinese that isn't a known colour (labels, notes) must never be flagged."""
+    cmap = build_color_map(_LOOKUP, client="GIII")
+    rev = build_reverse_color_map(_LOOKUP)
+    assert find_color_conflicts(_wb_with("裁剪配比", "层数"), cmap, rev) == []
+
+
+def test_conflicts_are_deduped():
+    cmap = build_color_map(_LOOKUP, client="GIII")
+    rev = build_reverse_color_map(_LOOKUP)
+    assert len(find_color_conflicts(_wb_with("深蓝", "深蓝", "深蓝"),
+                                    cmap, rev)) == 1
+
+
+def test_detection_does_not_modify_the_workbook():
+    """The whole point: reporting must leave the plan's own names in place."""
+    cmap = build_color_map(_LOOKUP, client="GIII")
+    rev = build_reverse_color_map(_LOOKUP)
+    wb = _wb_with("深蓝")
+    find_color_conflicts(wb, cmap, rev)
+    assert wb.active["A1"].value == "深蓝"
+
+
+def test_cleaning_alone_never_rewrites_a_chinese_colour():
+    cmap = build_color_map(_LOOKUP, client="GIII")
+    wb = _wb_with("深蓝")
+    clean_workbook(wb, cmap)                    # no overrides approved
+    assert wb.active["A1"].value == "深蓝"
+
+
+def test_approved_override_rewrites_it():
+    wb = _wb_with("深蓝")
+    clean_workbook(wb, None, {"深蓝": "藏青"})
+    assert wb.active["A1"].value == "藏青"
+
+
+def test_apply_color_overrides_round_trips_through_bytes():
+    from po_extractor.exporters.cutting_plan_clean import apply_color_overrides
+    wb = _wb_with("深蓝", "Material")
+    buf = io.BytesIO()
+    wb.save(buf)
+    out = apply_color_overrides(buf.getvalue(), {"深蓝": "藏青"})
+    ws = openpyxl.load_workbook(io.BytesIO(out)).active
+    assert ws["A1"].value == "藏青"
+    assert ws["A2"].value == "Material"         # untouched
 
 
 # ── workbook pass ────────────────────────────────────────────────────────────

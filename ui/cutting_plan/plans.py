@@ -13,8 +13,9 @@ from ui.session_keys import SK
 from ui.shared import _th, _tr, fragment_rerun
 from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
-    XLSX_MIME, cleanup_color_map, demand_matrix, link_rows,
-    load_sky_east_items, pdf_export_block, po_label, safe_filename, select_pos,
+    XLSX_MIME, cleanup_color_map, demand_matrix, detect_color_conflicts,
+    link_rows, load_sky_east_items, pdf_export_block, po_label,
+    render_color_conflicts, safe_filename, select_pos,
 )
 
 # Column order of the saved-plans table (one row per fabric).  Fabric-level
@@ -428,6 +429,10 @@ def _show_files(store, plan: dict) -> None:
         _build_standard_for_plan(store, plan, clean=_clean)
 
     if st.session_state.get(f"cp_std_{plan_id}_bytes"):
+        render_color_conflicts(
+            st.session_state.get(f"cp_std_{plan_id}_cn_conflicts") or [],
+            bytes_key=f"cp_std_{plan_id}_bytes",
+            key_prefix=f"cp_std_{plan_id}")
         st.download_button(
             f"⬇️ {st.session_state[f'cp_std_{plan_id}_fname']}",
             data=st.session_state[f"cp_std_{plan_id}_bytes"],
@@ -476,6 +481,9 @@ def _build_standard_for_plan(store, plan: dict, clean: bool = True) -> None:
         color_map=cleanup_color_map() if clean else None)
     st.session_state[f"cp_std_{plan_id}_bytes"] = data
     st.session_state[f"cp_std_{plan_id}_fname"] = _std_filename(plan)
+    # Reported, never rewritten — the user decides (render_color_conflicts).
+    st.session_state[f"cp_std_{plan_id}_cn_conflicts"] = (
+        detect_color_conflicts(data) if clean else [])
     # Any PDF built from the previous workbook is now stale.
     st.session_state.pop(f"cp_stdplan_{plan_id}_pdf_bytes", None)
 
