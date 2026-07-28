@@ -19,6 +19,7 @@ from ui.shared import guard_multiselect_state
 from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
     XLSX_MIME, cleanup_color_map, demand_frame, demand_matrix,
+    output_folder_input, save_copy_to_folder,
     detect_color_conflicts, pdf_export_block, render_color_conflicts,
     safe_filename, select_pos,
 )
@@ -71,19 +72,15 @@ def show_standard_section() -> None:
             help=t("Each plan contributes its own material blocks. Clear the "
                    "selection to produce a blank standard template."))
 
-    clean = st.checkbox(
-        t("Clean for the cutting room (Chinese labels, marker names only)"),
-        value=True, key="cp_std_clean",
-        help=t("Replaces the English headings with the Chinese the cutting "
-               "room reads and reduces marker paths to the marker name — the "
-               "cleanup that used to be a hand-run Excel macro. Untick to keep "
-               "the raw English layout (that copy can be re-uploaded and "
-               "re-parsed; the cleaned one cannot)."))
+    # One tick-box for this, not two — the standard sheet is always built for
+    # the cutting room. The PDF section keeps its own because that one renders
+    # the ORIGINAL workbook, which people sometimes want raw.
+    folder = output_folder_input("cp_std_dir")
 
     if st.button(f"📄 {t('Build standard cut plan')}", type="primary",
                  use_container_width=True, key="cp_std_build"):
         _build(store, plan_ids, pc_nos, po_nos, styles, items,
-               groups, colors, qty, clean=clean)
+               groups, colors, qty, clean=True, folder=folder)
 
     if st.session_state.get(SK.CP_STD_BYTES):
         render_color_conflicts(
@@ -102,7 +99,7 @@ def show_standard_section() -> None:
 
 def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
            styles: list[str], items, groups, colors, qty,
-           clean: bool = True) -> None:
+           clean: bool = True, folder: str = "") -> None:
     materials: list[dict] = []
     newest_parsed: dict | None = None
     for pid in plan_ids:
@@ -138,6 +135,7 @@ def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
     st.session_state[SK.CP_STD_BYTES] = data
     st.session_state[SK.CP_STD_FNAME] = (
         f"{safe_filename(order_name)}_CutPlan_standard.xlsx")
+    save_copy_to_folder(data, st.session_state[SK.CP_STD_FNAME], folder)
     # Colours the plan already names in Chinese that disagree with the PO are
     # reported, never rewritten — the user decides (see render_color_conflicts).
     st.session_state["cp_std_cn_conflicts"] = (

@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.113.0",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "feat", "text": "**Generated files can go straight to a folder.** Both **Build PDF** and **Build standard cut plan** now take an optional folder path; leave it blank and nothing changes, fill it in and a copy is written there as well as offered for download — so the cutting room’s shared drive doesn’t need a manual copy step. The path is confirmed on screen after each build, and a folder that doesn’t exist or can’t be written says so instead of failing quietly."},
+            {"type": "fix", "text": "**One \"Clean for the cutting room\" tick-box, not two.** The standard cut plan had its own copy of the option sitting next to the PDF’s. The standard sheet is always built for the cutting room, so its tick-box is gone; the PDF keeps one, because that renders the original workbook and is the copy people sometimes want raw."},
+        ],
+    },
+    {
         "version": "2.112.1",
         "date": "2026-07-28",
         "entries": [

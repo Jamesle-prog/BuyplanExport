@@ -398,3 +398,30 @@ def test_export_default_stays_english_and_reparseable():
     assert "Colors" in vals and "Marker Ratio" in vals
     assert any(".mrk" in v for v in vals)           # raw path retained
     assert not any("颜色" == v for v in vals)
+
+
+# ── optional output folder ───────────────────────────────────────────────────
+
+def test_save_copy_writes_the_file(tmp_path):
+    from ui.cutting_plan._shared import save_copy_to_folder
+    save_copy_to_folder(b"data", "plan.xlsx", str(tmp_path))
+    assert (tmp_path / "plan.xlsx").read_bytes() == b"data"
+
+
+def test_save_copy_is_a_no_op_without_a_folder(tmp_path):
+    from ui.cutting_plan._shared import save_copy_to_folder
+    save_copy_to_folder(b"data", "plan.xlsx", "")     # must not raise
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_save_copy_cannot_escape_the_folder(tmp_path):
+    """A filename carrying separators must not write outside the folder."""
+    from ui.cutting_plan._shared import save_copy_to_folder
+    save_copy_to_folder(b"x", r"..\..\escaped.xlsx", str(tmp_path))
+    assert (tmp_path / "escaped.xlsx").exists()
+    assert not (tmp_path.parent.parent / "escaped.xlsx").exists()
+
+
+def test_missing_folder_does_not_raise(tmp_path):
+    from ui.cutting_plan._shared import save_copy_to_folder
+    save_copy_to_folder(b"x", "p.xlsx", str(tmp_path / "nope"))   # warns only

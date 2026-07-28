@@ -14,6 +14,7 @@ from ui.shared import _th, _tr, fragment_rerun
 from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
     XLSX_MIME, cleanup_color_map, demand_matrix, detect_color_conflicts,
+    output_folder_input, save_copy_to_folder,
     link_rows, load_sky_east_items, pdf_export_block, po_label,
     render_color_conflicts, safe_filename, select_pos,
 )
@@ -532,17 +533,13 @@ def _show_files(store, plan: dict) -> None:
         "The standard version re-emits this plan in the house layout, with "
         "the Order demands block rebuilt from the linked PO(s) so it always "
         "reflects what was actually ordered."))
-    _clean = st.checkbox(
-        t("Clean for the cutting room (Chinese labels, marker names only)"),
-        value=True, key=f"cp_std_clean_{plan_id}",
-        help=t("Replaces the English headings with the Chinese the cutting "
-               "room reads and reduces marker paths to the marker name — the "
-               "cleanup that used to be a hand-run Excel macro. Untick to keep "
-               "the raw English layout (that copy can be re-uploaded and "
-               "re-parsed; the cleaned one cannot)."))
+    # No second "clean" tick-box here — the standard sheet is always built for
+    # the cutting room. The PDF section above keeps its own, because that one
+    # renders the ORIGINAL workbook and is the copy people sometimes want raw.
+    _folder = output_folder_input(f"cp_std_dir_{plan_id}")
     if st.button(f"📄 {t('Build standard cut plan')}",
                  key=f"cp_std_{plan_id}", use_container_width=True):
-        _build_standard_for_plan(store, plan, clean=_clean)
+        _build_standard_for_plan(store, plan, clean=True, folder=_folder)
 
     if st.session_state.get(f"cp_std_{plan_id}_bytes"):
         render_color_conflicts(
@@ -562,7 +559,8 @@ def _show_files(store, plan: dict) -> None:
             label=t("PDF of the standard version"))
 
 
-def _build_standard_for_plan(store, plan: dict, clean: bool = True) -> None:
+def _build_standard_for_plan(store, plan: dict, clean: bool = True,
+                             folder: str = "") -> None:
     parsed = plan.get("parsed") or {}
     plan_id = int(plan["id"])
     links = plan.get("links") or []
@@ -597,6 +595,7 @@ def _build_standard_for_plan(store, plan: dict, clean: bool = True) -> None:
         color_map=cleanup_color_map() if clean else None)
     st.session_state[f"cp_std_{plan_id}_bytes"] = data
     st.session_state[f"cp_std_{plan_id}_fname"] = _std_filename(plan)
+    save_copy_to_folder(data, _std_filename(plan), folder)
     # Reported, never rewritten — the user decides (render_color_conflicts).
     st.session_state[f"cp_std_{plan_id}_cn_conflicts"] = (
         detect_color_conflicts(data) if clean else [])

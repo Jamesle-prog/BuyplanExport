@@ -1334,6 +1334,14 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Section', '模块', 'label', 'admin'),
     ('Admin section', '管理模块', 'label', 'admin'),
 
+    # Cut plan — optional output folder (v2.113.0)
+    ('Also save a copy to this folder (optional)', '同时保存副本到此文件夹（可选）', 'label', 'tracking'),
+    ('Leave blank to just download. The folder must already exist and be writable from this machine.',
+     '留空则仅下载。该文件夹必须已存在且本机可写入。', 'label', 'tracking'),
+    ('Folder not found — nothing saved:', '未找到文件夹——未保存：', 'label', 'tracking'),
+    ('Saved a copy to', '已保存副本至', 'label', 'tracking'),
+    ('Could not save to', '无法保存到', 'label', 'tracking'),
+
     # Cut plan — PDF cleanup option + linked-order details (v2.110.2)
     ('Ticked: headings become Chinese, marker paths are reduced to the marker '
      'name and colours use the PO\'s names. Unticked: the workbook is rendered '

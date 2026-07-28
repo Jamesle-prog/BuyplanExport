@@ -37,6 +37,42 @@ def cleanup_color_map(client: str = "") -> dict[str, str]:
         return {}
 
 
+def output_folder_input(key: str) -> str:
+    """Optional folder to drop a copy of the generated file into.
+
+    The download button always works; this is for the shared drive the cutting
+    room reads, so the file doesn't have to be downloaded and moved by hand.
+    """
+    return (st.text_input(
+        t("Also save a copy to this folder (optional)"), key=key,
+        placeholder=r"D:\CutPlans\2026",
+        help=t("Leave blank to just download. The folder must already exist "
+               "and be writable from this machine.")) or "").strip()
+
+
+def save_copy_to_folder(data: bytes, filename: str, folder: str) -> None:
+    """Write *data* to ``folder/filename`` and report the outcome inline.
+
+    Best-effort and loud: a bad path tells the user which path failed and why,
+    and never takes the download with it. The filename is reduced to its base
+    name so a name carrying separators can't write outside *folder*.
+    """
+    if not folder:
+        return
+    import os
+    safe = os.path.basename(str(filename)) or "output"
+    try:
+        if not os.path.isdir(folder):
+            st.warning(f"{t('Folder not found — nothing saved:')} {folder}")
+            return
+        path = os.path.join(folder, safe)
+        with open(path, "wb") as fh:
+            fh.write(data)
+        st.success(f"{t('Saved a copy to')} {path}")
+    except OSError as exc:
+        st.warning(f"{t('Could not save to')} {folder} — {exc}")
+
+
 def _cleaned_copy(xlsx_bytes: bytes, client: str = "") -> bytes:
     """A cutting-room-cleaned copy of a workbook, for rendering only.
 
@@ -371,14 +407,18 @@ def pdf_export_block(xlsx_bytes: bytes | None, base_name: str, key: str, *,
                        "names. Unticked: the workbook is rendered exactly as "
                        "it is. The stored file is never changed either way."))
 
+        folder = output_folder_input(f"{key}_pdf_dir")
+
         if st.button(f"📕 {t('Build PDF')}", key=f"{key}_pdf_build",
                      use_container_width=True):
             try:
                 src = _cleaned_copy(xlsx_bytes, client) if clean else xlsx_bytes
-                st.session_state[f"{key}_pdf_bytes"] = xlsx_bytes_to_pdf(
-                    src, page_size=page_size, orientation=orientation)
-                st.session_state[f"{key}_pdf_name"] = (
-                    f"{base_name}{'_clean' if clean else ''}.pdf")
+                data = xlsx_bytes_to_pdf(src, page_size=page_size,
+                                         orientation=orientation)
+                name = f"{base_name}{'_clean' if clean else ''}.pdf"
+                st.session_state[f"{key}_pdf_bytes"] = data
+                st.session_state[f"{key}_pdf_name"] = name
+                save_copy_to_folder(data, name, folder)
             except PdfRenderError as exc:
                 st.error(str(exc))
             except Exception as exc:                    # noqa: BLE001
