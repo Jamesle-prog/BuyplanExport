@@ -48,7 +48,12 @@ def _cleaned_copy(xlsx_bytes: bytes, client: str = "") -> bytes:
     try:
         import openpyxl
         from po_extractor.exporters.cutting_plan_clean import clean_workbook
-        wb = openpyxl.load_workbook(BytesIO(xlsx_bytes))
+        # data_only=True is essential, not a detail. Marker sheets carry ~70
+        # =SUM() cells; openpyxl drops the cached results when it saves, so a
+        # copy loaded WITH formulas comes back out with no values behind them
+        # and the PDF renderer (which reads values) printed every total blank.
+        # Loading values bakes each formula down to its number first.
+        wb = openpyxl.load_workbook(BytesIO(xlsx_bytes), data_only=True)
         clean_workbook(wb, cleanup_color_map(client))
         buf = BytesIO()
         wb.save(buf)

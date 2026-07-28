@@ -47,16 +47,24 @@ def test_specific_marker_rules_win_over_the_bare_one():
 
 def test_substring_and_case_insensitive():
     """LookAt:=xlPart + MatchCase:=False — matches inside words, any case."""
-    assert translate_text("N Markers") == "N 版s"
-    assert translate_text("Order demands") == "订单数 demands"
     assert translate_text("MARKER") == "版"
     assert translate_text("colors") == "颜色"
+    assert translate_text("MATERIAL COST,CNY") == "材料成本,CNY"
 
 
-def test_untouched_labels_pass_through():
-    for s in ["Material", "Solution", "Spreading Plies", "Total Efficiency",
-              "Min Plies", "Client", "Date", "Sum"]:
-        assert translate_text(s) == s
+def test_every_fixed_heading_is_translated():
+    """No fixed heading may reach the cutting room in English. Unit suffixes
+    (cm / m / %) stay — they are units, not words."""
+    import re
+    for label in ["Material", "Solution", "Spreading Plies", "Total Efficiency",
+                  "Min Plies", "Max Plies", "Client", "Date", "Time", "Sum",
+                  "Sizes", "Quantity", "Total Quantity", "File Name",
+                  "N Markers", "Order demands", "Marker Definition",
+                  "Cut plan operator", "Average Length", "Total Tables",
+                  "Width, cm", "Length, cm", "Efficiency,%"]:
+        out = translate_text(label)
+        left = re.sub(r"[^A-Za-z]", "", out).replace("cm", "").replace("m", "")
+        assert not left, f"{label!r} -> {out!r} still English"
 
 
 def test_cut_length_and_material_cost_labels():
@@ -70,10 +78,11 @@ def test_total_cut_length_is_not_half_translated():
     assert translate_text("Total cut length") == "总裁剪长度"
 
 
-def test_bare_material_label_is_left_alone():
-    """Only 'Material Cost' is mapped — the Marker Definition block's plain
-    'Material' column holds the fabric name and must not be touched."""
-    assert translate_text("Material") == "Material"
+def test_material_cost_wins_over_bare_material():
+    """'Material Cost' must be replaced before the bare 'Material' rule, or
+    the cost heading comes out as '面料 Cost,CNY'."""
+    assert translate_text("Material Cost,CNY") == "材料成本,CNY"
+    assert translate_text("Material") == "面料"
 
 
 def test_replacements_do_not_cascade():
@@ -281,7 +290,8 @@ def test_apply_color_overrides_round_trips_through_bytes():
     out = apply_color_overrides(buf.getvalue(), {"深蓝": "藏青"})
     ws = openpyxl.load_workbook(io.BytesIO(out)).active
     assert ws["A1"].value == "藏青"
-    assert ws["A2"].value == "Material"         # untouched
+    # apply_color_overrides re-runs the whole cleanup, so headings translate too
+    assert ws["A2"].value == "面料"
 
 
 # ── workbook pass ────────────────────────────────────────────────────────────
@@ -291,14 +301,14 @@ def test_clean_workbook_reports_and_applies():
     ws = wb.active
     ws["A1"] = "Marker Ratio"
     ws["A2"] = r"D:\Markers\M1.mrk"
-    ws["A3"] = "Material"          # unchanged
+    ws["A3"] = "Material"          # a fixed heading — also translated now
     ws["A4"] = 42                  # untouched non-text
     changed = clean_workbook(wb)
     assert ws["A1"].value == "裁剪配比"
     assert ws["A2"].value == "M1"
-    assert ws["A3"].value == "Material"
+    assert ws["A3"].value == "面料"
     assert ws["A4"].value == 42
-    assert changed == 2
+    assert changed == 3
 
 
 # ── integration with the exporter ────────────────────────────────────────────
@@ -351,10 +361,10 @@ def test_export_translates_colours_from_the_po_data():
 
 def test_cleaned_header_keeps_only_what_the_cutting_room_reads():
     vals = _build(clean=True)
-    assert "Style file 1" in vals and "Cut plan operator" in vals
-    assert "Client" in vals
+    # Kept — and translated, since every fixed heading is Chinese now.
+    assert "款式文件 1" in vals and "裁剪计划员" in vals and "客户" in vals
     for gone in ("Date", "Time", "Order name", "Style name 1", "Style name 2",
-                 "Output folder path"):
+                 "Output folder path", "款式名称 1", "订单名称"):
         assert gone not in vals, gone
 
 

@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.112.1",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "fix", "text": "**Every total was blank on the cleaned cut plan.** Marker sheets carry around seventy `=SUM()` cells. The cleanup was opening the workbook with its formulas rather than its values, and saving drops the stored results — so the PDF, which prints values, found nothing behind any of them. Ticking \"Clean for the cutting room\" therefore lost every sum while leaving it unticked kept them. The cleanup now reads values, baking each formula down to its number before anything else happens."},
+            {"type": "feat", "text": "**The whole sheet is in Chinese now, not just some of it.** The remaining fixed headings are translated — 面料 / 排版结果 / 铺布层数 / 合计 / 尺码 / 数量 / 客户 / 日期 / 总利用率 / 总成本 / 总台数 / 平均版长 and the rest. Only unit suffixes (cm, m, %) stay as they are."},
+        ],
+    },
+    {
         "version": "2.112.0",
         "date": "2026-07-28",
         "entries": [

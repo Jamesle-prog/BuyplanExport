@@ -29,6 +29,45 @@ from typing import Any
 
 # (search, replacement) — ORDER IS SIGNIFICANT, see module docstring.
 TRANSLATIONS: list[tuple[str, str]] = [
+    # ── Block titles and fixed headings ──────────────────────────────────
+    # These come FIRST because several contain a word a later rule also
+    # matches ("Marker Definition" vs "Marker", "Total cut length" vs "Cut
+    # Length", "Spreading Plies" vs "Spreading"). Longest/most specific wins
+    # by running earlier — the same reason the original macro ordered its own
+    # rules the way it did.
+    ("Order demands",     "订单需求"),
+    ("Marker Definition", "版定义"),
+    ("Spreading Plies",   "铺布层数"),
+    ("Total Efficiency",  "总利用率"),
+    ("Total Quantity",    "总数量"),
+    ("Total Tables",      "总台数"),
+    ("Total Cost",        "总成本"),
+    ("Average Length",    "平均版长"),
+    ("Waste Limits, cm",  "损耗上限,cm"),
+    ("Cut plan operator", "裁剪计划员"),
+    ("Style file",        "款式文件"),
+    ("Style name",        "款式名称"),
+    ("Order name",        "订单名称"),
+    ("N Markers",         "版数"),
+    ("Min Plies",         "最少层数"),
+    ("Max Plies",         "最多层数"),
+    ("File Name",         "文件名"),
+    ("Width, cm",         "幅宽,cm"),
+    ("Length, cm",        "长度,cm"),
+    ("Efficiency,%",      "利用率,%"),
+    ("PO Style(s)",       "订单款号"),
+    ("Spreading",         "铺布"),
+    ("Solution",          "排版结果"),
+    ("Material Cost",     "材料成本"),   # MUST precede the bare "Material"
+    ("Material",          "面料"),
+    ("Quantity",          "数量"),
+    ("Sizes",             "尺码"),
+    ("Client",            "客户"),
+    ("Sum",               "合计"),
+    ("Date",              "日期"),
+    ("Time",              "时间"),
+
+    # ── The original macro's own rules, in its order ─────────────────────
     ("Plies number",  "层数"),
     ("Marker Length", "版长"),
     ("Colors",        "颜色"),
@@ -43,7 +82,6 @@ TRANSLATIONS: list[tuple[str, str]] = [
     # leave the total reading "Total 裁剪长度".
     ("Total cut length", "总裁剪长度"),
     ("Cut Length",       "裁剪长度"),
-    ("Material Cost",    "材料成本"),
 ]
 
 _COMPILED: list[tuple[re.Pattern, str]] = [
