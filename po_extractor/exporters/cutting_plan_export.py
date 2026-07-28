@@ -386,7 +386,8 @@ def build_standard_cut_plan(*, header: dict[str, Any],
                             colors: list[str],
                             demand_qty: dict[tuple[str, str, str], int],
                             materials: list[dict[str, Any]] | None = None,
-                            sheet_name: str = "Cut Plan") -> bytes:
+                            sheet_name: str = "Cut Plan",
+                            clean: bool = False) -> bytes:
     """Render a cutting plan in the standard layout and return .xlsx bytes.
 
     ``groups``      ordered [(style, [size, ...]), ...] — the demand columns.
@@ -394,6 +395,15 @@ def build_standard_cut_plan(*, header: dict[str, Any],
     ``demand_qty``  {(style, colour, size): qty} from the PO.
     ``materials``   parsed material blocks from a linked plan; when empty an
                     empty scaffold is written so the layout is still standard.
+    ``clean``       run the house cleanup (Chinese labels, marker paths reduced
+                    to bare names) — the step that used to be a hand-run Excel
+                    macro.
+
+    ``clean`` defaults to **False** on purpose: this layout is re-parseable by
+    ``parsers.cutting_plan`` (which finds its blocks by English anchor text),
+    and the app round-trips its own export. Cleaning is a *delivery* step —
+    turn it on for the copy handed to the cutting room, not for the canonical
+    workbook.
     """
     wb = Workbook()
     ws = wb.active
@@ -419,6 +429,12 @@ def build_standard_cut_plan(*, header: dict[str, Any],
     for c in range(3, n_cols + 2):
         ws.column_dimensions[get_column_letter(c)].width = 13
     ws.freeze_panes = "C2"
+
+    # Last step, after every cell is written and before saving — the same
+    # point the Excel macro ran at.
+    if clean:
+        from .cutting_plan_clean import clean_workbook
+        clean_workbook(wb)
 
     apply_print_settings(wb)
     buf = io.BytesIO()

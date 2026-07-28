@@ -1319,6 +1319,17 @@ _SEED: list[tuple[str, str, str, str]] = [
 
     # Tracking → Factory Updates (factory quantity reports, v2.81.0).
     ('📨 Factory Updates', '📨 工厂回报', 'header', 'tracking'),
+    # Cut plan — house cleanup toggle (v2.109.3)
+    ('Clean for the cutting room (Chinese labels, marker names only)',
+     '按裁剪车间格式清理（中文表头，仅版名）', 'label', 'tracking'),
+    ('Replaces the English headings with the Chinese the cutting room reads '
+     'and reduces marker paths to the marker name — the cleanup that used to '
+     'be a hand-run Excel macro. Untick to keep the raw English layout (that '
+     'copy can be re-uploaded and re-parsed; the cleaned one cannot).',
+     '将英文表头替换为裁剪车间使用的中文，并把版文件路径缩减为版名——即以往需手动运行的 Excel 宏。'
+     '取消勾选可保留英文原始格式（该文件可重新上传解析，清理后的文件不可）。',
+     'label', 'tracking'),
+
     ('Quantity progress', '数量进度', 'header', 'tracking'),
     ('Ordered', '订单数', 'label', 'tracking'),
     ('Cut', '已裁剪', 'label', 'tracking'),

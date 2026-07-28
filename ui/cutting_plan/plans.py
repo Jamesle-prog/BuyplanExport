@@ -415,9 +415,17 @@ def _show_files(store, plan: dict) -> None:
         "The standard version re-emits this plan in the house layout, with "
         "the Order demands block rebuilt from the linked PO(s) so it always "
         "reflects what was actually ordered."))
+    _clean = st.checkbox(
+        t("Clean for the cutting room (Chinese labels, marker names only)"),
+        value=True, key=f"cp_std_clean_{plan_id}",
+        help=t("Replaces the English headings with the Chinese the cutting "
+               "room reads and reduces marker paths to the marker name — the "
+               "cleanup that used to be a hand-run Excel macro. Untick to keep "
+               "the raw English layout (that copy can be re-uploaded and "
+               "re-parsed; the cleaned one cannot)."))
     if st.button(f"📄 {t('Build standard cut plan')}",
                  key=f"cp_std_{plan_id}", use_container_width=True):
-        _build_standard_for_plan(store, plan)
+        _build_standard_for_plan(store, plan, clean=_clean)
 
     if st.session_state.get(f"cp_std_{plan_id}_bytes"):
         st.download_button(
@@ -433,7 +441,7 @@ def _show_files(store, plan: dict) -> None:
             label=t("PDF of the standard version"))
 
 
-def _build_standard_for_plan(store, plan: dict) -> None:
+def _build_standard_for_plan(store, plan: dict, clean: bool = True) -> None:
     parsed = plan.get("parsed") or {}
     plan_id = int(plan["id"])
     links = plan.get("links") or []
@@ -464,7 +472,7 @@ def _build_standard_for_plan(store, plan: dict) -> None:
     data = build_standard_cut_plan(
         header=header, groups=groups, colors=colors, demand_qty=qty,
         materials=parsed.get("materials") or [],
-        sheet_name=plan.get("plan_name") or "Cut Plan")
+        sheet_name=plan.get("plan_name") or "Cut Plan", clean=clean)
     st.session_state[f"cp_std_{plan_id}_bytes"] = data
     st.session_state[f"cp_std_{plan_id}_fname"] = _std_filename(plan)
     # Any PDF built from the previous workbook is now stale.

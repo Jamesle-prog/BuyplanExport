@@ -70,10 +70,19 @@ def show_standard_section() -> None:
             help=t("Each plan contributes its own material blocks. Clear the "
                    "selection to produce a blank standard template."))
 
+    clean = st.checkbox(
+        t("Clean for the cutting room (Chinese labels, marker names only)"),
+        value=True, key="cp_std_clean",
+        help=t("Replaces the English headings with the Chinese the cutting "
+               "room reads and reduces marker paths to the marker name — the "
+               "cleanup that used to be a hand-run Excel macro. Untick to keep "
+               "the raw English layout (that copy can be re-uploaded and "
+               "re-parsed; the cleaned one cannot)."))
+
     if st.button(f"📄 {t('Build standard cut plan')}", type="primary",
                  use_container_width=True, key="cp_std_build"):
         _build(store, plan_ids, pc_nos, po_nos, styles, items,
-               groups, colors, qty)
+               groups, colors, qty, clean=clean)
 
     if st.session_state.get(SK.CP_STD_BYTES):
         st.download_button(
@@ -88,7 +97,8 @@ def show_standard_section() -> None:
 
 
 def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
-           styles: list[str], items, groups, colors, qty) -> None:
+           styles: list[str], items, groups, colors, qty,
+           clean: bool = True) -> None:
     materials: list[dict] = []
     newest_parsed: dict | None = None
     for pid in plan_ids:
@@ -118,7 +128,7 @@ def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
 
     data = build_standard_cut_plan(
         header=header, groups=groups, colors=colors, demand_qty=qty,
-        materials=materials, sheet_name=order_name)
+        materials=materials, sheet_name=order_name, clean=clean)
 
     st.session_state[SK.CP_STD_BYTES] = data
     st.session_state[SK.CP_STD_FNAME] = (
