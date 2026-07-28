@@ -1330,6 +1330,10 @@ _SEED: list[tuple[str, str, str, str]] = [
      '取消勾选可保留英文原始格式（该文件可重新上传解析，清理后的文件不可）。',
      'label', 'tracking'),
 
+    # Navigation (labels are collapsed; kept for screen readers)
+    ('Section', '模块', 'label', 'admin'),
+    ('Admin section', '管理模块', 'label', 'admin'),
+
     # Cut plan — plan-vs-PO colour disagreement (v2.109.3)
     ('This cut plan names', '本裁剪计划中有', 'label', 'tracking'),
     ('colour(s) differently from the PO. Nothing has been changed.',

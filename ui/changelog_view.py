@@ -10,6 +10,25 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.110.0",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "perf", "text": "**Pages open far faster — only the section you're looking at is built.** The tab bar rendered *every* tab's contents on every page load, not just the visible one: all twelve sections plus all twelve admin panels, so one load ran every list query, table and download-builder in the app, and threw almost all of it away. (Wrapping tabs in fragments didn't prevent this — a fragment only narrows *later* reruns, it still runs in full on a page load; this was confirmed by test, not assumed.) Navigation is now a single-select bar and one page load does one section's work. Everything is where it was and nothing else changed — the heaviest panels, the translations editor with 1,500+ rows and the 6,000-row fabric table, are simply no longer built when you aren't looking at them."},
+            {"type": "feat", "text": "**The cut plan comes out ready for the cutting room.** The cleanup that used to be a hand-run Excel macro now happens in the app: English headings become the Chinese the cutting room reads (订单数 / 颜色 / 层数 / 裁剪配比 / 版长 / 面料长度 / 裁剪长度 / 材料成本), and marker cells that arrive as full Windows paths are reduced to just the marker name. There's a tick-box on both Build buttons, on by default; untick it for the raw English layout, which is the copy that can be re-uploaded and re-parsed."},
+            {"type": "feat", "text": "**Colours on the cut plan are named the way the PO names them.** A colour still in English is rendered in Chinese using your PO colour translations, and a colour that is already Chinese is left alone. If the plan's own Chinese name disagrees with the PO's — the plan says 深蓝 where the PO says 藏青 — the difference is listed for you and **nothing is changed**; a button applies the PO's names to the downloadable file only if you ask, and never touches the stored plan."},
+            {"type": "perf", "text": "**Tracking records are no longer dragged around whole.** The tracking table is ~175 columns wide, and building the row dictionaries — not the query — was the cost. Screens that need only a PO and style now ask for only those: the CMPT contract prefill went from 19.7 ms to 1.7 ms per rerun."},
+        ],
+    },
+    {
+        "version": "2.109.2",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "fix", "text": "**MemoryError when opening Missing Fields (and other photo tables).** Style photos were being inlined into table cells at full resolution: source images here run to 15 MB each, base64 adds a third on top, and every photo was held twice — raw bytes in the session cache and again as an encoded string. A single table came to roughly 190 MB held on the server and shipped to the browser, for cells rendered a few dozen pixels wide. Photos are now downscaled to a 160 px thumbnail before encoding: the same 139 images went from 187.6 MB to 2.9 MB, 65× smaller. Excel exports are untouched and still embed the full-resolution originals."},
+            {"type": "fix", "text": "**One unreadable photo can no longer take down the tab.** The image loader caught only `OSError`, so a `MemoryError` escaped and killed the whole page. Failures now skip that image alone and the skipped IDs are reported. A memory ceiling stops a very large batch from exhausting the machine mid-render, and it never returns nothing — a single image over the ceiling is still loaded, because an empty table is worse."},
+            {"type": "fix", "text": "**BLAS thread pools capped at startup.** numpy's OpenBLAS reserves per-thread buffers for every core at import time — 28 on this machine — which on a box near its memory limit is itself the failing allocation, aborting the process with \"Memory allocation still failed after 10 retries\". The cap is set inside the app before numpy loads, so it applies however the app is launched; an explicit value in the environment still wins. This app does dataframe work, not linear algebra, so there is no performance cost."},
+        ],
+    },
+    {
         "version": "2.109.1",
         "date": "2026-07-27",
         "entries": [

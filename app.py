@@ -2,9 +2,21 @@
 import os
 import sys
 
+# Cap the BLAS thread pools BEFORE anything imports numpy — the pools and
+# their per-thread buffers are allocated at import time and can't be resized
+# afterwards. On a many-core box (28 here) that reserves a substantial block
+# for an app that does dataframe work, not linear algebra, and on a machine
+# near its commit limit it is the allocation that fails: numpy aborts the
+# process with "OpenBLAS error: Memory allocation still failed after 10
+# retries". Set here rather than in the launch command so the app is robust
+# however it is started. An explicit value in the environment still wins.
+for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
+             "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+    os.environ.setdefault(_var, "4")
+
 import streamlit as st
 
-APP_VERSION = "2.109.1"
+APP_VERSION = "2.110.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -734,14 +746,31 @@ def show_main():
     tab_labels = [label for label, _ in _visible_tabs]
     if admin_mode:
         tab_labels.append(f"⚙️ {t('Admin')}")
-    tabs = st.tabs(tab_labels)
 
-    for tab, (_, fn) in zip(tabs, _visible_tabs):
-        with tab:
-            fn()
-    if admin_mode:
-        with tabs[-1]:
-            _show_admin_panel()
+    # Only the SELECTED section's body runs.
+    #
+    # This was st.tabs, which executes every tab body on every script run —
+    # @st.fragment does not defer that, it only narrows later reruns. So one
+    # page load was rendering all ~12 sections plus the whole admin panel:
+    # every list query, DataFrame and table, almost all of it never looked at.
+    # A single-select nav means one page load does one section's work.
+    _NAV_KEY = "main_nav"
+    # Labels are translated, so they change with the language toggle — drop a
+    # stored value that is no longer an option or the widget raises.
+    if st.session_state.get(_NAV_KEY) not in tab_labels:
+        st.session_state[_NAV_KEY] = tab_labels[0]
+    active = st.segmented_control(
+        t("Section"), tab_labels, key=_NAV_KEY, label_visibility="collapsed")
+    if active not in tab_labels:      # deselected — keep showing something
+        active = st.session_state[_NAV_KEY]
+
+    # Dispatch positionally, the way st.tabs did — label text is translated and
+    # must never be the thing that decides which section runs.
+    _idx = tab_labels.index(active)
+    if admin_mode and _idx == len(tab_labels) - 1:
+        _show_admin_panel()
+    else:
+        _visible_tabs[_idx][1]()
 
 
 # -- Summary tab ---------------------------------------------------------
@@ -793,56 +822,54 @@ def _show_admin_panel():
         _fac_pending = 0
     _fac_label = f"🏭 {t('Factories')}" + (f" ({_fac_pending})" if _fac_pending else "")
 
-    (admin_tab_users, admin_tab_cos, admin_tab_fac, admin_tab_schema,
-     admin_tab_sizes, admin_tab_tpl, admin_tab_pipe, admin_tab_bsr,
-     admin_tab_smtp, admin_tab_i18n, admin_tab_log, admin_tab_settings) = st.tabs(
-        [f"👤 {t('Users')}", f"🏢 {t('Companies')}", _fac_label,
-         f"📋 {t('Column Mapping')}",
-         f"📐 {t('Size Order')}", f"📄 {t('Templates')}", f"🧩 {t('Pipeline Layouts')}",
-         f"🚢 {t('船样要求')}", f"📧 {t('Email')}", f"🌐 {t('Translations')}",
-         f"🔐 {t('Login Log')}", f"⚙️ {t('Settings')}"]
-    )
-
-    with admin_tab_cos:
-        _show_company_admin()
-
-    with admin_tab_fac:
-        from ui.admin_factories import show_factory_admin
-        show_factory_admin()
-
-    with admin_tab_log:
-        from ui.admin_login_log import show_login_log_admin
-        show_login_log_admin()
-
-    with admin_tab_users:
-        _show_user_admin()
-
-    with admin_tab_schema:
-        _show_schema_editor()
-
-    with admin_tab_sizes:
-        _show_size_order_admin()
-
-    with admin_tab_tpl:
-        _show_templates_admin()
-
-    with admin_tab_pipe:
-        _show_pipeline_layout_admin()
-
-    with admin_tab_bsr:
-        _show_boat_sample_admin()
-
-    with admin_tab_smtp:
+    def _admin_smtp():
         from ui.admin_smtp import show_smtp_admin
         show_smtp_admin()
 
-    with admin_tab_i18n:
+    def _admin_i18n():
         from ui.admin_i18n import show_i18n_admin
         show_i18n_admin()
 
-    with admin_tab_settings:
+    def _admin_settings():
         from ui.admin_settings import show_settings_admin
         show_settings_admin()
+
+    def _admin_factories():
+        from ui.admin_factories import show_factory_admin
+        show_factory_admin()
+
+    def _admin_login_log():
+        from ui.admin_login_log import show_login_log_admin
+        show_login_log_admin()
+
+    # Same story as the main nav: st.tabs ran all twelve of these panels on
+    # every admin render — including the translations editor (1,500+ rows) and
+    # the fabric/user tables. Only the chosen panel runs now.
+    _panels = [
+        (f"👤 {t('Users')}",           _show_user_admin),
+        (f"🏢 {t('Companies')}",       _show_company_admin),
+        (_fac_label,                   _admin_factories),
+        (f"📋 {t('Column Mapping')}",  _show_schema_editor),
+        (f"📐 {t('Size Order')}",      _show_size_order_admin),
+        (f"📄 {t('Templates')}",       _show_templates_admin),
+        (f"🧩 {t('Pipeline Layouts')}", _show_pipeline_layout_admin),
+        (f"🚢 {t('船样要求')}",         _show_boat_sample_admin),
+        (f"📧 {t('Email')}",           _admin_smtp),
+        (f"🌐 {t('Translations')}",    _admin_i18n),
+        (f"🔐 {t('Login Log')}",       _admin_login_log),
+        (f"⚙️ {t('Settings')}",        _admin_settings),
+    ]
+    _labels = [lbl for lbl, _ in _panels]
+    _KEY = "admin_nav"
+    # The factories label carries a live count and every label is translated,
+    # so a stored value can go stale — fall back rather than raise.
+    if st.session_state.get(_KEY) not in _labels:
+        st.session_state[_KEY] = _labels[0]
+    _active = st.segmented_control(
+        t("Admin section"), _labels, key=_KEY, label_visibility="collapsed")
+    if _active not in _labels:
+        _active = st.session_state[_KEY]
+    _panels[_labels.index(_active)][1]()
 
 
 # ---------------------------------------------------------------------------
