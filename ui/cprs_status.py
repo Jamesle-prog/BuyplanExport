@@ -36,6 +36,33 @@ def _probe(base: str, api_key: str) -> dict:
                 "message": f"Could not reach CPRS: {exc}"}
 
 
+_TTL_DOWN = 300      # a server that is OFF stays off — don't re-probe every 20s
+_DOWN_KEY = "_cprs_down_until"
+
+
+def _probe_backoff(base: str, api_key: str) -> dict:
+    """:func:`_probe` with a long back-off once the server is known down.
+
+    An unreachable host costs the full timeout on every probe, and the sidebar
+    renders on every interaction — so a 20 s TTL meant a stall right after
+    sign-in and again every 20 s for as long as CPRS stayed off. A server that
+    is switched off does not come back between one click and the next, so a
+    failure is trusted for much longer. Refresh clears it for the case where it
+    genuinely just came back.
+    """
+    import time
+    until = st.session_state.get(_DOWN_KEY) or 0
+    if until and time.time() < until:
+        return {"ok": False, "status": "", "db": "", "version": "",
+                "message": t("CPRS was unreachable — press Refresh to retry.")}
+    res = _probe(base, api_key)
+    if res.get("ok"):
+        st.session_state.pop(_DOWN_KEY, None)
+    else:
+        st.session_state[_DOWN_KEY] = time.time() + _TTL_DOWN
+    return res
+
+
 def _host(base: str) -> str:
     """Bare host:port (drop scheme + path) — shown only when the admin opts in."""
     return str(base or "").split("://")[-1].split("/")[0]
@@ -64,7 +91,7 @@ def render_sidebar_cprs_status() -> None:
         return
 
     host = _host(base) if show_addr else ""
-    info = _probe(base, api_key)
+    info = _probe_backoff(base, api_key)
     if info.get("ok"):
         ver = info.get("version") or ""
         st.markdown(f"🟢 **{t('Online')}**" + (f" · v{ver}" if ver else ""))
@@ -83,4 +110,5 @@ def render_sidebar_cprs_status() -> None:
     if st.button(f"🔄 {t('Refresh')}", key="cprs_status_refresh",
                  use_container_width=True):
         _probe.clear()
+        st.session_state.pop(_DOWN_KEY, None)
         st.rerun()

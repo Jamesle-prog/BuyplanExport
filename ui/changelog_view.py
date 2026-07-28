@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.113.1",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "perf", "text": "**Signing in is no longer held up by an offline CPRS server.** The sidebar checks whether CPRS is reachable, and an unreachable server costs the full connection timeout — which was being paid on the first screen after sign-in and again every twenty seconds for as long as CPRS stayed down. A server that is switched off does not come back between one click and the next, so a failed check is now trusted for five minutes instead of twenty seconds. **Refresh** still forces an immediate re-check the moment it comes back. When CPRS is up nothing changes."},
+        ],
+    },
+    {
         "version": "2.113.0",
         "date": "2026-07-28",
         "entries": [
