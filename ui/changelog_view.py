@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.110.1",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "fix", "text": "**Double outline on the sign-in fields.** The username and password boxes were drawing two borders, one inside the other — most obvious on the focused field, where both turned pink. The field styling was being applied to the input element itself, which sits inside a wrapper that already draws its own border. The box is now drawn once, on the wrapper. As a side effect the password reveal button sits inside the field instead of floating beside it, so both fields match."},
+        ],
+    },
+    {
         "version": "2.110.0",
         "date": "2026-07-28",
         "entries": [

@@ -16,7 +16,7 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
 
 import streamlit as st
 
-APP_VERSION = "2.110.0"
+APP_VERSION = "2.110.1"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -364,16 +364,36 @@ div[data-testid="stForm"] label p {
     color: var(--tl-soft) !important;
     font-family: 'Schibsted Grotesk', 'Noto Sans SC', sans-serif !important;
 }
-div[data-testid="stForm"] input {
-    border-radius: 14px !important; border: 1.5px solid var(--tl-hair) !important;
-    background: var(--tl-field) !important; color: var(--tl-ink) !important;
-    padding: 13px 16px !important; font-size: 15px !important; font-weight: 500 !important;
-    font-family: 'Schibsted Grotesk', 'Noto Sans SC', sans-serif !important;
+/* The field box is drawn on BaseWeb's wrapper, NOT on the <input>.
+   Streamlit nests the input inside div[data-baseweb="input"], which draws a
+   border of its own — so bordering the inner element as well produced two
+   concentric rounded rectangles, obvious once focus turned them pink. One
+   box, one border. Keeping it on the wrapper also puts the password reveal
+   button inside the field instead of floating beside it. */
+div[data-testid="stForm"] div[data-baseweb="input"] {
+    border-radius: 14px !important;
+    border: 1.5px solid var(--tl-hair) !important;
+    background: var(--tl-field) !important;
+    box-shadow: none !important;
     transition: border-color .15s, box-shadow .15s;
 }
-div[data-testid="stForm"] input:focus {
+div[data-testid="stForm"] div[data-baseweb="input"]:focus-within {
     border-color: #ff2e74 !important;
     box-shadow: 0 0 0 3.5px rgba(255,46,116,0.14) !important;
+}
+/* Everything inside the box stays flat — no second border, no second fill. */
+div[data-testid="stForm"] div[data-baseweb="base-input"],
+div[data-testid="stForm"] input,
+div[data-testid="stForm"] input:focus {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+div[data-testid="stForm"] input {
+    color: var(--tl-ink) !important;
+    padding: 13px 16px !important; font-size: 15px !important; font-weight: 500 !important;
+    font-family: 'Schibsted Grotesk', 'Noto Sans SC', sans-serif !important;
 }
 div[data-testid="stFormSubmitButton"] button {
     width: 100%; border: none; border-radius: 14px; padding: 13px;
