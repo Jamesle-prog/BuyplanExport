@@ -13,8 +13,8 @@ from ui.session_keys import SK
 from ui.shared import _th, _tr, fragment_rerun
 from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
-    XLSX_MIME, demand_matrix, link_rows, load_sky_east_items, pdf_export_block,
-    po_label, safe_filename, select_pos,
+    XLSX_MIME, cleanup_color_map, demand_matrix, link_rows,
+    load_sky_east_items, pdf_export_block, po_label, safe_filename, select_pos,
 )
 
 # Column order of the saved-plans table (one row per fabric).  Fabric-level
@@ -472,7 +472,8 @@ def _build_standard_for_plan(store, plan: dict, clean: bool = True) -> None:
     data = build_standard_cut_plan(
         header=header, groups=groups, colors=colors, demand_qty=qty,
         materials=parsed.get("materials") or [],
-        sheet_name=plan.get("plan_name") or "Cut Plan", clean=clean)
+        sheet_name=plan.get("plan_name") or "Cut Plan", clean=clean,
+        color_map=cleanup_color_map() if clean else None)
     st.session_state[f"cp_std_{plan_id}_bytes"] = data
     st.session_state[f"cp_std_{plan_id}_fname"] = _std_filename(plan)
     # Any PDF built from the previous workbook is now stale.

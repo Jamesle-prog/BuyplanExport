@@ -18,8 +18,8 @@ from ui.session_keys import SK
 from ui.shared import guard_multiselect_state
 from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
-    XLSX_MIME, demand_frame, demand_matrix, pdf_export_block, safe_filename,
-    select_pos,
+    XLSX_MIME, cleanup_color_map, demand_frame, demand_matrix,
+    pdf_export_block, safe_filename, select_pos,
 )
 
 
@@ -128,7 +128,8 @@ def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
 
     data = build_standard_cut_plan(
         header=header, groups=groups, colors=colors, demand_qty=qty,
-        materials=materials, sheet_name=order_name, clean=clean)
+        materials=materials, sheet_name=order_name, clean=clean,
+        color_map=cleanup_color_map() if clean else None)
 
     st.session_state[SK.CP_STD_BYTES] = data
     st.session_state[SK.CP_STD_FNAME] = (

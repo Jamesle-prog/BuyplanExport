@@ -20,6 +20,23 @@ _SIZE_COLS = {"XS": "xs", "S": "s", "M": "m", "L": "l",
               "XL": "xl", "2XL": "xxl"}
 
 
+def cleanup_color_map(client: str = "") -> dict[str, str]:
+    """Colour map for the cut-plan cleanup: ``{english: chinese}`` taken from
+    the PO colour translations, so a colour the plan carries in English is
+    handed to the cutting room in Chinese.
+
+    Best-effort — if the colour table can't be read the export still builds,
+    just with the English colour names it already had.
+    """
+    from po_extractor.exporters.cutting_plan_clean import build_color_map
+    from ui.stores import get_color_translation_store
+    try:
+        return build_color_map(
+            get_color_translation_store().build_lookup_dict(), client)
+    except Exception:
+        return {}
+
+
 def po_label(pc_no: str, po_no: str, style: str = "") -> str:
     """Display label for one link — 'PC No. · PO No. · Style'."""
     parts = [p for p in ((pc_no or "").strip(), (po_no or "").strip(),

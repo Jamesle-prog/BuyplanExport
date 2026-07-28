@@ -38,6 +38,12 @@ TRANSLATIONS: list[tuple[str, str]] = [
     ("Marker",        "版"),
     ("Fabric Length", "面料长度"),
     ("Fabric Weight", "面料重量"),
+    # Added beyond the original macro. "Total cut length" MUST precede
+    # "Cut Length" — the sheet has both, and the short rule would otherwise
+    # leave the total reading "Total 裁剪长度".
+    ("Total cut length", "总裁剪长度"),
+    ("Cut Length",       "裁剪长度"),
+    ("Material Cost",    "材料成本"),
 ]
 
 _COMPILED: list[tuple[re.Pattern, str]] = [
@@ -45,6 +51,42 @@ _COMPILED: list[tuple[re.Pattern, str]] = [
 ]
 
 MARKER_EXT = ".mrk"
+
+_CJK = re.compile(r"[一-鿿]")
+
+
+def has_chinese(text: str) -> bool:
+    """True when *text* already contains a Chinese character."""
+    return bool(_CJK.search(text))
+
+
+def _norm_color(text: str) -> str:
+    """Case/space-insensitive colour key — matches the colour store's own
+    normalisation ("NAVY", "navy", " Navy " all collapse together)."""
+    return " ".join(str(text).split()).casefold()
+
+
+def build_color_map(lookup: dict, client: str = "") -> dict[str, str]:
+    """Flatten the colour store's ``{(client, brand, en): cn}`` into
+    ``{normalised_en: cn}`` for whole-cell colour replacement.
+
+    A colour can be mapped differently per client/brand, so rows for *client*
+    are applied last and win; everything else is a fallback. Blank Chinese
+    names are skipped so a half-filled row can't blank a colour out.
+    """
+    out: dict[str, str] = {}
+    for scope in (False, True):          # others first, then the client's own
+        for key, cn in (lookup or {}).items():
+            if not cn:
+                continue
+            row_client = key[0] if isinstance(key, tuple) and key else ""
+            en = key[2] if isinstance(key, tuple) and len(key) > 2 else ""
+            if not en:
+                continue
+            is_client = bool(client) and str(row_client) == client
+            if is_client == scope:
+                out[_norm_color(en)] = cn
+    return out
 
 
 def translate_text(text: str) -> str:
@@ -70,16 +112,26 @@ def strip_path_and_ext(text: str) -> str:
     return text
 
 
-def clean_value(value: Any) -> Any:
-    """Clean one cell value; non-text and formulas pass through untouched."""
+def clean_value(value: Any, color_map: dict[str, str] | None = None) -> Any:
+    """Clean one cell value; non-text and formulas pass through untouched.
+
+    When *color_map* is given, a cell whose **whole** value is a known English
+    colour becomes its Chinese name from the PO colour data. Whole-cell only —
+    a substring rule here would corrupt any text that merely contains a colour
+    word. A colour that is already Chinese is left alone.
+    """
     if not isinstance(value, str):
         return value
     if value.startswith("="):        # never rewrite a formula
         return value
+    if color_map and not has_chinese(value):
+        cn = color_map.get(_norm_color(value))
+        if cn:
+            return cn                # a colour cell is only ever the colour
     return strip_path_and_ext(translate_text(value))
 
 
-def clean_worksheet(ws) -> int:
+def clean_worksheet(ws, color_map: dict[str, str] | None = None) -> int:
     """Clean every cell of *ws* in place. Returns the number of cells changed."""
     changed = 0
     for row in ws.iter_rows():
@@ -87,13 +139,13 @@ def clean_worksheet(ws) -> int:
             old = cell.value
             if not isinstance(old, str):
                 continue
-            new = clean_value(old)
+            new = clean_value(old, color_map)
             if new != old:
                 cell.value = new
                 changed += 1
     return changed
 
 
-def clean_workbook(wb) -> int:
+def clean_workbook(wb, color_map: dict[str, str] | None = None) -> int:
     """Clean every worksheet of *wb* in place. Returns total cells changed."""
-    return sum(clean_worksheet(ws) for ws in wb.worksheets)
+    return sum(clean_worksheet(ws, color_map) for ws in wb.worksheets)

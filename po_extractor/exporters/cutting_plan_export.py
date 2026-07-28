@@ -387,7 +387,8 @@ def build_standard_cut_plan(*, header: dict[str, Any],
                             demand_qty: dict[tuple[str, str, str], int],
                             materials: list[dict[str, Any]] | None = None,
                             sheet_name: str = "Cut Plan",
-                            clean: bool = False) -> bytes:
+                            clean: bool = False,
+                            color_map: dict[str, str] | None = None) -> bytes:
     """Render a cutting plan in the standard layout and return .xlsx bytes.
 
     ``groups``      ordered [(style, [size, ...]), ...] — the demand columns.
@@ -398,6 +399,11 @@ def build_standard_cut_plan(*, header: dict[str, Any],
     ``clean``       run the house cleanup (Chinese labels, marker paths reduced
                     to bare names) — the step that used to be a hand-run Excel
                     macro.
+
+    ``color_map``   ``{normalised english colour: chinese}`` from the PO colour
+                    data — colour cells that aren't already Chinese are
+                    rendered in Chinese. Only applied when ``clean`` is on;
+                    build it with ``cutting_plan_clean.build_color_map``.
 
     ``clean`` defaults to **False** on purpose: this layout is re-parseable by
     ``parsers.cutting_plan`` (which finds its blocks by English anchor text),
@@ -434,7 +440,7 @@ def build_standard_cut_plan(*, header: dict[str, Any],
     # point the Excel macro ran at.
     if clean:
         from .cutting_plan_clean import clean_workbook
-        clean_workbook(wb)
+        clean_workbook(wb, color_map)
 
     apply_print_settings(wb)
     buf = io.BytesIO()

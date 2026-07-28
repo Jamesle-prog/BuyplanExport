@@ -12,7 +12,8 @@ import openpyxl
 import pytest
 
 from po_extractor.exporters.cutting_plan_clean import (
-    clean_value, clean_workbook, strip_path_and_ext, translate_text,
+    build_color_map, clean_value, clean_workbook, has_chinese,
+    strip_path_and_ext, translate_text,
 )
 
 
@@ -56,6 +57,23 @@ def test_untouched_labels_pass_through():
     for s in ["Material", "Solution", "Spreading Plies", "Total Efficiency",
               "Min Plies", "Client", "Date", "Sum"]:
         assert translate_text(s) == s
+
+
+def test_cut_length_and_material_cost_labels():
+    assert translate_text("Cut Length,m") == "裁剪长度,m"
+    assert translate_text("Material Cost,CNY") == "材料成本,CNY"
+
+
+def test_total_cut_length_is_not_half_translated():
+    """'Total cut length' must be replaced before the 'Cut Length' rule, or it
+    would come out as 'Total 裁剪长度'."""
+    assert translate_text("Total cut length") == "总裁剪长度"
+
+
+def test_bare_material_label_is_left_alone():
+    """Only 'Material Cost' is mapped — the Marker Definition block's plain
+    'Material' column holds the fabric name and must not be touched."""
+    assert translate_text("Material") == "Material"
 
 
 def test_replacements_do_not_cascade():
@@ -108,6 +126,61 @@ def test_translate_then_strip_on_one_cell():
     assert clean_value(r"D:\Markers\SS26\ABC.mrk") == "ABC"
 
 
+# ── colour translation from the PO colour data ───────────────────────────────
+
+# Shape returned by ColorTranslationStore.build_lookup_dict().
+_LOOKUP = {
+    ("GIII", "DKNY", "Navy"): "藏青",
+    ("GIII", "DKNY", "Clay"): "泥粉",
+    ("Sky East", "Zalando", "Navy"): "深蓝",
+    ("GIII", "DKNY", "Blank"): "",          # half-filled row
+}
+
+
+def test_build_color_map_flattens_and_normalises():
+    m = build_color_map(_LOOKUP)
+    assert m["navy"] in {"藏青", "深蓝"}
+    assert m["clay"] == "泥粉"
+    assert "blank" not in m                 # empty cn never mapped
+
+
+def test_client_rows_win_over_other_clients():
+    assert build_color_map(_LOOKUP, client="GIII")["navy"] == "藏青"
+    assert build_color_map(_LOOKUP, client="Sky East")["navy"] == "深蓝"
+
+
+def test_colour_cell_translated_case_insensitively():
+    m = build_color_map(_LOOKUP, client="GIII")
+    for src in ("NAVY", "navy", " Navy "):
+        assert clean_value(src, m) == "藏青"
+
+
+def test_colour_already_chinese_is_left_alone():
+    m = build_color_map(_LOOKUP, client="GIII")
+    assert clean_value("藏青", m) == "藏青"
+
+
+def test_unknown_colour_falls_through_unchanged():
+    m = build_color_map(_LOOKUP, client="GIII")
+    assert clean_value("PUCE", m) == "PUCE"
+
+
+def test_colour_match_is_whole_cell_only():
+    """A substring rule here would corrupt any text containing a colour word."""
+    m = build_color_map(_LOOKUP, client="GIII")
+    assert clean_value("Navy Blazer 2pc", m) == "Navy Blazer 2pc"
+
+
+def test_colour_mapping_does_not_disturb_labels():
+    m = build_color_map(_LOOKUP, client="GIII")
+    assert clean_value("Marker Ratio", m) == "裁剪配比"
+    assert clean_value(r"D:\Markers\M1.mrk", m) == "M1"
+
+
+def test_has_chinese():
+    assert has_chinese("藏青") and not has_chinese("Navy")
+
+
 # ── workbook pass ────────────────────────────────────────────────────────────
 
 def test_clean_workbook_reports_and_applies():
@@ -127,7 +200,7 @@ def test_clean_workbook_reports_and_applies():
 
 # ── integration with the exporter ────────────────────────────────────────────
 
-def _build(clean: bool) -> list[str]:
+def _build(clean: bool, color_map=None) -> list[str]:
     from po_extractor.exporters.cutting_plan_export import build_standard_cut_plan
     data = build_standard_cut_plan(
         header={"order_name": "PO-99", "client": "GIII", "operator": "LI",
@@ -145,7 +218,7 @@ def _build(clean: bool) -> list[str]:
                          "file_name": r"D:\Markers\SS26\ABC-1234.mrk",
                          "rows": []}],
         }],
-        clean=clean,
+        clean=clean, color_map=color_map,
     )
     ws = openpyxl.load_workbook(io.BytesIO(data)).active
     return [str(c.value) for r in ws.iter_rows() for c in r
@@ -155,9 +228,18 @@ def _build(clean: bool) -> list[str]:
 def test_export_cleaned_when_requested():
     vals = _build(clean=True)
     assert "颜色" in vals and "裁剪配比" in vals and "层数" in vals
+    assert "裁剪长度,m" in vals and "材料成本,CNY" in vals
     assert "ABC-1234" in vals                       # marker path reduced
     assert not any(".mrk" in v for v in vals)
     assert not any(v == "Marker Ratio" for v in vals)
+
+
+def test_export_translates_colours_from_the_po_data():
+    """NAVY is a demand-block colour row; with the PO colour map it ships in
+    Chinese, without one it stays as it was."""
+    cmap = build_color_map(_LOOKUP, client="GIII")
+    assert "藏青" in _build(clean=True, color_map=cmap)
+    assert "NAVY" in _build(clean=True, color_map=None)
 
 
 def test_export_default_stays_english_and_reparseable():
