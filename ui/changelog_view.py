@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.110.4",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "fix", "text": "**Two different order numbers no longer share a column heading.** Our own PO number and the client's PO were both displayed as \"PO No.\" — in the Summary tab they appeared under identical headings in two tables, meaning different things. Each now has one heading of its own, used everywhere: **PO Number** for our PO, **Zalando PO** for the client's, **PC No.** for the Sky East contract number. The Sky East items table was the clearest case — the client's PO was being labelled from our own PO's column-mapping entry, so renaming that field in Admin would have relabelled the wrong column."},
+            {"type": "fix", "text": "**The cut plan's linked-order column was mislabelled.** It reads \"Zalando PO\" now, which is what the value actually is — confirmed against the stored data, where it matches the client PO on the Sky East items and no GIII PO. The UPC Check tables, which showed a bare \"PO\", now say \"PO Number\" like everywhere else. Workbook headings are untouched: the \"PO No.\" columns in the buy plan and the other exports are the layout the factory reads."},
+        ],
+    },
+    {
         "version": "2.110.3",
         "date": "2026-07-28",
         "entries": [

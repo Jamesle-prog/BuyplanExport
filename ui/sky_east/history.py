@@ -1,6 +1,5 @@
 ﻿"""Sky East history section — contract browser, downloads, buy plan generation."""
 from __future__ import annotations
-import base64
 import io
 import os
 import tempfile
@@ -24,6 +23,7 @@ from ui.shared import (
     DEFAULT_XLSX_EXT as _DEFAULT_XLSX_EXT,
     _th, _tr,
     build_image_cache_for_ids,
+    build_thumbnail_data_urls,
     fragment_rerun,
     load_style_photo_pair,
     load_style_photo_map,
@@ -748,11 +748,7 @@ def _se_hist_inject_photo_col(display_df, col_cfg, df_items) -> None:
         if s and pid and s not in style_to_pid:
             style_to_pid[s] = pid
     all_pids = list(set(style_to_pid.values()))
-    loaded   = build_image_cache_for_ids(all_pids)
-    pid_to_b64 = {
-        pid: f"data:image/png;base64,{base64.b64encode(b).decode()}"
-        for pid, b in loaded.items()
-    }
+    pid_to_b64 = build_thumbnail_data_urls(all_pids)
     if not pid_to_b64:
         return
     photo_vals = display_df[_style_col].map(
@@ -1665,7 +1661,7 @@ def _se_color_miss_log_section(misses_df=None) -> None:
                 "client_po_color", "progress_colors", "source",
             ]].rename(columns={
                 "logged_at": "Logged At", "pc_no": "PC No.", "contract_no": "Contract No.",
-                "style": "Style", "po_no": "PO No.", "client_po_color": "Client's PO Colour",
+                "style": "Style", "po_no": "Zalando PO", "client_po_color": "Client's PO Colour",
                 "progress_colors": "大货进度表 Colour(s)", "source": "Source",
             }),
             width="stretch", hide_index=True,

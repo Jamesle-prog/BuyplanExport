@@ -382,7 +382,7 @@ def _build_items_display_df(df_items):
                  if c in df.columns]
 
     rename_map = {c: live_label(c, c) for c in show_cols}
-    rename_map["zalando_po"]   = _th(live_label("po_number", "PO No."))
+    rename_map["zalando_po"]   = _th("Zalando PO")
     rename_map["pc_no"]        = _th(live_label("pc_no", "PC No."))
     rename_map["contract_no"]  = _th("HHN Contract No.")
     rename_map["colour_code"]  = _th("Color Code")

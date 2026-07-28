@@ -1,13 +1,11 @@
 ﻿"""Sky East missing-fields section — editor grid, auto-fill, and section B."""
 from __future__ import annotations
 
-import base64
-
 import streamlit as st
 
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import build_image_cache_for_ids, _th, _tr
+from ui.shared import build_thumbnail_data_urls, _th, _tr
 from ui.stores import get_sky_east_store
 
 
@@ -21,12 +19,8 @@ def _se_missing_style_photo_map(df) -> dict[str, str]:
             if s and pid and s not in style_to_pid:
                 style_to_pid[s] = pid
     all_pids = list(set(style_to_pid.values()))
-    loaded   = build_image_cache_for_ids(all_pids)
-    return {
-        s: f"data:image/png;base64,{base64.b64encode(loaded[pid]).decode()}"
-        for s, pid in style_to_pid.items()
-        if pid in loaded
-    }
+    loaded   = build_thumbnail_data_urls(all_pids)
+    return {s: loaded[pid] for s, pid in style_to_pid.items() if pid in loaded}
 
 
 def _se_missing_apply_auto_fill(df_a, fl, pl):
@@ -113,7 +107,7 @@ def _se_missing_edit_grid(df_a, pid_b64_a: dict) -> None:
                  if c in edit_df.columns]
     edit_df = edit_df[disp_cols].copy()
     drename = _tr({
-        "pc_no": "PC No.", "zalando_po": "PO No.", "style": "Style",
+        "pc_no": "PC No.", "zalando_po": "Zalando PO", "style": "Style",
         "color_name": "Color", "brand": "Brand",
         "fabric_item_no": "Fabric No.", "contract_no": "HHN Contract No.",
         "ex_fty_date": "Ex-Fty", "total_qty": "Units",

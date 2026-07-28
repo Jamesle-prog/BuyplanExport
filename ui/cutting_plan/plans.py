@@ -351,7 +351,7 @@ def _show_links(store, plan: dict) -> None:
         st.dataframe(
             pd.DataFrame([{
                 _th("PC No."): l.get("pc_no", ""),
-                _th("PO No."): l.get("po_no", ""),
+                _th("Zalando PO"): l.get("po_no", ""),
                 _th("Style"): l.get("style", "") or t("(all styles)"),
                 _th("Linked"): l.get("linked_at", ""),
                 _th("By"): l.get("linked_by", ""),

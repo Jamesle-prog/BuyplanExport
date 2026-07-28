@@ -439,7 +439,7 @@ def _show_overview(user_cos: list[str], admin_mode: bool,
 
             # All selectable columns (key → human label)
             giii_field_labels: dict = {
-                "po_number":         "PO No.",
+                "po_number":         "PO Number",
                 "pc_no":             "PC No.",
                 "company":           "Company",
                 "style":              "Style",
@@ -482,7 +482,7 @@ def _show_overview(user_cos: list[str], admin_mode: bool,
 
             se_field_labels: dict = {
                 "pc_no":       "PC No.",
-                "zalando_po":  "PO No.",
+                "zalando_po":  "Zalando PO",
                 "company":     "Company",
                 "style":       "Style",
                 "brand":       "Brand",

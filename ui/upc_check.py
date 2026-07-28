@@ -26,7 +26,7 @@ from ui.session_keys import SK
 from ui.stores import get_store
 
 _COLS = {
-    "po_number": "PO", "style": "Style", "color": "Color", "size": "Size",
+    "po_number": "PO Number", "style": "Style", "color": "Color", "size": "Size",
     "units": "Units", "company": "Client", "destination_code": "Warehouse",
     "ship_to": "Destination", "buyer": "Buyer", "xfty_date": "X-Factory",
 }
@@ -262,7 +262,7 @@ def _mode_count(store, user_cos):
     data = store.load_stocktake()
     if data:
         df = pd.DataFrame(data).rename(columns={
-            "upc": "UPC", "qty": "Count", "po_number": "PO", "style": "Style",
+            "upc": "UPC", "qty": "Count", "po_number": "PO Number", "style": "Style",
             "color": "Color", "size": "Size", "updated_at": "Updated"})
         st.caption(f"**{len(df)}** {t('UPCs counted')}  ·  "
                    f"{t('total units')} **{int(df['Count'].sum())}**")
