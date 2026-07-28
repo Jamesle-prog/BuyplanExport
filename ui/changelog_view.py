@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.110.5",
+        "date": "2026-07-28",
+        "entries": [
+            {"type": "perf", "text": "**Opening Cutting Plan is quick again.** The tab was building all three of its sections every time it opened — the upload screen with its PO pickers, the saved-plan list with each plan's detail, and the standard-output demand matrices — to show one of them. Only the section you pick is built now. This is the same tab-bar behaviour fixed in the main navigation in v2.110.0 and in the plan detail in v2.110.2; the remaining tab bars (GIII, Sky East, Email, Reference Data and the sub-tabs inside them) still work this way and are worth the same change."},
+        ],
+    },
+    {
         "version": "2.110.4",
         "date": "2026-07-28",
         "entries": [

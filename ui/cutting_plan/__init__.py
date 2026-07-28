@@ -37,16 +37,24 @@ def show_cutting_plan_tab() -> None:
         kind, message = flash
         getattr(st, kind, st.info)(message)
 
-    tab_upload, tab_plans, tab_std = st.tabs(
-        [f"📤 {t('Upload & Link')}", f"📋 {t('Saved plans')}",
-         f"📄 {t('Standard output')}"])
-
-    with tab_upload:
-        show_upload_section()
-    with tab_plans:
-        show_plans_section()
-    with tab_std:
-        show_standard_section()
+    # NOT st.tabs — it runs every section on every render, and each of these
+    # loads its own data (Sky East items for the PO pickers, the saved-plan
+    # list with its per-plan detail, the standard-output demand matrices).
+    # Opening this tab was paying for all three to show one.
+    _sections = [
+        (f"📤 {t('Upload & Link')}",    show_upload_section),
+        (f"📋 {t('Saved plans')}",      show_plans_section),
+        (f"📄 {t('Standard output')}",  show_standard_section),
+    ]
+    _labels = [lbl for lbl, _ in _sections]
+    _key = "cp_section_nav"
+    if st.session_state.get(_key) not in _labels:      # language toggle
+        st.session_state[_key] = _labels[0]
+    _active = st.segmented_control(
+        t("Section"), _labels, key=_key, label_visibility="collapsed")
+    if _active not in _labels:
+        _active = st.session_state[_key]
+    _sections[_labels.index(_active)][1]()
 
 
 __all__ = ["show_cutting_plan_tab"]
