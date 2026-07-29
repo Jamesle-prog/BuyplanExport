@@ -190,3 +190,58 @@ def test_photo_map_sanitizes_style_names_like_pair_loader(tmp_path, monkeypatch)
 
     out = shared.load_style_photo_map(["DR/5:A"], str(tmp_path / "missing"))
     assert out["DR/5:A"][0] is not None
+
+
+# ── Styles filed as a single photo (no _front suffix) ───────────────────────
+#
+# Most of the shared style library is like this: 286 of the 427 files on the
+# Zalando share had no ``_front`` sibling, and requiring the suffix reported
+# every one of those styles as having no photo at all while the file sat right
+# there in the folder.
+
+def test_bare_style_png_is_used_as_the_front_photo(tmp_path, monkeypatch):
+    primary = tmp_path / "primary"; primary.mkdir()
+    monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(tmp_path / "none"))
+    (primary / "DR5108.png").write_bytes(_png())
+
+    assert shared.load_style_photo_pair("DR5108", str(primary))[0] is not None
+    assert shared.load_style_photo_map(["DR5108"], str(primary))["DR5108"][0] \
+        is not None
+
+
+def test_bare_style_png_is_never_taken_as_the_back_photo(tmp_path, monkeypatch):
+    primary = tmp_path / "primary"; primary.mkdir()
+    monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(tmp_path / "none"))
+    (primary / "DR5108.png").write_bytes(_png())
+
+    assert shared.load_style_photo_pair("DR5108", str(primary))[1] is None
+    assert shared.load_style_photo_map(["DR5108"], str(primary))["DR5108"][1] \
+        is None
+
+
+def test_explicit_front_wins_over_the_bare_name(tmp_path, monkeypatch):
+    """A style with both filings must use the one that says which side it is —
+    including when the explicit one is only in the extracted fallback."""
+    primary = tmp_path / "primary"; primary.mkdir()
+    extracted = tmp_path / "extracted"; extracted.mkdir()
+    monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(extracted))
+    front = _png()
+    (extracted / "DR5110_front.png").write_bytes(front)
+    (primary / "DR5110.png").write_bytes(b"not a png")     # bare, primary
+
+    assert shared.load_style_photo_pair("DR5110", str(primary))[0] == front
+    assert shared.load_style_photo_map(["DR5110"], str(primary))["DR5110"][0] \
+        == front
+
+
+def test_filename_case_does_not_decide_whether_a_photo_is_found(tmp_path,
+                                                                monkeypatch):
+    """Windows and the WebDAV mount are both case-insensitive, so a set
+    membership test on the raw listing missed a file that differed only in
+    case — it was there, and the style was reported as having none."""
+    primary = tmp_path / "primary"; primary.mkdir()
+    monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(tmp_path / "none"))
+    (primary / "dr5108_FRONT.png").write_bytes(_png())
+
+    assert shared.load_style_photo_map(["DR5108"], str(primary))["DR5108"][0] \
+        is not None

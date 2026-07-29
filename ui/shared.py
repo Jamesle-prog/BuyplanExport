@@ -367,7 +367,8 @@ def show_image_folder_expander(session_key: str, apply_key: str) -> None:
     with st.expander(_t("Image folder (load & save style photos)")):
         st.caption(
             "Images are loaded from and saved here as `{style}_front.png` / `{style}_back.png` "
-            "and also as `{picture_id}.png` for internal lookup. "
+            "and also as `{picture_id}.png` for internal lookup. A style filed as a "
+            "single `{style}.png` is used as its front photo. "
             "Leave blank to use the built-in default folder."
         )
 
@@ -470,13 +471,28 @@ def load_image(picture_id: str,
     return None
 
 
+def _photo_candidates(safe_style: str, pos: str) -> tuple[str, ...]:
+    """Filenames accepted for a style's *pos* photo, best match first.
+
+    A style with a single photo is filed under its bare name — most of the
+    shared library is like that (286 of 427 files at last count had no
+    ``_front`` sibling), and requiring the suffix reported every one of those
+    styles as having no photo at all. A lone photo is the front one, which is
+    also how the GIII side classifies it (``_photo_utils._classify_filename``
+    calls an exact match "single" and uses it as the front).
+    """
+    if pos == "front":
+        return (f"{safe_style}_front.png", f"{safe_style}.png")
+    return (f"{safe_style}_back.png",)
+
+
 def load_style_photo_pair(style: str, primary_dir: str | None = None) -> list:
     """Return ``[front_bytes|None, back_bytes|None]`` for *style*.
 
     Looks in the primary (configured) folder first, then the persistent
-    :data:`EXTRACTED_IMAGES_DIR` fallback, for ``{safe_style}_front.png`` /
-    ``{safe_style}_back.png``.  Used by the buy-plan generator so photos still
-    embed after a restart or a changed image folder.
+    :data:`EXTRACTED_IMAGES_DIR` fallback, for each name
+    :func:`_photo_candidates` accepts.  Used by the buy-plan generator so
+    photos still embed after a restart or a changed image folder.
     """
     import re as _re
     safe = _re.sub(r'[\\/:*?"<>|]', '_', str(style or ""))
@@ -484,15 +500,19 @@ def load_style_photo_pair(style: str, primary_dir: str | None = None) -> list:
     pair: list = []
     for pos in ("front", "back"):
         data = None
-        for folder in (primary, EXTRACTED_IMAGES_DIR):
-            p = os.path.join(folder, f"{safe}_{pos}.png")
-            if os.path.exists(p):
-                try:
-                    with open(p, "rb") as fh:
-                        data = fh.read()
-                    break
-                except OSError:
-                    pass
+        # Name outside folder: an explicit `_front` anywhere beats a bare name.
+        for cand in _photo_candidates(safe, pos):
+            for folder in (primary, EXTRACTED_IMAGES_DIR):
+                p = os.path.join(folder, cand)
+                if os.path.exists(p):
+                    try:
+                        with open(p, "rb") as fh:
+                            data = fh.read()
+                        break
+                    except OSError:
+                        pass
+            if data is not None:
+                break
         pair.append(data)
     return pair
 
@@ -630,12 +650,15 @@ def load_style_photo_map(styles, primary_dir: str | None = None) -> dict[str, li
     from concurrent.futures import ThreadPoolExecutor
 
     primary = primary_dir if primary_dir is not None else images_dir()
-    listings: list[tuple[str, set[str]]] = []
+    # Lowercased name → the name as it is actually spelled on disk. Windows and
+    # the WebDAV mount are both case-insensitive, so a set membership test on
+    # the raw names would miss a file that differs only in case.
+    listings: list[tuple[str, dict[str, str]]] = []
     for folder in (primary, EXTRACTED_IMAGES_DIR):
         try:
-            listings.append((folder, set(os.listdir(folder))))
+            listings.append((folder, {n.lower(): n for n in os.listdir(folder)}))
         except OSError:
-            listings.append((folder, set()))
+            listings.append((folder, {}))
 
     # Resolve which (folder, filename) each style/position should read from.
     wanted: list[tuple[str, int, str, str]] = []
@@ -645,11 +668,15 @@ def load_style_photo_map(styles, primary_dir: str | None = None) -> dict[str, li
             continue
         safe = _re.sub(r'[\\/:*?"<>|]', '_', s)
         for idx, pos in enumerate(("front", "back")):
-            fname = f"{safe}_{pos}.png"
-            for folder, names in listings:
-                if fname in names:
-                    wanted.append((s, idx, folder, fname))
-                    break
+            # Name outside folder: an explicit `_front` anywhere beats a bare
+            # name, which is only a fallback for a style filed as one photo.
+            hit = next(
+                ((folder, names[cand.lower()])
+                 for cand in _photo_candidates(safe, pos)
+                 for folder, names in listings if cand.lower() in names),
+                None)
+            if hit:
+                wanted.append((s, idx, hit[0], hit[1]))
 
     if not wanted:
         return {}

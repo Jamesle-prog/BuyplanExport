@@ -1226,7 +1226,12 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                         ]
                         for _p in (_bad_photos or []):
                             _base = os.path.basename(_p)
-                            _sty = _base.replace("_front.png", "").replace("_back.png", "")
+                            # A style may be filed as a bare `<style>.png`, so
+                            # drop the extension too or it lands in the log as
+                            # the style name.
+                            _sty = (_base.replace("_front.png", "")
+                                         .replace("_back.png", ""))
+                            _sty = os.path.splitext(_sty)[0]
                             _issue_rows.append(
                                 {"style": _sty, "issue": "error", "detail": _p})
                         store.replace_photo_issues(_issue_rows)
@@ -1447,7 +1452,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             f"🖼 {len(_nophoto)} " + t("style(s) have no photo in the buy plan")
             + f": {_prev}. "
             + t("Re-run **Process** on New Contracts to (re)extract images, or drop "
-                "`<style>_front.png` into the image folder."),
+                "`<style>.png` (or `<style>_front.png`) into the image folder."),
             icon="🖼",
         )
 
@@ -1598,8 +1603,8 @@ def _se_photo_issue_log_section() -> None:
     )
     with st.expander(f"🖼 {t('Photo issues')} ({len(issues)})", expanded=False):
         st.caption(t(
-            "'missing' = no {style}_front.png in the image folder, the "
-            "extracted-images fallback, or the upload's embedded pictures — "
+            "'missing' = no {style}.png or {style}_front.png in the image "
+            "folder, the extracted-images fallback, or the upload's embedded pictures — "
             "the buy plan has no photo for that style. 'error' = the source "
             "file exists but could not be read (often a corrupt file on the "
             "network share; it is skipped fast and retried automatically "

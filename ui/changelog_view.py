@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.116.3",
+        "date": "2026-07-29",
+        "entries": [
+            {"type": "fix", "text": "**A style filed as a single photo is found again.** The buy plan only ever looked for `<style>_front.png` / `<style>_back.png`, so a style stored as a plain `<style>.png` was reported as having no photo at all — with the file sitting right there in the folder. On the Zalando share that was **286 of 427 files** (DR5108, DR4468A, DR4501, DR4521, DR5316, DR5430 …). A lone photo is now used as the front one, which is how the GIII side has always read it. An explicit `_front` still wins wherever it is, so nothing that worked before changes."},
+            {"type": "fix", "text": "**Filename case no longer decides whether a photo is found.** The folder listing was matched exactly, so `dr5108_front.png` missed `DR5108`. Windows and the WebDAV mount are both case-insensitive — the lookup now is too."},
+            {"type": "docs", "text": "The “no photo” warning and the 🖼 Photo issues note now name `<style>.png` as an accepted filename, so they stop pointing at a file you don’t need to create."},
+        ],
+    },
+    {
         "version": "2.116.2",
         "date": "2026-07-29",
         "entries": [
