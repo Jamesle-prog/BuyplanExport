@@ -445,25 +445,107 @@ def test_missing_folder_does_not_raise(tmp_path):
     save_copy_to_folder(b"x", "p.xlsx", str(tmp_path / "nope"))   # warns only
 
 
-def test_dropped_columns_are_cleared_heading_and_figures():
-    """The heading sits several rows above its figures with blank rows in
-    between, so the walk must step over blanks and stop only at the next
-    block's heading."""
-    from po_extractor.exporters.cutting_plan_clean import blank_dropped_columns
+_METRICS = ("Fabric Length,m", "Efficiency,%", "Cut Length,m",
+            "Marker Length,cm", "Material Cost,CNY")
+
+
+def test_dropped_columns_close_up_inside_their_own_block():
+    """Each block writes its metrics right after *its own* size columns, so two
+    fabrics with different size counts put ``Cut Length,m`` on two different
+    sheet columns — and the column one block uses for a metric the other uses
+    for a size. Emptying or deleting the sheet column can only ever come out
+    right for the widest block; every narrower one keeps a blank gap."""
+    from po_extractor.exporters.cutting_plan_clean import compact_dropped_columns
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.cell(1, 1, "Cut Length,m"); ws.cell(1, 2, "Fabric Length,m")
-    ws.cell(4, 1, 110.65);         ws.cell(4, 2, 1022.16)   # blank rows 2-3
-    ws.cell(5, 1, 110.65);         ws.cell(5, 2, 1022.16)   # the 合计 row
-    ws.cell(9, 1, "Cut Length,m")                            # next block
-    ws.cell(11, 1, 55.5)
-    cleared = blank_dropped_columns(ws)
-    assert [ws.cell(r, 1).value for r in (1, 4, 5, 9, 11)] == [None] * 5
-    # the neighbouring kept column is untouched
-    assert ws.cell(1, 2).value == "Fabric Length,m"
-    assert ws.cell(4, 2).value == 1022.16
-    assert ws.max_column == 2                # column never removed
-    assert cleared == 5
+    # wide block — 10 size columns (C..L), so its metrics land on M..Q
+    ws.cell(1, 1, "Marker 1"); ws.cell(1, 3, "Sizes"); ws.merge_cells("C1:L1")
+    for i, head in enumerate(_METRICS):
+        ws.cell(1, 13 + i, head)
+    for c in range(3, 13):
+        ws.cell(2, c, 176)
+    for i, v in enumerate((1022.16, 87.47, 110.65, 580.77, 1022.16)):
+        ws.cell(2, 13 + i, v)
+    # narrow block — 5 size columns (C..G), so its metrics land on H..L
+    ws.cell(3, 1, "Marker 1"); ws.cell(3, 3, "Sizes"); ws.merge_cells("C3:G3")
+    for i, head in enumerate(_METRICS):
+        ws.cell(3, 8 + i, head)
+    for c in range(3, 8):
+        ws.cell(4, c, 74)
+    for i, v in enumerate((40.75, 83.70, 29.83, 110.13, 40.75)):
+        ws.cell(4, 8 + i, v)
+
+    assert compact_dropped_columns(ws) == 4           # two out of each block
+    assert [ws.cell(1, c).value for c in range(13, 18)] == [
+        "Fabric Length,m", "Efficiency,%", "Marker Length,cm", None, None]
+    assert [ws.cell(2, c).value for c in range(13, 18)] == [
+        1022.16, 87.47, 580.77, None, None]
+    assert [ws.cell(3, c).value for c in range(8, 13)] == [
+        "Fabric Length,m", "Efficiency,%", "Marker Length,cm", None, None]
+    assert [ws.cell(4, c).value for c in range(8, 13)] == [
+        40.75, 83.70, 110.13, None, None]
+    # column J is the narrow block's Cut Length AND the wide block's 4th size
+    assert ws.cell(2, 10).value == 176
+
+
+def test_packing_moves_the_merges_and_strips_the_vacated_tail():
+    from po_extractor.exporters.cutting_plan_clean import compact_dropped_columns
+    from openpyxl.styles import Border, Side
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.cell(1, 1, "Marker 1"); ws.cell(1, 3, "Sizes"); ws.merge_cells("C1:G1")
+    for i, head in enumerate(_METRICS):
+        ws.cell(1, 8 + i, head)                       # heading spans rows 1-2
+        ws.merge_cells(start_row=1, start_column=8 + i, end_row=2,
+                       end_column=8 + i)
+    for i, v in enumerate((40.75, 83.70, 29.83, 110.13, 40.75)):
+        ws.cell(3, 8 + i, v)                          # figure spans rows 3-4
+        ws.merge_cells(start_row=3, start_column=8 + i, end_row=4,
+                       end_column=8 + i)
+    thin = Border(left=Side(style="thin"))
+    for r in range(1, 5):
+        for c in range(8, 13):
+            ws.cell(r, c).border = thin
+
+    compact_dropped_columns(ws)
+    ranges = {str(m) for m in ws.merged_cells.ranges}
+    assert {"H1:H2", "I1:I2", "J1:J2"} <= ranges      # packed left, merge too
+    assert "K1:K2" not in ranges and "L1:L2" not in ranges
+    assert "J3:J4" in ranges
+    assert ws.cell(1, 10).value == "Marker Length,cm"
+    assert ws.cell(3, 10).value == 110.13
+    # an empty *bordered* cell is exactly the gap being closed, so the tail
+    # loses its styling as well as its value
+    assert ws.cell(1, 11).value is None
+    assert ws.cell(1, 11).border.left.style is None
+
+
+def test_a_fabrics_average_length_row_belongs_to_its_block():
+    """It is printed one row BELOW the fabric's Total Tables, so the block has
+    to reach past its own end marker to claim it — left out, it survives its
+    fabric's removal and prints as a stray figure under the plan totals."""
+    from po_extractor.exporters.cutting_plan_clean import (
+        find_fabric_blocks, keep_only_fabrics,
+    )
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    sheet = [("Marker Definition", None), ("Material", None), ("A", 4),
+             ("Total Tables", 4), ("Average Length", 0.95), (None, None),
+             ("Marker Definition", None), ("Material", None), ("B", 2),
+             ("Total Tables", 2), ("Average Length", 0.06), (None, None),
+             ("Total Tables", 6)]
+    for r, (a, b) in enumerate(sheet, start=1):
+        if a is not None:
+            ws.cell(r, 1, a)
+        if b is not None:
+            ws.cell(r, 2, b)
+
+    assert find_fabric_blocks(ws) == [("A", 1, 5), ("B", 7, 11)]
+    assert keep_only_fabrics(ws, {"A"}) == 1
+    labels = [ws.cell(r, 1).value for r in range(1, ws.max_row + 1)]
+    assert labels.count("Average Length") == 1        # A's kept, B's went
+    assert ws.cell(ws.max_row, 1).value == "Total Tables"
+    assert ws.cell(ws.max_row, 2).value == 4          # grand total recomputed
 
 
 def test_gap_closing_carries_merged_ranges_with_it():

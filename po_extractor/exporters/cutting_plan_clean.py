@@ -262,38 +262,114 @@ def _is_dropped_column(label: str) -> bool:
     return any(s.startswith(h) for h in COLUMNS_DROPPED)
 
 
-def blank_dropped_columns(ws) -> int:
-    """Empty the unwanted metric columns wherever they appear. Returns cells cleared.
+def _has_text(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
-    **Clears cells; never deletes columns** — deleting one would drag every
-    column to its right out from under its heading.
 
-    These headings repeat once per marker block rather than sitting in a single
-    header row, so each occurrence is handled on its own: the heading is
-    cleared, then the figures directly beneath it, stopping at the first cell
-    that isn't a number (one blank row is stepped over, which is what separates
-    a block's value row from its 合计 row).
+def _run_bounds(ws, row: int, col: int) -> tuple[int, int]:
+    """The contiguous run of labelled columns in *row* that *col* belongs to.
+
+    A block's metric headings sit shoulder to shoulder at the right-hand end of
+    its top row, so the run is bounded by the first empty cell on either side.
+    The wide merged ``Sizes`` heading to their left reads empty on every cell
+    but its first, which is what stops the walk.
     """
-    cleared = 0
-    for row in ws.iter_rows():
-        for cell in row:
-            if not isinstance(cell.value, str) or not _is_dropped_column(cell.value):
-                continue
+    lo = col
+    while lo > 1 and _has_text(ws.cell(row, lo - 1).value):
+        lo -= 1
+    hi = col
+    while hi < ws.max_column and _has_text(ws.cell(row, hi + 1).value):
+        hi += 1
+    return lo, hi
+
+
+def _run_last_row(ws, header_row: int, lo: int, hi: int) -> int:
+    """Last row of the block headed by the run at *header_row*.
+
+    The block runs down to the row before the next label in the same columns —
+    that label is the next block's own heading.
+    """
+    for r in range(header_row + 1, ws.max_row + 1):
+        if any(_has_text(ws.cell(r, c).value) for c in range(lo, hi + 1)):
+            return r - 1
+    return ws.max_row
+
+
+def _pack_run(ws, *, top: int, bot: int, lo: int, hi: int,
+              keep: list[int]) -> None:
+    """Left-pack the *keep* columns into ``lo…`` over rows *top*–*bot*.
+
+    Only the run's own rectangle is touched — values, styles and the merges
+    contained in it. That is the whole point: a sheet column carries a metric
+    in one block and a size in another, so emptying or deleting the column
+    outright can only ever come out right for one of them.
+    """
+    from copy import copy
+
+    snap = {(r, c): (ws.cell(r, c).value, copy(ws.cell(r, c)._style))
+            for r in range(top, bot + 1) for c in range(lo, hi + 1)}
+    inside = [m for m in list(ws.merged_cells.ranges)
+              if lo <= m.min_col and m.max_col <= hi
+              and top <= m.min_row and m.max_row <= bot]
+    for m in inside:
+        ws.unmerge_cells(str(m))
+
+    moved = {src: lo + i for i, src in enumerate(keep)}
+    for r in range(top, bot + 1):
+        for src, dst in moved.items():
+            value, style = snap[(r, src)]
+            cell = ws.cell(r, dst)
+            cell.value = value
+            cell._style = style
+        # The tail the pack vacated. Its borders and fill go too — an empty
+        # bordered cell is exactly the gap being closed.
+        for c in range(lo + len(keep), hi + 1):
+            cell = ws.cell(r, c)
             cell.value = None
-            cleared += 1
-            # Walk down clearing this column's figures. Blank rows are stepped
-            # OVER, not treated as the end — the value row sits a few rows
-            # below its heading, with empty rows between. The block ends at the
-            # next text cell in the column, which is the next block's heading.
-            for r in range(cell.row + 1, ws.max_row + 1):
-                below = ws.cell(r, cell.column)
-                if below.value is None:
-                    continue
-                if isinstance(below.value, str):
-                    break
-                below.value = None
-                cleared += 1
-    return cleared
+            cell._style = None
+
+    for m in inside:
+        if m.min_col not in moved or m.max_col not in moved:
+            continue                               # a dropped column's own
+        a, b = moved[m.min_col], moved[m.max_col]
+        if a == b and m.min_row == m.max_row:
+            continue                               # a 1x1 "merge" is not one
+        ws.merge_cells(start_row=m.min_row, start_column=a,
+                       end_row=m.max_row, end_column=b)
+
+
+def compact_dropped_columns(ws) -> int:
+    """Remove the unwanted metric columns from every block. Returns the count.
+
+    Each block writes its metrics immediately to the right of *its own* size
+    columns, so two fabrics with different size counts put ``Cut Length,m`` on
+    two different sheet columns — and the column one block uses for a metric
+    the other uses for a size. Clearing the cells and then deleting the empty
+    sheet column therefore only ever worked for the widest block; every
+    narrower one kept a blank gap where its metric had been.
+
+    So the gap is closed inside each block instead: the block's run of metric
+    columns is packed to the left over the block's own rows, leaving the rest
+    of the sheet — including whatever another block keeps in those columns —
+    exactly where it was.
+    """
+    removed = 0
+    for r in range(1, ws.max_row + 1):
+        done: set[int] = set()
+        for c in range(1, ws.max_column + 1):
+            if c in done:
+                continue
+            value = ws.cell(r, c).value
+            if not isinstance(value, str) or not _is_dropped_column(value):
+                continue
+            lo, hi = _run_bounds(ws, r, c)
+            done.update(range(lo, hi + 1))
+            keep = [k for k in range(lo, hi + 1)
+                    if not _is_dropped_column(str(ws.cell(r, k).value or ""))]
+            _pack_run(ws, top=r, bot=_run_last_row(ws, r, lo, hi),
+                      lo=lo, hi=hi, keep=keep)
+            removed += (hi - lo + 1) - len(keep)
+    return removed
 
 
 def _delete_line(ws, *, at: int, axis: str) -> None:
@@ -365,6 +441,18 @@ def find_fabric_blocks(ws) -> list[tuple[str, int, int]]:
             limit = grand - 1
         ends = [t for t in totals if first < t <= limit and t != grand]
         last = ends[-1] if ends else limit
+        # A fabric's own "Average Length" is printed one row BELOW its Total
+        # Tables, so the rule above stops just short of it. Left out of the
+        # block it survives its fabric's removal and prints as a stray figure
+        # under the plan totals.
+        for r in range(last + 1, limit + 1):
+            lbl = label(r)
+            if not lbl and ws.cell(r, 2).value is None:
+                continue                  # blank spacer — keep looking
+            if lbl.startswith("average length"):
+                last = r
+                continue
+            break
         # material name: first non-empty column-A cell below the block's own
         # header row that isn't the header label itself
         name = ""
@@ -528,7 +616,7 @@ def clean_worksheet(ws, color_map: dict[str, str] | None = None,
     """Clean every cell of *ws* in place. Returns the number of cells changed."""
     # Blank rows and columns FIRST, while the labels are still their English
     # originals — the matchers key on the English text.
-    changed = drop_header_rows(ws) + blank_dropped_columns(ws)
+    changed = drop_header_rows(ws) + compact_dropped_columns(ws)
     for row in ws.iter_rows():
         for cell in row:
             old = cell.value

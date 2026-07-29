@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.116.2",
+        "date": "2026-07-29",
+        "entries": [
+            {"type": "fix", "text": "**The empty column is closed in every block, not just the widest one.** Each fabric writes its metrics immediately to the right of *its own* size columns, so a plan with a 10-size fabric and a 5-size one puts 裁剪长度 on two different sheet columns — and the column one fabric uses for a metric the other uses for a size. Clearing the cells and deleting the empty sheet column could therefore only ever come out right for the widest fabric; every narrower one kept a blank bordered cell between 利用率,% and 版长,cm. The gap is now closed inside each block instead, moving that block's own metrics left over its own rows — values, borders and merged headings together — and leaving the rest of the sheet untouched."},
+            {"type": "fix", "text": "**No stray 平均版长 under the totals.** A fabric's 平均版长 is printed one row below its own 总台数, which put it outside the block being removed — so exporting a single fabric left the other one's figure sitting on its own beneath the plan totals. Each block now reaches past its end marker to claim it."},
+        ],
+    },
+    {
         "version": "2.116.1",
         "date": "2026-07-28",
         "entries": [
