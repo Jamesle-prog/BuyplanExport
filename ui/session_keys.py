@@ -118,6 +118,12 @@ class SK:
     CP_STD_BYTES    = "cp_std_bytes"     # generated standard cut plan bytes
     CP_STD_FNAME    = "cp_std_fname"
 
+    # ── Settlement (💰 结算统计表) ────────────────────────────────────────────
+    ST_PARSED    = "st_parsed"      # dict — parsed upload awaiting import
+    ST_PARSE_SIG = "st_parse_sig"   # uploader signature the parse was built from
+    ST_FLASH     = "st_flash"       # one-shot (kind, message) after an import
+    ST_NAV       = "st_nav"         # selected section of the settlement tab
+
 
 # Allowed values for ``SK.SE_COLOR_SOURCE`` — controls where the buy-plan
 # Chinese colour mapping (中文颜色 / 中文颜色代码 / 主标颜色) is loaded from.

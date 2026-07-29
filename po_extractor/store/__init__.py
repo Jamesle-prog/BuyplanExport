@@ -25,6 +25,7 @@ from .email_inbox_store import EmailInboxStore
 from .factory_registry_store import FactoryRegistryStore
 from .login_log_store import LoginLogStore
 from .cutting_plan_store import CuttingPlanStore
+from .settlement_store import SettlementStore
 
 
 def _db_path() -> str:
@@ -215,6 +216,11 @@ def get_login_log_store() -> LoginLogStore:
     return LoginLogStore(_db_path())
 
 
+def get_settlement_store() -> SettlementStore:
+    """Return a fresh SettlementStore wired to the canonical DB."""
+    return SettlementStore(_db_path())
+
+
 def get_cutting_plan_store() -> CuttingPlanStore:
     """Return a fresh CuttingPlanStore wired to the canonical DB."""
     return CuttingPlanStore(_db_path())
@@ -256,5 +262,7 @@ __all__ = [
     "get_cmpt_contract_store", "get_email_inbox_store",
     "get_factory_registry_store", "get_login_log_store",
     "get_cutting_plan_store",
+    "get_settlement_store",
+    "SettlementStore",
     "list_all_brands", "count_fabric_rows",
 ]

@@ -61,11 +61,16 @@ MODULE_RELEASES         = "releases"
 # Sky East module: cut plans expose marker efficiency, fabric consumption and
 # material cost, which the Buy Plan users must not see. Grant it explicitly.
 MODULE_CUTTING_PLAN     = "cutting_plan"
+# Settlement statistics (结算统计表). Its own module for the same reason as
+# cut plans, only more so: these rows carry factory cost, margin and money
+# received. Grant it explicitly.
+MODULE_SETTLEMENT       = "settlement"
 
 ALL_MODULES = [
     MODULE_GIII, MODULE_SKY_EAST, MODULE_SKY_EAST_BUYPLAN, MODULE_FABRIC_DB,
     MODULE_REFERENCE_DATA, MODULE_COLORS, MODULE_SUMMARY, MODULE_TRACKING,
-    MODULE_CMPT, MODULE_EMAIL, MODULE_CUTTING_PLAN, MODULE_RELEASES,
+    MODULE_CMPT, MODULE_EMAIL, MODULE_CUTTING_PLAN, MODULE_SETTLEMENT,
+    MODULE_RELEASES,
 ]
 
 MODULE_LABELS = {
@@ -80,6 +85,7 @@ MODULE_LABELS = {
     MODULE_CMPT: "📄 CMPT Contracts",
     MODULE_EMAIL: "📧 Email",
     MODULE_CUTTING_PLAN: "✂️ Cutting Plan",
+    MODULE_SETTLEMENT: "💰 Settlement",
     MODULE_RELEASES: "🔖 Releases",
 }
 

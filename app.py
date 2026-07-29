@@ -16,7 +16,7 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
 
 import streamlit as st
 
-APP_VERSION = "2.120.0"
+APP_VERSION = "2.121.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -760,6 +760,7 @@ def show_main():
         ("cmpt",           f"📄 {t('CMPT')}",           lambda: _show_cmpt_tab(admin_mode=admin_mode)),
         ("email",          f"📧 {t('Email')}",          lambda: _show_email_tab(admin_mode=admin_mode)),
         ("cutting_plan",   f"✂️ {t('Cutting Plan')}",   lambda: _show_cutting_plan_tab()),
+        ("settlement",     f"💰 {t('Settlement')}",     lambda: _show_settlement_tab()),
         ("releases",       f"🔖 {t('Releases')}",       lambda: _show_changelog_tab()),
     ]
     _visible_tabs = [(label, fn) for key, label, fn in _all_tabs if _allowed(key)]
@@ -830,6 +831,12 @@ def _show_email_tab(admin_mode: bool) -> None:
 def _show_cutting_plan_tab() -> None:
     from ui.cutting_plan import show_cutting_plan_tab
     show_cutting_plan_tab()
+
+
+@st.fragment
+def _show_settlement_tab() -> None:
+    from ui.settlement import show_settlement_tab
+    show_settlement_tab()
 
 
 def _show_admin_panel():

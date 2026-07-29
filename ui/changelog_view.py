@@ -10,6 +10,18 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.121.0",
+        "date": "2026-07-29",
+        "entries": [
+            {"type": "feat", "text": "**New 💰 Settlement module (结算统计表).** Angel's settlement workbook is read into the system: one row per invoice line — what was contracted, what shipped, what was invoiced and received, and everything paid back out in 面料款 / 辅料款 / 加工费 and 港杂费 / 其他 / 税金. Excel stays the master; re-upload to refresh. Its own permission, granted explicitly — these rows carry factory cost, margin and money received."},
+            {"type": "feat", "text": "**The views a spreadsheet makes awkward.** Outstanding by client and year, oldest ex-factory first; discount-risk lines; sample cost per style; and totals that are always grouped by currency — the SC book is in GBP and adding it to the USD one would produce a number that is not an amount of anything."},
+            {"type": "feat", "text": "**Cross-checked against the orders already in the system.** Each line is matched on the client's PO *and* the style — a PO covers several styles and each is invoiced separately, so the PO alone would fan one line across all of them. Lines naming a PO/style pair no contract has are listed, as are lines whose quantity disagrees with the order they match."},
+            {"type": "feat", "text": "**Colour is read as data, not decoration.** Discount risk exists in the workbook only as a red fill on the invoice number, and contract status only as a fill on 合同号. Both are read from the sheet's own legend rows rather than a hardcoded colour, so a re-themed book still parses."},
+            {"type": "feat", "text": "Import replaces only the sheets the uploaded file carries, so a book holding one client-year cannot delete the years it doesn't mention — the summary says which sheets moved and which were left alone. 到期未付款明细 and 折扣风险明细 are deliberately not imported: they are views of the same rows, and this tab recomputes them so they cannot fall behind."},
+            {"type": "feat", "text": "Every field is resolved by its heading, never by position: Zalando2026 puts 辅助列/款号/PO# where Zalando2025 puts PO#/辅助列/款号, and each payment's 日期 column is bound to the payment on its left, which is the only thing that says which date it is."},
+        ],
+    },
+    {
         "version": "2.120.0",
         "date": "2026-07-29",
         "entries": [
