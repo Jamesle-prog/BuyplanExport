@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.118.0",
+        "date": "2026-07-29",
+        "entries": [
+            {"type": "feat", "text": "**X-factory date on the saved-plans table.** The date the cutting room is actually working to — when the linked PO has to leave the factory (离厂时间) — now sits next to Cut vs PO %, and on the plan's own detail line. It is read from the linked PO's items, so it needs no extra typing and cannot drift out of step with the contract."},
+            {"type": "feat", "text": "A plan can cover POs that ship on different days, so the column shows the **span** (`earliest → latest`) rather than one date silently chosen out of several — picking the later one would overstate the deadline, and picking the earlier without saying so would hide that a later one exists. Undated items are ignored rather than collapsing the span, and the cell is blank when no PO is linked."},
+        ],
+    },
+    {
         "version": "2.117.0",
         "date": "2026-07-29",
         "entries": [

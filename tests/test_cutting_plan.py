@@ -716,7 +716,7 @@ def test_po_qty_is_empty_without_the_po_tables(store, exact):
 
 
 def _seed_sky_east_items(db_path: str, rows) -> None:
-    """Create a minimal sky_east_items table with (pc, po, style, qty) rows."""
+    """Minimal sky_east_items table: ``(pc, po, style, qty[, ex_fty_date])``."""
     import sqlite3
 
     conn = sqlite3.connect(db_path)
@@ -725,10 +725,13 @@ def _seed_sky_east_items(db_path: str, rows) -> None:
             """CREATE TABLE IF NOT EXISTS sky_east_items (
                    id        INTEGER PRIMARY KEY AUTOINCREMENT,
                    pc_no     TEXT, zalando_po TEXT, style TEXT,
-                   total_qty INTEGER DEFAULT 0)""")
+                   total_qty INTEGER DEFAULT 0,
+                   ex_fty_date TEXT DEFAULT '')""")
         conn.executemany(
-            "INSERT INTO sky_east_items (pc_no, zalando_po, style, total_qty) "
-            "VALUES (?,?,?,?)", rows)
+            "INSERT INTO sky_east_items "
+            "(pc_no, zalando_po, style, total_qty, ex_fty_date) "
+            "VALUES (?,?,?,?,?)",
+            [tuple(r) + ("",) * (5 - len(r)) for r in rows])
         conn.commit()
     finally:
         conn.close()
@@ -811,3 +814,57 @@ def test_sky_east_modules_do_not_grant_cutting_plan():
 
     granted = [MODULE_SKY_EAST_BUYPLAN, MODULE_CUTTING_PLAN]
     assert allowed(MODULE_CUTTING_PLAN, granted) is True
+
+
+# ── X-factory date: the deadline the cutting room is actually working to ────
+
+def test_x_factory_date_comes_from_the_linked_po(store, exact):
+    _seed_sky_east_items(store.db_path, [
+        ("PC1", "PO1", "TP5016", 300, "2026-09-02"),
+        ("PC1", "PO2", "DR5004", 200, "2026-10-15"),
+    ])
+    pid = store.save_plan(exact, source_file="a.xlsx", links=[
+        {"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"}])
+    assert store.x_factory_by_plan()[pid] == "2026-09-02"
+    assert store.list_plans_by_material().iloc[0]["ex_fty"] == "2026-09-02"
+
+
+def test_x_factory_shows_the_span_when_linked_pos_ship_on_different_days(
+        store, exact):
+    """One date picked silently out of several would misstate the deadline —
+    early if the later one is chosen, and hiding that a later one exists if
+    the earlier is."""
+    _seed_sky_east_items(store.db_path, [
+        ("PC1", "PO1", "TP5016", 300, "2026-10-15"),
+        ("PC1", "PO2", "DR5004", 200, "2026-09-02"),
+    ])
+    pid = store.save_plan(exact, source_file="a.xlsx",
+                          links=[{"pc_no": "PC1", "po_no": "", "style": ""}])
+    assert store.x_factory_by_plan()[pid] == "2026-09-02 → 2026-10-15"
+
+
+def test_x_factory_ignores_items_that_carry_no_date(store, exact):
+    """An undated item must not drag the span back to an empty string."""
+    _seed_sky_east_items(store.db_path, [
+        ("PC1", "PO1", "TP5016", 300, ""),
+        ("PC1", "PO2", "DR5004", 200, "2026-09-02"),
+    ])
+    pid = store.save_plan(exact, source_file="a.xlsx",
+                          links=[{"pc_no": "PC1", "po_no": "", "style": ""}])
+    assert store.x_factory_by_plan()[pid] == "2026-09-02"
+
+
+def test_x_factory_is_blank_for_an_unlinked_plan(store, exact):
+    _seed_sky_east_items(store.db_path,
+                         [("PC1", "PO1", "TP5016", 300, "2026-09-02")])
+    pid = store.save_plan(exact, source_file="a.xlsx")
+    assert pid not in store.x_factory_by_plan()
+    assert store.list_plans_by_material().iloc[0]["ex_fty"] == ""
+
+
+def test_x_factory_survives_a_database_with_no_po_tables(store, exact):
+    """Same guard as po_qty: a database without the Sky East tables (a test
+    DB, a fresh install) must list plans, not raise."""
+    store.save_plan(exact, source_file="a.xlsx")
+    assert store.x_factory_by_plan() == {}
+    assert store.list_plans_by_material().iloc[0]["ex_fty"] == ""

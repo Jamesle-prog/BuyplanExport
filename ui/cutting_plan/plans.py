@@ -35,7 +35,7 @@ _LIST_RENAME = {
     "mat_fabric_m": "Fabric (m)", "m_per_unit": "m/unit",
     "mat_efficiency_pct": "Efficiency %", "cost": "Cost",
     "po_qty": "PO qty", "order_qty": "Plan qty", "cut_qty": "Cut qty",
-    "diff_pct": "Cut vs PO %",
+    "diff_pct": "Cut vs PO %", "ex_fty": "X-factory",
     "linked_pos": "Linked POs", "linked_styles": "Linked styles",
     "uploaded_at": "Uploaded", "uploaded_by": "By",
 }
@@ -82,6 +82,12 @@ def show_plans_section() -> None:
             _th("m/unit"): st.column_config.NumberColumn(
                 format="%.4f",
                 help=t("Metres of this fabric per garment."),
+            ),
+            _th("X-factory"): st.column_config.TextColumn(
+                help=t("Ex-factory date (离厂时间) of the linked PO(s). Two "
+                       "dates when the plan covers POs that ship on different "
+                       "days — the earlier one is the deadline. Blank when no "
+                       "PO is linked."),
             ),
         },
     )
@@ -208,6 +214,7 @@ def _show_plan_detail(store, plan_id: int) -> None:
                "units."))
     c4.metric(t("Markers"), int(plan.get("total_markers") or 0))
     st.caption(
+        f"{t('X-factory')}: {store.x_factory_by_plan().get(plan_id) or '—'} · "
         f"{t('Styles')}: {plan.get('styles') or '—'} · "
         f"{t('Colors')}: {plan.get('colors') or '—'} · "
         f"{t('Operator')}: {plan.get('operator') or '—'} · "

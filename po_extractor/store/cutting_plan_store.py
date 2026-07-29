@@ -352,6 +352,44 @@ class CuttingPlanStore(BaseSQLiteStore):
             return {}          # no sky_east_items in this DB (e.g. a test DB)
         return {int(r["plan_id"]): int(r["po_qty"] or 0) for r in rows}
 
+    def x_factory_by_plan(self, source: str = SOURCE_SKY_EAST) -> dict[int, str]:
+        """Ex-factory date from the **PO side**, per plan.
+
+        The date the cutting room is actually working to: when the linked PO
+        has to leave the factory.
+
+        A plan can cover several POs or styles whose dates differ, so what
+        comes back is the span rather than one date silently picked out of
+        several — a single date when they agree, ``"earliest → latest"`` when
+        they don't. The earliest is the one that binds; hiding that a later
+        one exists would misstate the deadline in the other direction.
+
+        Returns {} when the PO tables aren't present in this database.
+        """
+        sql = """
+            SELECT l.plan_id                  AS plan_id,
+                   MIN(TRIM(i.ex_fty_date))   AS first_date,
+                   MAX(TRIM(i.ex_fty_date))   AS last_date
+              FROM cutting_plan_links l
+              JOIN sky_east_items i
+                ON TRIM(i.pc_no) = TRIM(l.pc_no)
+               AND (l.po_no = '' OR TRIM(i.zalando_po) = TRIM(l.po_no))
+               AND (l.style = '' OR TRIM(i.style)      = TRIM(l.style))
+             WHERE l.source = ?
+               AND TRIM(COALESCE(i.ex_fty_date, '')) <> ''
+             GROUP BY l.plan_id
+        """
+        try:
+            with self._conn() as conn:
+                rows = conn.execute(sql, (source,)).fetchall()
+        except sqlite3.OperationalError:
+            return {}          # no sky_east_items in this DB (e.g. a test DB)
+        out: dict[int, str] = {}
+        for r in rows:
+            first, last = (r["first_date"] or ""), (r["last_date"] or "")
+            out[int(r["plan_id"])] = first if first == last else f"{first} → {last}"
+        return out
+
     def list_plan_materials(self, plan_id: int) -> pd.DataFrame:
         """One row per fabric for a single plan, in the plan's own order,
         with that fabric's consumption per garment."""
@@ -411,7 +449,7 @@ class CuttingPlanStore(BaseSQLiteStore):
                    "mat_tables", "total_plies", "mat_cut_qty",
                    "mat_fabric_m", "m_per_unit", "mat_efficiency_pct",
                    "cut_length_m", "cost", "seq", "linked_pos",
-                   "linked_styles", "po_qty", "diff_pct"])
+                   "linked_styles", "po_qty", "diff_pct", "ex_fty"])
         if not rows:
             return pd.DataFrame(columns=cols)
         df = pd.DataFrame([dict(r) for r in rows])
@@ -425,6 +463,7 @@ class CuttingPlanStore(BaseSQLiteStore):
         ]
         df["m_per_unit"] = [consumption(m, q) for m, q in
                             zip(df["mat_fabric_m"], df["cut_qty"])]
+        df["ex_fty"] = df["id"].map(self.x_factory_by_plan()).fillna("")
         return df
 
     def get_plan(self, plan_id: int) -> dict[str, Any] | None:
