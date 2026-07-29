@@ -24,6 +24,8 @@ from datetime import datetime
 from typing import NamedTuple
 import openpyxl
 
+from ..utils.image_extractor import extract_anchored_positions
+
 
 class PCColorMatch(NamedTuple):
     """Result of a PC No.-keyed color lookup from 大货进度表.
@@ -315,7 +317,20 @@ def parse_progress_rows(source, sheet_name: str | None = None) -> list[dict]:
                 break
         if resolved_sheet is None:
             resolved_sheet = wb_meta.sheetnames[0]
+    _sheet_idx = wb_meta.sheetnames.index(resolved_sheet)
     wb_meta.close()
+
+    # Photos in the 大货进度表 come both ways: a WPS cell image leaves a
+    # DISPIMG formula in the IMAGE cell (read below via _dispimg_id), while one
+    # inserted the ordinary Excel way floats OVER the cell and leaves it empty.
+    # Only the first was ever read, so a row whose photo was inserted normally
+    # looked like a row with no photo. Keyed (row_1based, col_1based).
+    if hasattr(src, "seek"):
+        src.seek(0)
+    try:
+        _anchored = extract_anchored_positions(src, sheet_index=_sheet_idx)
+    except Exception:                                   # noqa: BLE001
+        _anchored = {}                                  # never block the parse
 
     if hasattr(src, "seek"):
         src.seek(0)
@@ -387,7 +402,9 @@ def parse_progress_rows(source, sheet_name: str | None = None) -> list[dict]:
         shared = {
             "contract_no":   _v(_cv(i, "contract_no")),
             "pc_no":         _v(_cv(i, "pc_no")),
-            "image_id":      _dispimg_id(_cv(i, "image")),
+            # df row 0 is the header, so _data index i is sheet row i + 2.
+            "image_id":      (_dispimg_id(_cv(i, "image"))
+                              or _anchored.get((i + 2, col.get("image", 3) + 1), "")),
             "style":         style,
             "style_display": style_display,
             "label_color":   _v(_cv(i, "label_color")),

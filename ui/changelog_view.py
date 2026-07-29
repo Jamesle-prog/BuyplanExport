@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.117.0",
+        "date": "2026-07-29",
+        "entries": [
+            {"type": "feat", "text": "**Photos inserted the ordinary Excel way are extracted too.** A picture reaches a cell two different ways, and one client PO routinely has both: pasted as a WPS cell image (`=DISPIMG(\"ID_…\")`), or inserted with Insert ▸ Picture — which anchors it *over* the cell and leaves the cell itself empty. Only the first form was ever read, so a style whose photo was inserted normally came through with no picture at all, and was then reported as having no photo with the picture sitting visibly in the file that was just uploaded. Both the client PO and the 大货进度表 now read both forms."},
+            {"type": "fix", "text": "**Real case:** in `HHPPC053 SS27`, rows 1 and 3 (`ZLD060/S24DTR003`, `JS5013`) carried WPS cell images and extracted fine; row 2 (`DR5108`) carried an anchored picture and extracted nothing. It now comes through — and its bytes are identical to the `DR5108.png` someone had already copied onto the share by hand."},
+            {"type": "fix", "text": "An anchored picture has no id of its own, so one is derived from its content. Two consequences that both matter: the same photo re-uploaded keeps its id instead of being filed twice, and two POs that each call their picture `image1.png` cannot collide — a picture id becomes a filename in a shared folder, so a collision would attach one client's photo to another's style."},
+        ],
+    },
+    {
         "version": "2.116.3",
         "date": "2026-07-29",
         "entries": [

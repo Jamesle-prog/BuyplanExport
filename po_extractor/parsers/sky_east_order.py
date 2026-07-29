@@ -28,7 +28,9 @@ import openpyxl
 
 from ..models.sky_east_data import SkyEastContract, SkyEastItem
 from ..models.fabric_part import FabricPart
-from ..utils.image_extractor import extract_dispimg_positions
+from ..utils.image_extractor import (
+    extract_anchored_positions, extract_dispimg_positions,
+)
 
 PARSER_VERSION = "1.3"
 
@@ -666,9 +668,17 @@ def parse(path: str, processed_by: str = "") -> SkyEastContract:
     # Use the *found* contract sheet's index — hardcoding 0 read image positions
     # from sheet 1 even when the contract lives on a later sheet, attaching
     # wrong/no photos by (row, col) collision.
-    dispimg_pos = extract_dispimg_positions(
-        path, sheet_index=wb.sheetnames.index(ws.title)
-    )
+    _sheet_idx = wb.sheetnames.index(ws.title)
+    dispimg_pos = extract_dispimg_positions(path, sheet_index=_sheet_idx)
+    # A photo inserted the ordinary Excel way FLOATS over its cell instead of
+    # living in it, so it carries no DISPIMG formula at all. Both forms turn up
+    # in the same client PO — one row's photo pasted as a WPS cell image, the
+    # next row's inserted normally — and only the first was being read, which
+    # left the second row with no picture. DISPIMG keeps priority where a row
+    # somehow has both.
+    for _pos, _img_id in extract_anchored_positions(
+            path, sheet_index=_sheet_idx).items():
+        dispimg_pos.setdefault(_pos, _img_id)
 
     def cv(row, key):
         c = col.get(key)
