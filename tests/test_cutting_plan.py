@@ -868,3 +868,177 @@ def test_x_factory_survives_a_database_with_no_po_tables(store, exact):
     store.save_plan(exact, source_file="a.xlsx")
     assert store.x_factory_by_plan() == {}
     assert store.list_plans_by_material().iloc[0]["ex_fty"] == ""
+
+
+# ── Single-style plans ──────────────────────────────────────────────────────
+#
+# A plan covering ONE style is laid out differently in two ways, and both were
+# read as if it were a multi-style plan:
+#
+#   * the header writes plain "Style file" / "Style name", with no number;
+#   * there is no band of style names between the "Sizes" heading and the size
+#     labels, because there is only one style to name.
+#
+# Read with a band assumed, every size label was taken for a style name and
+# the first data row for the sizes — which left the plan with no style totals
+# at all (Plan qty 0) and its quantities filed under size names, so Cut qty
+# came out as the sum of two mis-keyed buckets instead of the units cut.
+
+def _single_style_grid() -> list[list]:
+    """One style, one colour, one material, markers overcut the order.
+
+    Mirrors a real export: 3457 ordered, 3499 cut.
+    """
+    return [
+        ["Date", "July 29 - 2026", None, "Time", "09:46"],
+        ["Order name", "1237_mix"],
+        ["Style file", r"D:\x\S25DDR1237-XL.PDS"],       # no number
+        ["Style name", "S25DDR1237"],                     # no number
+        ["Cut plan operator", "LLL"],
+        ["Client", "ZR"],
+        [],
+        ["Output folder path", r"D:\x\2026_1273"],
+        [],
+        [None, "Order demands"],
+        [None, "Colors", "Sizes"],
+        [None, None, "XS", "S", "M", "L", "XL"],          # no style band
+        [None, "Black", 269, 727, 1033, 865, 563],
+        [None, "Sum", 269, 727, 1033, 865, 563],
+        [],
+        ["Marker Definition"],
+        ["Material", "N Markers", "Spreading", "Width, cm", "Length, cm",
+         "Min Plies", "Max Plies", "Waste Limits, cm"],
+        [],
+        ["Shell", 7, "Single", 159, 650, 1, 110, "0, 0, 0, 0"],
+        [],
+        ["Marker Ratio"],
+        ["Marker", "File Name", "Sizes"],
+        [None, None, "XS", "S", "M", "L", "XL"],
+        [1, r"D:\x\Shell1.mrk", 1, None, 2, 1, 1],
+        [],
+        ["Spreading Plies"],
+        ["Marker 1", r"D:\x\Shell1.mrk", "Sizes", None, None, None, None,
+         "Fabric Length,m", "Efficiency,%", "Cut Length,m",
+         "Marker Length,cm", "Material Cost,CNY"],
+        # Colors / Plies number share the size row — there is no band to
+        # carry them.
+        ["Colors", "Plies number", "XS", "S", "M", "L", "XL"],
+        ["Black", 110, 110, None, 220, 110, 110,
+         594.57, 85.84, 100.0, 540.52, 594.57],
+        ["Sum", 110, 110, 0, 220, 110, 110, 594.57],
+        [],
+        ["Solution"],
+        [None, "Colors", "Quantity", "Sizes", None, None, None, None,
+         "Total Quantity", "Fabric Length,m"],
+        [None, None, None, "XS", "S", "M", "L", "XL"],
+        [None, "Black", "Order", 269, 727, 1033, 865, 563, 3457],
+        [None, None, "Real", 269, 729, 1054, 884, 563, 3499, 3787.88],
+        [],
+        ["Total Efficiency", 85.72, "%"],
+        ["Total Cost", 3787.88, "CNY"],
+        ["Total cut length", 773.15, "m"],
+        ["Total Tables", 7],
+        ["Average Length", 1.08, "m"],
+    ]
+
+
+@pytest.fixture
+def single():
+    return parse_cut_plan_grid(_single_style_grid())
+
+
+def test_unnumbered_style_file_and_name_are_one_style(single):
+    """Numbering them by arrival order split the pair across two slots — one
+    style with only a filename, one with only a name."""
+    assert single["styles"] == [
+        {"name": "S25DDR1237", "file": r"D:\x\S25DDR1237-XL.PDS"}]
+
+
+def test_single_style_demands_carry_the_style_name(single):
+    """The name comes from the header block; there is no band to read it off."""
+    assert len(single["demands"]) == 5
+    assert {d["style"] for d in single["demands"]} == {"S25DDR1237"}
+    assert {(d["size"], d["qty"]) for d in single["demands"]} == {
+        ("XS", 269), ("S", 727), ("M", 1033), ("L", 865), ("XL", 563)}
+    assert single["colors"] == ["Black"]
+
+
+def test_single_style_plan_qty_is_the_ordered_total(single):
+    """Was 0: with no style band the demand rows never parsed at all."""
+    assert single["style_totals"] == {"S25DDR1237": 3457}
+    assert single["total_qty"] == 3457
+
+
+def test_single_style_cut_qty_is_the_achieved_total(single):
+    """Was the sum of two mis-keyed size buckets rather than the units cut."""
+    assert [m["cut_qty"] for m in single["materials"]] == [3499]
+
+
+def test_single_style_size_groups_are_read_in_order(single):
+    assert single["materials"][0]["groups"] == [
+        ("S25DDR1237", ["XS", "S", "M", "L", "XL"])]
+
+
+def test_plies_column_is_not_read_as_a_size(single):
+    """Colors / Plies number share the size row when there is no band, so
+    without a left bound the ply count was filed as a garment quantity."""
+    pieces = single["materials"][0]["spreads"][0]["rows"][0]["pieces"]
+    assert {p["size"] for p in pieces} == {"XS", "M", "L", "XL"}
+    assert single["materials"][0]["spreads"][0]["rows"][0]["plies"] == 110
+
+
+def test_single_style_summary_matches_the_saved_columns(single):
+    s = summarise_plan(single)
+    assert s["order_qty"] == 3457
+    assert s["cut_qty"] == 3499
+    assert s["styles"] == "S25DDR1237"
+
+
+def test_multi_style_geometry_is_untouched(exact, overcut):
+    """The band still governs where a plan has one — these are the layouts
+    that already worked."""
+    assert exact["style_totals"] == {"S24DTR003": 500, "ZLD060": 500}
+    assert [m["cut_qty"] for m in exact["materials"]] == [1000]
+    assert overcut["style_totals"] == {"S24DTR003": 946}
+    assert [m["cut_qty"] for m in overcut["materials"]] == [950]
+
+
+# ── Re-reading a stored plan ────────────────────────────────────────────────
+
+def test_reparse_refreshes_the_saved_figures(store, single, exact):
+    """A parser fix otherwise reaches only plans uploaded after it. Simulated
+    by saving one plan's figures against another's file."""
+    from po_extractor.exporters.cutting_plan_export import (
+        build_standard_cut_plan, plan_header_from_parsed,
+    )
+    groups = single["materials"][0]["groups"]
+    demand = {(d["style"], d["color"], d["size"]): d["qty"]
+              for d in single["demands"]}
+    xlsx = build_standard_cut_plan(
+        header=plan_header_from_parsed(single), groups=groups,
+        colors=single["colors"], demand_qty=demand,
+        materials=single["materials"])
+
+    pid = store.save_plan(exact, source_file="a.xlsx", file_bytes=xlsx)
+    assert store.get_plan(pid)["order_qty"] == 500      # the wrong figures
+
+    assert store.reparse_plan(pid) is True
+    assert store.get_plan(pid)["order_qty"] == 3457     # read from the file
+    assert list(store.list_plan_materials(pid)["material"]) == ["Shell"]
+
+
+def test_reparse_leaves_the_row_alone_when_there_is_no_stored_file(store, exact):
+    pid = store.save_plan(exact, source_file="a.xlsx")   # no file_bytes
+    assert store.reparse_plan(pid) is False
+    assert store.get_plan(pid)["order_qty"] == 500
+
+
+def test_reparse_keeps_the_links(store, exact):
+    xlsx = build_standard_cut_plan(
+        header=today_header("x"), groups=[("S24DTR003", ["S"])],
+        colors=["Wine"], demand_qty={("S24DTR003", "Wine", "S"): 10})
+    pid = store.save_plan(exact, source_file="a.xlsx", file_bytes=xlsx,
+                          links=[{"pc_no": "PC1", "po_no": "PO1",
+                                  "style": "TP5016"}])
+    store.reparse_plan(pid)
+    assert [l["pc_no"] for l in store.get_plan(pid)["links"]] == ["PC1"]

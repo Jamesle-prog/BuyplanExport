@@ -8,6 +8,7 @@ covers this, and does it cover the whole quantity?".
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import sqlite3
 from datetime import datetime
@@ -155,6 +156,54 @@ class CuttingPlanStore(BaseSQLiteStore):
             if links:
                 self._replace_links(conn, plan_id, links, uploaded_by, now)
         return plan_id
+
+    def reparse_plan(self, plan_id: int) -> bool:
+        """Re-read a stored plan from its original file. True when it changed.
+
+        A parser fix otherwise reaches only plans uploaded after it: the
+        figures in this table were worked out at upload time. The original
+        upload is kept as a blob, so the plan can simply be read again — the
+        links, notes and uploaded-by are the user's and are left alone.
+
+        Returns False when the plan has no stored file or can no longer be
+        parsed, leaving the existing row untouched rather than blanking it.
+        """
+        from ..parsers.cutting_plan import parse_cut_plan
+
+        stored = self.get_plan_file(plan_id)
+        if not stored:
+            return False
+        try:
+            parsed = parse_cut_plan(io.BytesIO(stored[1]))
+        except Exception:                                   # noqa: BLE001
+            return False
+
+        summary = summarise_plan(parsed)
+        with self._conn() as conn:
+            conn.execute(
+                """UPDATE cutting_plans SET
+                       plan_name=?, client=?, operator=?, plan_date=?,
+                       plan_time=?, plan_format=?, styles=?, colors=?,
+                       materials=?, order_qty=?, cut_qty=?, total_tables=?,
+                       total_markers=?, fabric_length_m=?, efficiency_pct=?,
+                       parsed_json=?
+                     WHERE id=?""",
+                (
+                    summary["plan_name"] or stored[0],
+                    summary["client"], summary["operator"],
+                    summary["plan_date"], summary["plan_time"],
+                    parsed.get("format", "optitex"),
+                    summary["styles"], summary["colors"], summary["materials"],
+                    summary["order_qty"], summary["cut_qty"],
+                    summary["total_tables"], summary["total_markers"],
+                    summary["fabric_length_m"], summary["efficiency_pct"],
+                    json.dumps(parsed, ensure_ascii=False),
+                    plan_id,
+                ),
+            )
+            self._replace_materials(conn, plan_id, parsed)
+            self._replace_demands(conn, plan_id, parsed)
+        return True
 
     @staticmethod
     def _replace_materials(conn, plan_id: int, parsed: dict[str, Any]) -> None:

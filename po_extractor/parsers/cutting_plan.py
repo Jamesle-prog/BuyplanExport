@@ -158,18 +158,30 @@ def _metric_cols(grid: list[list[Any]], r: int) -> dict[str, int]:
     return out
 
 
-def _size_columns(grid: list[list[Any]], style_row: int,
-                  size_row: int) -> list[tuple[int, str, str]]:
+def _size_columns(grid: list[list[Any]], style_row: int, size_row: int,
+                  default_style: str = "",
+                  first_col: int = 0) -> list[tuple[int, str, str]]:
     """Resolve the (column, style, size) triples of a size matrix.
 
     *style_row* carries a style name above the first column of each group
     (the export merges it across the group), *size_row* carries one size per
     column.  A style name therefore owns every column up to the next name.
+
+    A single-style plan has no band at all — *style_row* is then ``-1`` and
+    every column belongs to *default_style*, which the caller takes from the
+    header block (``Style name``).
+
+    *first_col* is the column the ``Sizes`` heading sits in; nothing left of
+    it is a size.  With a band, the block's own labels (``Colors``, ``Plies
+    number``) sit on the band row and the size row is empty under them — but
+    a single-style block has no band, so those labels share the size row, and
+    without this bound ``Plies number`` was read as a size and its ply count
+    as a garment quantity.
     """
     out: list[tuple[int, str, str]] = []
-    current_style = ""
+    current_style = default_style
     width = max(len(_row_at(grid, style_row)), len(_row_at(grid, size_row)))
-    for c in range(width):
+    for c in range(max(first_col, 0), width):
         name = _txt(_cell(grid, style_row, c))
         if name:
             current_style = name
@@ -183,28 +195,79 @@ def _row_at(grid: list[list[Any]], r: int) -> list[Any]:
     return grid[r] if 0 <= r < len(grid) else []
 
 
+# Text that can sit in a block's label column on a *header* row — anything
+# else there is the first data row.  Used to find where the header ends.
+_HEADER_LABELS = frozenset({
+    "colors", "color", "plies number", "quantity", "sizes", "size",
+    "marker", "file name",
+})
+
+
+def _first_data_row(grid: list[list[Any]], sizes_row: int, label_col: int,
+                    *, window: int = 3) -> int:
+    """Row where the block's data starts, or -1 when it can't be told.
+
+    Found by the label column: every header row leaves it empty or carries a
+    fixed heading, and the first row that puts anything else there is the
+    first colour/marker. Reading the geometry off this rather than off a fixed
+    offset is what makes a single-style plan work — see :class:`_Matrix`.
+    """
+    for r in range(sizes_row + 1, min(sizes_row + 1 + window, len(grid))):
+        if _row_is_blank(grid, r):
+            break
+        label = _norm(_cell(grid, r, label_col))
+        if label and label not in _HEADER_LABELS:
+            return r
+    return -1
+
+
 class _Matrix:
     """The header geometry shared by every colour x (style, size) block.
 
-    Each block is anchored by the cell reading ``Sizes``: the style names sit
-    one row below it and the size names two rows below, with the data rows
-    following.  Only the *label* columns move around — ``Colors`` sits on the
-    Sizes row in the Order demands / Solution blocks but on the style row in
-    Spreading Plies — so both rows are searched for them.  Metric headers
-    (``Fabric Length,m`` …) always live on the Sizes row.
+    Each block is anchored by the cell reading ``Sizes``.  Below it come the
+    size labels, and — **only when the plan covers more than one style** — a
+    band of style names between the two, merged across each style's group of
+    sizes.  Then the data rows.
+
+    That band is not always there, and assuming it was is what made a
+    single-style plan wrong in a way nothing flagged: every size label was
+    read as a style name and the first data row as the sizes, which left the
+    plan with no style totals at all (Plan qty 0) and its quantities filed
+    under size names, so Cut qty came out as the sum of two mis-keyed buckets
+    rather than the units cut.  The rows are therefore located from where the
+    data actually starts, not from a fixed offset.
+
+    Only the *label* columns move around — ``Colors`` sits on the Sizes row in
+    the Order demands / Solution blocks but on the style row in Spreading
+    Plies — so both rows are searched for them.  Metric headers (``Fabric
+    Length,m`` …) always live on the Sizes row.
     """
 
     __slots__ = ("sizes_row", "style_row", "size_row", "cols", "metrics",
                  "label_col", "plies_col", "kind_col", "first_data_row")
 
-    def __init__(self, grid: list[list[Any]], sizes_row: int):
+    def __init__(self, grid: list[list[Any]], sizes_row: int,
+                 default_style: str = ""):
         self.sizes_row = sizes_row
+        # Provisional geometry — the label columns are read off these, and
+        # they are then corrected below once the data row is known.
         self.style_row = sizes_row + 1
         self.size_row = sizes_row + 2
         self.first_data_row = sizes_row + 3
-        self.cols = _size_columns(grid, self.style_row, self.size_row)
-        self.metrics = _metric_cols(grid, sizes_row)
         self.label_col = self._col(grid, "colors", default=0)
+
+        found = _first_data_row(grid, sizes_row, self.label_col)
+        if found > sizes_row + 1:
+            self.first_data_row = found
+            self.size_row = found - 1
+            # No room for a band → one style, and its name is in the header
+            # block rather than over the sizes.
+            self.style_row = found - 2 if found - 2 > sizes_row else -1
+
+        self.cols = _size_columns(grid, self.style_row, self.size_row,
+                                  default_style,
+                                  self._col(grid, "sizes", default=0))
+        self.metrics = _metric_cols(grid, sizes_row)
         self.plies_col = self._col(grid, "plies number", default=-1)
         # Present only when the plan couldn't hit the ordered quantity exactly:
         # the Solution block then splits each colour into 'Order' and 'Real'
@@ -212,8 +275,11 @@ class _Matrix:
         self.kind_col = self._col(grid, "quantity", default=-1)
 
     def _col(self, grid: list[list[Any]], label: str, *, default: int) -> int:
+        # The size row is searched too: with no band it is where ``Colors``
+        # and ``Plies number`` end up, and skipping it read every marker's
+        # ply count as zero.  ``_row_at`` tolerates the -1 of an absent band.
         target = _norm(label)
-        for r in (self.sizes_row, self.style_row):
+        for r in (self.sizes_row, self.style_row, self.size_row):
             for c, v in enumerate(_row_at(grid, r)):
                 if _norm(v) == target:
                     return c
@@ -224,13 +290,14 @@ class _Matrix:
 
 
 def _find_matrix(grid: list[list[Any]], start: int, end: int,
-                 *, within: int = 4) -> _Matrix | None:
+                 *, within: int = 4,
+                 default_style: str = "") -> _Matrix | None:
     """Locate the matrix header within *within* rows of *start*."""
     row = _find_label(grid, "sizes", start=start,
                       end=min(start + within, end), max_col=6)
     if row < 0:
         return None
-    m = _Matrix(grid, row)
+    m = _Matrix(grid, row, default_style)
     return m if m.cols else None
 
 
@@ -250,10 +317,10 @@ def _groups_from_cols(cols: list[tuple[int, str, str]]
     return list(groups.items())
 
 
-def _block_groups(grid: list[list[Any]], start: int,
-                  end: int) -> list[tuple[str, list[str]]]:
+def _block_groups(grid: list[list[Any]], start: int, end: int,
+                  default_style: str = "") -> list[tuple[str, list[str]]]:
     """Size groups of the block starting at *start*, or [] when not found."""
-    m = _find_matrix(grid, start, end)
+    m = _find_matrix(grid, start, end, default_style=default_style)
     return _groups_from_cols(m.cols) if m else []
 
 
@@ -290,6 +357,17 @@ def _matrix_rows(grid: list[list[Any]], first_row: int, label_col: int,
 # Block parsers
 # ---------------------------------------------------------------------------
 
+def _style_slot(key: str, prefix: str) -> int:
+    """Which style a ``Style file N`` / ``Style name N`` header line belongs to.
+
+    A plan covering one style drops the number and writes plain ``Style file``
+    / ``Style name``. Numbering those by arrival order put the file and the
+    name in two *different* slots, so a single-style plan came out as two
+    styles — one with only a filename, one with only a name.
+    """
+    return _int(key.replace(prefix, "").strip()) or 1
+
+
 def _parse_header(grid: list[list[Any]]) -> dict[str, Any]:
     """Key/value header block — labels in col A (or B), values one col right."""
     head: dict[str, Any] = {
@@ -318,11 +396,9 @@ def _parse_header(grid: list[list[Any]]) -> dict[str, Any]:
             elif key == _H_FOLDER:
                 head["output_folder"] = val
             elif key.startswith("style name"):
-                idx = _int(key.replace("style name", "").strip()) or (len(styles) + 1)
-                styles.setdefault(idx, {})["name"] = val
+                styles.setdefault(_style_slot(key, "style name"), {})["name"] = val
             elif key.startswith("style file"):
-                idx = _int(key.replace("style file", "").strip()) or (len(styles) + 1)
-                styles.setdefault(idx, {})["file"] = val
+                styles.setdefault(_style_slot(key, "style file"), {})["file"] = val
     # "Time" is written as a real time value; normalise to HH:MM.
     raw_time = _cell_time(grid)
     if raw_time:
@@ -349,12 +425,14 @@ def _cell_time(grid: list[list[Any]]) -> str:
     return ""
 
 
-def _parse_demands(grid: list[list[Any]]) -> list[dict[str, Any]]:
+def _parse_demands(grid: list[list[Any]],
+                   default_style: str = "") -> list[dict[str, Any]]:
     """Order demands block → [{style, color, size, qty}]."""
     anchor = _find_label(grid, _B_DEMANDS, max_col=4)
     if anchor < 0:
         return []
-    m = _find_matrix(grid, anchor + 1, len(grid), within=6)
+    m = _find_matrix(grid, anchor + 1, len(grid), within=6,
+                     default_style=default_style)
     if m is None:
         return []
     out: list[dict[str, Any]] = []
@@ -403,10 +481,10 @@ def _parse_marker_definition(grid: list[list[Any]], anchor: int) -> dict[str, An
     }
 
 
-def _parse_marker_ratio(grid: list[list[Any]], anchor: int,
-                        end: int) -> list[dict[str, Any]]:
+def _parse_marker_ratio(grid: list[list[Any]], anchor: int, end: int,
+                        default_style: str = "") -> list[dict[str, Any]]:
     """Marker Ratio block → one entry per marker with its size ratio."""
-    m = _find_matrix(grid, anchor, end)
+    m = _find_matrix(grid, anchor, end, default_style=default_style)
     if m is None:
         return []
     out: list[dict[str, Any]] = []
@@ -429,26 +507,26 @@ def _parse_marker_ratio(grid: list[list[Any]], anchor: int,
     return out
 
 
-def _parse_spreading(grid: list[list[Any]], anchor: int,
-                     end: int) -> list[dict[str, Any]]:
+def _parse_spreading(grid: list[list[Any]], anchor: int, end: int,
+                     default_style: str = "") -> list[dict[str, Any]]:
     """Spreading Plies block → one entry per marker with its ply rows."""
     out: list[dict[str, Any]] = []
     r = anchor + 1
     while r < end:
         if _norm(_cell(grid, r, 0)).startswith("marker "):
-            out.append(_parse_spread_marker(grid, r, end))
+            out.append(_parse_spread_marker(grid, r, end, default_style))
             r += 1
             continue
         r += 1
     return [m for m in out if m]
 
 
-def _parse_spread_marker(grid: list[list[Any]], row: int,
-                         end: int) -> dict[str, Any]:
+def _parse_spread_marker(grid: list[list[Any]], row: int, end: int,
+                         default_style: str = "") -> dict[str, Any]:
     marker_no = _int(_norm(_cell(grid, row, 0)).replace("marker", "").strip())
     # The marker row *is* the matrix header here — 'Sizes' and the metric
     # headers share it with the marker number and file name.
-    m = _find_matrix(grid, row, end, within=1)
+    m = _find_matrix(grid, row, end, within=1, default_style=default_style)
     if m is None:
         return {}
     rows: list[dict[str, Any]] = []
@@ -475,10 +553,10 @@ def _parse_spread_marker(grid: list[list[Any]], row: int,
     }
 
 
-def _parse_solution(grid: list[list[Any]], anchor: int,
-                    end: int) -> list[dict[str, Any]]:
+def _parse_solution(grid: list[list[Any]], anchor: int, end: int,
+                    default_style: str = "") -> list[dict[str, Any]]:
     """Solution block → achieved qty per colour, with fabric length."""
-    m = _find_matrix(grid, anchor + 1, end)
+    m = _find_matrix(grid, anchor + 1, end, default_style=default_style)
     if m is None:
         return []
     out: list[dict[str, Any]] = []
@@ -559,7 +637,11 @@ def parse_cut_plan_grid(grid: list[list[Any]]) -> dict[str, Any]:
 
     plan: dict[str, Any] = _parse_header(grid)
     plan["format"] = "optitex"
-    plan["demands"] = _parse_demands(grid)
+    # A plan covering one style names it only in the header block — there is
+    # no style band over the size columns to read it from.
+    one_style = (plan["styles"][0].get("name", "")
+                 if len(plan["styles"]) == 1 else "")
+    plan["demands"] = _parse_demands(grid, one_style)
 
     def_rows = _find_all_labels(grid, _B_MARKERDEF, max_col=2)
     if not def_rows and not plan["demands"]:
@@ -577,23 +659,28 @@ def parse_cut_plan_grid(grid: list[list[Any]]) -> dict[str, Any]:
         sol_at = _find_label(grid, _B_SOLUTION, start=anchor, end=end, max_col=2)
         mat["markers"] = (
             _parse_marker_ratio(grid, ratio_at + 1,
-                                spread_at if spread_at > 0 else end)
+                                spread_at if spread_at > 0 else end,
+                                one_style)
             if ratio_at >= 0 else []
         )
         mat["spreads"] = (
-            _parse_spreading(grid, spread_at, sol_at if sol_at > 0 else end)
+            _parse_spreading(grid, spread_at,
+                             sol_at if sol_at > 0 else end, one_style)
             if spread_at >= 0 else []
         )
         mat["solution"] = (
-            _parse_solution(grid, sol_at, end) if sol_at >= 0 else []
+            _parse_solution(grid, sol_at, end, one_style) if sol_at >= 0 else []
         )
         # The material's own column order, kept so it can be re-emitted
         # faithfully — a lining is often cut for only some of the styles or
         # sizes, so it can't be derived from the order-demands matrix.
         mat["groups"] = (
-            (_block_groups(grid, ratio_at + 1, end) if ratio_at >= 0 else [])
-            or (_block_groups(grid, sol_at + 1, end) if sol_at >= 0 else [])
-            or (_block_groups(grid, spread_at + 1, end) if spread_at >= 0 else [])
+            (_block_groups(grid, ratio_at + 1, end, one_style)
+             if ratio_at >= 0 else [])
+            or (_block_groups(grid, sol_at + 1, end, one_style)
+                if sol_at >= 0 else [])
+            or (_block_groups(grid, spread_at + 1, end, one_style)
+                if spread_at >= 0 else [])
         )
         mat.update(_parse_totals(grid, sol_at if sol_at >= 0 else anchor, end))
         real = achieved_rows(mat["solution"])

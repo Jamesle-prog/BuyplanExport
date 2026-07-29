@@ -10,6 +10,16 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.120.0",
+        "date": "2026-07-29",
+        "entries": [
+            {"type": "fix", "text": "**Plan qty and Cut qty are right for a single-style plan.** A plan covering one style is laid out differently in two ways, and both were read as if it covered several: the header writes plain `Style file` / `Style name` with no number, and there is no band of style names between the 尺码 heading and the size labels — because there is only one style to name. Read with a band assumed, every size label was taken for a style name and the first data row for the sizes. `1237_撞色` therefore showed **Plan qty 0** (no style totals parsed at all) and **Cut qty 4062**, which was 563 + 3499 — two mis-keyed size buckets added together, not a quantity from the file. It now reads 3457 ordered and 3499 cut, matching the workbook."},
+            {"type": "fix", "text": "The unnumbered `Style file` / `Style name` pair was also being numbered by arrival order, so the two lines landed in different slots and one style came out as two — one with only a filename, one with only a name."},
+            {"type": "fix", "text": "With no style band, 颜色 and 层数 share the size row, and 层数 was read as a size — filing each marker's ply count as a garment quantity. Sizes are now taken only from the 尺码 heading rightwards, and the ply count is found on the row it is actually on (it was reading 0 for every marker on these plans)."},
+            {"type": "feat", "text": "**🔄 Re-read from the original file**, on a plan's detail screen. A parser fix otherwise reaches only plans uploaded after it, since the figures are worked out at upload time — the original upload is kept, so re-reading it is enough. Links, notes and the upload record are left alone, and a plan whose file is missing or no longer parses is left exactly as it was rather than blanked."},
+        ],
+    },
+    {
         "version": "2.119.0",
         "date": "2026-07-29",
         "entries": [

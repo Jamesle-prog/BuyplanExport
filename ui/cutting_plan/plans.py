@@ -248,6 +248,23 @@ def _show_plan_detail(store, plan_id: int) -> None:
     _panels[_labels.index(_active)][1]()
 
     st.divider()
+    # The figures above were worked out when the file was uploaded, so a
+    # parser fix reaches only plans uploaded after it. The original is kept,
+    # so re-reading it is enough — no re-upload, and the links stay put.
+    if st.button(f"🔄 {t('Re-read from the original file')}",
+                 key=f"cp_reparse_{plan_id}",
+                 help=t("Parses the stored upload again and refreshes this "
+                        "plan's quantities. Links, notes and the upload "
+                        "record are unchanged.")):
+        if store.reparse_plan(plan_id):
+            st.session_state[SK.CP_FLASH] = (
+                "success", t("Plan re-read from its original file."))
+        else:
+            st.session_state[SK.CP_FLASH] = (
+                "warning", t("No stored file to re-read, or it could no "
+                             "longer be parsed — nothing was changed."))
+        fragment_rerun()
+
     with st.expander(f"🗑 {t('Delete this plan')}"):
         st.warning(t(
             "Deleting removes the plan, its PO links and the stored original "
