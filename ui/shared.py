@@ -344,6 +344,28 @@ def _push_history(session_key: str, path: str) -> list[str]:
     return history
 
 
+def recent_folders(kind: str) -> list[str]:
+    """Folders previously used for *kind*, most recently used first.
+
+    *kind* is a logical bucket, not a widget key — every field that writes to
+    the same destination should share one, so a folder entered in one place is
+    offered everywhere it applies.
+    """
+    return _load_history(kind)
+
+
+def remember_folder(kind: str, path: str) -> None:
+    """Record *path* as the most recently used folder for *kind*.
+
+    Call this only after a write actually succeeded: remembering a path the
+    moment it is typed fills the history with half-finished paths and
+    mistakes, and then offers them back as suggestions.
+    """
+    path = str(path or "").strip()
+    if path:
+        _push_history(kind, path)
+
+
 def show_image_folder_expander(session_key: str, apply_key: str) -> None:
     """Render the Image folder expander with persistent history dropdown."""
     try:

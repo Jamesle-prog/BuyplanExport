@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.119.0",
+        "date": "2026-07-29",
+        "entries": [
+            {"type": "feat", "text": "**The export folder is remembered.** \"Also save a copy to this folder\" comes back pre-filled with the folder last saved to, across restarts — it is the same shared drive on every export, and retyping it each time was pure friction. Once more than one folder has been used, a **Recent folders** picker appears above the box. Clearing the field still sticks for the rest of the session; the remembered path is only filled in when the box is empty."},
+            {"type": "feat", "text": "**One memory, shared by every cut-plan export.** A folder entered on the Standard output screen is already filled in on a plan's own export and on the PDF panel — the destination is a property of the machine, not of the particular screen that asked for it."},
+            {"type": "fix", "text": "A folder is remembered only once a file has actually landed in it. Recording paths as they are typed would have filled the suggestions with half-finished paths, typos and folders that turned out not to exist."},
+        ],
+    },
+    {
         "version": "2.118.0",
         "date": "2026-07-29",
         "entries": [
