@@ -10,6 +10,17 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.123.0",
+        "date": "2026-07-30",
+        "entries": [
+            {"type": "feat", "text": "**New 📏 Fabric Condition module (面料情况).** The shop-floor width/weight/shrinkage log is read into the system: measured net and gross width against nominal, weight, fabric- and pattern-paper shrinkage (径向/纬向 each), cutting requirements (max plies, max length, direction), net consumption, and remaining stock (rolls/kg/m). Own permission, granted explicitly, matching every other module added this way."},
+            {"type": "feat", "text": "**Every value is shown exactly as the sheet has it — nothing is rounded or converted.** This is a hand-typed running log, not a structured export: 'numeric' columns are full of ranges ('176-178'), approximations ('100层左右'), typo'd signs ('负0.6%' — the Chinese word for negative instead of a minus sign), and words instead of numbers ('无', '同上' — \"ditto\", referring to the row above, never resolved here since that would be a guess this module has no business making). Coercing any of these to a number would silently discard whichever part didn't fit."},
+            {"type": "feat", "text": "The one exception: the date column's cells carry a plain Excel serial number with **General** formatting rather than a date format, so a clean integer is converted to an ISO date — a deterministic, lossless read of what Excel's own encoding means, not a guess. Anything that isn't a clean integer (one row has the typo '2023/215') is kept exactly as typed."},
+            {"type": "feat", "text": "The sheet repeats 径向/纬向 twice — once under 面料缩率 (fabric shrinkage), once under 纸板缩率 (pattern-paper shrinkage) — reading identically on their own row. Resolved by the merged group heading above them rather than position, so it doesn't matter which one is wider in a given upload."},
+            {"type": "feat", "text": "Import replaces the whole table on each upload: unlike Settlement (several client-years in one workbook), this is a single running log from one sheet, so there is nothing to preserve selectively across a re-upload."},
+        ],
+    },
+    {
         "version": "2.122.1",
         "date": "2026-07-30",
         "entries": [

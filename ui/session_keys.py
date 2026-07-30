@@ -124,6 +124,12 @@ class SK:
     ST_FLASH     = "st_flash"       # one-shot (kind, message) after an import
     ST_NAV       = "st_nav"         # selected section of the settlement tab
 
+    # ── Fabric Condition (📏 面料情况) ────────────────────────────────────────
+    FC_PARSED    = "fc_parsed"      # dict — parsed upload awaiting import
+    FC_PARSE_SIG = "fc_parse_sig"   # uploader signature the parse was built from
+    FC_FLASH     = "fc_flash"       # one-shot (kind, message) after an import
+    FC_NAV       = "fc_nav"         # selected section of the fabric condition tab
+
 
 # Allowed values for ``SK.SE_COLOR_SOURCE`` — controls where the buy-plan
 # Chinese colour mapping (中文颜色 / 中文颜色代码 / 主标颜色) is loaded from.

@@ -26,6 +26,7 @@ from .factory_registry_store import FactoryRegistryStore
 from .login_log_store import LoginLogStore
 from .cutting_plan_store import CuttingPlanStore
 from .settlement_store import SettlementStore
+from .fabric_condition_store import FabricConditionStore
 
 
 def _db_path() -> str:
@@ -221,6 +222,11 @@ def get_settlement_store() -> SettlementStore:
     return SettlementStore(_db_path())
 
 
+def get_fabric_condition_store() -> FabricConditionStore:
+    """Return a fresh FabricConditionStore wired to the canonical DB."""
+    return FabricConditionStore(_db_path())
+
+
 def get_cutting_plan_store() -> CuttingPlanStore:
     """Return a fresh CuttingPlanStore wired to the canonical DB."""
     return CuttingPlanStore(_db_path())
@@ -264,5 +270,7 @@ __all__ = [
     "get_cutting_plan_store",
     "get_settlement_store",
     "SettlementStore",
+    "get_fabric_condition_store",
+    "FabricConditionStore",
     "list_all_brands", "count_fabric_rows",
 ]

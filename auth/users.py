@@ -65,12 +65,16 @@ MODULE_CUTTING_PLAN     = "cutting_plan"
 # cut plans, only more so: these rows carry factory cost, margin and money
 # received. Grant it explicitly.
 MODULE_SETTLEMENT       = "settlement"
+# Actual fabric condition (面料情况) -- shop-floor width/weight/shrinkage
+# test log. Own module for the same reason as the others: a distinct data
+# set with its own audience, granted explicitly rather than implied.
+MODULE_FABRIC_CONDITION = "fabric_condition"
 
 ALL_MODULES = [
     MODULE_GIII, MODULE_SKY_EAST, MODULE_SKY_EAST_BUYPLAN, MODULE_FABRIC_DB,
     MODULE_REFERENCE_DATA, MODULE_COLORS, MODULE_SUMMARY, MODULE_TRACKING,
     MODULE_CMPT, MODULE_EMAIL, MODULE_CUTTING_PLAN, MODULE_SETTLEMENT,
-    MODULE_RELEASES,
+    MODULE_FABRIC_CONDITION, MODULE_RELEASES,
 ]
 
 MODULE_LABELS = {
@@ -86,6 +90,7 @@ MODULE_LABELS = {
     MODULE_EMAIL: "📧 Email",
     MODULE_CUTTING_PLAN: "✂️ Cutting Plan",
     MODULE_SETTLEMENT: "💰 Settlement",
+    MODULE_FABRIC_CONDITION: "📏 Fabric Condition",
     MODULE_RELEASES: "🔖 Releases",
 }
 
