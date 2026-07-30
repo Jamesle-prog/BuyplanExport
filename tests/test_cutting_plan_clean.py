@@ -11,10 +11,26 @@ import io
 import openpyxl
 import pytest
 
+import ui.shared as _shared
 from po_extractor.exporters.cutting_plan_clean import (
     build_color_map, build_reverse_color_map, clean_value, clean_workbook,
     find_color_conflicts, has_chinese, strip_path_and_ext, translate_text,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolated_folder_history(tmp_path, monkeypatch):
+    """Point the persisted folder-history file at a scratch path.
+
+    A successful ``save_copy_to_folder`` below calls ``remember_folder``,
+    which without this fixture writes straight to the real
+    ``data/image_folder_history.json`` — the file the running app reads back
+    as "the last folder used". Every test run on the dev machine (where the
+    app and the suite share a filesystem) was therefore burying the user's
+    actual folder under a growing pile of pytest tmp paths.
+    """
+    monkeypatch.setattr(_shared, "_HISTORY_FILE",
+                        tmp_path / "image_folder_history.json")
 
 
 # ── translate ────────────────────────────────────────────────────────────────

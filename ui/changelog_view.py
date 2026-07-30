@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.122.1",
+        "date": "2026-07-30",
+        "entries": [
+            {"type": "fix", "text": "**The remembered cut-plan folder is no longer overwritten by running the test suite.** Two tests exercised the real `save_copy_to_folder` with a genuine (pytest-created) folder, so every full test run recorded that throwaway path as \"the last folder used\" in the same file the app reads on the Standard output / plan export / PDF screens — pushing the real shared-drive folder further down the list each time until it was evicted outright. \"Also save a copy to this folder\" was showing a `pytest-of-Administrator\\...` path as a result. The two tests now write to a scratch file instead of the real one, and the real `data/image_folder_history.json` has been cleaned of the pytest entries that had already piled up."},
+        ],
+    },
+    {
         "version": "2.122.0",
         "date": "2026-07-30",
         "entries": [
