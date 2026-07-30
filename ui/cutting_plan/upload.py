@@ -57,40 +57,52 @@ def show_upload_section() -> None:
         return
 
     st.divider()
-    st.markdown(f"**{t('Link to PO(s) and styles')}**")
-    st.caption(t(
-        "A cut plan usually covers several POs at once, and only some of the "
-        "styles inside them. Pick everything it covers — the link is what "
-        "makes the plan show up against those POs and styles."
-    ))
-    selection = select_pos("cp_up")
-    items = selection.items
+    skip_link = st.checkbox(
+        t("Save without linking to a PO"), key="cp_up_skip_link",
+        help=t("The plan can be linked later from Saved plans → Linked POs "
+               "— useful when the PO isn't in the system yet, or the plan "
+               "doesn't correspond to one."))
 
-    if items is not None and not items.empty:
-        groups, colors, qty = demand_matrix(items)
-        df = demand_frame(groups, colors, qty)
-        if not df.empty:
-            with st.expander(t("PO quantities for the selection"),
-                             expanded=False):
-                st.dataframe(df, use_container_width=True, hide_index=True)
-            _show_coverage(ok, groups, colors, qty)
+    selection = None
+    links: list[dict] = []
+    if skip_link:
+        st.caption(t("This plan will be saved without a PO link."))
+    else:
+        st.markdown(f"**{t('Link to PO(s) and styles')}**")
+        st.caption(t(
+            "A cut plan usually covers several POs at once, and only some of "
+            "the styles inside them. Pick everything it covers — the link is "
+            "what makes the plan show up against those POs and styles."
+        ))
+        selection = select_pos("cp_up")
+        items = selection.items
 
-    links = link_rows(selection)
-    if links:
-        st.caption(t("Will link to:") + " " +
-                   ", ".join(po_label(l["pc_no"], l["po_no"], l["style"])
-                             for l in links[:10])
-                   + (" …" if len(links) > 10 else ""))
+        if items is not None and not items.empty:
+            groups, colors, qty = demand_matrix(items)
+            df = demand_frame(groups, colors, qty)
+            if not df.empty:
+                with st.expander(t("PO quantities for the selection"),
+                                 expanded=False):
+                    st.dataframe(df, use_container_width=True, hide_index=True)
+                _show_coverage(ok, groups, colors, qty)
+
+        links = link_rows(selection)
+        if links:
+            st.caption(t("Will link to:") + " " +
+                       ", ".join(po_label(l["pc_no"], l["po_no"], l["style"])
+                                 for l in links[:10])
+                       + (" …" if len(links) > 10 else ""))
 
     notes = st.text_input(t("Notes (optional)"), key="cp_up_notes")
 
-    disabled = not links
+    disabled = not links and not skip_link
     if disabled:
-        st.info(t("Select at least one PC No. to link the plan to."))
+        st.info(t("Select at least one PC No. to link the plan to, or tick "
+                  "'Save without linking to a PO'."))
     if st.button(t("Save cut plan(s)"), type="primary",
                  use_container_width=True, key="cp_save",
                  disabled=disabled):
-        _save(ok, links, notes, selection.styles)
+        _save(ok, links, notes, selection.styles if selection else None)
 
 
 def _parse_all(files) -> list[dict]:
@@ -222,13 +234,15 @@ def _save(entries: list[dict], links: list[dict], notes: str,
         except Exception as exc:                       # noqa: BLE001
             st.error(f"{entry.get('name')}: {type(exc).__name__}: {exc}")
     if saved:
-        n_pos = len({(l["pc_no"], l["po_no"]) for l in links})
-        n_styles = len({l["style"] for l in links if l["style"]})
-        st.session_state[SK.CP_FLASH] = (
-            "success",
-            t("Saved {n} cut plan(s), linked to {m} PO(s) and "
-              "{s} style(s).").format(n=saved, m=n_pos, s=n_styles),
-        )
+        if links:
+            n_pos = len({(l["pc_no"], l["po_no"]) for l in links})
+            n_styles = len({l["style"] for l in links if l["style"]})
+            msg = t("Saved {n} cut plan(s), linked to {m} PO(s) and "
+                   "{s} style(s).").format(n=saved, m=n_pos, s=n_styles)
+        else:
+            msg = t("Saved {n} cut plan(s) without a PO link. Link it "
+                    "anytime from Saved plans → Linked POs.").format(n=saved)
+        st.session_state[SK.CP_FLASH] = ("success", msg)
         # Clear the staged uploads so a rerun doesn't offer to save them twice.
         st.session_state[SK.CP_PARSED] = []
         st.session_state[SK.CP_PARSE_SIG] = None

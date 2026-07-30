@@ -1042,3 +1042,17 @@ def test_reparse_keeps_the_links(store, exact):
                                   "style": "TP5016"}])
     store.reparse_plan(pid)
     assert [l["pc_no"] for l in store.get_plan(pid)["links"]] == ["PC1"]
+
+
+def test_a_plan_saved_with_no_links_is_fully_usable(store, exact):
+    """The upload screen offers "save without linking to a PO" for a plan
+    with no matching PO yet — passing links=[] must behave exactly like
+    omitting the argument, not like an error or a half-saved row."""
+    pid = store.save_plan(exact, source_file="a.xlsx", links=[])
+    assert store.get_plan(pid)["links"] == []
+    row = store.list_plans_by_material().iloc[0]
+    assert row["id"] == pid and row["po_qty"] == 0
+    # It can still be linked afterwards, same as a plan saved with no
+    # links argument at all (the pre-existing path).
+    store.set_links(pid, [{"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"}])
+    assert [l["pc_no"] for l in store.get_plan(pid)["links"]] == ["PC1"]

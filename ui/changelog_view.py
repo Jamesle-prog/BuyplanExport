@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.124.0",
+        "date": "2026-07-30",
+        "entries": [
+            {"type": "feat", "text": "**Cutting Plan → Upload & Link can now save without a PO.** A new **'Save without linking to a PO'** tickbox hides the PC No./PO/style picker and enables Save directly — for a plan whose PO isn't in the system yet, or that doesn't correspond to one. It was already possible to link a plan after the fact from Saved plans → Linked POs; this just removes the requirement to do it at upload time, which previously blocked the Save button outright with no way past it."},
+            {"type": "feat", "text": "The success message says so explicitly (\"Saved without a PO link — link it anytime from Saved plans → Linked POs\") rather than the misleading \"linked to 0 PO(s)\" the existing message would otherwise have shown."},
+        ],
+    },
+    {
         "version": "2.123.0",
         "date": "2026-07-30",
         "entries": [
