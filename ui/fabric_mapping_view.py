@@ -8,7 +8,7 @@ import streamlit as st
 
 from auth.companies import list_company_names, COMPANY_SKY_EAST
 from ui.i18n import t
-from ui.shared import lazy_sections, fragment_rerun, XLSX_MIME
+from ui.shared import lazy_sections, fragment_rerun, _th, _tr, XLSX_MIME
 from ui.sky_east._shared import _parse_fabric_mapping_bytes
 from ui.sky_east.processing import _enrich_fabric_parts_from_cache
 from ui.stores import get_store
@@ -27,6 +27,52 @@ def _company_to_source(name: str) -> str:
 def _cached_parse_fabric_mapping(file_bytes: bytes) -> dict:
     """Parse fabric mapping bytes; cached so repeated reruns don't re-parse."""
     return _parse_fabric_mapping_bytes(file_bytes)
+
+
+# Column order for the full mapping table — one row per (style, combo, seq),
+# i.e. every fabric part of every combination on file, not just the style
+# names the summary count above shows.
+_FABRIC_TABLE_RENAME = {
+    "style": "Style", "combo_idx": "Combo", "seq": "Seq",
+    "body_part": "Body Part", "hhn_no": "HHN No.",
+    "composition": "Composition", "weight_gsm": "Weight (gsm)",
+    "width_cm": "Width (cm)", "updated_at": "Updated",
+}
+
+
+def _render_full_fabric_table(source: str) -> None:
+    """Every stored fabric-part row for *source* — the data itself, not just
+    which styles have some."""
+    df = get_store().load_fabric_parts(source=source)
+    if df.empty:
+        st.caption(t("Nothing stored."))
+        return
+
+    search = st.text_input(
+        t("Filter by style or HHN No."), key="fm_tab_full_search",
+    )
+    if search.strip():
+        needle = search.strip().lower()
+        df = df[
+            df["style"].astype(str).str.lower().str.contains(needle, na=False)
+            | df["hhn_no"].astype(str).str.lower().str.contains(needle, na=False)
+        ]
+        if df.empty:
+            st.caption(t("No rows match."))
+            return
+
+    cols = [c for c in _FABRIC_TABLE_RENAME if c in df.columns]
+    st.dataframe(
+        df[cols].rename(columns=_tr(_FABRIC_TABLE_RENAME)),
+        width="stretch", hide_index=True,
+        column_config={
+            _th("Weight (gsm)"): st.column_config.NumberColumn(format="%d"),
+            _th("Width (cm)"):   st.column_config.NumberColumn(format="%d"),
+        },
+    )
+    st.caption(
+        f"{len(df)} {t('fabric row(s)')} · {df['style'].nunique()} {t('style(s)')}"
+    )
 
 
 def _load_mapped_styles(source: str) -> set[str]:
@@ -173,6 +219,8 @@ def _show_fabric_mapping_section() -> None:
                 pd.DataFrame(sorted(existing_styles), columns=[t("Style")]),
                 width="stretch", hide_index=True,
             )
+        with st.expander(f"🧾 {t('View full fabric mapping table')}"):
+            _render_full_fabric_table(source)
     else:
         st.info(f"{t('No fabric mapping stored yet for')} **{fm_company}**.")
 

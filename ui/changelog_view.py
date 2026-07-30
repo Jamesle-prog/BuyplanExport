@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.122.0",
+        "date": "2026-07-30",
+        "entries": [
+            {"type": "feat", "text": "**📐 Reference Data → Style-Fabric Mapping now has a full-table view.** \"View stored styles\" only ever listed style names; a new **View full fabric mapping table** expander alongside it shows every stored fabric row — combo, sequence, body part, HHN No., composition, weight and width — with a filter box for style or HHN No. A style with two fabrics (shell + lining) or two combos now visibly has two rows instead of being folded into one name in a list."},
+        ],
+    },
+    {
         "version": "2.121.0",
         "date": "2026-07-29",
         "entries": [
