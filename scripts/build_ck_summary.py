@@ -13,8 +13,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from po_extractor.parsers import parse_pdf
-from po_extractor.store.po_store import POStore
-from po_extractor.config import DB_PATH
+from po_extractor.store import get_po_store
 from po_extractor.ui_helpers.kl_format import generate_kl_format_excel
 from po_extractor.ui_helpers.kl_consistency import check_kl_excel
 
@@ -67,7 +66,7 @@ def _find_vendor_pdfs(root: str, prefix: str) -> list[str]:
 
 
 # ── Parse all PDFs and refresh DB ────────────────────────────────────────────
-store = POStore(DB_PATH)
+store = get_po_store()
 
 pdf_paths = _find_vendor_pdfs(ROOT_DIR, _VENDOR_PREFIX)
 if not pdf_paths:

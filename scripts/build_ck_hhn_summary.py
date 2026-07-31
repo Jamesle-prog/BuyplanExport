@@ -19,8 +19,7 @@ import tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from po_extractor.parsers import parse_pdf
-from po_extractor.store.po_store import POStore
-from po_extractor.config import DB_PATH
+from po_extractor.store import get_po_store
 from po_extractor.ui_helpers.kl_format import generate_kl_format_excel
 from po_extractor.ui_helpers.kl_consistency import check_kl_excel
 
@@ -82,7 +81,7 @@ if not all_paths:
 print(f"Found {len(all_paths)} {_VENDOR_PREFIX.upper()}* file(s) under {ROOT_DIR}")
 
 # ── Parse, deduplicate by PO number, save to DB ───────────────────────────────
-store      = POStore(DB_PATH)
+store      = get_po_store()
 po_numbers: list[str] = []
 seen_pos:  set[str]   = set()
 

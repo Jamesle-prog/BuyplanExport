@@ -110,6 +110,8 @@ class SK:
     GIII_MASTER_DL_BYTES = "master_dl_bytes"
     GIII_MASTER_DL_FNAME = "master_dl_fname"
 
+    FM_DUP_RESULTS  = "fm_tab_dup_results"  # duplicate fabric-combo scan results
+
     # ── Cutting Plan (✂️ 裁剪计划) ─────────────────────────────────────────────
     CP_PARSED       = "cp_parsed"        # list[dict] — parsed uploads awaiting save
     CP_PARSE_SIG    = "cp_parse_sig"     # uploader signature the parses were built from

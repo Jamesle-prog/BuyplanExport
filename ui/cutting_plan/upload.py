@@ -102,7 +102,7 @@ def show_upload_section() -> None:
     if st.button(t("Save cut plan(s)"), type="primary",
                  use_container_width=True, key="cp_save",
                  disabled=disabled):
-        _save(ok, links, notes, selection.styles if selection else None)
+        _save(ok, links, notes)
 
 
 def _parse_all(files) -> list[dict]:
@@ -216,8 +216,7 @@ def _show_coverage(entries: list[dict], groups, colors, qty) -> None:
                 ).format(plan=plan_qty, po=po_per_style))
 
 
-def _save(entries: list[dict], links: list[dict], notes: str,
-          styles: list[str] | None = None) -> None:
+def _save(entries: list[dict], links: list[dict], notes: str) -> None:
     store = get_cutting_plan_store()
     saved = 0
     for entry in entries:

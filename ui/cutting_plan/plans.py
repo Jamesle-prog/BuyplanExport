@@ -338,19 +338,22 @@ def _show_linked_po_details(links: list[dict]) -> None:
         return
 
     st.caption(t("Open a linked order to see its details:"))
-    for po_no, pc_no in rows:
-        label = " · ".join(x for x in (po_no, pc_no) if x)
+    for link_po, pc_no in rows:
+        label = " · ".join(x for x in (link_po, pc_no) if x)
         with st.expander(f"🔗 {label}", expanded=False):
-            _render_po_details(po_no, pc_no)
+            _render_po_details(link_po, pc_no)
 
 
-def _render_po_details(po_no: str, pc_no: str) -> None:
+def _render_po_details(link_po: str, pc_no: str) -> None:
     """Size breakdown for one linked order.
 
-    The two pipelines key their rows differently — GIII size rows by PO
-    number, Sky East items by PC No. — so each is looked up with the
-    identifier it actually uses. Best-effort by design: a plan can outlive
-    the order it was linked to.
+    ``link_po`` is the link's stored PO number, which is pipeline-dependent
+    by design: a client (zalando) PO for Sky East links, a GIII ``po_number``
+    for GIII links — which is why it is probed against both below and named
+    for neither. The two pipelines key their rows differently — GIII size
+    rows by PO number, Sky East items by PC No. — so each is looked up with
+    the identifier it actually uses. Best-effort by design: a plan can
+    outlive the order it was linked to.
     """
     from ui.stores import get_store, get_sky_east_store
 
@@ -363,13 +366,13 @@ def _render_po_details(po_no: str, pc_no: str) -> None:
             _render_se_breakdown(se, pc_no)
             return
 
-    if po_no:
+    if link_po:
         try:
-            giii = get_store().load_size_rows([po_no])
+            giii = get_store().load_size_rows([link_po])
         except Exception:
             giii = None
         if giii is not None and not giii.empty:
-            _render_giii_breakdown(giii, po_no)
+            _render_giii_breakdown(giii, link_po)
             return
 
     st.caption(t("No order details found — it may have been deleted since "

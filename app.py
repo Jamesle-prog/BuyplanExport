@@ -16,7 +16,7 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
 
 import streamlit as st
 
-APP_VERSION = "2.125.1"
+APP_VERSION = "2.125.2"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -594,7 +594,7 @@ def show_login():
                 _login_succeeded(uname_key)
                 _record_login(username, "success")
                 st.session_state.logged_in = True
-                st.session_state.username = username
+                st.session_state[SK.USERNAME] = username
                 st.session_state.results = None
                 st.session_state.parse_log = []
                 st.rerun()
@@ -627,7 +627,7 @@ def _show_change_password_sidebar():
             st.error(t("New password cannot be empty."))
         elif new1 != new2:
             st.error(t("Passwords do not match."))
-        elif not change_password(st.session_state.username, old, new1):
+        elif not change_password(st.session_state[SK.USERNAME], old, new1):
             st.error(t("Current password is incorrect."))
         else:
             st.success(t("Password changed."))
@@ -646,7 +646,7 @@ def show_main():
         from ui.cprs_status import render_sidebar_cprs_status
         render_sidebar_cprs_status()
         st.divider()
-        st.markdown(f"👤 **{st.session_state.username}**")
+        st.markdown(f"👤 **{st.session_state[SK.USERNAME]}**")
         with st.expander(f"🔑 {t('Change Password')}"):
             _show_change_password_sidebar()
         st.divider()
@@ -729,8 +729,8 @@ def show_main():
         render_sidebar_memory()
 
     # ---- Tabs ----
-    admin_mode = is_admin(st.session_state.username)
-    user_modules = get_user_modules(st.session_state.username)  # [] = unrestricted
+    admin_mode = is_admin(st.session_state[SK.USERNAME])
+    user_modules = get_user_modules(st.session_state[SK.USERNAME])  # [] = unrestricted
     _buyplan_only = (
         MODULE_SKY_EAST_BUYPLAN in user_modules
         and MODULE_SKY_EAST not in user_modules
@@ -754,9 +754,9 @@ def show_main():
         ("reference_data", f"📐 {t('Reference Data')}", lambda: _show_fabric_mapping_tab()),
         ("colors",         f"🎨 {t('Colors')}",         lambda: _show_color_translation_tab()),
         ("summary",        f"📊 {t('Summary')}",        lambda: _show_summary_tab(
-            user_cos=get_user_companies(st.session_state.username), admin_mode=admin_mode)),
+            user_cos=get_user_companies(st.session_state[SK.USERNAME]), admin_mode=admin_mode)),
         ("tracking",       f"🏭 {t('Tracking')}",       lambda: _show_production_tracking_tab(
-            user_cos=get_user_companies(st.session_state.username), admin_mode=admin_mode)),
+            user_cos=get_user_companies(st.session_state[SK.USERNAME]), admin_mode=admin_mode)),
         ("cmpt",           f"📄 {t('CMPT')}",           lambda: _show_cmpt_tab(admin_mode=admin_mode)),
         ("email",          f"📧 {t('Email')}",          lambda: _show_email_tab(admin_mode=admin_mode)),
         ("cutting_plan",   f"✂️ {t('Cutting Plan')}",   lambda: _show_cutting_plan_tab()),
@@ -810,22 +810,22 @@ def _show_production_tracking_tab(user_cos: list[str], admin_mode: bool) -> None
     from auth.users import get_user_factories
     show_production_tracking_tab(
         user_cos=user_cos,
-        username=st.session_state.username,
+        username=st.session_state[SK.USERNAME],
         admin_mode=admin_mode,
-        user_factories=get_user_factories(st.session_state.username),
+        user_factories=get_user_factories(st.session_state[SK.USERNAME]),
     )
 
 
 @st.fragment
 def _show_cmpt_tab(admin_mode: bool) -> None:
     from ui.cmpt_view import show_cmpt_tab
-    show_cmpt_tab(username=st.session_state.username, admin_mode=admin_mode)
+    show_cmpt_tab(username=st.session_state[SK.USERNAME], admin_mode=admin_mode)
 
 
 @st.fragment
 def _show_email_tab(admin_mode: bool) -> None:
     from ui.email_view import show_email_tab
-    show_email_tab(username=st.session_state.username, admin_mode=admin_mode)
+    show_email_tab(username=st.session_state[SK.USERNAME], admin_mode=admin_mode)
 
 
 @st.fragment

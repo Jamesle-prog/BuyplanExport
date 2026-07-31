@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.125.2",
+        "date": "2026-08-01",
+        "entries": [
+            {"type": "security", "text": "**Stored secrets are no longer echoed back into admin forms.** The IMAP mailbox password and the CPRS API key were pre-filled into their settings fields — type=\"password\" masks a value visually, but value= still pushes the plaintext over the websocket into the browser on every render. Both now follow the SMTP screen's pattern: the field starts blank, the placeholder says a value is saved, and leaving it blank keeps the stored secret."},
+            {"type": "refactor", "text": "Convention sweep from the full code review: the five scripts/ summary tools construct their store through the canonical factory instead of directly (the exact silent-failure pattern the v1.53.0 refactor exists to prevent); the auth flow reads the username via SK.USERNAME; the duplicate-combo scan results moved behind an SK constant; a dead parameter dropped from the cut-plan upload save; and the linked-order breakdown's parameter is named for what it actually holds — a pipeline-dependent PO probed against both systems — instead of the ambiguous po_no."},
+        ],
+    },
+    {
         "version": "2.125.1",
         "date": "2026-08-01",
         "entries": [

@@ -2,8 +2,7 @@
 import sys, os, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import pdfplumber
-from po_extractor.store.po_store import POStore
-from po_extractor.config import DB_PATH
+from po_extractor.store import get_po_store
 import pandas as pd
 
 NEXUS_DIR = (
@@ -78,7 +77,7 @@ for fname in files:
     nexus_rows.append(r)
 
 # ── Load legacy from DB ──────────────────────────────────────────────────────
-store     = POStore(DB_PATH)
+store     = get_po_store()
 po_nums   = [r['po_number'] for r in nexus_rows if r['po_number'] != '?']
 df_meta   = store.list_pos()
 df_meta   = df_meta[df_meta['po_number'].isin(po_nums)].copy()

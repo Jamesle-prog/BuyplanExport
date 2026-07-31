@@ -141,9 +141,14 @@ def _show_cprs_settings(store) -> None:
         placeholder="http://localhost:3100", key="admin_cprs_url",
         help=t("The CPRS API base URL, e.g. http://localhost:3100"),
     )
+    # Never pre-fill the stored key — value= pushes the plaintext over the
+    # websocket into the browser DOM on every render. Blank keeps the
+    # current key on save (same pattern as the SMTP password).
     new_key = st.text_input(
-        t("CPRS API key"), value=cur_key, type="password",
-        placeholder="x-api-key …", key="admin_cprs_key",
+        t("CPRS API key"), value="", type="password",
+        placeholder=(t("•••••• (saved — leave blank to keep)")
+                     if cur_key else "x-api-key …"),
+        key="admin_cprs_key",
     )
     show_addr = st.checkbox(
         t("Show server address in the sidebar status"),
@@ -157,14 +162,16 @@ def _show_cprs_settings(store) -> None:
         if st.button(f"🔌 {t('Test connection')}", key="admin_cprs_test",
                      disabled=not new_url.strip()):
             from po_extractor.utils.cprs_client import CprsClient
-            ok, msg = CprsClient(new_url, new_key).health()
+            ok, msg = CprsClient(new_url, new_key.strip() or cur_key).health()
             (st.success if ok else st.error)(f"{'✅' if ok else '❌'} {msg}")
     with col_save:
         if st.button(f"💾 {t('Save CPRS settings')}", key="admin_cprs_save",
                      type="primary"):
             user = st.session_state.get(SK.USERNAME, "")
             store.set(KEY_CPRS_BASE_URL, new_url.strip(), updated_by=user)
-            store.set(KEY_CPRS_API_KEY, new_key.strip(), updated_by=user)
+            # Blank key field = keep the stored key (never pre-filled).
+            store.set(KEY_CPRS_API_KEY, new_key.strip() or cur_key,
+                      updated_by=user)
             store.set(KEY_CPRS_SHOW_ADDRESS,
                       "true" if show_addr else "false", updated_by=user)
             st.success(t("✅ CPRS settings saved."))

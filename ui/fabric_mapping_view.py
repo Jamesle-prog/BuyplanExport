@@ -8,6 +8,7 @@ import streamlit as st
 
 from auth.companies import list_company_names, COMPANY_SKY_EAST
 from ui.i18n import t
+from ui.session_keys import SK
 from ui.shared import lazy_sections, fragment_rerun, _th, _tr, XLSX_MIME
 from ui.sky_east._shared import _parse_fabric_mapping_bytes
 from ui.sky_east.processing import _enrich_fabric_parts_from_cache
@@ -234,9 +235,9 @@ def _show_fabric_mapping_section() -> None:
               "that iterate one sheet per combo (e.g. the Sky East Buy Plan).")
         )
         if st.button(f"🔍 {t('Scan for duplicates')}", key="fm_tab_dup_scan"):
-            st.session_state["fm_tab_dup_results"] = get_store().find_duplicate_fabric_combos()
+            st.session_state[SK.FM_DUP_RESULTS] = get_store().find_duplicate_fabric_combos()
 
-        dup_results = st.session_state.get("fm_tab_dup_results")
+        dup_results = st.session_state.get(SK.FM_DUP_RESULTS)
         if dup_results is not None:
             if not dup_results:
                 st.success(f"✅ {t('No duplicate fabric combos found.')}")
@@ -270,7 +271,7 @@ def _show_fabric_mapping_section() -> None:
                                 d["source"], d["style"], cidx
                             )
                     st.success(f"{t('Removed')} {n_deleted} {t('duplicate fabric part row(s).')}")
-                    st.session_state["fm_tab_dup_results"] = None
+                    st.session_state[SK.FM_DUP_RESULTS] = None
                     fragment_rerun()
 
     st.divider()

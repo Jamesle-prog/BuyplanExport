@@ -13,8 +13,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from po_extractor.parsers import parse_pdf
-from po_extractor.store.po_store import POStore
-from po_extractor.config import DB_PATH
+from po_extractor.store import get_po_store
 from po_extractor.ui_helpers.kl_format import generate_kl_format_excel
 from po_extractor.ui_helpers.kl_consistency import check_kl_excel
 
@@ -39,7 +38,7 @@ PDF_DIR  = os.path.join(
 OUT_PATH = r'C:\Users\Administrator\Desktop\DUKHHA_HOL26_PO_Summary.xlsx'
 
 # ── Parse all PDFs and refresh DB ────────────────────────────────────────────
-store = POStore(DB_PATH)
+store = get_po_store()
 
 pdf_files = sorted(
     f for f in os.listdir(PDF_DIR)

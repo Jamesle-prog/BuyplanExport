@@ -300,8 +300,14 @@ def _render_mailbox_settings() -> None:
         port = c2.number_input(t("Port"), value=int(s["port"]), min_value=1,
                                max_value=65535, key="em_imap_port")
         user = st.text_input(t("Username"), value=s["user"], key="em_imap_user")
-        pw = st.text_input(t("Password"), value=s["password"], type="password",
-                           key="em_imap_pw")
+        # Never pre-fill the stored secret — value= pushes the plaintext over
+        # the websocket into the browser DOM on every render (type="password"
+        # only masks it visually). Blank keeps the current password on save —
+        # the same pattern admin_smtp uses.
+        pw = st.text_input(
+            t("Password"), value="", type="password", key="em_imap_pw",
+            placeholder=(t("•••••• (saved — leave blank to keep)")
+                         if s["password"] else ""))
         c3, c4 = st.columns(2)
         folder = c3.text_input(t("Folder"), value=s["folder"],
                                key="em_imap_folder")
@@ -319,7 +325,10 @@ def _render_mailbox_settings() -> None:
         tested = c6.form_submit_button(f"🔌 {t('Test connection')}")
 
     payload = {
-        "host": host, "port": port, "user": user, "password": pw,
+        "host": host, "port": port, "user": user,
+        # Blank password field = keep the stored secret (field is never
+        # pre-filled with it).
+        "password": pw or s["password"],
         "folder": folder, "use_ssl": use_ssl, "allowed_senders": allowed,
     }
     if saved:
