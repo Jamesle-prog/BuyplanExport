@@ -826,6 +826,13 @@ def build_image_cache_for_ids(picture_ids,
     that fails — including MemoryError, which a bare ``except OSError`` used
     to let escape and kill the calling tab — skips that image only.  Skipped
     IDs are available from :func:`get_last_image_skips`.
+
+    The session cache as a whole is held under the same ceiling: the per-call
+    budget alone let every new PO set add its own budget's worth of photos,
+    so a session that generated buy plans for several different sets could
+    still climb to the MemoryError the ceiling exists to prevent.  Entries
+    not needed by the current call are evicted oldest-first once the total
+    passes the budget.
     """
     global _last_image_skips
     _last_image_skips = []
@@ -859,6 +866,18 @@ def build_image_cache_for_ids(picture_ids,
         spent += len(b)
         session_cache[pid] = b
         result[pid] = b
+
+    # Cap the WHOLE cache, not just this call's reads. Oldest entries first
+    # (dict insertion order); everything this call returned is kept.
+    total = sum(len(b) for b in session_cache.values())
+    if total > budget_bytes:
+        for old_pid in list(session_cache):
+            if total <= budget_bytes:
+                break
+            if old_pid in result:
+                continue
+            total -= len(session_cache[old_pid])
+            del session_cache[old_pid]
     return result
 
 

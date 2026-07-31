@@ -77,16 +77,27 @@ def _int(v: Any) -> int | None:
     return int(s) if s.isdigit() else None
 
 
+# Serials decoding to 2000-01-01 .. 2100-01-01. A shop-floor log holds no
+# earlier or later date; anything outside is a typo, not a serial.
+_SERIAL_MIN, _SERIAL_MAX = 36_526, 73_051
+
+
 def _date_text(v: Any) -> str:
-    """ISO date when *v* is a clean Excel-serial integer; raw text otherwise.
+    """ISO date when *v* is a plausible Excel-serial integer; raw otherwise.
 
     The column's own cell format is General (checked against the source
     workbook), so a real date typed here would already come back as a
     ``datetime`` — a bare int is a serial number that lost its date
     formatting, not a different kind of value.
+
+    Bounded to serials decoding within 2000–2100: an unbounded conversion
+    turned typos into confident wrong dates — a typed year ``2023`` became
+    "1905-07-15" — which is exactly the silent rewriting this module's
+    verbatim-text policy exists to prevent. Outside the window the cell is
+    kept as typed, same as every other field.
     """
     n = _int(v)
-    if n is not None and 1 <= n <= 2_958_465:      # openpyxl's valid range
+    if n is not None and _SERIAL_MIN <= n <= _SERIAL_MAX:
         try:
             return from_excel(n).strftime("%Y-%m-%d")
         except (ValueError, OverflowError):

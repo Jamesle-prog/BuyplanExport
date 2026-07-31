@@ -10,6 +10,16 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.125.1",
+        "date": "2026-08-01",
+        "entries": [
+            {"type": "perf", "text": "**The cross-module joins can use indexes now.** Cut-plan PO quantities/X-factory and the settlement cross-check all join through TRIM(column) — the hand-typed sources carry stray whitespace — and a plain column index can never serve an expression, so each of those joins scanned the whole Sky East items table per outer row. Expression indexes matching the joins exactly turn every one into an indexed seek (verified with EXPLAIN QUERY PLAN). Invisible at today's row counts; this was the one genuine scaling cliff the review found."},
+            {"type": "perf", "text": "Opening a plan on Saved plans no longer re-runs both cross-module joins the list just computed — the detail reuses the list's own figures. Nothing changes on screen."},
+            {"type": "fix", "text": "**The session photo cache is capped as a whole.** The 192 MB budget only limited bytes read per call, so a session generating buy plans for several different PO sets could still accumulate several hundred MB of full-resolution photos — the exact MemoryError the ceiling exists to prevent. Oldest entries are now evicted once the total passes the budget; everything the current generation needs is kept."},
+            {"type": "security", "text": "Images read out of an uploaded workbook are capped at 64 MB per picture. Deflate compresses ~1000:1, so a small crafted upload could otherwise expand into multi-GB allocations in the shared server process. Real style photos run ~15 MB; nothing legitimate is affected."},
+        ],
+    },
+    {
         "version": "2.125.0",
         "date": "2026-08-01",
         "entries": [

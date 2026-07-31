@@ -93,6 +93,19 @@ CREATE INDEX IF NOT EXISTS idx_sei_pc_no  ON sky_east_items(pc_no);
 CREATE INDEX IF NOT EXISTS idx_seih_pc_no ON sky_east_item_history(pc_no);
 CREATE INDEX IF NOT EXISTS idx_secm_pc_no ON sky_east_color_misses(pc_no);
 
+-- Expression indexes matching the cross-module joins EXACTLY as they are
+-- written. The cutting-plan links (po_qty_by_plan / x_factory_by_plan) and
+-- the settlement cross-check (match_orders) all join through
+-- TRIM(column) = TRIM(other) because the hand-typed sources carry stray
+-- whitespace -- and a plain column index can never serve an expression
+-- predicate, so every one of those joins was a full scan of this table per
+-- outer row. SQLite uses an expression index only when the query's
+-- expression matches the indexed one, which these do.
+CREATE INDEX IF NOT EXISTS idx_sei_trim_pc_no
+    ON sky_east_items(TRIM(pc_no));
+CREATE INDEX IF NOT EXISTS idx_sei_trim_zalando_po
+    ON sky_east_items(TRIM(zalando_po), TRIM(style));
+
 -- Photo issues from the most recent buy-plan generation: styles with no
 -- picture anywhere, and source files that failed to read (broken files on a
 -- network share). REPLACED wholesale on every generation (unlike the

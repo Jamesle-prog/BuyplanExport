@@ -106,7 +106,16 @@ def show_plans_section() -> None:
         t("Open a plan"), ids, key="cp_plan_pick",
         format_func=lambda i: labels.get(int(i), str(i)))
     if plan_id is not None:
-        _show_plan_detail(store, int(plan_id))
+        # The list frame already carries this plan's PO qty and X-factory
+        # (list_plans_by_material computed them this same rerun) — hand them
+        # down rather than re-running both cross-module joins in the detail.
+        _mine = view[view["id"] == int(plan_id)]
+        _row = _mine.iloc[0] if not _mine.empty else None
+        _show_plan_detail(
+            store, int(plan_id),
+            po_qty=int(_row["po_qty"]) if _row is not None else None,
+            x_factory=(str(_row["ex_fty"]) if _row is not None
+                       and str(_row.get("ex_fty") or "") else None))
 
 
 def _show_fabric_totals(view: pd.DataFrame) -> None:
@@ -189,14 +198,16 @@ def _filter_plans(df: pd.DataFrame, search: str, store) -> pd.DataFrame:
     return df[mask]
 
 
-def _show_plan_detail(store, plan_id: int) -> None:
+def _show_plan_detail(store, plan_id: int, *, po_qty: int | None = None,
+                      x_factory: str | None = None) -> None:
     plan = store.get_plan(plan_id)
     if not plan:
         st.error(t("That plan no longer exists."))
         return
 
     st.markdown(f"### {plan.get('plan_name') or '—'}")
-    po_qty = int(store.po_qty_by_plan().get(plan_id, 0))
+    if po_qty is None:
+        po_qty = int(store.po_qty_by_plan().get(plan_id, 0))
     order_qty = int(plan.get("order_qty") or 0)
     cut = int(plan.get("cut_qty") or 0)
     diff_pct = cut_vs_po_pct(po_qty, cut)
@@ -213,8 +224,10 @@ def _show_plan_detail(store, plan_id: int) -> None:
                "fabric are listed below — a co-ord set cuts more pieces than "
                "units."))
     c4.metric(t("Markers"), int(plan.get("total_markers") or 0))
+    if x_factory is None:
+        x_factory = store.x_factory_by_plan().get(plan_id)
     st.caption(
-        f"{t('X-factory')}: {store.x_factory_by_plan().get(plan_id) or '—'} · "
+        f"{t('X-factory')}: {x_factory or '—'} · "
         f"{t('Styles')}: {plan.get('styles') or '—'} · "
         f"{t('Colors')}: {plan.get('colors') or '—'} · "
         f"{t('Operator')}: {plan.get('operator') or '—'} · "

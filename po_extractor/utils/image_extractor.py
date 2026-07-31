@@ -58,6 +58,23 @@ _XML_ERRORS = (ET.ParseError,) + (
 _DISPIMG_CELL_RE = re.compile(r'DISPIMG\("(ID_[0-9A-Fa-f]+)"', re.IGNORECASE)
 _COL_LETTER_RE   = re.compile(r'^([A-Za-z]+)')
 
+# Largest media member read into memory. Real style photos on this system run
+# to ~15 MB; deflate compresses ~1000:1, so without a cap a small crafted
+# upload could expand into multi-GB allocations in the shared server process.
+# ZipInfo.file_size is the declared uncompressed size and CPython's zipfile
+# stops reading at it, so checking it up front is effective.
+_MAX_IMAGE_BYTES = 64 * 1024 * 1024
+
+
+def _read_member(zf, name: str) -> bytes | None:
+    """Read one zip member, refusing anything over :data:`_MAX_IMAGE_BYTES`."""
+    try:
+        if zf.getinfo(name).file_size > _MAX_IMAGE_BYTES:
+            return None
+        return zf.read(name)
+    except (KeyError, OSError):
+        return None
+
 
 def _col_letters_to_num(letters: str) -> int:
     """A=1, Z=26, AA=27, …"""
@@ -257,12 +274,15 @@ def extract_anchored_positions(path, sheet_index: int = 0
             names = set(zf.namelist())
             # One photo can be anchored in several places; memoise so a big
             # media part on a network mount is read once, not once per anchor.
-            memo: dict[str, str] = {}
+            memo: dict[str, str | None] = {}
             for drawing in _drawing_paths(zf, names, sheet_index):
                 for row0, col0, media in _anchored_pictures(zf, names, drawing):
                     if media not in memo:
-                        memo[media] = _anchored_id(zf.read(media))
-                    result[(row0 + 1, col0 + 1)] = memo[media]
+                        data = _read_member(zf, media)
+                        memo[media] = (_anchored_id(data)
+                                       if data is not None else None)
+                    if memo[media] is not None:
+                        result[(row0 + 1, col0 + 1)] = memo[media]
     except (zipfile.BadZipFile, OSError, *_XML_ERRORS, KeyError):
         pass
     return result
@@ -277,9 +297,8 @@ def _anchored_images(zf, names: set[str]) -> dict[str, bytes]:
             if media in seen:
                 continue
             seen.add(media)
-            try:
-                data = zf.read(media)
-            except (KeyError, OSError):
+            data = _read_member(zf, media)
+            if data is None:
                 continue
             out.setdefault(_anchored_id(data), data)
     return out
@@ -355,7 +374,9 @@ def _dispimg_images(zf, names: set[str]) -> dict[str, bytes]:
         for img_id, rid in id_to_rid.items():
             img_path = rid_to_path.get(rid)
             if img_path and img_path in names:
-                result[img_id] = zf.read(img_path)
+                data = _read_member(zf, img_path)
+                if data is not None:
+                    result[img_id] = data
 
     except (zipfile.BadZipFile, OSError, *_XML_ERRORS, KeyError):
         pass   # silently skip unreadable / hostile files

@@ -230,3 +230,14 @@ def test_an_empty_store_lists_cleanly(store):
     assert store.count() == 0
     assert store.list_records().empty
     assert store.distinct("style") == []
+
+
+def test_a_typed_year_is_not_rewritten_into_a_fabricated_date():
+    """An unbounded serial conversion turned typos into confident wrong
+    dates — a typed year 2023 became '1905-07-15'. Serials are accepted only
+    within the 2000–2100 window a shop-floor log can actually mean; outside
+    it the cell is kept verbatim, per the module's own policy."""
+    for raw, want in ((2023, "2023"), (45, "45"), (44872, "2022-11-07")):
+        rows = [_row(date=raw, style="S1", color="Black")]
+        rec = parse_fabric_condition(_book(rows))["records"][0]
+        assert rec["test_date"] == want, (raw, rec["test_date"])
