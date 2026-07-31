@@ -1056,3 +1056,36 @@ def test_a_plan_saved_with_no_links_is_fully_usable(store, exact):
     # links argument at all (the pre-existing path).
     store.set_links(pid, [{"pc_no": "PC1", "po_no": "PO1", "style": "TP5016"}])
     assert [l["pc_no"] for l in store.get_plan(pid)["links"]] == ["PC1"]
+
+
+def test_blank_template_build_does_not_crash_on_style_summary(monkeypatch):
+    """Building the standard template with NO linked cut plan used to clobber
+    the ``styles`` parameter (the user's selected PO style codes) with header
+    dicts, and the style_summary join then raised TypeError on every blank
+    build. The header now uses its own local; the summary keeps the codes."""
+    import ui.cutting_plan.standard as std
+
+    class _St:
+        def __init__(self):
+            self.session_state = {}
+        def success(self, *a, **k): pass
+
+    fake = _St()
+    monkeypatch.setattr(std, "st", fake)
+    monkeypatch.setattr(std, "save_copy_to_folder", lambda *a, **k: None)
+    monkeypatch.setattr(std, "pdf_export_invalidate", lambda *a, **k: None)
+
+    std._build(store=None, plan_ids=[], pc_nos=["PC1"], po_nos=[],
+               styles=["TP5016"], items=None,
+               groups=[("S24DTR003", ["S", "M"])], colors=["Wine"],
+               qty={("S24DTR003", "Wine", "S"): 300,
+                    ("S24DTR003", "Wine", "M"): 200},
+               clean=False, folder="")
+
+    from ui.session_keys import SK
+    data = fake.session_state[SK.CP_STD_BYTES]
+    assert data and fake.session_state[SK.CP_STD_FNAME].endswith(".xlsx")
+    ws = load_workbook(io.BytesIO(data)).active
+    texts = {str(ws.cell(r, c).value) for r in range(1, 15)
+             for c in range(1, 6) if ws.cell(r, c).value is not None}
+    assert "TP5016" in texts          # the user's style codes, not repr(dict)

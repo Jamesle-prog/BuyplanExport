@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.124.1",
+        "date": "2026-08-01",
+        "entries": [
+            {"type": "fix", "text": "**Cut-plan cleanup no longer breaks on a narrower fabric above a wider one.** Each block's metric columns are packed within that block's own rows — but the scan for where a block ends only stopped at *text* in its own columns, and a wider block below reads as merged-empty headings or bare numbers there. The pack then either wrote through the wide block's merged 尺码 heading (a crash the export's best-effort guard turned into a silently *uncleaned* file — no translation, no marker-name stripping, no fabric filtering) or shifted its quantities under the wrong sizes. The scan now also stops at the next structural anchor (版 N, 排版结果, the totals cluster), and packing refuses to write through a merged cell it doesn't own."},
+            {"type": "fix", "text": "**The plan-wide 总台数 survives even when a fabric omits its own.** Fabric sections were counted against Total-Tables rows to spot the plan-wide grand total; a fabric block with no totals row of its own made the counts equal, and the grand total was absorbed into the last block — exporting the other fabric then deleted the plan's own total. The grand is now also recognised by position: it sits apart, below a blank row."},
+            {"type": "fix", "text": "**Building a blank standard cut plan (no linked plan) crashed.** The header-building branch overwrote the list of selected style codes with its own internal records, and the style summary line then failed on every blank-template build. Found in the full code review; a regression test pins it."},
+        ],
+    },
+    {
         "version": "2.124.0",
         "date": "2026-07-30",
         "entries": [

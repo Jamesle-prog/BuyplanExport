@@ -464,6 +464,18 @@ def demand_frame(groups: list[tuple[str, list[str]]], colors: list[str],
     return pd.DataFrame(rows)
 
 
+def pdf_export_invalidate(key: str) -> None:
+    """Drop the PDF a ``pdf_export_block(key=...)`` built earlier.
+
+    Call after the workbook it was rendered from is replaced, or the download
+    button hands back a stale sheet. Lives here so the ``{key}_pdf_*``
+    session-key scheme stays in one place — a caller hand-writing the key
+    string would silently stop invalidating the moment the scheme changed.
+    """
+    st.session_state.pop(f"{key}_pdf_bytes", None)
+    st.session_state.pop(f"{key}_pdf_name", None)
+
+
 def pdf_export_block(xlsx_bytes: bytes | None, base_name: str, key: str, *,
                      label: str | None = None,
                      allow_clean: bool = False,

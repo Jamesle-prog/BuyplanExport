@@ -117,6 +117,7 @@ class SK:
     CP_EDIT_ID      = "cp_edit_id"       # plan id whose links are being edited
     CP_STD_BYTES    = "cp_std_bytes"     # generated standard cut plan bytes
     CP_STD_FNAME    = "cp_std_fname"
+    CP_STD_CN_CONFLICTS = "cp_std_cn_conflicts"  # plan-vs-PO colour disagreements
 
     # ── Settlement (💰 结算统计表) ────────────────────────────────────────────
     ST_PARSED    = "st_parsed"      # dict — parsed upload awaiting import

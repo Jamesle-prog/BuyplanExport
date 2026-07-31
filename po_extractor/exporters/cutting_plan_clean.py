@@ -283,13 +283,41 @@ def _run_bounds(ws, row: int, col: int) -> tuple[int, int]:
     return lo, hi
 
 
+# Rows that begin a NEW structure on the sheet: the next marker's header, the
+# next section, or the totals cluster.  Matched on the pre-translation English
+# labels in column 1 or 2.  Deliberately absent: "Colors" and "Sum" — those
+# sit INSIDE the block whose run is being measured.
+_ANCHOR_RE = re.compile(
+    r"^(marker \d+|marker definition|marker ratio|spreading plies|solution|"
+    r"order demands|total efficiency|total cost|total cut length|"
+    r"total tables|average length)$")
+
+
+def _is_anchor_row(ws, r: int) -> bool:
+    return any(_ANCHOR_RE.match(_norm_label(ws.cell(r, c).value))
+               for c in (1, 2))
+
+
+def _norm_label(v) -> str:
+    return " ".join(str(v).split()).casefold() if isinstance(v, str) else ""
+
+
 def _run_last_row(ws, header_row: int, lo: int, hi: int) -> int:
     """Last row of the block headed by the run at *header_row*.
 
     The block runs down to the row before the next label in the same columns —
-    that label is the next block's own heading.
+    OR the row before the next structural anchor ("Marker 2", "Solution", the
+    totals cluster…), whichever comes first.  The anchor stop matters when the
+    block BELOW is *wider* than this one: its cells in this run's columns are
+    merged-empty headings or bare numbers, neither of which reads as text, so
+    without the anchor the rectangle overran into the wider block — and
+    packing then either wrote through its merged ``Sizes`` heading (a crash
+    the caller's best-effort guard turned into a silently-uncleaned file) or
+    shifted its quantities under the wrong sizes.
     """
     for r in range(header_row + 1, ws.max_row + 1):
+        if _is_anchor_row(ws, r):
+            return r - 1
         if any(_has_text(ws.cell(r, c).value) for c in range(lo, hi + 1)):
             return r - 1
     return ws.max_row
@@ -306,6 +334,8 @@ def _pack_run(ws, *, top: int, bot: int, lo: int, hi: int,
     """
     from copy import copy
 
+    from openpyxl.cell.cell import MergedCell
+
     snap = {(r, c): (ws.cell(r, c).value, copy(ws.cell(r, c)._style))
             for r in range(top, bot + 1) for c in range(lo, hi + 1)}
     inside = [m for m in list(ws.merged_cells.ranges)
@@ -319,12 +349,21 @@ def _pack_run(ws, *, top: int, bot: int, lo: int, hi: int,
         for src, dst in moved.items():
             value, style = snap[(r, src)]
             cell = ws.cell(r, dst)
+            if isinstance(cell, MergedCell):
+                # Covered by a merge anchored OUTSIDE the rectangle — foreign
+                # structure this pack has no business rewriting. The run
+                # bounds are supposed to prevent ever getting here; skipping
+                # keeps an unforeseen layout degraded-but-cleaned instead of
+                # aborting the whole cleanup on a write to a read-only cell.
+                continue
             cell.value = value
             cell._style = style
         # The tail the pack vacated. Its borders and fill go too — an empty
         # bordered cell is exactly the gap being closed.
         for c in range(lo + len(keep), hi + 1):
             cell = ws.cell(r, c)
+            if isinstance(cell, MergedCell):
+                continue
             cell.value = None
             cell._style = None
 
@@ -432,7 +471,20 @@ def find_fabric_blocks(ws) -> list[tuple[str, int, int]]:
     # end. When there is one more than there are fabrics, that last one is the
     # grand total and must stay out of every block — otherwise removing the
     # final fabric takes the plan's own total with it.
-    grand = totals[-1] if len(totals) > len(starts) else None
+    #
+    # The count alone isn't enough: a fabric that omits its OWN Total Tables
+    # row makes the counts equal, and the grand total would then be absorbed
+    # into the last block and deleted with it. The grand is also recognisable
+    # by position — it sits apart, below a blank row, where a fabric's own
+    # totals row follows its Total-cut-length line directly.
+    def _values_blank(r: int) -> bool:
+        return all(ws.cell(r, c).value is None
+                   for c in range(1, ws.max_column + 1))
+
+    grand = None
+    if totals and (len(totals) > len(starts)
+                   or (totals[-1] > 1 and _values_blank(totals[-1] - 1))):
+        grand = totals[-1]
 
     blocks: list[tuple[str, int, int]] = []
     for i, first in enumerate(starts):

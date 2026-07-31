@@ -20,8 +20,8 @@ from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
     XLSX_MIME, cleanup_color_map, demand_frame, demand_matrix,
     fabric_picker, output_folder_input, save_copy_to_folder,
-    detect_color_conflicts, pdf_export_block, render_color_conflicts,
-    safe_filename, select_pos,
+    detect_color_conflicts, pdf_export_block, pdf_export_invalidate,
+    render_color_conflicts, safe_filename, select_pos,
 )
 
 
@@ -94,7 +94,7 @@ def show_standard_section() -> None:
 
     if st.session_state.get(SK.CP_STD_BYTES):
         render_color_conflicts(
-            st.session_state.get("cp_std_cn_conflicts") or [],
+            st.session_state.get(SK.CP_STD_CN_CONFLICTS) or [],
             bytes_key=SK.CP_STD_BYTES, key_prefix="cp_std")
         st.download_button(
             f"⬇️ {st.session_state.get(SK.CP_STD_FNAME)}",
@@ -130,12 +130,16 @@ def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
         header = plan_header_from_parsed(newest_parsed)
         header["order_name"] = order_name
     else:
-        styles = [{"name": s, "file": ""} for s, _sizes in groups]
+        # A separate name on purpose: assigning to ``styles`` here clobbered
+        # the parameter (the user's selected PO style codes, list[str]) with
+        # header dicts, and the style_summary join below then crashed every
+        # blank-template build with a TypeError.
+        header_styles = [{"name": s, "file": ""} for s, _sizes in groups]
         buyer = ""
         if items is not None and not items.empty and "brand" in items.columns:
             brands = [b for b in items["brand"].dropna().unique().tolist() if b]
             buyer = ", ".join(map(str, brands[:3]))
-        header = today_header(order_name, client=buyer, styles=styles)
+        header = today_header(order_name, client=buyer, styles=header_styles)
     header["pc_summary"] = ", ".join(pc_nos)
     header["po_summary"] = ", ".join(po_nos) if po_nos else t("All POs")
     header["style_summary"] = (", ".join(styles) if styles
@@ -152,11 +156,11 @@ def _build(store, plan_ids: list[int], pc_nos: list[str], po_nos: list[str],
     save_copy_to_folder(data, st.session_state[SK.CP_STD_FNAME], folder)
     # Colours the plan already names in Chinese that disagree with the PO are
     # reported, never rewritten — the user decides (see render_color_conflicts).
-    st.session_state["cp_std_cn_conflicts"] = (
+    st.session_state[SK.CP_STD_CN_CONFLICTS] = (
         detect_color_conflicts(data) if clean else [])
     # A previously built PDF belongs to the old workbook — drop it so the
     # download button can't hand back a stale sheet.
-    st.session_state.pop("cp_std_pdf_bytes", None)
+    pdf_export_invalidate("cp_std")
     if not materials:
         st.success(t("Standard template built (marker sections blank)."))
     else:

@@ -719,3 +719,81 @@ def test_spacing_is_not_added_twice():
     before = ws.max_row
     assert space_out_blocks(ws) == 0
     assert ws.max_row == before
+
+
+def test_a_narrow_block_above_a_wide_one_stops_at_the_wide_blocks_header():
+    """The reverse of the case above — and the dangerous one. The wider
+    block's cells in the narrow run's columns are merged-empty headings or
+    bare numbers, neither of which reads as text, so the scan used to overrun
+    into it: packing then wrote through the wide block's merged Sizes heading
+    (a crash the UI's best-effort guard turned into a silently-uncleaned
+    file). The structural-anchor stop ends the run at the next "Marker N"
+    row instead."""
+    from po_extractor.exporters.cutting_plan_clean import compact_dropped_columns
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    # narrow: 5 size cols C..G, metrics H..L
+    ws.cell(1, 1, "Marker 1"); ws.cell(1, 3, "Sizes"); ws.merge_cells("C1:G1")
+    for i, head in enumerate(_METRICS):
+        ws.cell(1, 8 + i, head)
+    for c in range(3, 8):
+        ws.cell(2, c, 74)
+    for i, v in enumerate((40.75, 83.70, 29.83, 110.13, 40.75)):
+        ws.cell(2, 8 + i, v)
+    # wide below: 10 size cols C..L (merged heading + merged style band),
+    # metrics M..Q
+    ws.cell(4, 1, "Marker 1"); ws.cell(4, 3, "Sizes"); ws.merge_cells("C4:L4")
+    for i, head in enumerate(_METRICS):
+        ws.cell(4, 13 + i, head)
+    ws.cell(5, 3, "STYLEA"); ws.merge_cells("C5:G5")
+    ws.cell(5, 8, "STYLEB"); ws.merge_cells("H5:L5")
+    for c in range(3, 13):
+        ws.cell(6, c, 176)
+    for i, v in enumerate((1022.16, 87.47, 110.65, 580.77, 1022.16)):
+        ws.cell(6, 13 + i, v)
+
+    assert compact_dropped_columns(ws) == 4       # two from each block
+
+    # narrow: packed to H..J
+    assert [ws.cell(1, c).value for c in range(8, 13)] == [
+        "Fabric Length,m", "Efficiency,%", "Marker Length,cm", None, None]
+    assert [ws.cell(2, c).value for c in range(8, 13)] == [
+        40.75, 83.70, 110.13, None, None]
+    # wide: sizes and style merges untouched, metrics packed at M..O
+    assert [ws.cell(6, c).value for c in range(3, 13)] == [176] * 10
+    ranges = {str(m) for m in ws.merged_cells.ranges}
+    assert {"C4:L4", "C5:G5", "H5:L5"} <= ranges
+    assert [ws.cell(4, c).value for c in range(13, 16)] == [
+        "Fabric Length,m", "Efficiency,%", "Marker Length,cm"]
+    assert [ws.cell(6, c).value for c in range(13, 16)] == [
+        1022.16, 87.47, 580.77]
+
+
+def test_grand_total_is_recognised_even_when_a_fabric_omits_its_own():
+    """A fabric block with no Total Tables row of its own makes the row count
+    equal, and the plan-wide grand total used to be absorbed into that block
+    — exporting the other fabric then deleted the plan's own total. The
+    grand is also recognisable by sitting below a blank row."""
+    from po_extractor.exporters.cutting_plan_clean import (
+        find_fabric_blocks, keep_only_fabrics,
+    )
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    sheet = [("Marker Definition", None), ("Material", None), ("A", 4),
+             ("Total Tables", 4), (None, None),
+             ("Marker Definition", None), ("Material", None), ("B", 2),
+             (None, None),                       # B has NO Total Tables row
+             ("Total Tables", 6)]                # the plan-wide grand
+    for r, (a, b) in enumerate(sheet, start=1):
+        if a is not None:
+            ws.cell(r, 1, a)
+        if b is not None:
+            ws.cell(r, 2, b)
+
+    blocks = find_fabric_blocks(ws)
+    assert [b[0] for b in blocks] == ["A", "B"]
+    assert blocks[1][2] < 10                     # grand row NOT inside B
+
+    assert keep_only_fabrics(ws, {"A"}) == 1
+    labels = [str(ws.cell(r, 1).value or "") for r in range(1, ws.max_row + 1)]
+    assert "Total Tables" in labels              # the grand survived
