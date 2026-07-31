@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS settlements (
     row_no          INTEGER DEFAULT 0,          -- row in the sheet, for tracing
 
     invoice_no      TEXT DEFAULT '',
-    po_number       TEXT DEFAULT '',            -- the client's PO (PO#)
+    zalando_po       TEXT DEFAULT '',            -- the client's PO (PO#)
     style           TEXT DEFAULT '',            -- 款号
     contract_no     TEXT DEFAULT '',            -- 合同号
     factory         TEXT DEFAULT '',
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS settlements (
 );
 
 CREATE INDEX IF NOT EXISTS idx_settlements_sheet    ON settlements(sheet);
-CREATE INDEX IF NOT EXISTS idx_settlements_po       ON settlements(po_number);
+CREATE INDEX IF NOT EXISTS idx_settlements_po       ON settlements(zalando_po);
 CREATE INDEX IF NOT EXISTS idx_settlements_style    ON settlements(style);
 CREATE INDEX IF NOT EXISTS idx_settlements_contract ON settlements(contract_no);
 CREATE INDEX IF NOT EXISTS idx_settlements_invoice  ON settlements(invoice_no);

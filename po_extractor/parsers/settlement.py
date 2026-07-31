@@ -120,7 +120,7 @@ def _date(v: Any) -> str:
 # heading itself (``FOB（£）``).
 _FIELDS: dict[str, tuple[str, ...]] = {
     "invoice_no":      ("invoiceno.", "invoiceno", "invoice"),
-    "po_number":       ("po#", "po号", "ponumber"),
+    "zalando_po":      ("po#", "po号", "ponumber"),
     "style":           ("款号",),
     "contract_no":     ("合同号",),
     "contract_qty":    ("合同数量",),
@@ -152,7 +152,7 @@ _DATE_HEAD = "日期"
 
 # A row counts as a settlement line when it names at least one of these; a
 # sheet's stray totals and notes carry none of them.
-_KEY_FIELDS = ("invoice_no", "po_number", "style", "contract_no")
+_KEY_FIELDS = ("invoice_no", "zalando_po", "style", "contract_no")
 
 
 def _find_header_row(ws) -> int:
@@ -298,13 +298,30 @@ def parse_settlement(source: Any) -> dict[str, Any]:
                        "client": client, "year": year,
                        "currency": _currency(ws, header_row)})
 
-    if not rows and not samples:
+    # Reject only a workbook with no RECOGNISABLE sheet at all. A recognised
+    # sheet that parses to zero rows is legitimate — a client-year emptied in
+    # Excel — and the import replaces its stored rows with nothing, which is
+    # exactly what the user just did in the workbook.
+    if not sheets:
         raise SettlementParseError(
             "No settlement sheet was found — expected a header row with "
             "合同号 and 款号 / PO# / INVOICE NO."
         )
     return {"rows": rows, "samples": samples, "sheets": sheets,
             "skipped": skipped}
+
+
+def _sub_row_is_header(ws, header_row: int) -> bool:
+    """Whether the row under the header carries the 支付/费用 sub-labels.
+
+    Every current sheet has the two-row header, but nothing guarantees it —
+    a sheet without the payment/fee groups has no sub-row at all, and
+    skipping ``header_row + 1`` unconditionally would silently drop its
+    first data line.
+    """
+    subs = set(_PAY_FIELDS) | set(_FEE_FIELDS) | {_DATE_HEAD}
+    return any(_norm(ws.cell(header_row + 1, c).value) in subs
+               for c in range(1, ws.max_column + 1))
 
 
 def _parse_sheet(ws, header_row: int, title: str) -> list[dict[str, Any]]:
@@ -319,13 +336,14 @@ def _parse_sheet(ws, header_row: int, title: str) -> list[dict[str, Any]]:
         c = cols.get(field)
         return ws.cell(r, c).value if c else None
 
+    first = header_row + (2 if _sub_row_is_header(ws, header_row) else 1)
     out: list[dict[str, Any]] = []
-    for r in range(header_row + 2, ws.max_row + 1):
+    for r in range(first, ws.max_row + 1):
         rec = {
             "sheet": title, "client": client, "year": year,
             "currency": currency, "row_no": r,
             "invoice_no":   _txt(cell(r, "invoice_no")),
-            "po_number":    _txt(cell(r, "po_number")),
+            "zalando_po":    _txt(cell(r, "zalando_po")),
             "style":        _txt(cell(r, "style")),
             "contract_no":  _txt(cell(r, "contract_no")),
             "factory":      _txt(cell(r, "factory")),

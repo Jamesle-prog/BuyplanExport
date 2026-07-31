@@ -25,7 +25,7 @@ from ._settlement_schema import _SETTLEMENT_SCHEMA
 # Columns written per settlement row, in insert order.
 _ROW_COLS = (
     "sheet", "client", "year", "currency", "row_no",
-    "invoice_no", "po_number", "style", "contract_no", "factory",
+    "invoice_no", "zalando_po", "style", "contract_no", "factory",
     "repeat_or_new", "contract_qty", "unit_cost", "fob", "contract_amount",
     "ex_factory", "shipped_qty", "over_short_pct", "invoice_amount",
     "received", "received_date",
@@ -50,6 +50,17 @@ class SettlementStore(BaseSQLiteStore):
 
     def _ensure_schema(self) -> None:
         with self._conn() as conn:
+            # Migrate BEFORE the schema script: a table created under the
+            # original column name makes CREATE TABLE IF NOT EXISTS a no-op,
+            # and every insert would then miss. The column was renamed to
+            # ``zalando_po`` because it holds the CLIENT's PO — CLAUDE.md
+            # reserves ``po_number`` for GIII's own POs, and a join written
+            # against the shared name would look right and match nothing.
+            try:
+                conn.execute("ALTER TABLE settlements "
+                             "RENAME COLUMN po_number TO zalando_po")
+            except sqlite3.OperationalError:
+                pass          # fresh DB (no table yet) or already renamed
             conn.executescript(_SETTLEMENT_SCHEMA)
 
     # ── import ──────────────────────────────────────────────────────────────
@@ -67,7 +78,14 @@ class SettlementStore(BaseSQLiteStore):
         now = datetime.now().isoformat(timespec="seconds")
         rows = parsed.get("rows") or []
         samples = parsed.get("samples") or []
-        sheets = sorted({str(r.get("sheet") or "") for r in rows})
+        # Replace every settlement sheet the FILE carries, not just sheets
+        # that yielded rows — a client-year the user emptied in Excel must
+        # come back empty here too, not survive as stale rows reported
+        # "left untouched".
+        sheets = sorted(
+            {str(r.get("sheet") or "") for r in rows}
+            | {str(s.get("sheet") or "") for s in (parsed.get("sheets") or [])
+               if s.get("kind") == "settlement"})
         digest = (hashlib.sha256(bytes(file_bytes)).hexdigest()
                   if file_bytes else "")
 
@@ -134,7 +152,7 @@ class SettlementStore(BaseSQLiteStore):
                 args.extend(vals)
         if search.strip():
             like = f"%{search.strip()}%"
-            sql.append("AND (invoice_no LIKE ? OR po_number LIKE ? "
+            sql.append("AND (invoice_no LIKE ? OR zalando_po LIKE ? "
                        "OR style LIKE ? OR contract_no LIKE ? "
                        "OR factory LIKE ?)")
             args.extend([like] * 5)
@@ -172,15 +190,16 @@ class SettlementStore(BaseSQLiteStore):
 
         Matched on the client's PO **and** the style: a PO covers several
         styles and each is invoiced separately, so the PO alone would fan one
-        settlement line out across all of them.  ``po_number`` here is the
-        client's own PO — the same thing Sky East stores as ``zalando_po`` —
-        not a GIII ``po_number``, which is a different number entirely.
+        settlement line out across all of them.  ``zalando_po`` is the
+        client's own PO, named identically to the Sky East column it joins
+        against — deliberately NOT ``po_number``, which CLAUDE.md reserves
+        for GIII's own POs, a different number entirely.
 
         Returns an empty frame when the Sky East tables aren't in this
         database, the same guard the cut-plan store uses.
         """
         sql = """
-            SELECT s.id, s.sheet, s.invoice_no, s.po_number, s.style,
+            SELECT s.id, s.sheet, s.invoice_no, s.zalando_po, s.style,
                    s.contract_no, s.contract_qty, s.shipped_qty,
                    s.currency, s.client, s.year,
                    i.pc_no          AS se_pc_no,
@@ -189,9 +208,9 @@ class SettlementStore(BaseSQLiteStore):
                    i.color_name     AS se_color
               FROM settlements s
               LEFT JOIN sky_east_items i
-                ON TRIM(i.zalando_po) = TRIM(s.po_number)
+                ON TRIM(i.zalando_po) = TRIM(s.zalando_po)
                AND TRIM(i.style)      = TRIM(s.style)
-             WHERE TRIM(s.po_number) <> ''
+             WHERE TRIM(s.zalando_po) <> ''
              ORDER BY s.year DESC, s.invoice_no
         """
         try:
@@ -224,16 +243,30 @@ def _with_derived(df: pd.DataFrame) -> pd.DataFrame:
     def n(col: str) -> pd.Series:
         return pd.to_numeric(df.get(col), errors="coerce").fillna(0)
 
+    def present(col: str) -> pd.Series:
+        """The column with BOTH blank and explicit 0 treated as absent.
+
+        发票金额 is typically a formula (shipped × FOB) that bakes to 0 before
+        shipment, and a typed 0 in 实际收汇 means "nothing received yet" — in
+        this workbook a zero amount is a stage, not a figure. Treating it as
+        a real 0 made every not-yet-shipped line read as billed-nothing and
+        drop out of the outstanding totals. This is also exactly what the
+        scalar helpers in the parser do (``a or b or c`` skips 0), so the
+        two implementations can't drift apart again.
+        """
+        s = pd.to_numeric(df.get(col), errors="coerce")
+        return s.where(s != 0)
+
     # Billed falls back to the contract amount: a line that has shipped but
-    # not been invoiced is still owed, and would otherwise read as settled.
-    billed = pd.to_numeric(df.get("invoice_amount"), errors="coerce")
-    billed = billed.fillna(pd.to_numeric(df.get("contract_amount"),
-                                         errors="coerce")).fillna(0)
+    # not been invoiced (or whose invoice formula still reads 0) is still
+    # owed, and would otherwise read as settled.
+    billed = present("invoice_amount").fillna(
+        present("contract_amount")).fillna(0)
     df["outstanding"] = (billed - n("received")).round(2)
     df["cost_total"] = (n("pay_fabric") + n("pay_trim") + n("pay_cmt")
                         + n("fee_port") + n("fee_other1")
                         + n("fee_other2")).round(2)
-    earned = pd.to_numeric(df.get("received"), errors="coerce").fillna(billed)
+    earned = present("received").fillna(billed)
     # None, not 0, where nothing has been paid out — "break even" and "not
     # costed yet" are different claims.
     df["margin"] = (earned - df["cost_total"]).round(2)

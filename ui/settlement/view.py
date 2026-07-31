@@ -22,7 +22,7 @@ from ui.stores import get_settlement_store
 # money in, then money out — the order the line actually moves through.
 _LIST_RENAME = {
     "invoice_no": "Invoice No.", "client": "Client", "year": "Year",
-    "po_number": "PO#", "style": "Style", "contract_no": "Contract No.",
+    "zalando_po": "PO#", "style": "Style", "contract_no": "Contract No.",
     "factory": "Factory", "repeat_or_new": "New / repeat",
     "contract_qty": "Contract qty", "shipped_qty": "Shipped qty",
     "over_short_pct": "Over / short",
@@ -217,9 +217,10 @@ def _render_receivables() -> None:
     store = get_settlement_store()
     st.markdown(f"#### {t('Outstanding by client')}")
     st.caption(t(
-        "Lines that have shipped but not been received in full. This is the "
-        "到期未付款明细 sheet, recomputed from the lines themselves so it "
-        "cannot fall behind them."))
+        "Lines invoiced — or contracted, when no invoice is raised yet — "
+        "and not received in full. This is the 到期未付款明细 sheet, "
+        "recomputed from the lines themselves so it cannot fall behind "
+        "them."))
     df = store.list_rows()
     if df.empty:
         st.info(t("No settlement lines — import the workbook first."))
@@ -249,11 +250,17 @@ def _render_receivables() -> None:
     st.markdown(f"##### {t('Oldest first')}")
     st.caption(t("By ex-factory date — the line that shipped longest ago is "
                  "the one that has been owed longest."))
-    cols = ["ex_factory", "client", "invoice_no", "po_number", "style",
+    cols = ["ex_factory", "client", "invoice_no", "zalando_po", "style",
             "contract_no", "factory", "currency", "invoice_amount",
             "received", "outstanding"]
     oldest = view[[c for c in cols if c in view.columns]].copy()
-    oldest = oldest.sort_values("ex_factory", na_position="last")
+    # Sort on the PARSED date, display the raw text: ex-factory sometimes
+    # holds a revision note ("2025/8/28->9/4") rather than a date, and a
+    # plain text sort files those between the ISO dates at random.
+    _when = pd.to_datetime(oldest["ex_factory"], errors="coerce")
+    oldest = (oldest.assign(_when=_when)
+              .sort_values("_when", na_position="last")
+              .drop(columns="_when"))
     st.dataframe(oldest.rename(columns=_tr(_LIST_RENAME)),
                  use_container_width=True, hide_index=True)
 
@@ -276,7 +283,7 @@ def _render_risk() -> None:
     if risk.empty:
         st.success(t("No line is flagged at discount risk."))
     else:
-        cols = ["client", "year", "invoice_no", "po_number", "style",
+        cols = ["client", "year", "invoice_no", "zalando_po", "style",
                 "contract_no", "factory", "ex_factory", "currency",
                 "contract_amount", "invoice_amount", "outstanding"]
         st.dataframe(
@@ -295,22 +302,27 @@ def _render_risk() -> None:
         "one line across all of them. A line here names a PO/style pair no "
         "Sky East contract in the system has, so nothing can be checked "
         "against it."))
-    unmatched = store.unmatched_pos()
+    # One query serves both sections below — unmatched lines are exactly the
+    # match_orders rows with no order behind them, so running the join twice
+    # per rerun bought nothing.
+    matched = store.match_orders()
+    unmatched = (matched[matched["se_qty"].isna()]
+                 if not matched.empty and "se_qty" in matched.columns
+                 else matched)
     if unmatched.empty:
         st.success(t("Every line with a PO matches an order in the system."))
-        return
-    cols = ["client", "year", "invoice_no", "po_number", "style",
-            "contract_no", "contract_qty", "shipped_qty"]
-    st.dataframe(
-        unmatched[[c for c in cols if c in unmatched.columns]].rename(
-            columns=_tr(_LIST_RENAME)),
-        use_container_width=True, hide_index=True)
+    else:
+        cols = ["client", "year", "invoice_no", "zalando_po", "style",
+                "contract_no", "contract_qty", "shipped_qty"]
+        st.dataframe(
+            unmatched[[c for c in cols if c in unmatched.columns]].rename(
+                columns=_tr(_LIST_RENAME)),
+            use_container_width=True, hide_index=True)
 
     st.divider()
     st.markdown(f"#### {t('Quantity disagreements')}")
     st.caption(t("Where the settlement line and the order it matches state "
                  "different quantities."))
-    matched = store.match_orders()
     if matched.empty or "se_qty" not in matched.columns:
         st.info(t("Nothing to compare — no matching orders in the system."))
         return
@@ -322,7 +334,7 @@ def _render_risk() -> None:
         st.success(t("Every matched line agrees with its order."))
         return
     st.dataframe(
-        gaps[["client", "year", "invoice_no", "po_number", "style",
+        gaps[["client", "year", "invoice_no", "zalando_po", "style",
               "contract_no", "contract_qty", "se_qty", "diff", "se_pc_no",
               "se_ex_fty"]].rename(columns=_tr({
                   **_LIST_RENAME, "se_qty": "Order qty", "diff": "Difference",

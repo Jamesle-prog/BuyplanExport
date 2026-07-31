@@ -100,9 +100,9 @@ def test_columns_are_found_by_heading_not_position():
     d = parse_settlement(_book(Zalando2026=_zalando2026, Zalando2025=y2025))
     by_inv = {r["invoice_no"]: r for r in d["rows"]}
     assert by_inv["S267009"]["style"] == "DR4319"
-    assert by_inv["S267009"]["po_number"] == "PO2360361C"
+    assert by_inv["S267009"]["zalando_po"] == "PO2360361C"
     assert by_inv["S257025"]["style"] == "ZLD114"
-    assert by_inv["S257025"]["po_number"] == "PO2091447C"
+    assert by_inv["S257025"]["zalando_po"] == "PO2091447C"
 
 
 def test_each_payment_takes_the_date_column_on_its_right():
@@ -359,3 +359,102 @@ def test_reading_an_empty_store_gives_the_derived_columns_anyway(store):
     assert df.empty
     for col in ("outstanding", "cost_total", "margin"):
         assert col in df.columns
+
+
+# ── Fixes from the full code review ─────────────────────────────────────────
+
+def test_an_explicit_zero_invoice_still_reads_as_owed(store):
+    """发票金额 is typically a formula (shipped x FOB) that bakes to 0 before
+    shipment. The vectorized derived columns treated that 0 as "billed
+    nothing", so every not-yet-shipped line dropped out of Receivables; the
+    scalar helper already fell back to the contract amount. Both now agree:
+    a zero amount is a stage, not a figure."""
+    def s(ws):
+        _bulk_sheet(ws, order="other", rows=[
+            ["S1", "PO1", None, "ST1", "C1", 400, None, "F", None, 10, 4000,
+             None, "2026-01-02", None, None, 0, 0]])   # invoice=0, received=0
+    store.import_parsed(parse_settlement(_book(X2026=s)))
+    row = store.list_rows().iloc[0]
+    assert row["outstanding"] == 4000                  # falls back to contract
+    assert outstanding({"invoice_amount": 0.0, "contract_amount": 4000,
+                        "received": 0}) == 4000        # scalar agrees
+
+
+def test_an_explicit_zero_received_matches_the_scalar_margin(store):
+    """A typed 0 in 实际收汇 means "nothing received yet" — earned falls back
+    to the billed amount, exactly as the scalar helper always did, instead of
+    flipping the line to a deep negative margin."""
+    def s(ws):
+        _bulk_sheet(ws, order="other", rows=[
+            ["S1", "PO1", None, "ST1", "C1", 400, None, "F", None, 10, 4000,
+             None, "2026-01-02", 400, None, 4100, 0, "",
+             900, "", 100, "", 1200, "", 60, 10, 25]])
+    store.import_parsed(parse_settlement(_book(X2026=s)))
+    row = store.list_rows().iloc[0]
+    assert row["cost_total"] == 2295
+    assert row["margin"] == pytest.approx(4100 - 2295)
+    assert margin({"received": 0, "invoice_amount": 4100, "pay_fabric": 900,
+                   "pay_trim": 100, "pay_cmt": 1200, "fee_port": 60,
+                   "fee_other1": 10, "fee_other2": 25}) \
+        == pytest.approx(4100 - 2295)
+
+
+def test_a_sheet_present_but_emptied_is_replaced_not_left_untouched(store):
+    """A client-year the user emptied in Excel must come back empty here too
+    — the replace set is the sheets the FILE carries, not just the sheets
+    that yielded rows."""
+    store.import_parsed(parse_settlement(_book(Zalando2026=_zalando2026)))
+    assert store.rows_by_sheet() == {"Zalando2026": 2}
+
+    def emptied(ws):
+        _bulk_sheet(ws, order="zalando2026", rows=[])
+    res = store.import_parsed(parse_settlement(_book(Zalando2026=emptied)))
+    assert store.rows_by_sheet() == {}
+    assert res["untouched"] == []
+
+
+def test_a_one_row_header_does_not_lose_its_first_data_line():
+    """Every current sheet has the two-row header, but a sheet without the
+    支付/费用 groups has no sub-row at all — skipping header_row+1
+    unconditionally dropped its first data line."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    ws = wb.create_sheet("X2026")
+    for c, v in enumerate(["INVOICE NO.", "PO#", "款号", "合同号", "合同数量"],
+                          start=1):
+        ws.cell(1, c, v)
+    ws.cell(2, 1, "S1"); ws.cell(2, 4, "C1"); ws.cell(2, 5, 400)
+    ws.cell(3, 1, "S2"); ws.cell(3, 4, "C2"); ws.cell(3, 5, 300)
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    rows = parse_settlement(buf)["rows"]
+    assert [r["invoice_no"] for r in rows] == ["S1", "S2"]
+
+
+def test_the_client_po_column_is_named_zalando_po_not_po_number(store):
+    """CLAUDE.md reserves ``po_number`` for GIII's own POs; the settlement
+    line's PO# is the CLIENT's PO — the same thing sky_east_items stores as
+    ``zalando_po``. Sharing GIII's name was a join written to match nothing
+    waiting to happen."""
+    store.import_parsed(parse_settlement(_book(Zalando2026=_zalando2026)))
+    df = store.list_rows()
+    assert "zalando_po" in df.columns and "po_number" not in df.columns
+
+
+def test_a_table_created_under_the_old_column_name_is_migrated(tmp_path):
+    """An existing install created settlements(po_number ...); CREATE TABLE
+    IF NOT EXISTS would no-op on it and every insert would then miss."""
+    import sqlite3
+    from po_extractor.store._settlement_schema import _SETTLEMENT_SCHEMA
+    db = str(tmp_path / "po_history.db")
+    conn = sqlite3.connect(db)
+    # Recreate exactly what a pre-rename install ran: the current schema
+    # with the column under its original name.
+    conn.executescript(_SETTLEMENT_SCHEMA.replace("zalando_po", "po_number"))
+    conn.execute("INSERT INTO settlements (sheet, po_number) "
+                 "VALUES ('Zalando2026', 'PO1')")
+    conn.commit(); conn.close()
+
+    SettlementStore._checked_paths.clear()
+    migrated = SettlementStore(db)
+    df = migrated.list_rows()
+    assert list(df["zalando_po"]) == ["PO1"]

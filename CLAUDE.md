@@ -62,7 +62,7 @@
   |---|---|---|---|
   | GIII purchase order | `po_number` | our own PO number | `po_metadata`, `po_size_rows`, `production_tracking`, `po_exceptions`, `po_version_history`, `cmpt_contract_lines`, `factory_progress_reports` |
   | Sky East contract | `pc_no` | contract/PC number — **not** a PO | `sky_east_contracts`, `sky_east_items`, `sky_east_item_history`, `progress_records` |
-  | Client's own PO | `zalando_po` | the buyer's PO printed on a Sky East item | `sky_east_items`, `sky_east_item_history` |
+  | Client's own PO | `zalando_po` | the buyer's PO printed on a Sky East item | `sky_east_items`, `sky_east_item_history`, `settlements` |
 
   - Use **`po_number`** for a GIII PO everywhere in new code — never `po_num`
     or `po_no`. User-facing label is **"PO Number"**.

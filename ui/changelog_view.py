@@ -10,6 +10,17 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.125.0",
+        "date": "2026-08-01",
+        "entries": [
+            {"type": "fix", "text": "**Settlement: a zero amount is a stage, not a figure.** 发票金额 is usually a formula (出货数 × FOB) that reads 0 before shipment, and a typed 0 in 实际收汇 means nothing received yet — but the table's derived columns treated both as real figures, so every not-yet-shipped line dropped out of Receivables and out of the outstanding totals, and a typed 0 flipped a healthy line to deep negative margin. Both now fall back the way the sheet means them to: 未收余额 falls back to the contract amount, 利润's income falls back to the billed amount."},
+            {"type": "fix", "text": "**Settlement: the client's PO column is now named `zalando_po`, not `po_number`.** The line's PO# is the client's own PO — the same thing Sky East stores as `zalando_po` — and CLAUDE.md reserves `po_number` for GIII's own POs, a different number entirely. Sharing GIII's name was a join written to match nothing waiting to happen. Existing installs migrate automatically; the naming table in CLAUDE.md now lists `settlements`."},
+            {"type": "fix", "text": "**Settlement: emptying a client-year in Excel now empties it here too.** A sheet present in the upload but parsing to zero rows was reported 'left untouched' and its stale rows survived; and the parser refused a workbook whose only settlement sheet was legitimately empty. The replace set is now the sheets the file carries, and only a workbook with no recognisable sheet at all is rejected."},
+            {"type": "fix", "text": "**Settlement: the Quantity-disagreements section actually renders when everything matches upstream.** An early return after 'Every line with a PO matches' skipped it entirely. Also: Receivables' oldest-first table now sorts on the parsed date (a revision note like '2025/8/28->9/4' no longer files between the ISO dates at random), its caption no longer claims the lines have shipped, a one-row-header sheet no longer loses its first data line, and the cross-check join runs once per rerun instead of twice."},
+            {"type": "feat", "text": "**Settlement finally speaks Chinese.** The module shipped without a single seed translation — under the Chinese UI the whole tab rendered in English. All 69 of its strings are seeded now, including the tab label, every section, caption and column header. This also fills the X-factory label the cut-plan table uses."},
+        ],
+    },
+    {
         "version": "2.124.1",
         "date": "2026-08-01",
         "entries": [
