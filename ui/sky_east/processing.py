@@ -288,8 +288,12 @@ def _se_save_fabric_parts_universal(contracts, fabric_lookup, log: list[str]) ->
 
 
 def _run_sky_east_processing(order_files, ean_file, progress_file,
-                             mask_prices: bool = False):
+                             mask_prices: bool = False,
+                             save_mode: str = "merge"):
     """Parse, validate, and save Sky East contracts; populate lookup caches.
+
+    *save_mode* is "merge" (add and update only) or "replace" (the uploaded
+    file becomes the whole contract — see SkyEastStore.replace_contract).
 
     Fabric mapping is no longer accepted here — upload it independently via
     the 🧵 Fabric Mapping section in the Contract History tab.
@@ -399,7 +403,7 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             tracker.step("Saving to database")
             st.write("Saving to database...")
             store   = get_sky_east_store()
-            results = store.save_many_contracts_checked(contracts)
+            results = store.save_many_contracts_checked(contracts, mode=save_mode)
             from ui.sky_east._missing_compute import _compute_se_missing_df
             from ui.sky_east.history import _se_buyplan_fabric_preflight
             _compute_se_missing_df.clear()
@@ -409,14 +413,30 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             total_upd  = sum(len(r["updated_items"])   for r in results)
             total_dup  = sum(len(r["duplicate_items"]) for r in results)
             total_pend = sum(len(r["pending_return_label"]) for r in results)
+            total_gone = sum(len(r.get("removed_items", []))  for r in results)
+            total_ai   = sum(len(r.get("ai_matched_items", [])) for r in results)
             st.write(
                 f"  {total_new} new, {total_upd} updated, "
                 f"{total_dup} duplicate(s) skipped"
+                + (f", {total_gone} removed (replace mode)" if total_gone else "")
+                + (f", {total_ai} matched by AI" if total_ai else "")
                 + (f", {total_pend} Return Label conflict(s) held for review" if total_pend else "")
             )
+            if total_gone:
+                st.write("  Removed items are archived and remain in item history.")
+            if total_ai:
+                for r in results:
+                    for style, matched, incoming, po in r.get("ai_matched_items", []):
+                        st.write(f"  🤖 {style} / {po}: treated \"{incoming}\" as "
+                                 f"\"{matched}\" (already on file)")
+                        log.append(
+                            f"AI colour match: {html.escape(str(style))} / "
+                            f"{html.escape(str(po))} -- \"{html.escape(str(incoming))}\" "
+                            f"treated as \"{html.escape(str(matched))}\"")
             log.append(
                 f"Stored: {html.escape(str(total_new))} new, {html.escape(str(total_upd))} updated, "
                 f"{html.escape(str(total_dup))} duplicates skipped"
+                + (f", {html.escape(str(total_gone))} removed (replace mode)" if total_gone else "")
                 + (f", {html.escape(str(total_pend))} Return Label conflict(s) held for review" if total_pend else "")
             )
 

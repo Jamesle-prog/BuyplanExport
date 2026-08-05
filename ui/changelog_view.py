@@ -10,6 +10,16 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.127.0",
+        "date": "2026-08-05",
+        "entries": [
+            {"type": "fix", "text": "**A Sky East contract uploaded twice no longer duplicates its lines.** An item is identified by style + colour + client PO, and the colour was compared as raw text — so when the factory retyped it between revisions the item looked new and was saved beside the row it should have updated. HHPPC053 arrived as `(dark grey)` on 7-24 and `Dark Grey` on 7-30: same garment, same PO, same 500 pcs, two buy plan lines. Capitals and punctuation are now ignored when matching; word order is not, so genuine second colourways sharing a style and PO (navy vs wine, `(dark blue)(white)` vs `(black)(white)`) stay separate lines."},
+            {"type": "fix", "text": "**A re-import now refreshes the colour spelling and a missing Config SKU.** Rows whose quantities are unchanged are still not rewritten — Fabric No. and 合同号 entered in the app are never clobbered by a file that leaves them blank — but the colour follows the newest contract, and a Config SKU that was blank gets filled. Both were visible in the buy plan: the older spelling is the one the colour lookup failed on (未找到), and two SKUs were blank."},
+            {"type": "feat", "text": "**Upload can now replace a whole contract, not only add to it.** A save-mode choice on the Sky East upload screen: *Update / add only* (unchanged default) or *Replace the whole contract*, which makes the database match the uploaded file — items it no longer lists are removed. Merging can never express a withdrawal, so a pulled style, or a row duplicated by the bug above, survived every later upload. Removed items are archived first and stay in item history; Fabric No. and 合同号 are carried across for items the file still lists."},
+            {"type": "feat", "text": "**Optional AI matching for colours retyped beyond recognition** — admin setting, off by default. Normalisation sees through capitals and punctuation but not abbreviations (DK Grey), typos (Daek Blue) or an English/Chinese switch (深灰色). With this on, DeepSeek is asked only when normalisation has already failed, is shown only the colours already on file for that same style and client PO, and can only pick one of them verbatim. The import log names every colour it matched. No API key, or a failed call, silently falls back to normalisation alone."},
+        ],
+    },
+    {
         "version": "2.126.0",
         "date": "2026-08-04",
         "entries": [

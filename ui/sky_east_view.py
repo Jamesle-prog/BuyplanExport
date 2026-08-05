@@ -17,6 +17,29 @@ from ui.sky_east.reports_tab import PIN_BUYPLAN, _show_se_reports_tab
 # and shared with the Buy Plan section in the history tab.
 
 
+# How a re-uploaded contract is written. Merge only ever adds and updates, so
+# a style withdrawn from the order — or a row that duplicated one already on
+# file — survives every later upload; replace makes the DB match the file.
+SE_SAVE_MERGE = "merge"
+SE_SAVE_REPLACE = "replace"
+
+_SE_SAVE_MODES = {
+    SE_SAVE_MERGE:   "🔀 Update / add only",
+    SE_SAVE_REPLACE: "♻️ Replace the whole contract",
+}
+
+_SE_SAVE_MODE_HELP = {
+    SE_SAVE_MERGE: (
+        "New items are added and changed ones updated. Nothing is ever "
+        "removed, so items on file that this file doesn't list are kept."
+    ),
+    SE_SAVE_REPLACE: (
+        "The uploaded file becomes the complete contract: items it doesn't "
+        "list are archived and removed from the active order."
+    ),
+}
+
+
 # ---------------------------------------------------------------------------
 # Upload section
 # ---------------------------------------------------------------------------
@@ -91,6 +114,26 @@ def _show_se_upload_section():
         help="Replace FOB / cost / price columns with *** before download.",
     )
 
+    # ── How an already-imported contract is written ──────────────────────────
+    st.markdown(f"**{t('If the contract is already in the system')}**")
+    save_mode = st.radio(
+        t("Save mode"),
+        [SE_SAVE_MERGE, SE_SAVE_REPLACE],
+        format_func=lambda m: t(_SE_SAVE_MODES[m]),
+        horizontal=True,
+        label_visibility="collapsed",
+        key=SK.SE_SAVE_MODE,
+    )
+    st.caption(t(_SE_SAVE_MODE_HELP[save_mode]))
+    if save_mode == SE_SAVE_REPLACE:
+        st.warning(t(
+            "⚠️ Replace removes items this file doesn't list — use it when the "
+            "upload is the complete, current contract, not a partial revision. "
+            "Removed items are archived and stay visible in item history. "
+            "Fabric No. and 合同号 entered in the app are kept for items the "
+            "file still lists."
+        ))
+
     st.divider()
 
     if not order_files:
@@ -107,7 +150,7 @@ def _show_se_upload_section():
         st.session_state.pop(SK.SE_PHOTO_CACHE, None)
         st.session_state.se_masked_zip = None
         _run_sky_east_processing(order_files, ean_file, progress_file,
-                                 mask_prices=se_mask)
+                                 mask_prices=se_mask, save_mode=save_mode)
         st.rerun()
 
     if st.session_state.se_log:

@@ -216,3 +216,410 @@ def test_return_label_defaults_to_na_when_not_set(tmp_path):
     ]))
     items = store.list_items(["PC1"])
     assert items[items["style"] == "RL2"].iloc[0]["return_label"] == "NA"
+
+
+# ── A colour retyped between revisions is the same item ─────────────────────
+#
+# HHPPC053 arrived twice: 2026-07-24 wrote the colours "(dark grey)",
+# "(black)(off-white)", "(dark blue)"; 2026-07-30 wrote "Dark Grey", "black
+# off white", "dark blue" -- same styles, same client POs, same quantities.
+# Matched as raw text those read as new items, so the second upload inserted
+# three rows beside the three it should have updated and the buy plan printed
+# every style twice.
+
+import pytest
+
+
+@pytest.mark.parametrize("before, after", [
+    ("(dark grey)", "Dark Grey"),                  # parens + case
+    ("(black)(off-white)", "black off white"),     # parens + hyphen
+    ("(dark blue)", "dark blue"),                  # parens only
+    ("NAVY", "navy"),                              # case only
+    ("CHOCOLATE BROWN", "chocolate  brown"),       # doubled space
+])
+def test_a_retyped_colour_updates_the_row_it_should(tmp_path, before, after):
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / f"se{abs(hash(before))}.db"))
+
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ZLD060", zalando_po="PO2360361C", color_name=before,
+                   config_sku="", sizes={"S": 500}, total_qty=500)]))
+    result = store.save_contract_checked(_make_contract([
+        _make_item(style="ZLD060", zalando_po="PO2360361C", color_name=after,
+                   config_sku="EV421J0GZ-C12", sizes={"S": 500}, total_qty=500)]))
+
+    df = store.list_items(pc_nos=["PC1"])
+    assert len(df) == 1, "the retyped colour must not add a second line"
+    assert result["new_items"] == []
+    # The current file's spelling wins, and with it the Config SKU the older
+    # parse didn't have -- that blank is what showed up in the buy plan.
+    assert df.iloc[0]["color_name"] == after
+    assert df.iloc[0]["config_sku"] == "EV421J0GZ-C12"
+
+
+def test_genuinely_different_colourways_stay_separate(tmp_path):
+    """Real second colourways sharing a style and PO -- from HHPPC042/045/043
+    and HHPPC048. Merging these would lose a whole line of the order."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "se_ways.db"))
+
+    for a, b in [("NAVY", "wine"), ("FUSHIA", "BURGUNDY"), ("BLACK", "CREAM"),
+                 ("CHOCOLATE BROWN", "NAVY"), ("(dark blue)(white)", "(black)(white)")]:
+        store.save_contract_checked(_make_contract([
+            _make_item(style=f"S{a}{b}", zalando_po="POX", color_name=a),
+            _make_item(style=f"S{a}{b}", zalando_po="POX", color_name=b)]))
+
+    assert len(store.list_items(pc_nos=["PC1"])) == 10
+
+
+def test_word_order_still_separates_a_colour_from_its_reverse(tmp_path):
+    """Punctuation and case are noise; order is not -- body vs trim."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "se_order.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", color_name="(black)(white)"),
+        _make_item(style="ST1", zalando_po="PO1", color_name="(white)(black)")]))
+    assert len(store.list_items(pc_nos=["PC1"])) == 2
+
+
+def test_a_real_change_still_archives_and_updates_across_a_retype(tmp_path):
+    """The merge's own job -- archive the old state, write the new one -- has
+    to keep working when the colour spelling moved at the same time."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "se_arch.db"))
+
+    store.save_contract_checked(_make_contract([
+        _make_item(style="DR5108", zalando_po="PO2361469C",
+                   color_name="(black)(off-white)", sizes={"S": 400}, total_qty=400)]))
+    result = store.save_contract_checked(_make_contract([
+        _make_item(style="DR5108", zalando_po="PO2361469C",
+                   color_name="black off white", sizes={"S": 450}, total_qty=450)]))
+
+    assert len(result["updated_items"]) == 1
+    assert len(store.list_items(pc_nos=["PC1"])) == 1
+    assert int(store.list_items(pc_nos=["PC1"]).iloc[0]["total_qty"]) == 450
+    hist = store.list_item_history("PC1", style="DR5108")
+    assert len(hist) == 1
+    assert int(hist.iloc[0]["total_qty"]) == 400          # the pre-change state
+
+
+def test_colour_key_normalises_only_what_it_should():
+    from po_extractor.store.sky_east_store import colour_key
+    assert colour_key("(dark grey)") == colour_key("Dark Grey") == "dark grey"
+    assert colour_key("(black)(off-white)") == colour_key("black off white")
+    assert colour_key(None) == colour_key("") == ""
+    assert colour_key("黑色") == "黑色"                    # CJK is kept
+    assert colour_key("2#-80#") == "2 80"                 # digits are kept
+    assert colour_key("navy") != colour_key("wine")
+
+
+def test_an_unchanged_row_keeps_the_fields_the_user_patched(tmp_path):
+    """The duplicate path must not become a full overwrite: fabric_item_no and
+    contract_no are maintained in the app and usually blank in the file."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "se_patch.db"))
+
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", color_name="(navy)")]))
+    store.update_item_fields("PC1", "ST1", "(navy)", "PO1",
+                             fabric_item_no="HHP-JS-99999", contract_no="26302-ZA1")
+
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", color_name="Navy",
+                   fabric_item_no="", contract_no="")]))
+
+    row = store.list_items(pc_nos=["PC1"]).iloc[0]
+    assert row["fabric_item_no"] == "HHP-JS-99999"     # not clobbered
+    assert row["contract_no"] == "26302-ZA1"
+    assert row["color_name"] == "Navy"                 # but the colour refreshed
+
+
+def test_a_blank_incoming_sku_never_erases_one_on_file(tmp_path):
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "se_sku.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", config_sku="AN621C2PV-Q11")]))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", config_sku="")]))
+    assert store.list_items(pc_nos=["PC1"]).iloc[0]["config_sku"] == "AN621C2PV-Q11"
+
+
+# ── AI-assisted matching (admin toggle, off by default) ─────────────────────
+
+def _ai_store(tmp_path, monkeypatch, name, *, enabled=True, picks=None,
+              calls=None):
+    """A store whose AI layer is stubbed — no network, no API key needed."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / name))
+    monkeypatch.setattr(
+        SkyEastStore, "_ai_settings",
+        staticmethod(lambda: (enabled, "k" if enabled else "", "deepseek-chat")))
+
+    def fake_match(client_color, candidates, api_key, model="deepseek-chat"):
+        if calls is not None:
+            calls.append((client_color, tuple(candidates)))
+        return (picks or {}).get(client_color, "")
+
+    import po_extractor.lookups.color_ai_enhance as ai
+    monkeypatch.setattr(ai, "match_color_to_candidates", fake_match)
+    return store
+
+
+def test_ai_matches_a_colour_normalisation_cannot(tmp_path, monkeypatch):
+    """An abbreviation is a different string however it's normalised."""
+    calls = []
+    store = _ai_store(tmp_path, monkeypatch, "ai_on.db",
+                      picks={"DK Grey": "Dark Grey"}, calls=calls)
+
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ZLD060", zalando_po="PO1", color_name="Dark Grey",
+                   sizes={"S": 500}, total_qty=500)]))
+    result = store.save_contract_checked(_make_contract([
+        _make_item(style="ZLD060", zalando_po="PO1", color_name="DK Grey",
+                   sizes={"S": 600}, total_qty=600)]))
+
+    assert len(store.list_items(pc_nos=["PC1"])) == 1
+    assert result["new_items"] == []
+    assert result["ai_matched_items"] == [("ZLD060", "Dark Grey", "DK Grey", "PO1")]
+    assert int(store.list_items(pc_nos=["PC1"]).iloc[0]["total_qty"]) == 600
+    # Only the colours on file for that same style + PO were offered.
+    assert calls == [("DK Grey", ("Dark Grey",))]
+
+
+def test_the_same_case_without_the_toggle_still_duplicates(tmp_path, monkeypatch):
+    """The toggle is the whole difference — this is what admins are choosing
+    between, so it is pinned rather than assumed."""
+    store = _ai_store(tmp_path, monkeypatch, "ai_off.db", enabled=False,
+                      picks={"DK Grey": "Dark Grey"})
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ZLD060", zalando_po="PO1", color_name="Dark Grey")]))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ZLD060", zalando_po="PO1", color_name="DK Grey")]))
+    assert len(store.list_items(pc_nos=["PC1"])) == 2
+
+
+def test_ai_is_not_consulted_when_normalisation_already_matched(tmp_path,
+                                                                monkeypatch):
+    """No tokens spent on the case the cheap path handles."""
+    calls = []
+    store = _ai_store(tmp_path, monkeypatch, "ai_skip.db", calls=calls)
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", color_name="(dark grey)")]))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", color_name="Dark Grey")]))
+    assert calls == []
+    assert len(store.list_items(pc_nos=["PC1"])) == 1
+
+
+def test_a_declined_ai_match_stays_a_new_item(tmp_path, monkeypatch):
+    """Navy is not Wine. An empty answer must not merge anything."""
+    store = _ai_store(tmp_path, monkeypatch, "ai_no.db", picks={})
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", color_name="NAVY")]))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", color_name="wine")]))
+    assert len(store.list_items(pc_nos=["PC1"])) == 2
+
+
+def test_an_answer_outside_the_candidates_is_refused(tmp_path, monkeypatch):
+    """Guard against a model returning a colour that isn't on file."""
+    store = _ai_store(tmp_path, monkeypatch, "ai_bad.db",
+                      picks={"Teal": "Turquoise"})       # never offered
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", color_name="NAVY")]))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", color_name="Teal")]))
+    assert len(store.list_items(pc_nos=["PC1"])) == 2
+
+
+def test_ai_never_reaches_across_to_another_po(tmp_path, monkeypatch):
+    """Two POs for one style are two orders, not two spellings."""
+    calls = []
+    store = _ai_store(tmp_path, monkeypatch, "ai_po.db",
+                      picks={"DK Grey": "Dark Grey"}, calls=calls)
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO_A", color_name="Dark Grey")]))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO_B", color_name="DK Grey")]))
+    assert len(store.list_items(pc_nos=["PC1"])) == 2
+    assert calls == []          # no candidates on PO_B, so nothing to ask
+
+
+def test_an_api_failure_degrades_to_normalisation(tmp_path, monkeypatch):
+    """An import must never fail because the AI call did."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "ai_err.db"))
+    monkeypatch.setattr(SkyEastStore, "_ai_settings",
+                        staticmethod(lambda: (True, "k", "deepseek-chat")))
+    import po_extractor.lookups.color_ai_enhance as ai
+
+    def boom(*a, **k):
+        raise RuntimeError("api down")
+    monkeypatch.setattr(ai, "match_color_to_candidates", boom)
+
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", color_name="Dark Grey")]))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="ST1", zalando_po="PO1", color_name="DK Grey")]))
+    assert len(store.list_items(pc_nos=["PC1"])) == 2      # duplicate, but no crash
+
+
+def test_ai_stays_off_without_an_api_key(tmp_path):
+    """The toggle alone must not enable it — _ai_settings gates on the key."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    from po_extractor.store.app_settings_store import (
+        KEY_DEEPSEEK_API_KEY, KEY_ITEM_COLOUR_AI_MATCH,
+    )
+    from po_extractor.store import app_settings_store as mod
+    settings = mod.AppSettingsStore(str(tmp_path / "settings.db"))
+    settings.set(KEY_ITEM_COLOUR_AI_MATCH, "true")
+    settings.set(KEY_DEEPSEEK_API_KEY, "")
+
+    import po_extractor.store as store_pkg
+    real = store_pkg.get_app_settings_store
+    store_pkg.get_app_settings_store = lambda: settings
+    try:
+        assert SkyEastStore._ai_settings()[0] is False
+    finally:
+        store_pkg.get_app_settings_store = real
+
+
+def test_ai_matching_is_off_by_default():
+    from po_extractor.store.app_settings_store import (
+        _DEFAULTS, KEY_ITEM_COLOUR_AI_MATCH,
+    )
+    assert _DEFAULTS[KEY_ITEM_COLOUR_AI_MATCH] == "false"
+
+
+# ── Replace vs merge at upload ───────────────────────────────────────────────
+
+def test_replace_drops_items_the_new_file_does_not_list(tmp_path):
+    """The point of replace: merge alone can never remove a withdrawn style,
+    or a row that duplicated one already on file."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "rep.db"))
+
+    store.save_contract_checked(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="Red"),
+        _make_item(style="B", zalando_po="PO2", color_name="Blue"),
+        _make_item(style="GONE", zalando_po="PO3", color_name="Black")]))
+    result = store.replace_contract(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="Red"),
+        _make_item(style="B", zalando_po="PO2", color_name="Blue")]))
+
+    assert sorted(store.list_items(pc_nos=["PC1"])["style"]) == ["A", "B"]
+    assert result["removed_items"] == [("GONE", "Black", "PO3")]
+    assert len(result["new_items"]) == 2
+
+
+def test_merge_is_still_the_default_and_removes_nothing(tmp_path):
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "mrg.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="Red"),
+        _make_item(style="KEEP", zalando_po="PO3", color_name="Black")]))
+    store.save_many_contracts_checked([_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="Red")])])
+    assert sorted(store.list_items(pc_nos=["PC1"])["style"]) == ["A", "KEEP"]
+
+
+def test_replace_archives_what_it_removes(tmp_path):
+    """A replace run in error has to be recoverable."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "rep_arch.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="GONE", zalando_po="PO3", color_name="Black",
+                   sizes={"S": 250}, total_qty=250)]))
+    store.replace_contract(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="Red")]))
+
+    hist = store.list_item_history("PC1", style="GONE")
+    assert len(hist) == 1
+    assert int(hist.iloc[0]["total_qty"]) == 250
+
+
+def test_replace_keeps_the_fabric_no_and_contract_no_entered_in_the_app(tmp_path):
+    """Neither field is in the contract file. "The file is the whole truth"
+    is about which items exist, not about discarding work it never carried."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "rep_keep.db"))
+
+    store.save_contract_checked(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="(red)")]))
+    store.update_item_fields("PC1", "A", "(red)", "PO1",
+                             fabric_item_no="HHP-JS-12345", contract_no="26302-ZA9")
+
+    store.replace_contract(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="Red",   # retyped
+                   fabric_item_no="", contract_no="")]))
+
+    row = store.list_items(pc_nos=["PC1"]).iloc[0]
+    assert row["fabric_item_no"] == "HHP-JS-12345"
+    assert row["contract_no"] == "26302-ZA9"
+    assert row["color_name"] == "Red"
+
+
+def test_the_file_still_wins_when_it_does_carry_those_fields(tmp_path):
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "rep_win.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="Red",
+                   fabric_item_no="OLD", contract_no="OLD-C")]))
+    store.replace_contract(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="Red",
+                   fabric_item_no="NEW", contract_no="NEW-C")]))
+    row = store.list_items(pc_nos=["PC1"]).iloc[0]
+    assert (row["fabric_item_no"], row["contract_no"]) == ("NEW", "NEW-C")
+
+
+def test_two_files_for_one_pc_only_replace_once(tmp_path):
+    """Uploading two files that share a PC No. in replace mode must not have
+    the second file's contract wipe the first file's."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "rep_two.db"))
+    store.save_many_contracts_checked([
+        _make_contract([_make_item(style="A", zalando_po="PO1", color_name="Red")]),
+        _make_contract([_make_item(style="B", zalando_po="PO2", color_name="Blue")]),
+    ], mode="replace")
+    assert sorted(store.list_items(pc_nos=["PC1"])["style"]) == ["A", "B"]
+
+
+def test_replace_on_a_pc_with_nothing_on_file_is_just_an_insert(tmp_path):
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "rep_new.db"))
+    result = store.replace_contract(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="Red")]))
+    assert result["removed_items"] == []
+    assert len(store.list_items(pc_nos=["PC1"])) == 1
+
+
+def test_replace_reduces_the_real_hhppc053_pollution_to_six_rows(tmp_path):
+    """End to end on the actual case: the 7-24 import, then the 7-30 import
+    that duplicated it, then a replace with 7-30."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "rep_053.db"))
+    old = [_make_item(style=s, zalando_po=po, color_name=c)
+           for s, po, c in [("ZLD060", "PO2360361C", "(dark grey)"),
+                            ("DR5108", "PO2361469C", "(black)(off-white)"),
+                            ("JS5013", "PO2338236C", "(dark blue)")]]
+    new = [_make_item(style=s, zalando_po=po, color_name=c)
+           for s, po, c in [("ZLD060", "PO2360361C", "Dark Grey"),
+                            ("DR5108", "PO2361469C", "black off white"),
+                            ("JS5013", "PO2338236C", "dark blue"),
+                            ("TR3072", "PO2367024C", "black"),
+                            ("DR5252", "PO2367104C", "blue"),
+                            ("DR5252", "PO2367103C", "BURGUNDY")]]
+
+    # Simulate the polluted DB this bug produced: raw-colour identity.
+    store.save_contract_checked(_make_contract(old))
+    for it in new:                       # force the pre-fix duplication
+        with store._conn() as conn:
+            store._insert_item(conn, it)
+    assert len(store.list_items(pc_nos=["PC1"])) == 9
+
+    result = store.replace_contract(_make_contract(new))
+    df = store.list_items(pc_nos=["PC1"])
+    assert len(df) == 6
+    assert len(result["removed_items"]) == 3
+    assert sorted(df["color_name"]) == sorted(
+        ["Dark Grey", "black off white", "dark blue", "black", "blue", "BURGUNDY"])

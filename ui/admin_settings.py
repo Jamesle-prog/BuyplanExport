@@ -14,6 +14,7 @@ from po_extractor.store.app_settings_store import (
     KEY_EXTRACTION_METHOD,
     KEY_DEEPSEEK_MODEL,
     KEY_COLOR_AI_ENHANCE,
+    KEY_ITEM_COLOUR_AI_MATCH,
     KEY_MASK_USE_AI,
     KEY_CPRS_BASE_URL,
     KEY_CPRS_API_KEY,
@@ -256,6 +257,29 @@ def _show_deepseek_settings(store) -> None:
         key="admin_mask_use_ai",
     )
 
+    st.divider()
+    st.markdown(f"**🎨 {t('AI-assisted duplicate colour matching')}**")
+    st.caption(t(
+        "When a Sky East contract is uploaded again and the factory has retyped "
+        "a colour, the item can look new and get saved as a second line — the "
+        "same style appears twice in the buy plan. Differences in capitals and "
+        "punctuation are always handled without AI ((dark grey) = Dark Grey). "
+        "Turn this on to also let DeepSeek judge abbreviations, typos and "
+        "English/Chinese pairs (DK Grey, Daek Blue, 深灰色). It is only ever "
+        "shown the colours already on file for that same style and client PO, "
+        "and can only pick one of them — it cannot invent a colour or change "
+        "any other field. Uses the API key above; if it's unset or a call "
+        "fails, matching falls back to normalisation alone."
+    ))
+    item_colour_ai = st.toggle(
+        t("Use AI to match retyped colours on re-imported contracts"),
+        value=(store.get(KEY_ITEM_COLOUR_AI_MATCH, "false") == "true"),
+        key="admin_item_colour_ai",
+    )
+    if item_colour_ai and not (new_key or store.get(KEY_DEEPSEEK_API_KEY, "")):
+        st.warning(t("⚠️ No DeepSeek API key set — AI colour matching stays off "
+                     "until one is saved above."))
+
     col_test, col_save = st.columns([1, 1])
     with col_test:
         if st.button(f"🔌 {t('Test API key')}", key="admin_deepseek_test",
@@ -272,6 +296,8 @@ def _show_deepseek_settings(store) -> None:
             store.set(KEY_EXTRACTION_METHOD, chosen_method, updated_by=user)
             store.set(KEY_DEEPSEEK_MODEL,    new_model,      updated_by=user)
             store.set(KEY_MASK_USE_AI, "true" if mask_ai else "false", updated_by=user)
+            store.set(KEY_ITEM_COLOUR_AI_MATCH,
+                      "true" if item_colour_ai else "false", updated_by=user)
             if new_key:
                 store.set(KEY_DEEPSEEK_API_KEY, new_key, updated_by=user)
             st.success(t("✅ AI extraction settings saved."))

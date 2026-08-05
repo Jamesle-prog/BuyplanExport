@@ -28,6 +28,9 @@ KEY_MASK_USE_AI          = "mask_use_ai"         # "true" | "false" — AI-assis
 KEY_CPRS_BASE_URL        = "cprs_base_url"       # CPRS knowledge-base API base URL
 KEY_CPRS_API_KEY         = "cprs_api_key"        # CPRS x-api-key
 KEY_CPRS_SHOW_ADDRESS    = "cprs_show_address"   # "true" | "false" — show host in sidebar status
+# "true" | "false" — let the AI decide whether a retyped colour on a re-imported
+# Sky East contract is the same item, when plain normalisation says it is not.
+KEY_ITEM_COLOUR_AI_MATCH = "item_colour_ai_match"
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +73,7 @@ _DEFAULTS: dict[str, str] = {
     KEY_CPRS_BASE_URL:        "",           # e.g. http://localhost:3100
     KEY_CPRS_API_KEY:         "",
     KEY_CPRS_SHOW_ADDRESS:    "false",       # hide the host in the sidebar by default
+    KEY_ITEM_COLOUR_AI_MATCH: "false",      # opt-in — normalisation alone runs by default
 }
 
 

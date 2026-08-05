@@ -55,6 +55,28 @@ _LANG_COL: dict[str, str] = {
 
 # fmt: off
 _SEED: list[tuple[str, str, str, str]] = [
+    ("AI-assisted duplicate colour matching",
+     "AI 辅助重复颜色匹配", "label", "admin"),
+    ("Use AI to match retyped colours on re-imported contracts",
+     "使用 AI 匹配重新导入合同中重新输入的颜色", "label", "admin"),
+    ("When a Sky East contract is uploaded again and the factory has retyped a colour, the item can look new and get saved as a second line — the same style appears twice in the buy plan. Differences in capitals and punctuation are always handled without AI ((dark grey) = Dark Grey). Turn this on to also let DeepSeek judge abbreviations, typos and English/Chinese pairs (DK Grey, Daek Blue, 深灰色). It is only ever shown the colours already on file for that same style and client PO, and can only pick one of them — it cannot invent a colour or change any other field. Uses the API key above; if it's unset or a call fails, matching falls back to normalisation alone.",
+     "当天东合同再次上传且工厂重新输入了颜色时，该款可能被视为新款而另存为一行——同一款式在 Buy Plan 中出现两次。大小写和标点差异始终无需 AI 即可处理（(dark grey) = Dark Grey）。开启此项后，DeepSeek 还会判断缩写、拼写错误以及中英文对应（DK Grey、Daek Blue、深灰色）。它只会看到同一款式和同一客人 PO 下已存档的颜色，且只能从中选择——无法臆造颜色，也无法修改其他任何字段。使用上方的 API Key；若未设置或调用失败，则仅退回到标准化匹配。", "caption", "admin"),
+    ("⚠️ No DeepSeek API key set — AI colour matching stays off until one is saved above.",
+     "⚠️ 未设置 DeepSeek API Key——在上方保存之前，AI 颜色匹配将保持关闭。", "warning", "admin"),
+    ("If the contract is already in the system",
+     "若该合同已存在于系统中", "label", "admin"),
+    ("Save mode",
+     "保存方式", "label", "admin"),
+    ("🔀 Update / add only",
+     "🔀 仅更新／新增", "label", "admin"),
+    ("♻️ Replace the whole contract",
+     "♻️ 整份合同替换", "label", "admin"),
+    ("New items are added and changed ones updated. Nothing is ever removed, so items on file that this file doesn't list are kept.",
+     "新增款会被添加，已变更的会被更新。不会删除任何内容，因此本文件未列出但系统中已有的款仍会保留。", "caption", "admin"),
+    ("The uploaded file becomes the complete contract: items it doesn't list are archived and removed from the active order.",
+     "上传的文件将成为完整合同：其未列出的款会被归档，并从当前订单中移除。", "caption", "admin"),
+    ("⚠️ Replace removes items this file doesn't list — use it when the upload is the complete, current contract, not a partial revision. Removed items are archived and stay visible in item history. Fabric No. and 合同号 entered in the app are kept for items the file still lists.",
+     "⚠️ 替换会移除本文件未列出的款——仅在上传的是完整的最新合同（而非部分修订）时使用。被移除的款会归档，仍可在款式历史中查看。对于文件仍列出的款，在系统中录入的面料编号和合同号将予以保留。", "warning", "admin"),
     # ── Shared column headers (migrated from _LABEL_ZH) ─────────────────────
     ("Company",               "公司",         "label",   "shared"),
     ("Companies",             "公司数",        "label",   "shared"),

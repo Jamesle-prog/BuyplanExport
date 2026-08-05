@@ -30,6 +30,7 @@ class SK:
     SE_FABRIC_LOOKUP = "se_fabric_lookup"
     SE_PROGRESS_LKUP = "se_progress_lookup"
     SE_MASKED_ZIP    = "se_masked_zip"
+    SE_SAVE_MODE = "se_save_mode"   # "merge" | "replace" — how a re-uploaded contract is written
     SE_IMAGES_DIR    = "se_images_dir"
     SE_RL_PENDING    = "se_return_label_pending"   # Return Label conflicts awaiting confirmation
     SE_NEW_BRAND_PENDING = "se_new_brand_pending"   # brand names awaiting a 船样要求 entry
