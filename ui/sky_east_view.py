@@ -116,15 +116,19 @@ def _show_se_upload_section():
 
     # ── How an already-imported contract is written ──────────────────────────
     st.markdown(f"**{t('If the contract is already in the system')}**")
+    # captions= puts each explanation under its own option, so the two are
+    # readable side by side before choosing — the difference is destructive,
+    # so it shouldn't take switching the radio to find out what it does.
     save_mode = st.radio(
         t("Save mode"),
         [SE_SAVE_MERGE, SE_SAVE_REPLACE],
         format_func=lambda m: t(_SE_SAVE_MODES[m]),
+        captions=[t(_SE_SAVE_MODE_HELP[m])
+                  for m in (SE_SAVE_MERGE, SE_SAVE_REPLACE)],
         horizontal=True,
         label_visibility="collapsed",
         key=SK.SE_SAVE_MODE,
     )
-    st.caption(t(_SE_SAVE_MODE_HELP[save_mode]))
     if save_mode == SE_SAVE_REPLACE:
         st.warning(t(
             "⚠️ Replace removes items this file doesn't list — use it when the "

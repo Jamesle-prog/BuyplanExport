@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.127.1",
+        "date": "2026-08-05",
+        "entries": [
+            {"type": "fix", "text": "**Both save modes now explain themselves side by side.** The note under the Sky East upload's save-mode choice described only the option currently selected, so finding out what the other one does meant switching to it — on a choice where one side removes rows. Each option now carries its own note beneath it."},
+        ],
+    },
+    {
         "version": "2.127.0",
         "date": "2026-08-05",
         "entries": [
