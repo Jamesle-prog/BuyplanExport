@@ -524,6 +524,7 @@ _SEED: list[tuple[str, str, str, str]] = [
     ('Search', '搜索', 'label', 'admin'),
     ('Reading the workbook…', '正在读取工作簿…', 'label', 'admin'),
     ('Import into the system', '导入系统', 'label', 'admin'),
+    ('Saving', '将保存', 'label', 'admin'),
     # ── Settlement (结算统计表) — the module shipped without seeds ──────────
     ('Settlement', '结算统计', 'label', 'admin'),
     ('The 结算统计表 workbook, read into the system. Excel stays the master — re-upload to refresh. Amounts are never added across currencies.', '结算统计表工作簿已读入系统。Excel 仍是主数据 — 重新上传即可刷新。不同币种的金额绝不相加。', 'label', 'admin'),

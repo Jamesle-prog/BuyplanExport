@@ -9,13 +9,16 @@ import pandas as pd
 import streamlit as st
 
 from po_extractor.parsers.cutting_plan import CuttingPlanParseError, parse_cut_plan
-from po_extractor.store.cutting_plan_store import consumption, summarise_plan
+from po_extractor.store.cutting_plan_store import (
+    consumption, filter_plan_materials, summarise_plan,
+)
 from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import _th, fragment_rerun
 from ui.stores import get_cutting_plan_store
 from ui.cutting_plan._shared import (
-    demand_frame, demand_matrix, link_rows, po_label, select_pos,
+    demand_frame, demand_matrix, fabric_picker, link_rows, po_label,
+    select_pos,
 )
 
 
@@ -49,8 +52,8 @@ def show_upload_section() -> None:
             st.error(t("None of the uploaded files could be read as a cut plan."))
         return
 
-    for entry in parsed:
-        _show_parsed_plan(entry)
+    for i, entry in enumerate(parsed):
+        _show_parsed_plan(entry, i)
 
     ok = [e for e in parsed if e.get("plan")]
     if not ok:
@@ -124,7 +127,7 @@ def _parse_all(files) -> list[dict]:
     return out
 
 
-def _show_parsed_plan(entry: dict) -> None:
+def _show_parsed_plan(entry: dict, idx: int = 0) -> None:
     name = entry.get("name", "?")
     if entry.get("error"):
         st.error(f"**{name}** — {entry['error']}")
@@ -181,6 +184,17 @@ def _show_parsed_plan(entry: dict) -> None:
         if not mats.empty:
             st.dataframe(mats, use_container_width=True, hide_index=True)
 
+        # Which fabrics to SAVE — shell and lining go to different cutting
+        # tables, so one fabric's blocks are often all that's wanted on
+        # record. Recorded on the session-cached entry so _save picks it up;
+        # the original file is stored whole either way, and Saved plans'
+        # re-read re-applies this selection rather than resurrecting the
+        # fabrics left out.
+        kept = fabric_picker(plan.get("materials") or [],
+                             f"cp_up_fab_{idx}", verb="Saving")
+        entry["keep_fabrics"] = sorted(
+            {str(m.get("material") or "—") for m in kept})
+
 
 def _show_coverage(entries: list[dict], groups, colors, qty) -> None:
     """Compare each plan's demand block against the selected POs' quantities.
@@ -220,9 +234,14 @@ def _save(entries: list[dict], links: list[dict], notes: str) -> None:
     store = get_cutting_plan_store()
     saved = 0
     for entry in entries:
+        plan = entry["plan"]
+        keep = entry.get("keep_fabrics")
+        if keep is not None:
+            # No-op when the selection covers every fabric.
+            plan = filter_plan_materials(plan, set(keep))
         try:
             store.save_plan(
-                entry["plan"],
+                plan,
                 source_file=entry.get("name", ""),
                 file_bytes=entry.get("bytes"),
                 uploaded_by=st.session_state.get(SK.USERNAME, ""),

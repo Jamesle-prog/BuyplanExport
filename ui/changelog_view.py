@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.126.0",
+        "date": "2026-08-04",
+        "entries": [
+            {"type": "feat", "text": "**Upload & Link can save only the fabric(s) you pick.** Each uploaded plan with more than one fabric now shows the fabric picker under its details — shell and lining go to different cutting tables, so one fabric's blocks are often all that's wanted on record. The saved plan's per-fabric rows, totals and 总台数 reflect just the selection; the demand block stays whole (it is plan-level). Leaving everything selected saves the whole plan, same as before."},
+            {"type": "feat", "text": "**The original file is stored untouched, and re-reading respects your choice.** The selection is recorded inside the saved plan itself, so 'Download original file' still hands back exactly what the factory sent — and 🔄 Re-read from the original file re-applies the selection instead of silently resurrecting the fabrics you left out."},
+        ],
+    },
+    {
         "version": "2.125.2",
         "date": "2026-08-01",
         "entries": [

@@ -39,7 +39,8 @@ def cleanup_color_map(client: str = "") -> dict[str, str]:
         return {}
 
 
-def fabric_picker(materials: list[dict], key: str) -> list[dict]:
+def fabric_picker(materials: list[dict], key: str,
+                  verb: str = "Exporting") -> list[dict]:
     """Let the user narrow a multi-fabric plan to the fabric(s) they want.
 
     Shell and lining are separate fabrics at different widths and go to
@@ -60,7 +61,7 @@ def fabric_picker(materials: list[dict], key: str) -> list[dict]:
                "keeps its own marker, spreading and solution blocks."))
     chosen = set(picked) or set(uniq)
     if chosen != set(uniq):
-        st.caption(f"{t('Exporting')} {len(chosen)}/{len(uniq)} {t('fabric(s)')}")
+        st.caption(f"{t(verb)} {len(chosen)}/{len(uniq)} {t('fabric(s)')}")
     return [m for m, n in zip(materials, names) if n in chosen]
 
 

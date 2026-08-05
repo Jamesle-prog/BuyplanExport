@@ -1089,3 +1089,61 @@ def test_blank_template_build_does_not_crash_on_style_summary(monkeypatch):
     texts = {str(ws.cell(r, c).value) for r in range(1, 15)
              for c in range(1, 6) if ws.cell(r, c).value is not None}
     assert "TP5016" in texts          # the user's style codes, not repr(dict)
+
+
+# ── Saving only some of a plan's fabrics ────────────────────────────────────
+
+def _two_fabric(exact):
+    """The exact plan with its material duplicated as a lining."""
+    import copy
+    two = copy.deepcopy(exact)
+    lining = copy.deepcopy(two["materials"][0])
+    lining["material"] = "里"
+    two["materials"].append(lining)
+    two["total_tables"] = 2
+    return two
+
+
+def test_filter_plan_materials_narrows_and_recomputes(exact):
+    from po_extractor.store.cutting_plan_store import filter_plan_materials
+    two = _two_fabric(exact)
+    out = filter_plan_materials(two, {"A"})
+    assert [m["material"] for m in out["materials"]] == ["A"]
+    assert out["total_tables"] == 1              # recomputed from what's kept
+    assert out["kept_fabrics"] == ["A"]          # recorded for re-read
+    assert summarise_plan(out)["materials"] == "A"
+    # the demand block is plan-level and stays whole
+    assert out["demands"] == two["demands"]
+    # the source dict is untouched
+    assert len(two["materials"]) == 2 and "kept_fabrics" not in two
+
+
+def test_filter_covering_every_fabric_is_a_no_op(exact):
+    """Same 'empty means all' rule as the pickers — and no kept_fabrics is
+    recorded, so a later re-read has nothing to re-apply."""
+    from po_extractor.store.cutting_plan_store import filter_plan_materials
+    two = _two_fabric(exact)
+    assert filter_plan_materials(two, set()) is two
+    assert filter_plan_materials(two, {"A", "里"}) is two
+
+
+def test_reparse_reapplies_the_saved_fabric_selection(store, exact,
+                                                      monkeypatch):
+    """The stored original file deliberately keeps every fabric; re-reading
+    it must re-apply the recorded selection, not resurrect the fabrics the
+    user chose to leave out."""
+    from po_extractor.store.cutting_plan_store import filter_plan_materials
+    import po_extractor.parsers.cutting_plan as parser_mod
+
+    two = _two_fabric(exact)
+    narrowed = filter_plan_materials(two, {"A"})
+    pid = store.save_plan(narrowed, source_file="a.xlsx", file_bytes=b"blob")
+    assert list(store.list_plan_materials(pid)["material"]) == ["A"]
+
+    # Re-parsing the blob yields the FULL two-fabric plan again.
+    monkeypatch.setattr(parser_mod, "parse_cut_plan", lambda _b: two)
+    assert store.reparse_plan(pid) is True
+
+    rec = store.get_plan(pid)
+    assert list(store.list_plan_materials(pid)["material"]) == ["A"]
+    assert rec["parsed"]["kept_fabrics"] == ["A"]   # survives the re-read

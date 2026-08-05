@@ -55,12 +55,27 @@ def test_done_count_counts_actual_dates_only():
 # ── _status_strip_df ────────────────────────────────────────────────────────
 
 def test_status_strip_marks_done_planned_and_empty():
+    import datetime as _dt
     rec = _record(cutting_actual="2026-08-05", sewing_planned="2026-08-09")
-    row = v._status_strip_df([rec]).iloc[0]
+    # Pin *today* — the strip's 📅/🟠/🔴 depend on it, and leaving it implicit
+    # made this test change verdicts as the calendar walked toward the
+    # hardcoded planned date (it broke, untouched, on 2026-08-02).
+    row = v._status_strip_df([rec], today=_dt.date(2026, 7, 20)).iloc[0]
     labels = dict(MILESTONE_STAGES)
     assert row[labels["cutting"]] == "✅"
     assert row[labels["sewing"]] == "📅"
     assert row[labels["packing"]] == "⬜"
+
+
+def test_status_strip_flags_due_soon_and_overdue():
+    """The other two verdicts, pinned the same way."""
+    import datetime as _dt
+    labels = dict(MILESTONE_STAGES)
+    rec = _record(sewing_planned="2026-08-09")
+    strip = v._status_strip_df([rec], today=_dt.date(2026, 8, 4)).iloc[0]
+    assert strip[labels["sewing"]] == "🟠"          # within 7 days
+    strip = v._status_strip_df([rec], today=_dt.date(2026, 8, 15)).iloc[0]
+    assert strip[labels["sewing"]] == "🔴"          # planned date passed
 
 
 # ── _grid_diff ──────────────────────────────────────────────────────────────

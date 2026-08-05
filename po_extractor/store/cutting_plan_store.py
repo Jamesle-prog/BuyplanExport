@@ -178,6 +178,15 @@ class CuttingPlanStore(BaseSQLiteStore):
         except Exception:                                   # noqa: BLE001
             return False
 
+        # The plan may have been saved for only some of its fabrics; the
+        # original file (deliberately untouched) still carries all of them.
+        # Re-apply the recorded selection, or re-reading would silently
+        # resurrect the fabrics the user chose to leave out.
+        prior = self.get_plan(plan_id) or {}
+        kept = (prior.get("parsed") or {}).get("kept_fabrics")
+        if kept:
+            parsed = filter_plan_materials(parsed, set(kept))
+
         summary = summarise_plan(parsed)
         with self._conn() as conn:
             conn.execute(
@@ -692,6 +701,36 @@ def _achieved_by_cell(parsed: dict[str, Any]) -> dict[tuple[str, str, str], int]
                 if qty > best.get(key, 0):
                     best[key] = qty
     return best
+
+
+def filter_plan_materials(parsed: dict[str, Any],
+                          keep: set[str]) -> dict[str, Any]:
+    """A copy of *parsed* narrowed to the fabrics in *keep*.
+
+    Used when a plan is saved for only some of its fabrics — shell and lining
+    go to different cutting tables, so one fabric's blocks are often all
+    that's wanted on record. The demand block (per style/colour/size) is
+    plan-level and stays whole; the plan-wide table count is recomputed from
+    the fabrics that remain.
+
+    The selection is written into the plan itself (``kept_fabrics``) so that
+    :meth:`CuttingPlanStore.reparse_plan` — which re-reads the untouched
+    original file — can re-apply it instead of silently resurrecting the
+    fabrics the user chose to leave out.
+
+    An empty *keep*, or one covering every fabric, returns *parsed* unchanged
+    — same "empty means all" rule as the pickers.
+    """
+    materials = parsed.get("materials") or []
+    names = [str(m.get("material") or "—") for m in materials]
+    if not keep or set(names) <= set(keep):
+        return parsed
+    out = dict(parsed)
+    out["materials"] = [m for m, n in zip(materials, names) if n in keep]
+    tables = [int(m.get("total_tables") or 0) for m in out["materials"]]
+    out["total_tables"] = sum(tables) or None
+    out["kept_fabrics"] = sorted(keep & set(names))
+    return out
 
 
 def summarise_plan(parsed: dict[str, Any]) -> dict[str, Any]:
