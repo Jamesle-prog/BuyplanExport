@@ -76,7 +76,70 @@ class SkyEastStore(BaseSQLiteStore):
                 cols = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})")}
                 if "return_label" not in cols:
                     self._add_column_if_missing(conn, tbl, "return_label", "TEXT DEFAULT 'NA'")
+            self._migrate_colour_key(conn)
         SkyEastStore._checked_paths.add(self.db_path)
+
+    def _migrate_colour_key(self, conn: sqlite3.Connection) -> None:
+        """Populate colour_key and make the database enforce item identity.
+
+        Identity is style + colour + client PO, with the colour compared
+        normalised (:func:`colour_key`). That rule used to live only in Python,
+        while the table's own UNIQUE was on the raw colour text — so nothing
+        stopped a second row for an item whose colour had merely been retyped,
+        which is how one contract came to print every style twice in its buy
+        plan.
+
+        Three steps, each a no-op once done:
+
+        1. add the column and backfill it (the value can't be computed in SQL —
+           it's a Python regex);
+        2. archive and remove rows that duplicate another under the rule,
+           keeping the newest, since a unique index cannot be built over them;
+        3. create that index.
+
+        Step 2 is the only one that removes anything, and everything it removes
+        goes to sky_east_item_history first.
+        """
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(sky_east_items)")}
+        if "colour_key" not in cols:
+            self._add_column_if_missing(conn, "sky_east_items", "colour_key", "TEXT")
+
+        stale = conn.execute(
+            "SELECT id, color_name FROM sky_east_items "
+            "WHERE colour_key IS NULL OR colour_key = ''"
+        ).fetchall()
+        if stale:
+            conn.executemany(
+                "UPDATE sky_east_items SET colour_key=? WHERE id=?",
+                [(colour_key(r["color_name"]), r["id"]) for r in stale],
+            )
+
+        if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_sei_identity'"
+        ).fetchone():
+            return
+
+        # Losers = every row but the newest for its identity. MAX(id) rather
+        # than MIN: a later upload is the more current record, and it is the one
+        # the merge path has been keeping since the fix.
+        losers = conn.execute(
+            """SELECT * FROM sky_east_items WHERE id NOT IN (
+                   SELECT MAX(id) FROM sky_east_items
+                   GROUP BY pc_no, style, colour_key, zalando_po)"""
+        ).fetchall()
+        for row in losers:
+            existing = dict(row)
+            existing["revision_reason"] = "superseded: same colour retyped"
+            self._archive_item(conn, existing)
+        if losers:
+            conn.execute("DELETE FROM sky_east_items WHERE id IN (%s)"
+                         % ",".join("?" * len(losers)),
+                         [r["id"] for r in losers])
+
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_sei_identity "
+            "ON sky_east_items(pc_no, style, colour_key, zalando_po)"
+        )
 
     # ------------------------------------------------------------------ #
     # Internal helpers                                                     #
@@ -129,29 +192,49 @@ class SkyEastStore(BaseSQLiteStore):
                 db[bucket] += int(qty)
         return db["xs"], db["s"], db["m"], db["l"], db["xl"], db["xxl"]
 
+    # The columns sky_east_item_history keeps a copy of, in order. Named once so
+    # the row-at-a-time and whole-PC archives cannot drift apart. colour_key is
+    # absent deliberately — it is derived from color_name, which is here.
+    _ARCHIVE_COLS = (
+        "pc_no", "zalando_po", "style", "config_sku", "article_name", "brand",
+        "color_name", "colour_code", "launch_date", "fabric_item_no",
+        "fabrication", "contract_no", "xs", "s", "m", "l", "xl", "xxl",
+        "total_qty", "fob_usd", "total_cost_usd", "ex_fty_date", "picture_id",
+        "revision_reason", "return_label",
+    )
+    _ARCHIVE_DEFAULTS = {"xs": 0, "s": 0, "m": 0, "l": 0, "xl": 0, "xxl": 0,
+                         "total_qty": 0, "fob_usd": 0.0, "total_cost_usd": 0.0,
+                         "return_label": "NA"}
+
+    @classmethod
+    def _archive_insert(cls) -> str:
+        return (f"INSERT INTO sky_east_item_history "
+                f"({', '.join(cls._ARCHIVE_COLS)}, archived_at) ")
+
+    @staticmethod
+    def _now() -> str:
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     def _archive_item(self, conn: sqlite3.Connection, existing: dict) -> None:
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
-            """INSERT INTO sky_east_item_history
-               (pc_no, zalando_po, style, config_sku, article_name, brand,
-                color_name, colour_code, launch_date, fabric_item_no, fabrication,
-                contract_no,
-                xs, s, m, l, xl, xxl, total_qty, fob_usd, total_cost_usd,
-                ex_fty_date, picture_id, revision_reason, return_label, archived_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                existing.get("pc_no"), existing.get("zalando_po"), existing.get("style"),
-                existing.get("config_sku"), existing.get("article_name"), existing.get("brand"),
-                existing.get("color_name"), existing.get("colour_code"), existing.get("launch_date"),
-                existing.get("fabric_item_no"), existing.get("fabrication"),
-                existing.get("contract_no"),
-                existing.get("xs", 0), existing.get("s", 0), existing.get("m", 0),
-                existing.get("l", 0), existing.get("xl", 0), existing.get("xxl", 0),
-                existing.get("total_qty", 0), existing.get("fob_usd", 0.0),
-                existing.get("total_cost_usd", 0.0), existing.get("ex_fty_date"),
-                existing.get("picture_id"), existing.get("revision_reason"),
-                existing.get("return_label", "NA"), now,
-            ),
+            self._archive_insert()
+            + f"VALUES ({','.join('?' * (len(self._ARCHIVE_COLS) + 1))})",
+            tuple(existing.get(c, self._ARCHIVE_DEFAULTS.get(c))
+                  for c in self._ARCHIVE_COLS) + (self._now(),),
+        )
+
+    def _archive_pc(self, conn: sqlite3.Connection, pc_no: str) -> None:
+        """Archive every item of one PC No. in a single statement.
+
+        Used by replace, which archives the whole contract unconditionally —
+        reading the rows back into Python just to write them out one at a time
+        would be N round trips for nothing.
+        """
+        cols = ", ".join(self._ARCHIVE_COLS)
+        conn.execute(
+            self._archive_insert()
+            + f"SELECT {cols}, ? FROM sky_east_items WHERE pc_no=?",
+            (self._now(), pc_no),
         )
 
     def _insert_item(
@@ -159,17 +242,18 @@ class SkyEastStore(BaseSQLiteStore):
     ) -> None:
         sizes = item.sizes or {}
         xs, s, m, l, xl, xxl = self._sizes_to_db_cols(sizes)
-        conn.execute(
+        return conn.execute(
             """INSERT OR REPLACE INTO sky_east_items
                (pc_no, zalando_po, style, config_sku, article_name, brand,
-                color_name, colour_code, launch_date, fabric_item_no, fabrication,
-                contract_no,
+                color_name, colour_key, colour_code, launch_date, fabric_item_no,
+                fabrication, contract_no,
                 xs, s, m, l, xl, xxl, total_qty, fob_usd, total_cost_usd,
                 ex_fty_date, picture_id, revision_reason, return_label)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 item.pc_no, item.zalando_po, item.style, item.config_sku,
-                item.article_name, item.brand, item.color_name, item.colour_code,
+                item.article_name, item.brand, item.color_name,
+                colour_key(item.color_name), item.colour_code,
                 item.launch_date, item.fabric_item_no, item.fabrication,
                 item.contract_no,
                 xs, s, m, l, xl, xxl,
@@ -177,7 +261,7 @@ class SkyEastStore(BaseSQLiteStore):
                 item.ex_fty_date, item.picture_id, revision_reason,
                 item.return_label,
             ),
-        )
+        ).lastrowid
 
     @staticmethod
     def _refresh_parsed_fields(
@@ -192,19 +276,17 @@ class SkyEastStore(BaseSQLiteStore):
         """
         sets, vals = [], []
         if (existing.get("color_name") or "") != (item.color_name or ""):
-            sets.append("color_name=?")
-            vals.append(item.color_name)
+            # colour_key goes with it — the two are one value, and the identity
+            # index is on the derived half.
+            sets += ["color_name=?", "colour_key=?"]
+            vals += [item.color_name, colour_key(item.color_name)]
         if not (existing.get("config_sku") or "").strip() and (item.config_sku or "").strip():
             sets.append("config_sku=?")
             vals.append(item.config_sku)
         if not sets:
             return
-        try:
-            with conn:      # colour is in UNIQUE(...); see _update_item
-                conn.execute(f"UPDATE sky_east_items SET {', '.join(sets)} WHERE id=?",
-                             (*vals, existing["id"]))
-        except sqlite3.IntegrityError:
-            pass
+        conn.execute(f"UPDATE sky_east_items SET {', '.join(sets)} WHERE id=?",
+                     (*vals, existing["id"]))
 
     def _update_item(
         self, conn: sqlite3.Connection, item: SkyEastItem,
@@ -240,16 +322,13 @@ class SkyEastStore(BaseSQLiteStore):
             return
         # Adopt the newest file's spelling of the colour, so the buy plan shows
         # what the current contract says and the colour lookup gets the text it
-        # can actually match. UNIQUE(pc_no, style, color_name, zalando_po) is
-        # still on the raw colour, so this can collide with a row left behind
-        # by this bug before it was fixed; keep the stored spelling in that
-        # case rather than failing the whole import over a cosmetic field.
-        try:
-            with conn:
-                conn.execute(f"UPDATE sky_east_items SET {sets}, color_name=? WHERE id=?",
-                             values + (item.color_name, row_id))
-        except sqlite3.IntegrityError:
-            conn.execute(f"UPDATE sky_east_items SET {sets} WHERE id=?", values + (row_id,))
+        # can actually match. Neither unique constraint can object: the row was
+        # matched on colour_key, so the new spelling normalises to the value
+        # already stored there, and any row holding this exact spelling would
+        # share that colour_key too — which idx_sei_identity forbids.
+        conn.execute(f"UPDATE sky_east_items SET {sets}, color_name=?, colour_key=? "
+                     "WHERE id=?",
+                     values + (item.color_name, colour_key(item.color_name), row_id))
 
     # ------------------------------------------------------------------ #
     # Public API                                                           #
@@ -273,11 +352,13 @@ class SkyEastStore(BaseSQLiteStore):
         except Exception:
             return False, "", ""
 
-    def _ai_match(self, existing_map: dict, item: SkyEastItem,
-                  result: dict) -> dict | None:
+    @staticmethod
+    def _ai_match(settings: tuple[bool, str, str], existing_map: dict,
+                  item: SkyEastItem) -> tuple[dict, str] | None:
         """Last resort before an item is treated as new: ask the AI whether its
         colour is one of the colours already on file for this style and PO,
-        written differently.
+        written differently. Returns (row, the colour it was matched to), or
+        None — the caller records it, so this only has to answer the question.
 
         :func:`colour_key` only sees through case and punctuation. It cannot
         see through an abbreviation ("DK Grey"), a typo ("Daek Blue"), or a
@@ -292,12 +373,12 @@ class SkyEastStore(BaseSQLiteStore):
         colour, touch any other field, or reach an item on another PO. Off by
         default; see KEY_ITEM_COLOUR_AI_MATCH.
         """
-        enabled, api_key, model = self._ai_settings()
+        enabled, api_key, model = settings
         if not enabled or not (item.color_name or "").strip():
             return None
         # Only the colours on file for this exact style + PO are candidates.
         same_order = {
-            (r.get("color_name") or ""): (k, r)
+            (r.get("color_name") or ""): r
             for k, r in existing_map.items()
             if k[0] == item.style and k[2] == item.zalando_po
         }
@@ -311,10 +392,7 @@ class SkyEastStore(BaseSQLiteStore):
             return None
         if not picked or picked not in same_order:
             return None
-        _, row = same_order[picked]
-        result["ai_matched_items"].append(
-            (item.style, picked, item.color_name, item.zalando_po))
-        return row
+        return same_order[picked], picked
 
     def replace_contract(self, contract: SkyEastContract) -> dict:
         """Make the DB match *contract* exactly: every item currently on file
@@ -355,15 +433,14 @@ class SkyEastStore(BaseSQLiteStore):
             # raw-colour identity bug holds several rows that now normalise
             # together, and each of those really is removed here. The newest
             # (last inserted) speaks for the group.
+            self._archive_pc(conn, contract.pc_no)
             keep: dict[tuple, list[dict]] = {}
             for row in conn.execute(
                 "SELECT * FROM sky_east_items WHERE pc_no=?", (contract.pc_no,)
             ).fetchall():
                 existing = dict(row)
-                self._archive_item(conn, existing)
-                keep.setdefault((existing.get("style"),
-                                 colour_key(existing.get("color_name")),
-                                 existing.get("zalando_po")), []).append(existing)
+                keep.setdefault((existing["style"], existing["colour_key"],
+                                 existing["zalando_po"]), []).append(existing)
 
             conn.execute("DELETE FROM sky_east_items WHERE pc_no=?", (contract.pc_no,))
 
@@ -436,38 +513,42 @@ class SkyEastStore(BaseSQLiteStore):
             existing_rows = conn.execute(
                 "SELECT * FROM sky_east_items WHERE pc_no=?", (contract.pc_no,)
             ).fetchall()
-            # Keyed on the normalised colour: the factory retypes colour names
-            # between revisions of the same contract, and matching the raw text
-            # turned those revisions into new items. Rows are in insertion
-            # order, so when a DB written before this fix holds several
-            # spellings of one colour, the newest wins.
+            # Keyed on the stored normalised colour — the same value
+            # idx_sei_identity is unique on, so this map and the database agree
+            # on what one item is by construction.
             existing_map: dict[tuple, dict] = {
-                (r["style"], colour_key(r["color_name"]), r["zalando_po"]): dict(r)
+                (r["style"], r["colour_key"], r["zalando_po"]): dict(r)
                 for r in existing_rows
             }
+
+            # Read once, not once per unmatched item: this opens its own
+            # connections to the settings DB, and every item that turns out to
+            # be new would otherwise pay for it even with the feature off.
+            ai_settings = self._ai_settings()
 
             for item in contract.items:
                 key = (item.style, colour_key(item.color_name), item.zalando_po)
                 existing = existing_map.get(key)
 
                 if existing is None:
-                    existing = self._ai_match(existing_map, item, result)
+                    matched = self._ai_match(ai_settings, existing_map, item)
+                    if matched:
+                        existing, picked = matched
+                        result["ai_matched_items"].append(
+                            (item.style, picked, item.color_name, item.zalando_po))
 
                 if existing is None:
-                    self._insert_item(conn, item, revision_reason=None)
+                    row_id = self._insert_item(conn, item, revision_reason=None)
                     result["new_items"].append((item.style, item.color_name, item.zalando_po))
                     # BUG fix: existing_map was built once before the loop and
                     # never updated, so a second item in this same contract
-                    # sharing (style, color_name, zalando_po) — the table's
-                    # UNIQUE key — would look up the stale pre-loop state
-                    # instead of what this loop iteration just wrote,
-                    # silently losing the first iteration's update or
-                    # double-archiving. Re-read what we just inserted so the
-                    # next iteration of a duplicate key sees it.
+                    # sharing an identity would look up the stale pre-loop state
+                    # instead of what this loop iteration just wrote, silently
+                    # losing the first iteration's update or double-archiving.
+                    # Re-read by rowid — cheaper than the four-column lookup,
+                    # and unambiguous where that one was not.
                     existing_map[key] = dict(conn.execute(
-                        "SELECT * FROM sky_east_items "
-                        "WHERE pc_no=? AND style=? AND color_name=? AND zalando_po=?",
-                        (contract.pc_no, item.style, item.color_name, item.zalando_po),
+                        "SELECT * FROM sky_east_items WHERE id=?", (row_id,),
                     ).fetchone())
                 else:
                     old_sizes = _item_sizes_dict(existing)
@@ -560,15 +641,15 @@ class SkyEastStore(BaseSQLiteStore):
         """
         with self._conn() as conn:
             # Matched on the normalised colour for the same reason as
-            # save_contract_checked — this row was held back by that pass, so
-            # it has to resolve to the row that pass matched.
-            rows = conn.execute(
-                "SELECT * FROM sky_east_items WHERE pc_no=? AND style=? AND zalando_po=?",
-                (item.pc_no, item.style, item.zalando_po),
-            ).fetchall()
-            want = colour_key(item.color_name)
-            existing = next((r for r in reversed(rows)
-                             if colour_key(r["color_name"]) == want), None)
+            # save_contract_checked — this row was held back by that pass, so it
+            # has to resolve to the row that pass matched. A seek on
+            # idx_sei_identity, which is exactly this key.
+            existing = conn.execute(
+                "SELECT * FROM sky_east_items "
+                "WHERE pc_no=? AND style=? AND colour_key=? AND zalando_po=?",
+                (item.pc_no, item.style, colour_key(item.color_name),
+                 item.zalando_po),
+            ).fetchone()
             if existing is None:
                 self._insert_item(conn, item, revision_reason=None)
                 return "inserted"

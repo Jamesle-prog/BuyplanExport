@@ -25,6 +25,15 @@ CREATE TABLE IF NOT EXISTS sky_east_items (
     article_name    TEXT,
     brand           TEXT,
     color_name      TEXT,
+    -- color_name reduced to what identifies the colour (SkyEastStore.colour_key):
+    -- case- and punctuation-free, so the same colour retyped between revisions of
+    -- one contract is recognised as the same item. Derived from color_name and
+    -- written with it -- never edited on its own. The uniqueness that matters is
+    -- on THIS column (idx_sei_identity, created by the migration once existing
+    -- rows have been deduplicated); the UNIQUE below is on the raw text, is
+    -- implied by it, and remains only because SQLite cannot drop a table
+    -- constraint without rebuilding the table.
+    colour_key      TEXT,
     colour_code     TEXT,
     launch_date     TEXT,
     fabric_item_no  TEXT,

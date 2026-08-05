@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.128.0",
+        "date": "2026-08-05",
+        "entries": [
+            {"type": "fix", "text": "**A failed Sky East import no longer leaves half a contract saved.** Saving a contract is meant to be all-or-nothing, but a nested transaction added in v2.127.0 was committing it early — so a file that failed partway left every item before the failure already written. Restored to a single transaction, verified by a test that fails an import mid-contract and checks nothing landed."},
+            {"type": "refactor", "text": "**Item identity is now enforced by the database, not by convention.** Which rows count as the same item (style + colour + client PO, colour compared normalised) lived only in Python, while the table's own uniqueness was on the raw colour text — the gap that let one contract save two rows for one garment. The normalised value is now stored alongside the colour and carries a unique index, so the duplicate is rejected at the source whatever the calling code does. Existing databases are migrated on first open: the column is backfilled, any rows that duplicate another are archived and removed (newest kept), then the index is created."},
+            {"type": "perf", "text": "**Faster imports and a lighter settings read.** The AI-matching switch was being read once per unmatched item — four database connections and a schema script each time, paid even with the feature off; it is now read once per contract (a 17-item first import saved ~115 ms and ~68 connections). Application settings no longer re-run their schema script on every read, matching the guard the other stores already use. Replace mode archives a contract in one statement instead of one per item, and post-write lookups now seek by row id."},
+        ],
+    },
+    {
         "version": "2.127.2",
         "date": "2026-08-05",
         "entries": [

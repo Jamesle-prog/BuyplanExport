@@ -610,10 +610,13 @@ def test_replace_reduces_the_real_hhppc053_pollution_to_six_rows(tmp_path):
                             ("DR5252", "PO2367104C", "blue"),
                             ("DR5252", "PO2367103C", "BURGUNDY")]]
 
-    # Simulate the polluted DB this bug produced: raw-colour identity.
+    # Recreate the polluted state. It can no longer be produced through the
+    # store — idx_sei_identity rejects it — so the index has to come off first,
+    # which is exactly the shape of a DB written before that index existed.
     store.save_contract_checked(_make_contract(old))
-    for it in new:                       # force the pre-fix duplication
-        with store._conn() as conn:
+    with store._conn() as conn:
+        conn.execute("DROP INDEX IF EXISTS idx_sei_identity")
+        for it in new:
             store._insert_item(conn, it)
     assert len(store.list_items(pc_nos=["PC1"])) == 9
 
@@ -623,3 +626,153 @@ def test_replace_reduces_the_real_hhppc053_pollution_to_six_rows(tmp_path):
     assert len(result["removed_items"]) == 3
     assert sorted(df["color_name"]) == sorted(
         ["Dark Grey", "black off white", "dark blue", "black", "blue", "BURGUNDY"])
+
+
+# ── The database enforces item identity, not just Python ────────────────────
+
+def test_colour_key_is_stored_and_derived_from_the_colour(tmp_path):
+    from po_extractor.store.sky_east_store import SkyEastStore, colour_key
+    store = SkyEastStore(str(tmp_path / "ck.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="(Dark Grey)")]))
+    with store._conn() as conn:
+        row = conn.execute("SELECT color_name, colour_key FROM sky_east_items").fetchone()
+    assert row["color_name"] == "(Dark Grey)"
+    assert row["colour_key"] == colour_key("(Dark Grey)") == "dark grey"
+
+
+def test_a_colour_rewrite_keeps_the_two_columns_in_step(tmp_path):
+    """colour_key must never be left describing the old spelling."""
+    from po_extractor.store.sky_east_store import SkyEastStore, colour_key
+    store = SkyEastStore(str(tmp_path / "ck2.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="(dark grey)",
+                   sizes={"S": 1}, total_qty=1)]))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="Dark Grey",
+                   sizes={"S": 9}, total_qty=9)]))       # a real change -> update path
+    with store._conn() as conn:
+        row = conn.execute("SELECT color_name, colour_key FROM sky_east_items").fetchone()
+    assert row["colour_key"] == colour_key(row["color_name"])
+
+
+def test_the_unique_index_rejects_a_second_row_for_one_item(tmp_path):
+    """The rule is the database's now — not merely a convention every call
+    site has to remember."""
+    import sqlite3
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "ck3.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="Dark Grey")]))
+    with store._conn() as conn:
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO sky_east_items (pc_no, style, zalando_po, color_name,"
+                " colour_key) VALUES ('PC1','A','PO1','(dark grey)','dark grey')")
+
+
+def test_the_migration_deduplicates_a_db_written_before_the_fix(tmp_path):
+    """The real HHPPC053 shape: rows inserted under the old raw-colour identity
+    are merged to one per item, newest kept, losers archived not lost."""
+    import sqlite3
+    from po_extractor.store.sky_east_store import SkyEastStore
+    db = str(tmp_path / "legacy.db")
+    store = SkyEastStore(db)
+
+    # Bypass the store to recreate the pre-fix state: two rows, one item.
+    with store._conn() as conn:
+        conn.execute("DROP INDEX IF EXISTS idx_sei_identity")
+        for colour in ("(dark grey)", "Dark Grey"):
+            conn.execute(
+                "INSERT INTO sky_east_items (pc_no, style, zalando_po, color_name,"
+                " colour_key, total_qty) VALUES ('PC1','ZLD060','PO1',?,NULL,500)",
+                (colour,))
+    SkyEastStore._checked_paths.discard(db)
+    store = SkyEastStore(db)                       # re-open -> migration runs
+
+    df = store.list_items(pc_nos=["PC1"])
+    assert len(df) == 1
+    assert df.iloc[0]["color_name"] == "Dark Grey"          # the newest survives
+    hist = store.list_item_history("PC1")
+    assert len(hist) == 1
+    assert hist.iloc[0]["color_name"] == "(dark grey)"      # the loser is archived
+    assert "superseded" in (hist.iloc[0]["revision_reason"] or "")
+
+
+def test_the_migration_is_a_no_op_the_second_time(tmp_path):
+    from po_extractor.store.sky_east_store import SkyEastStore
+    db = str(tmp_path / "twice.db")
+    store = SkyEastStore(db)
+    store.save_contract_checked(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="Red")]))
+    SkyEastStore._checked_paths.discard(db)
+    store = SkyEastStore(db)
+    assert len(store.list_items(pc_nos=["PC1"])) == 1
+    assert len(store.list_item_history("PC1")) == 0     # nothing archived
+
+
+# ── Transactional integrity ─────────────────────────────────────────────────
+
+def test_a_failure_partway_rolls_the_whole_save_back(tmp_path, monkeypatch):
+    """save_contract_checked is one transaction. A nested `with conn:` used to
+    commit it early, so a later failure left the earlier items written."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "atomic.db"))
+    store.save_contract_checked(_make_contract([
+        _make_item(style="A", zalando_po="PO1", color_name="(red)",
+                   sizes={"S": 1}, total_qty=1)]))
+
+    real_insert = SkyEastStore._insert_item
+    calls = {"n": 0}
+
+    def blow_up_on_the_second(self, conn, item, revision_reason=None):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("parser blew up mid-contract")
+        return real_insert(self, conn, item, revision_reason)
+    monkeypatch.setattr(SkyEastStore, "_insert_item", blow_up_on_the_second)
+
+    with pytest.raises(RuntimeError):
+        store.save_contract_checked(_make_contract([
+            # touches the duplicate path -> refreshes the colour spelling
+            _make_item(style="A", zalando_po="PO1", color_name="Red"),
+            _make_item(style="B", zalando_po="PO2", color_name="Blue"),
+            _make_item(style="C", zalando_po="PO3", color_name="Green")]))
+
+    df = store.list_items(pc_nos=["PC1"])
+    assert list(df["style"]) == ["A"]                  # B never lands
+    assert df.iloc[0]["color_name"] == "(red)"         # nor the colour refresh
+
+
+# ── The AI gate is read once, not per item ──────────────────────────────────
+
+def test_the_settings_gate_is_read_once_per_save(tmp_path, monkeypatch):
+    """Reading it opens its own connections to the settings DB; paying that per
+    unmatched item made a first import of N items cost N times over."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "gate.db"))
+    calls = {"n": 0}
+
+    def counted():
+        calls["n"] += 1
+        return (False, "", "")
+    monkeypatch.setattr(SkyEastStore, "_ai_settings", staticmethod(counted))
+
+    store.save_contract_checked(_make_contract([
+        _make_item(style=f"S{i}", zalando_po=f"PO{i}", color_name="Red")
+        for i in range(8)]))
+    assert calls["n"] == 1
+
+
+def test_the_store_can_no_longer_create_that_pollution(tmp_path):
+    """The point of moving the rule into the schema: the 9-row state above is
+    not reachable through the store any more, whatever the call site does."""
+    from po_extractor.store.sky_east_store import SkyEastStore
+    store = SkyEastStore(str(tmp_path / "cant.db"))
+    with store._conn() as conn:
+        for colour in ("(dark grey)", "Dark Grey", "DARK  GREY"):
+            store._insert_item(conn, _make_item(
+                style="ZLD060", zalando_po="PO1", color_name=colour))
+    df = store.list_items(pc_nos=["PC1"])
+    assert len(df) == 1
+    assert df.iloc[0]["color_name"] == "DARK  GREY"     # last write wins

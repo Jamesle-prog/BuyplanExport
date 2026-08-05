@@ -82,8 +82,17 @@ _DEFAULTS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 class AppSettingsStore(BaseSQLiteStore):
+    # Same guard the other stores use: this class is constructed freshly on
+    # every read (get_app_settings_store() returns a new instance), and settings
+    # are read on nearly every render path, so without it each read re-ran the
+    # schema script and the migration SELECT. Schema work is idempotent — doing
+    # it once per db_path per process is all it was ever worth.
+    _checked_paths: set[str] = set()
+
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
+        if db_path in AppSettingsStore._checked_paths:
+            return
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
             # Run any pending one-time migrations.  Single SELECT to fetch all
@@ -104,6 +113,7 @@ class AppSettingsStore(BaseSQLiteStore):
                     "INSERT OR IGNORE INTO app_settings_migrations (name) "
                     "VALUES (?)", (name,)
                 )
+        AppSettingsStore._checked_paths.add(db_path)
 
     # ── Read ────────────────────────────────────────────────────────────────
 
