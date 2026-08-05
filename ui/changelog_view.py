@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.127.2",
+        "date": "2026-08-05",
+        "entries": [
+            {"type": "feat", "text": "**整份合同替换 now asks for confirmation.** Choosing *Replace the whole contract* reveals a tick box, and **Process Sky East Files** stays disabled until it is ticked — the mode removes items, so it shouldn't be reachable by selecting a radio button alone. The tick authorises exactly one run: it is cleared after processing, and dropped if you switch back to *Update / add only*, so a replace can never carry over silently to the next upload."},
+        ],
+    },
+    {
         "version": "2.127.1",
         "date": "2026-08-05",
         "entries": [

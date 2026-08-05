@@ -55,6 +55,10 @@ _LANG_COL: dict[str, str] = {
 
 # fmt: off
 _SEED: list[tuple[str, str, str, str]] = [
+    ("I understand — replace the contract and remove the items this file doesn't list",
+     "我已了解——替换该合同，并移除本文件未列出的款", "label", "admin"),
+    ("Tick the box above to enable processing in replace mode.",
+     "请勾选上方复选框，以启用替换方式处理。", "caption", "admin"),
     ("AI-assisted duplicate colour matching",
      "AI 辅助重复颜色匹配", "label", "admin"),
     ("Use AI to match retyped colours on re-imported contracts",

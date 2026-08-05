@@ -129,6 +129,7 @@ def _show_se_upload_section():
         label_visibility="collapsed",
         key=SK.SE_SAVE_MODE,
     )
+    replace_confirmed = False
     if save_mode == SE_SAVE_REPLACE:
         st.warning(t(
             "⚠️ Replace removes items this file doesn't list — use it when the "
@@ -137,6 +138,15 @@ def _show_se_upload_section():
             "Fabric No. and 合同号 entered in the app are kept for items the "
             "file still lists."
         ))
+        replace_confirmed = st.checkbox(
+            t("I understand — replace the contract and remove the items this "
+              "file doesn't list"),
+            key=SK.SE_REPLACE_CONFIRM,
+        )
+    else:
+        # Don't let a tick made earlier survive a switch back to replace: the
+        # confirmation has to be given for the run it applies to.
+        st.session_state.pop(SK.SE_REPLACE_CONFIRM, None)
 
     st.divider()
 
@@ -144,8 +154,14 @@ def _show_se_upload_section():
         st.info(t("Upload one or more Sky East Purchase Contract Excel files to begin."))
         return
 
+    needs_confirm = save_mode == SE_SAVE_REPLACE and not replace_confirmed
+    if needs_confirm:
+        st.caption("☝️ " + t("Tick the box above to enable processing in "
+                             "replace mode."))
+
     if st.button(t("Process Sky East Files"), type="primary",
-                 use_container_width=True, key="se_run"):
+                 use_container_width=True, key="se_run",
+                 disabled=needs_confirm):
         st.session_state.se_results = None
         st.session_state.se_log = []
         st.session_state.se_contracts = None
@@ -155,6 +171,9 @@ def _show_se_upload_section():
         st.session_state.se_masked_zip = None
         _run_sky_east_processing(order_files, ean_file, progress_file,
                                  mask_prices=se_mask, save_mode=save_mode)
+        # One tick authorises one run — the next upload has to confirm again,
+        # or a replace made now would silently repeat on the next file.
+        st.session_state.pop(SK.SE_REPLACE_CONFIRM, None)
         st.rerun()
 
     if st.session_state.se_log:
