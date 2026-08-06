@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.128.1",
+        "date": "2026-08-06",
+        "entries": [
+            {"type": "chore", "text": "**The updater now snapshots your databases before it runs.** It still never writes to `data\` itself — but the app does, the first time it opens a database after an upgrade that changes a table, and those migrations run automatically at startup. Copies of every `.db` (with its `-wal`/`-shm` sidecars, so a database stopped mid-write is captured completely) go to `data\backup_before_update_<timestamp>\`, and the finish message says where. If the copy fails it asks before going on."},
+        ],
+    },
+    {
         "version": "2.128.0",
         "date": "2026-08-05",
         "entries": [

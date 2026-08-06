@@ -68,7 +68,51 @@ if ($running) {
 }
 
 # ---------------------------------------------------------------------------
-# 2. Copy the new code over the target -- explicitly never touching data,
+# 2. Snapshot the databases before anything else.
+#
+#    This updater never writes to data\ -- but the APP does, the first time it
+#    opens a database after an upgrade that adds or changes a table. Those
+#    migrations run automatically at startup and some of them rewrite rows, so
+#    this is the last moment at which the pre-update state can still be
+#    captured. Copies only; the live files are left exactly where they are.
+# ---------------------------------------------------------------------------
+Write-Step "Backing up databases before the update..."
+
+$dataDir = Join-Path $resolvedTarget "data"
+$dbFiles = @()
+if (Test-Path $dataDir) {
+    $dbFiles = @(Get-ChildItem $dataDir -Filter "*.db" -File -ErrorAction SilentlyContinue)
+}
+if ($dbFiles.Count -eq 0) {
+    Write-Ok "No databases found yet -- nothing to back up."
+} else {
+    $backupDir = Join-Path $dataDir ("backup_before_update_" + (Get-Date -Format "yyyyMMdd_HHmmss"))
+    try {
+        New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+        foreach ($db in $dbFiles) {
+            # -wal / -shm too: a database stopped mid-write keeps committed
+            # transactions in the WAL, so the .db alone can be an older state.
+            Copy-Item $db.FullName $backupDir -Force
+            foreach ($side in @("-wal", "-shm")) {
+                $extra = "$($db.FullName)$side"
+                if (Test-Path $extra) { Copy-Item $extra $backupDir -Force }
+            }
+            Write-Ok "Backed up $($db.Name)"
+        }
+        Write-Ok "Saved to: $backupDir"
+    } catch {
+        Write-Warn "Could not write the backup: $($_.Exception.Message)"
+        Write-Warn "Copy the 'data' folder somewhere safe yourself before continuing."
+        $go = Read-Host "    Continue without a backup? (y/N)"
+        if ($go -ne "y" -and $go -ne "Y") {
+            Write-Err "Stopped. Nothing was changed."
+            exit 1
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 3. Copy the new code over the target -- explicitly never touching data,
 #    accounts, or the license, regardless of whether this pack happens to
 #    contain files by those names.
 #
@@ -102,7 +146,7 @@ if ($rc -ge 8) {
 Write-Ok "Files updated."
 
 # ---------------------------------------------------------------------------
-# 3. Refresh dependencies against the (possibly updated) requirements.lock
+# 4. Refresh dependencies against the (possibly updated) requirements.lock
 # ---------------------------------------------------------------------------
 Write-Step "Refreshing dependencies..."
 
@@ -128,5 +172,10 @@ Write-Host "=================================================" -ForegroundColor 
 Write-Host "  Update complete" -ForegroundColor Green
 Write-Host "=================================================" -ForegroundColor Green
 Write-Host "Your PO history, fabric database, accounts, and license were untouched."
+if ($backupDir -and (Test-Path $backupDir)) {
+    Write-Host "A copy of the databases as they were before this update is in:"
+    Write-Host "  $backupDir" -ForegroundColor DarkGray
+    Write-Host "Delete it once the updated app has run normally for a day or two."
+}
 Write-Host "Double-click Start_PO_Extractor.bat in the target folder to launch the updated app."
 Write-Host ""
