@@ -159,18 +159,24 @@ def show_fabric_mapping_tab() -> None:
     """
     st.subheader(f"📐 {t('Reference Data')}")
     st.caption(
-        t("💡 This tab holds **style→fabric assignments** and the **大货进度表** "
-          "(HHN contract progress). Fabric properties (composition · gsm · width) "
-          "live in **🧵 Fabric DB**; colour translations live in **🎨 Colors**.")
+        t("💡 This tab holds **style→fabric assignments**, the **大货进度表** "
+          "(HHN contract progress) and your company's **船样要求**. Fabric "
+          "properties (composition · gsm · width) live in **🧵 Fabric DB**; "
+          "colour translations live in **🎨 Colors**.")
     )
 
     def _progress_panel():
         from ui.progress_mapping_view import show_progress_mapping_section
         show_progress_mapping_section()
 
+    def _boat_sample_panel():
+        from ui.boat_sample_view import show_boat_sample_section
+        show_boat_sample_section()
+
     lazy_sections([
         (f"🧵 {t('Style-Fabric Mapping')}", _show_fabric_mapping_section),
         (f"📋 {t('HHN Contract Progress (大货进度表)')}", _progress_panel),
+        (f"🚢 {t('船样要求')}", _boat_sample_panel),
     ], key="refdata_section_nav")
 
 

@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.129.0",
+        "date": "2026-08-06",
+        "entries": [
+            {"type": "feat", "text": "**You can now maintain your own company's 船样要求.** New section under **📐 Reference Data → 🚢 船样要求**, open to every signed-in user for the companies their account is assigned to. Until now the only ways to set a requirement were the admin panel or the one-off prompt shown the first time a brand was uploaded — so once that moment had passed, a non-admin could not correct their own text. Picking a brand loads what's on file, so editing is a correction rather than a retype."},
+            {"type": "feat", "text": "**Admin keeps the full view, and the two now share one editor.** Admin → 🚢 船样要求 covers every company exactly as before; it and the new user section are the same code with a different company list, so neither can drift. Access is decided in one place and re-checked when you save, not merely by what the dropdown offered — an account assigned to no company gets a clear message rather than everyone else's data."},
+        ],
+    },
+    {
         "version": "2.128.1",
         "date": "2026-08-06",
         "entries": [
