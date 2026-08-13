@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.129.1",
+        "date": "2026-08-06",
+        "entries": [
+            {"type": "chore", "text": "**Repeatable whole-codebase review script** (`scripts/deepseek_review.py`). Sends every tracked source file to DeepSeek in parallel chunks and writes one report, scoped to logic, efficiency and concrete reachable security defects — not style, not generic hardening advice. No effect on the app; it's a maintenance tool."},
+        ],
+    },
+    {
         "version": "2.129.0",
         "date": "2026-08-06",
         "entries": [
