@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.130.2",
+        "date": "2026-08-06",
+        "entries": [
+            {"type": "security", "text": "**A sender can no longer put a working link or a tracking image into your inbox list.** Attachment names and summaries are written by whoever sent the email, and were being rendered as formatted text — so `[invoice](http://…)` became a clickable link and an image reference was fetched from inside the network as soon as the inbox was opened, before anyone had judged the sender. Both are now shown literally."},
+            {"type": "fix", "text": "**The review script no longer miscounts its own results.** It reported \"1 failed, 2 unreviewed\" on a run where all 147 chunks answered — the failure markers were being matched anywhere in the text, and the review had quoted them while reviewing the script itself. Also caps the retry budget and counts never-answered chunks as unreviewed rather than fine."},
+        ],
+    },
+    {
         "version": "2.130.1",
         "date": "2026-08-06",
         "entries": [

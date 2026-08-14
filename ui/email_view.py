@@ -87,13 +87,29 @@ def _check_mailbox(*, unseen_only: bool = True) -> str:
 # Inbox
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _md_escape(text: str | None) -> str:
+    """Neutralise Markdown syntax in text an outsider wrote.
+
+    Filenames and summaries come from whoever sent the email. Dropped into
+    st.markdown they are parsed as Markdown, so ``[invoice](http://evil)``
+    renders as a working link and ``![x](http://evil//beacon.png)`` fetches a
+    remote image the moment the inbox is opened — from inside the network,
+    before anyone decides the sender is trustworthy. HTML can't execute here
+    (unsafe_allow_html is off), but links and images don't need it.
+    """
+    out = str(text or "")
+    for ch in "\\`*_{}[]()#+-.!<>|~":
+        out = out.replace(ch, "\\" + ch)
+    return out
+
+
 def _render_attachment(att: dict, msg: dict, username: str) -> None:
     store = get_email_inbox_store()
     badge = _STATUS_BADGE.get(att["status"], "•")
     kind_label = KIND_LABELS.get(att["kind"], att["kind"])
     st.markdown(
-        f"{badge} **{att['filename']}** — {kind_label}"
-        + (f" · {att['summary']}" if att["summary"] else "")
+        f"{badge} **{_md_escape(att['filename'])}** — {kind_label}"
+        + (f" · {_md_escape(att['summary'])}" if att["summary"] else "")
     )
 
     if att["status"] == STATUS_BLOCKED:

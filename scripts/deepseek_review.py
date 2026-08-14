@@ -26,9 +26,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-# Chunk budget in characters. Sized so a chunk plus the prompt sits well inside
-# the context window with room for a long answer.
-CHUNK_CHARS = 48_000
+# Chunk budget in characters. Kept modest on purpose: the v4 models think
+# invisibly before answering, that trace is billed against max_tokens, and its
+# length scales with how much code is in the prompt. 48K-char chunks made the
+# trace outgrow every budget offered, so nothing was ever written.
+CHUNK_CHARS = 18_000
+# Headroom for the trace AND the answer. max_tokens is a cap, not a spend, so
+# a generous value costs nothing on chunks that answer briefly.
+MAX_TOKENS = 32_000
+# Upper bound for the empty-answer retry (see review_chunk).
+MAX_TOKENS_CEILING = 128_000
 MAX_WORKERS = 6
 
 SYSTEM = """You are reviewing a production Python codebase: a Streamlit app that \
@@ -131,24 +138,53 @@ def review_chunk(idx: int, chunk: list[Path], api_key: str, model: str) -> tuple
 
     names = ", ".join(f.relative_to(ROOT).as_posix() for f in chunk)
     client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+    body = render(chunk)
+    budget = max_tokens_for(model, MAX_TOKENS)
+
     for attempt in range(3):
         try:
             resp = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "system", "content": SYSTEM},
-                          {"role": "user", "content": render(chunk)}],
-                max_tokens=max_tokens_for(model, 4000),
-                **chat_kwargs(model),
+                          {"role": "user", "content": body}],
+                max_tokens=budget, **chat_kwargs(model),
             )
-            text = (resp.choices[0].message.content or "").strip()
-            print(f"  chunk {idx:>3} ok   ({len(chunk)} files)", flush=True)
-            return idx, f"---\n### chunk {idx} — {names}\n\n{text or '(empty response)'}\n"
+            choice = resp.choices[0]
+            text = (choice.message.content or "").strip()
+            if text:
+                print(f"  chunk {idx:>3} ok   ({len(chunk)} files, "
+                      f"{_reasoning(resp)} reasoning tk)", flush=True)
+                return idx, f"---\n### chunk {idx} — {names}\n\n{text}\n"
+
+            # Empty content is a FAILURE, not a clean chunk. The v4 models
+            # think invisibly before answering and the trace is billed against
+            # max_tokens: a budget the trace outgrows returns finish_reason
+            # "length" with nothing written. The first run of this script
+            # reported all 71 chunks "ok" and wrote "(empty response)" for
+            # every one of them, which read like a clean codebase.
+            # Capped: doubling without a ceiling eventually sends a
+            # max_tokens the API rejects, turning a recoverable empty answer
+            # into a hard failure.
+            budget = min(budget * 2, MAX_TOKENS_CEILING)
+            print(f"  chunk {idx:>3} empty ({choice.finish_reason}, "
+                  f"{_reasoning(resp)} reasoning tk) — retrying at "
+                  f"max_tokens={budget}", flush=True)
         except Exception as exc:                       # noqa: BLE001
             if attempt == 2:
                 print(f"  chunk {idx:>3} FAILED: {exc}", flush=True)
                 return idx, f"---\n### chunk {idx} — {names}\n\n_API error: {exc}_\n"
             time.sleep(3 * (attempt + 1))
-    return idx, ""
+
+    print(f"  chunk {idx:>3} NO ANSWER after 3 tries", flush=True)
+    return idx, (f"---\n### chunk {idx} — {names}\n\n"
+                 f"_No answer: the model's reasoning trace exhausted "
+                 f"max_tokens={budget // 2} three times. Not a clean chunk — "
+                 f"unreviewed._\n")
+
+
+def _reasoning(resp) -> int | str:
+    details = getattr(resp.usage, "completion_tokens_details", None)
+    return getattr(details, "reasoning_tokens", "?") if details else "?"
 
 
 def main() -> int:
@@ -182,8 +218,18 @@ def main() -> int:
             i, text = fut.result()
             results[i] = text
 
-    clean = sum(1 for t in results.values() if "No defects found." in t)
-    errors = sum(1 for t in results.values() if "_API error:" in t)
+    # Matched at the START OF A LINE, not anywhere in the text. Substring
+    # matching counted a chunk as failed because a FINDING quoted these very
+    # markers while reviewing this script -- reporting one failure and two
+    # unreviewed chunks in a run where all 147 answered.
+    def _marked(text: str, marker: str) -> bool:
+        return any(line.startswith(marker) for line in text.splitlines())
+
+    clean = sum(1 for t in results.values() if _marked(t, "No defects found."))
+    errors = sum(1 for t in results.values() if _marked(t, "_API error:"))
+    # A chunk that never answered is UNREVIEWED, not clean; omitting it from
+    # the summary reported it as though it were fine.
+    no_answer = sum(1 for t in results.values() if _marked(t, "_No answer:"))
     header = (f"# DeepSeek review — logic, efficiency & security\n\n"
               f"Model `{model}` · {len(files)} files · {len(chunks)} chunks · "
               f"{time.time() - started:.0f}s\n\n"

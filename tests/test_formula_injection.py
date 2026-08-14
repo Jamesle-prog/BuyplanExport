@@ -93,3 +93,21 @@ def test_a_real_buy_plan_export_defuses_injected_text(tmp_path):
             if isinstance(c.value, str) and c.value.startswith("=cmd")]
     assert hits, "the payload should still be present as text"
     assert all(c.data_type == "s" for c in hits)
+
+
+# ── Markdown injection in the email inbox ───────────────────────────────────
+
+def test_a_sender_cannot_inject_a_link_or_beacon_into_the_inbox():
+    """Filenames and summaries are written by whoever sent the mail. Rendered
+    as Markdown, a link works and an image is fetched from inside the network
+    the moment the inbox is opened."""
+    from ui.email_view import _md_escape
+    for payload in ["[invoice](http://evil)",
+                    "![x](http://evil/beacon.png)",
+                    "**not really bold**"]:
+        out = _md_escape(payload)
+        assert "](" not in out
+        assert out != payload
+    # A plain filename survives readably (escapes are invisible once rendered).
+    assert _md_escape("PO_2360361C.pdf").replace("\\", "") == "PO_2360361C.pdf"
+    assert _md_escape(None) == ""
