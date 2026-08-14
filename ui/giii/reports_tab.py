@@ -4,7 +4,7 @@ from __future__ import annotations
 import streamlit as st
 import pandas as pd
 
-from auth.users import get_user_companies, is_admin
+from auth.users import company_scope, is_admin
 from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import lazy_sections, guard_multiselect_state
@@ -35,7 +35,7 @@ def _show_reports_tab(pos_df: pd.DataFrame | None = None) -> None:
     """
     store    = get_store()
     username = st.session_state.get(SK.USERNAME, "")
-    user_cos = get_user_companies(username)
+    user_cos = company_scope(username)
     admin    = is_admin(username)
     # Non-admin with no assigned companies must see nothing — an empty list
     # falls through the store's falsy check to an unfiltered query.
@@ -46,7 +46,7 @@ def _show_reports_tab(pos_df: pd.DataFrame | None = None) -> None:
         ))
         return
     df = (pos_df if pos_df is not None
-          else store.list_pos(companies=user_cos if user_cos else None))
+          else store.list_pos(companies=user_cos))
 
     lazy_sections([
         (f"📥 {t('Generate Outputs')}",

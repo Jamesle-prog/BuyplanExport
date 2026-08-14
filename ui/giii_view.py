@@ -25,7 +25,7 @@ from po_extractor.store.app_settings_store import (
     KEY_EXTRACTION_METHOD, KEY_DEEPSEEK_API_KEY, KEY_DEEPSEEK_MODEL,
 )
 
-from auth.users import get_user_companies, is_admin
+from auth.users import company_scope, is_admin
 
 from ui.shared import (
     lazy_sections,
@@ -376,17 +376,17 @@ def show_smart_upload_tab():
     # empty list through would hit the store's falsy check and count EVERY
     # company's exceptions.
     _store    = get_store()
-    _user_cos = get_user_companies(st.session_state.username)
-    if _user_cos or is_admin(st.session_state.username):
-        _exc_df = _store.list_exceptions(companies=_user_cos if _user_cos else None)
-        # ONE full-table list_pos per rerun for the whole GIII tab — the
-        # missing-fields badge, Contract History, and Generate/Export
-        # sub-tabs all consume this same frame (st.tabs renders every
-        # sub-tab body on each rerun).
-        _pos_df = _store.list_pos(companies=_user_cos if _user_cos else None)
-    else:
-        _exc_df = pd.DataFrame()
-        _pos_df = pd.DataFrame()
+    # company_scope returns None only for an admin; an unassigned account
+    # gets [], which the stores read as "no rows". The guard this replaces
+    # did the same job here, but every other call site had to remember to
+    # repeat it — one of them didn't.
+    _user_cos = company_scope(st.session_state.username)
+    _exc_df = _store.list_exceptions(companies=_user_cos)
+    # ONE full-table list_pos per rerun for the whole GIII tab — the
+    # missing-fields badge, Contract History, and Generate/Export
+    # sub-tabs all consume this same frame (st.tabs renders every
+    # sub-tab body on each rerun).
+    _pos_df = _store.list_pos(companies=_user_cos)
     _exc_count = (len(_exc_df[_exc_df["status"] == "pending"])
                   if not _exc_df.empty and "status" in _exc_df.columns else 0)
     # Tab bar mirrors the Sky East tab exactly — same order AND the same

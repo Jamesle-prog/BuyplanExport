@@ -20,7 +20,7 @@ import streamlit as st
 
 from ui.shared import XLSX_MIME as _XLSX_MIME
 
-from auth.users import get_user_companies
+from auth.users import company_scope
 from ui.i18n import t
 from ui.session_keys import SK
 from ui.stores import get_store
@@ -96,7 +96,10 @@ def _render_pda_address() -> None:
 
 def show_upc_check_tab() -> None:
     store = get_store()
-    user_cos = get_user_companies(st.session_state.get(SK.USERNAME, "")) or None
+    # company_scope, not `get_user_companies(...) or None`: that turned an
+    # account assigned to NO company into an unrestricted one, because
+    # get_user_companies returns [] both for that and for an admin.
+    user_cos = company_scope(st.session_state.get(SK.USERNAME, ""))
 
     st.subheader("📷 " + t("UPC Check (PDA scanner)"))
     st.caption(t("Use a PDA/barcode scanner — it types the UPC and presses "

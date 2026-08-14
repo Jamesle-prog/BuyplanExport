@@ -21,10 +21,25 @@ class _ExceptionsMixin:
                 (po_number, file_name, company, "pending", reason, now, now, processed_by),
             )
 
+    _EXC_COLS = ["id", "po_number", "file_name", "company", "status",
+                 "reason", "raw_text_snippet", "created_at", "updated_at",
+                 "processed_by"]
+
     def list_exceptions(self, companies: list[str] | None = None) -> pd.DataFrame:
-        """Return all exceptions, optionally filtered by company list."""
+        """Return all exceptions, optionally filtered by company list.
+
+        *companies*: ``None`` scopes to everything (admin); a list scopes to
+        exactly those, and an EMPTY list to nothing.
+        """
+        rows: list = []
         with self._conn() as conn:
-            if companies:
+            # `companies is not None` -- an EMPTY list means the caller has no
+            # company access and must see nothing. Testing the list for truth
+            # instead treated that as "no filter", which showed an unassigned
+            # account every company's rows. See auth.users.company_scope.
+            if companies is not None and not companies:
+                pass                       # no access -> no rows
+            elif companies is not None:
                 ph = ",".join("?" * len(companies))
                 rows = conn.execute(
                     f"SELECT * FROM po_exceptions WHERE company IN ({ph}) ORDER BY created_at DESC",
@@ -34,12 +49,23 @@ class _ExceptionsMixin:
                 rows = conn.execute(
                     "SELECT * FROM po_exceptions ORDER BY created_at DESC"
                 ).fetchall()
-        cols = ["id", "po_number", "file_name", "company", "status",
-                "reason", "raw_text_snippet", "created_at", "updated_at", "processed_by"]
+        cols = self._EXC_COLS
         return pd.DataFrame([dict(r) for r in rows], columns=cols) if rows else pd.DataFrame(columns=cols)
 
+    def exception_ids(self, companies: list[str] | None = None) -> set[int]:
+        """The exception ids *companies* may act on — same scoping rules as
+        :meth:`list_exceptions`. Used to check an id BEFORE writing to it,
+        since the id arrives from the browser and need not be one that was
+        ever displayed."""
+        df = self.list_exceptions(companies)
+        return set() if df.empty else {int(i) for i in df["id"]}
+
     def update_exception_status(self, exc_id: int, status: str) -> None:
-        """Update the status of an exception record."""
+        """Update the status of an exception record.
+
+        Does NOT check company access — callers reaching this from a user
+        action must confirm the id against :meth:`exception_ids` first.
+        """
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with self._conn() as conn:
             conn.execute(

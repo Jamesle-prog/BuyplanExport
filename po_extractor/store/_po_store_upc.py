@@ -37,7 +37,11 @@ class _UpcMixin:
             WHERE s.upc = ?
         """
         params: list = [upc]
-        if companies:
+        # See _po_store_exceptions.list_exceptions: an empty list is "no
+        # access", not "no filter".
+        if companies is not None and not companies:
+            return []
+        if companies is not None:
             ph = ",".join("?" * len(companies))
             sql += f" AND m.company IN ({ph})"
             params += list(companies)

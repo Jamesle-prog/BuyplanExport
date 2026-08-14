@@ -225,6 +225,26 @@ def is_admin(username: str) -> bool:
     return bool(u and u["role"] == ROLE_ADMIN)
 
 
+def company_scope(username: str) -> list[str] | None:
+    """The company filter to hand a store for *username*.
+
+    ``None`` means unrestricted (admin). A list means exactly those companies —
+    **including the empty list**, which means the account may see nothing.
+
+    Exists because :func:`get_user_companies` returns ``[]`` for two opposite
+    situations: an admin (unrestricted) and a regular user assigned to no
+    company (no access). Call sites that collapsed that with ``or None`` handed
+    an unassigned account the admin's view of every company. Deciding it once,
+    here, is what stops the next call site getting it wrong too.
+
+    The stores treat an empty list as "match nothing" (fail closed), so the
+    result can be passed straight through without further checks.
+    """
+    if is_admin(username):
+        return None
+    return get_user_companies(username)
+
+
 def get_user_companies(username: str) -> list[str]:
     """Admin returns [] (meaning all). Regular user returns their list."""
     u = get_user(username)

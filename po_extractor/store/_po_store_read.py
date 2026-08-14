@@ -35,7 +35,13 @@ class _ReadsMixin:
             LEFT JOIN po_size_rows s ON s.po_number = m.po_number
         """
         with self._conn() as conn:
-            if companies:
+            # `companies is not None` -- an EMPTY list means the caller
+            # has no company access and must see nothing. Testing the list
+            # for truth instead treated that as 'no filter', which showed
+            # an unassigned account every company's rows.
+            if companies is not None and not companies:
+                rows = []
+            elif companies is not None:
                 ph = ",".join("?" * len(companies))
                 rows = conn.execute(
                     f"{_SELECT} WHERE m.company IN ({ph}) GROUP BY m.po_number ORDER BY m.extracted_at DESC",

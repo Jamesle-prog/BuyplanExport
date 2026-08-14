@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.130.0",
+        "date": "2026-08-06",
+        "entries": [
+            {"type": "security", "text": "**An account assigned to no company could see every company's purchase orders.** The permission code returned the same empty list for an administrator (meaning *all companies*) and for a user assigned to none (meaning *no companies*), and the UPC Check tab collapsed the two together — so an unassigned account got the administrator's view of every client's POs, styles, quantities and UPCs. Company access is now decided in one place that can tell the two apart, and the database layer refuses to answer at all for an empty scope, so a mistake in one screen can't reopen it. Administrators and correctly-assigned users are unaffected."},
+            {"type": "security", "text": "**Exception statuses could be changed across companies.** The Exception Queue took the record number as free text, so any number in the table could be submitted regardless of which client it belonged to. It is now chosen from the exceptions you can actually see, and re-checked against your access at the moment you save."},
+            {"type": "security", "text": "**The DeepSeek API key is no longer sent to your browser.** The Admin → Settings key box pre-filled the saved key on every render; the dots only hid it on screen. It now starts blank and shows a saved-key placeholder, leaving it empty keeps the existing key, and Test API key still works without retyping — the same handling the CPRS key and SMTP password already used."},
+        ],
+    },
+    {
         "version": "2.129.1",
         "date": "2026-08-06",
         "entries": [

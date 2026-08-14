@@ -213,11 +213,16 @@ def _show_deepseek_settings(store) -> None:
 
     col_key, col_model = st.columns([3, 1])
     with col_key:
+        # Never pre-fill the stored key — value= pushes the plaintext over the
+        # websocket into the browser DOM on every render, and type="password"
+        # only hides it visually. Blank keeps the current key on save, exactly
+        # as the CPRS key and the SMTP password already do.
         new_key = st.text_input(
             t("DeepSeek API Key"),
-            value=current_key,
+            value="",
             type="password",
-            placeholder="sk-...",
+            placeholder=(t("•••••• (saved — leave blank to keep)")
+                         if current_key else "sk-..."),
             key="admin_deepseek_key",
             disabled=(chosen_method == "regex"),
         )
@@ -227,8 +232,14 @@ def _show_deepseek_settings(store) -> None:
         # static fallback and the currently-saved value always included.
         import hashlib as _hl
         from po_extractor.parsers.deepseek_parser import FALLBACK_MODELS
-        _key_fp = _hl.md5((new_key or "").encode()).hexdigest()[:10] if new_key else ""
-        live = _live_deepseek_models(_key_fp) if (chosen_method in ("deepseek", "auto") and new_key) else []
+        # effective_key: what was typed, else what's already saved. The input
+        # is deliberately blank on every render (see above), so anything that
+        # needs a working key must fall back to the stored one or it breaks
+        # the moment the admin doesn't retype it.
+        effective_key = (new_key or "").strip() or current_key
+        _key_fp = _hl.md5(effective_key.encode()).hexdigest()[:10] if effective_key else ""
+        live = (_live_deepseek_models(_key_fp)
+                if (chosen_method in ("deepseek", "auto") and effective_key) else [])
         model_options = list(dict.fromkeys(
             [m for m in live] + FALLBACK_MODELS
             + ([current_model] if current_model else [])
@@ -276,16 +287,16 @@ def _show_deepseek_settings(store) -> None:
         value=(store.get(KEY_ITEM_COLOUR_AI_MATCH, "false") == "true"),
         key="admin_item_colour_ai",
     )
-    if item_colour_ai and not (new_key or store.get(KEY_DEEPSEEK_API_KEY, "")):
+    if item_colour_ai and not effective_key:
         st.warning(t("⚠️ No DeepSeek API key set — AI colour matching stays off "
                      "until one is saved above."))
 
     col_test, col_save = st.columns([1, 1])
     with col_test:
         if st.button(f"🔌 {t('Test API key')}", key="admin_deepseek_test",
-                     disabled=(chosen_method == "regex" or not new_key)):
+                     disabled=(chosen_method == "regex" or not effective_key)):
             with st.spinner(f"{t('Testing…')}"):
-                ok, msg = _test_deepseek(new_key, new_model)
+                ok, msg = _test_deepseek(effective_key, new_model)
             if ok:
                 st.success(f"✅ {msg}")
             else:
@@ -298,8 +309,10 @@ def _show_deepseek_settings(store) -> None:
             store.set(KEY_MASK_USE_AI, "true" if mask_ai else "false", updated_by=user)
             store.set(KEY_ITEM_COLOUR_AI_MATCH,
                       "true" if item_colour_ai else "false", updated_by=user)
-            if new_key:
-                store.set(KEY_DEEPSEEK_API_KEY, new_key, updated_by=user)
+            # Blank means "keep what's saved" -- never overwrite a working
+            # key with the empty box.
+            if new_key.strip():
+                store.set(KEY_DEEPSEEK_API_KEY, new_key.strip(), updated_by=user)
             st.success(t("✅ AI extraction settings saved."))
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from auth.users import get_user_companies, is_admin
+from auth.users import company_scope, is_admin
 from ui.session_keys import SK
 from ui.shared import guard_multiselect_state
 from ui.stores import get_store
@@ -13,7 +13,7 @@ from ui.giii.results import _show_master_po_table
 
 def _show_history(exc_df=None, pos_df=None):
     store = get_store()
-    user_cos = get_user_companies(st.session_state.username)
+    user_cos = company_scope(st.session_state.username)
     # Non-admin with no assigned companies must see nothing — an empty list
     # falls through the store's falsy check to an unfiltered query.
     if not is_admin(st.session_state.username) and not user_cos:
@@ -25,7 +25,7 @@ def _show_history(exc_df=None, pos_df=None):
     # *pos_df* is the company-scoped list_pos frame fetched once per rerun in
     # show_smart_upload_tab; fall back to a direct read for other callers.
     df = (pos_df if pos_df is not None
-          else store.list_pos(companies=user_cos if user_cos else None))
+          else store.list_pos(companies=user_cos))
 
     # ── Summary metrics ───────────────────────────────────────────────────────
     total_pos    = len(df)
@@ -111,17 +111,31 @@ def _show_history(exc_df=None, pos_df=None):
 
     # ── Exception queue ───────────────────────────────────────────────────────
     if exc_df is None:
-        exc_df = store.list_exceptions(companies=user_cos if user_cos else None)
+        exc_df = store.list_exceptions(companies=user_cos)
     exc_label = f"⚠️ Exception Queue ({pending_exc} pending)" if pending_exc else "⚠️ Exception Queue"
     with st.expander(exc_label, expanded=pending_exc > 0):
         if exc_df.empty:
             st.info("No exceptions.")
         else:
             st.dataframe(exc_df, width="stretch", hide_index=True)
-            exc_id = st.number_input("Exception ID to update:", min_value=1, step=1, key="exc_id")
+            # Chosen from the rows this user can actually see, not typed. As a
+            # free-text number this accepted any id in the table, and the store
+            # updates by id without a company check — so a user scoped to one
+            # client could change another client's exception status.
+            _ids = [int(i) for i in exc_df["id"]]
+            exc_id = st.selectbox(
+                "Exception ID to update:", _ids, index=None,
+                placeholder="— select an exception —", key="exc_id")
             new_status = st.selectbox("New status:", ["pending", "triaged", "corrected", "closed"],
                                       key="exc_status")
-            if st.button("Update exception status", key="update_exc"):
-                store.update_exception_status(int(exc_id), new_status)
-                st.success("Updated.")
-                st.rerun()
+            if st.button("Update exception status", key="update_exc",
+                         disabled=exc_id is None):
+                # Re-checked against the store at the moment of writing: the
+                # list above is a render-time snapshot, and the widget key
+                # outlives it.
+                if int(exc_id) not in store.exception_ids(user_cos):
+                    st.error("That exception isn't one of yours.")
+                else:
+                    store.update_exception_status(int(exc_id), new_status)
+                    st.success("Updated.")
+                    st.rerun()
