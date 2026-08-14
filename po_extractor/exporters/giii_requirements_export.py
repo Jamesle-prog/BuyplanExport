@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import re
+from ._excel_helpers import neutralise_foreign_formulas
 
 _NAVY = "FF1F3864"
 _WHITE = "FFFFFFFF"
@@ -226,6 +227,9 @@ def export_giii_requirements(contexts: list[dict],
         s.freeze_panes = "A3"
 
     buf = io.BytesIO()
+    # Any '=' text that arrived in the data becomes inert here; the
+    # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    neutralise_foreign_formulas(wb)
     wb.save(buf)
     return buf.getvalue()
 

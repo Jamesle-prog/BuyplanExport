@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass, field
+from ._excel_helpers import neutralise_foreign_formulas
 
 # Fixed left columns (before the dynamic size block).
 _LEFT = [
@@ -355,5 +356,8 @@ def export_giii_buyplan(header: BuyPlanHeader, rows: list[BuyPlanRow],
     ws.freeze_panes = "A10"
 
     buf = io.BytesIO()
+    # Any '=' text that arrived in the data becomes inert here; the
+    # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    neutralise_foreign_formulas(wb)
     wb.save(buf)
     return buf.getvalue()

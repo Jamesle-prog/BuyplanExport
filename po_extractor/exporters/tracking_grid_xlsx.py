@@ -31,6 +31,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from ..store._factory_progress_schema import MILESTONE_STAGES, MILESTONE_LABELS
+from ._excel_helpers import neutralise_foreign_formulas
 
 _SHEET_TITLE = "跟踪 Tracking"
 
@@ -116,6 +117,9 @@ def build_tracking_grid_xlsx(records: list[dict]) -> bytes:
     ws.freeze_panes = ws.cell(header_row + 1, _FIRST_DATE_COL).coordinate
 
     buf = io.BytesIO()
+    # Any '=' text that arrived in the data becomes inert here; the
+    # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    neutralise_foreign_formulas(wb)
     wb.save(buf)
     return buf.getvalue()
 

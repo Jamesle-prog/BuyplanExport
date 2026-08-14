@@ -51,6 +51,7 @@ from ._excel_helpers import (
 )
 from ._image_inject import inject_style_photos
 from ._photo_utils import resolve_photo_pair
+from ._excel_helpers import neutralise_foreign_formulas
 
 
 # ── Layout constants (must match the template) ───────────────────────────────
@@ -226,6 +227,9 @@ def export_hhp_buyplan(
 
     _set_index_widths(ws_index)
     apply_print_settings(wb)
+    # Any '=' text that arrived in the data becomes inert here; the
+    # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    neutralise_foreign_formulas(wb)
     wb.save(path)
 
     # Inject photos (front in J3:L6, back in M3:O6) via zip-level patch.

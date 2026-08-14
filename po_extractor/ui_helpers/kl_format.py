@@ -21,6 +21,7 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from ..exporters._excel_helpers import neutralise_foreign_formulas
 
 # ── Size ordering ──────────────────────────────────────────────────────────────
 KL_SIZE_ORDER: list[str] = [
@@ -352,5 +353,8 @@ def generate_kl_format_excel(
 
     # ── Serialise ─────────────────────────────────────────────────────────
     buf = io.BytesIO()
+    # Any '=' text that arrived in the data becomes inert here; the
+    # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    neutralise_foreign_formulas(wb)
     wb.save(buf)
     return buf.getvalue()

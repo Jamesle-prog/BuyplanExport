@@ -19,6 +19,7 @@ from openpyxl.utils import get_column_letter
 
 from ..utils.file_utils import versioned_path
 from ._excel_helpers import clean_sheet_name, stable_unique
+from ._excel_helpers import neutralise_foreign_formulas
 
 SIZES = ["XS", "S", "M", "L", "XL", "XXL"]
 
@@ -132,6 +133,9 @@ def export_hhp_template_p(
 
         fname = f"Zalando_面料_{fabric_key}.xlsx"
         buf = io.BytesIO()
+        # Any '=' text that arrived in the data becomes inert here; the
+        # exporter's own =SUM()/='Sheet'! formulas are left alone.
+        neutralise_foreign_formulas(wb)
         wb.save(buf)
         results.append((fname, buf.getvalue()))
 

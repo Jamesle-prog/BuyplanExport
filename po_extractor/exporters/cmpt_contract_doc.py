@@ -28,6 +28,7 @@ import openpyxl
 from copy import copy
 
 from ..utils.rmb_amount import rmb_capital
+from ._excel_helpers import neutralise_foreign_formulas
 
 _TOKEN_RE = re.compile(r"\{\{([a-z_.]+)\}\}")
 _LINE_PREFIX = "line."
@@ -138,6 +139,9 @@ def generate_cmpt_contract_xlsx(template_bytes: bytes, contract: dict) -> bytes:
                     cell.value = _substitute(cell.value, header_vals)
 
     buf = io.BytesIO()
+    # Any '=' text that arrived in the data becomes inert here; the
+    # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    neutralise_foreign_formulas(wb)
     wb.save(buf)
     wb.close()
     return buf.getvalue()

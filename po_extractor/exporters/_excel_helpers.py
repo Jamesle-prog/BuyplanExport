@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
+import re
+
 import pandas as pd
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.properties import PageSetupProperties
@@ -156,3 +158,39 @@ def cell_value(row, col: str) -> str | None:
         return None
     s = str(v).strip()
     return s if s and s.lower() not in _NULLISH else None
+
+
+# Formula shapes this codebase deliberately writes: SUM over a range, and a
+# cross-sheet reference to a total. Anything else in a formula cell arrived in
+# the data, not from us.
+_OUR_FORMULAS = re.compile(r"^=(SUM\(|')")
+
+
+def neutralise_foreign_formulas(wb) -> int:
+    """Store data-derived text that looks like a formula as text instead.
+
+    openpyxl turns a string starting with ``=`` into a live formula — and only
+    ``=``; ``+``, ``-`` and ``@`` are stored as plain text, whatever the usual
+    spreadsheet-injection advice says (verified against this openpyxl version).
+    So a vendor who puts ``=cmd|'/c calc'!A1`` in a PO becomes a formula in the
+    workbook a colleague opens.
+
+    Rather than escaping at every one of the hundreds of cell writes, this runs
+    once before saving and repairs any formula cell whose text isn't one of the
+    two shapes the exporters generate. The cell keeps its exact characters —
+    only ``data_type`` changes — so nothing gains a stray apostrophe.
+
+    Returns the number of cells changed (0 in the normal case).
+    """
+    fixed = 0
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.data_type != "f":
+                    continue
+                text = cell.value if isinstance(cell.value, str) else ""
+                if _OUR_FORMULAS.match(text):
+                    continue
+                cell.data_type = "s"
+                fixed += 1
+    return fixed

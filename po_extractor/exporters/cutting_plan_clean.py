@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from ._excel_helpers import neutralise_foreign_formulas
 
 # (search, replacement) — ORDER IS SIGNIFICANT, see module docstring.
 TRANSLATIONS: list[tuple[str, str]] = [
@@ -717,5 +718,8 @@ def apply_color_overrides(data: bytes, overrides: dict[str, str]) -> bytes:
     wb = openpyxl.load_workbook(BytesIO(data))
     clean_workbook(wb, color_map=None, cn_overrides=overrides)
     buf = BytesIO()
+    # Any '=' text that arrived in the data becomes inert here; the
+    # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    neutralise_foreign_formulas(wb)
     wb.save(buf)
     return buf.getvalue()

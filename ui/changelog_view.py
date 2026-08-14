@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.130.1",
+        "date": "2026-08-06",
+        "entries": [
+            {"type": "security", "text": "**Text copied out of a PO can no longer act as a formula in a downloaded workbook.** A value starting with `=` — which a vendor controls, since it comes from the PDFs we parse — was written into Excel as a live formula rather than as text. Every export now passes through one check just before saving: anything that looks like a formula but isn't one of the two kinds the app itself writes (`=SUM(...)` totals and cross-sheet references) is stored as plain text, with its characters unchanged. Applies to all 17 workbook downloads. Totals and links in buy plans are unaffected."},
+        ],
+    },
+    {
         "version": "2.130.0",
         "date": "2026-08-06",
         "entries": [

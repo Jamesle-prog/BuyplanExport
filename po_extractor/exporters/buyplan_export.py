@@ -48,6 +48,7 @@ from ._buyplan_helpers import (
 from ._excel_helpers import clean_sheet_name
 from ._image_inject import inject_style_photos
 from ._photo_utils import load_photo_from_disk
+from ._excel_helpers import neutralise_foreign_formulas
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +223,9 @@ def export_buyplan(
     if not wb.sheetnames:
         wb.create_sheet("Empty")
 
+    # Any '=' text that arrived in the data becomes inert here; the
+    # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    neutralise_foreign_formulas(wb)
     wb.save(str(path))
 
     # Inject style photos (front / back) into each sheet.

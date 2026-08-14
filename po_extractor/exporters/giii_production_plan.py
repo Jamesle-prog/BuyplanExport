@@ -37,6 +37,7 @@ from ._excel_helpers import clean_sheet_name
 from ..ui_helpers.giii_requirements import (
     brand_from_po, pack_ratio, prepack_flag, strip_ratio,
 )
+from ._excel_helpers import neutralise_foreign_formulas
 
 # ---------------------------------------------------------------------------
 # Style constants
@@ -439,6 +440,9 @@ def generate_giii_production_plan(
         _write_upc_detail_sheet(wb, summaries)       # index 3  (per-size list)
 
     buf = io.BytesIO()
+    # Any '=' text that arrived in the data becomes inert here; the
+    # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    neutralise_foreign_formulas(wb)
     wb.save(buf)
     return buf.getvalue()
 

@@ -6,6 +6,7 @@ from openpyxl.utils import get_column_letter
 
 from ..utils.file_utils import versioned_path
 from ._excel_helpers import clean_sheet_name
+from ._excel_helpers import neutralise_foreign_formulas
 
 
 def _thin():
@@ -186,5 +187,8 @@ def export_cross_check(df_size: pd.DataFrame, buyplan_path: str,
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
+    # Any '=' text that arrived in the data becomes inert here; the
+    # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    neutralise_foreign_formulas(wb)
     wb.save(path)
     return path

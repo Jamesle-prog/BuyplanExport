@@ -25,6 +25,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from ..store._factory_progress_schema import (
     REPORT_STAGES, MILESTONE_STAGES, MILESTONE_LABELS,
 )
+from ._excel_helpers import neutralise_foreign_formulas
 
 # Column layout of the request form (1-based). The 本次新增 columns are what
 # the factory fills in; everything else is context we pre-fill.
@@ -159,6 +160,9 @@ def build_progress_request_xlsx(factory: str, rows: list[dict],
         ms.freeze_panes = ms.cell(ms_header_row + 1, 1).coordinate
 
     buf = io.BytesIO()
+    # Any '=' text that arrived in the data becomes inert here; the
+    # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    neutralise_foreign_formulas(wb)
     wb.save(buf)
     return buf.getvalue()
 

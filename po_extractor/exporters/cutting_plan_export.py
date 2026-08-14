@@ -31,6 +31,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ._excel_helpers import apply_print_settings, clean_sheet_name
+from ._excel_helpers import neutralise_foreign_formulas
 
 _TITLE_FILL = PatternFill("solid", fgColor="DDEBF7")
 _HEAD_FILL = PatternFill("solid", fgColor="F2F2F2")
@@ -458,6 +459,9 @@ def build_standard_cut_plan(*, header: dict[str, Any],
 
     apply_print_settings(wb)
     buf = io.BytesIO()
+    # Any '=' text that arrived in the data becomes inert here; the
+    # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    neutralise_foreign_formulas(wb)
     wb.save(buf)
     return buf.getvalue()
 
