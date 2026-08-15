@@ -216,6 +216,12 @@ _GREY    = XL_GREY
 _GREEN   = XL_GREEN
 
 
+@st.cache_data(max_entries=8, show_spinner=False)
+# Pure: results in -> xlsx bytes out. Uncached, the whole workbook was
+# rebuilt on every rerun of this page -- behind a visible "Building
+# Excel..." spinner, so every click on the page paid for it whether or
+# not anyone wanted the download. Same treatment the summary tab's
+# builders already have.
 def _build_kl_excel(results: list[dict]) -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side

@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.130.3",
+        "date": "2026-08-06",
+        "entries": [
+            {"type": "perf", "text": "**The InforNexus and KL comparison pages no longer rebuild their whole workbook on every click.** Both showed a \"Building Excel…\" pause each time you touched anything on the page, even if you never wanted the download. The file is now built once and reused until the underlying results change — the same treatment the Summary tab's downloads already had."},
+            {"type": "perf", "text": "**Buy-plan export groups its rows in one pass** instead of re-scanning the whole table once per style. A few milliseconds at today's volumes; the point is that it no longer gets slower with the square of the order book."},
+        ],
+    },
+    {
         "version": "2.130.2",
         "date": "2026-08-06",
         "entries": [
