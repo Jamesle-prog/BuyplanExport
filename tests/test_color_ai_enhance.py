@@ -26,6 +26,9 @@ def _clear_cache(monkeypatch):
     # Persistence off by default: these tests stub the API and must neither
     # read real cached answers from the canonical DB nor write to it.
     monkeypatch.setattr(color_ai_enhance, "_persist_enabled", False)
+    # Same reasoning for the learned-corrections table: these tests must not
+    # be answered by a correction recorded on real data, nor teach one.
+    monkeypatch.setattr(color_ai_enhance, "_learn_enabled", False)
     color_ai_enhance._cache.clear()
     color_ai_enhance._match_cache.clear()
     yield

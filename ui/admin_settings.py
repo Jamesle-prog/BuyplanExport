@@ -6,6 +6,7 @@ import os
 import streamlit as st
 
 from ui.i18n import t
+from ui.shared import _th, _tr
 from ui.session_keys import SK, COLOR_SOURCE_DB, COLOR_SOURCE_PROGRESS
 from ui.stores import get_app_settings_store
 from po_extractor.store.app_settings_store import (
@@ -110,6 +111,10 @@ def show_settings_admin() -> None:
     # ── Colour Recognition — Local + AI Enhance ─────────────────────────────
     st.markdown("---")
     _show_color_ai_enhance_settings(store)
+
+    # ── Learned AI corrections ───────────────────────────────────────────────
+    st.markdown("---")
+    _show_ai_corrections()
 
     # ── CPRS Knowledge Base ──────────────────────────────────────────────────
     st.markdown("---")
@@ -340,6 +345,59 @@ _COLOR_AI_MODE_OPTIONS: dict[str, str] = {
     "local":            "🔍 Local only (regex, no API)",
     "local_ai_enhance": "🤖 Local + AI Enhance",
 }
+
+
+# ---------------------------------------------------------------------------
+# Learned AI corrections
+# ---------------------------------------------------------------------------
+
+def _show_ai_corrections() -> None:
+    """What the AI has worked out, and the means to undo it.
+
+    Every stored correction answers before the AI is consulted, so a wrong one
+    keeps being applied silently. It has to be visible and removable.
+    """
+    from po_extractor.store import get_ai_correction_store
+
+    st.markdown(f"#### 🧠 {t('Learned AI corrections')}")
+    st.caption(t(
+        "When the AI works out that a value written one way means a value "
+        "already on file — a retyped colour, an abbreviation, a Chinese name "
+        "against an English one — the answer is recorded here and used the "
+        "next time instead of asking again. A correction is only ever applied "
+        "when its result is still one of the values on file for that row, so "
+        "it can't introduce something that was never there."
+    ))
+
+    store = get_ai_correction_store()
+    df = store.list_all()
+    if df.empty:
+        st.info(t("Nothing learned yet. Entries appear here after the AI "
+                  "resolves a value that plain matching could not."))
+        return
+
+    show = df.rename(columns=_tr({
+        "raw_value": "Written as", "corrected": "Understood as",
+        "kind": "Used for", "source": "Learned from",
+        "times_used": "Times used", "last_used_at": "Last used",
+    }))
+    st.dataframe(show[[_th("Written as"), _th("Understood as"), _th("Used for"),
+                       _th("Learned from"), _th("Times used"), _th("Last used")]],
+                 width="stretch", hide_index=True)
+
+    labels = {int(r["id"]): f'{r["raw_value"]} → {r["corrected"]}'
+              for _, r in df.iterrows()}
+    dead = st.selectbox(
+        t("Remove a correction"), options=list(labels), index=None,
+        format_func=lambda i: labels[i],
+        placeholder=t("— choose one to forget —"), key="aicorr_del")
+    st.caption(t("Removing one makes the AI decide that value afresh next "
+                 "time it appears."))
+    if st.button(f"🗑️ {t('Forget selected')}", disabled=dead is None,
+                 key="aicorr_del_btn"):
+        if dead is not None and store.delete(int(dead)):
+            st.success(t("Forgotten."))
+            st.rerun()
 
 
 def _show_color_ai_enhance_settings(store) -> None:

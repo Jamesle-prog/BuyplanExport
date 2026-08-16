@@ -9,6 +9,7 @@ import pandas as pd
 
 from ..models.sky_east_data import SkyEastContract, SkyEastItem
 from .base_store import BaseSQLiteStore
+from .ai_corrections_store import KIND_SKY_EAST_COLOUR
 from ._sky_east_store_schema import _SCHEMA, _item_sizes_dict, _normalize_sizes, _sizes_equal
 
 DB_PATH_DEFAULT = Path(__file__).parent.parent.parent / "data" / "po_history.db"
@@ -373,8 +374,7 @@ class SkyEastStore(BaseSQLiteStore):
         colour, touch any other field, or reach an item on another PO. Off by
         default; see KEY_ITEM_COLOUR_AI_MATCH.
         """
-        enabled, api_key, model = settings
-        if not enabled or not (item.color_name or "").strip():
+        if not (item.color_name or "").strip():
             return None
         # Only the colours on file for this exact style + PO are candidates.
         same_order = {
@@ -384,6 +384,28 @@ class SkyEastStore(BaseSQLiteStore):
         }
         if not same_order:
             return None
+
+        # 1. A correction already established for this spelling. Checked before
+        #    the AI and regardless of whether AI matching is switched on: once
+        #    "DK Grey" is known to mean "Dark Grey" that stays true, and
+        #    re-asking would spend a call to be told the same thing. lookup()
+        #    only answers with a colour still among these candidates, so a
+        #    correction learned elsewhere can't put a colour on a row that
+        #    never had it.
+        #    Scope is deliberately blank rather than the PC No.: a spelling
+        #    habit ("DK Grey", 深灰色) belongs to the factory, not to one
+        #    contract, and a correction that only answered for the contract it
+        #    was learned on would never save a single call.
+        learned = SkyEastStore._corrections()
+        if learned is not None:
+            picked = learned.lookup(KIND_SKY_EAST_COLOUR, "",
+                                    item.color_name, candidates=same_order)
+            if picked:
+                return same_order[picked], picked
+
+        enabled, api_key, model = settings
+        if not enabled:
+            return None
         try:
             from ..lookups.color_ai_enhance import match_color_to_candidates
             picked = match_color_to_candidates(
@@ -392,7 +414,26 @@ class SkyEastStore(BaseSQLiteStore):
             return None
         if not picked or picked not in same_order:
             return None
+
+        # 2. Remember it, so the next contract carrying this spelling is
+        #    resolved from the database instead of another API call.
+        if learned is not None:
+            try:
+                learned.record(KIND_SKY_EAST_COLOUR, "",
+                               item.color_name, picked, model=model)
+            except Exception:
+                pass          # a failed write must never fail the import
         return same_order[picked], picked
+
+    @staticmethod
+    def _corrections():
+        """The learned-corrections store, or None if it can't be opened —
+        matching is expected to work without it."""
+        try:
+            from . import get_ai_correction_store
+            return get_ai_correction_store()
+        except Exception:
+            return None
 
     def replace_contract(self, contract: SkyEastContract) -> dict:
         """Make the DB match *contract* exactly: every item currently on file

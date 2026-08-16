@@ -15,6 +15,7 @@ from .po_store import POStore
 from .sky_east_store import SkyEastStore
 from .fabric_master_store import FabricMasterStore
 from .color_translation_store import ColorTranslationStore
+from .ai_corrections_store import AiCorrectionStore
 from .boat_sample_store import BoatSampleStore
 from .ui_translation_store import UITranslationStore
 from .app_settings_store import AppSettingsStore
@@ -172,6 +173,11 @@ def get_color_translation_store() -> ColorTranslationStore:
     return ColorTranslationStore(_db_path())
 
 
+def get_ai_correction_store() -> AiCorrectionStore:
+    """Return an AiCorrectionStore wired to the canonical DB."""
+    return AiCorrectionStore(_db_path())
+
+
 def get_boat_sample_store() -> BoatSampleStore:
     """Return a fresh BoatSampleStore wired to the canonical DB."""
     return BoatSampleStore(_db_path())
@@ -258,12 +264,14 @@ def list_all_brands(company: str) -> list[str]:
 __all__ = [
     "POStore", "SkyEastStore", "FabricMasterStore",
     "ColorTranslationStore", "BoatSampleStore", "UITranslationStore",
+    "AiCorrectionStore",
     "AppSettingsStore", "ProductionTrackingStore", "FactoryProgressStore",
     "CmptContractStore", "EmailInboxStore", "FactoryRegistryStore",
     "LoginLogStore", "CuttingPlanStore",
     "get_po_store", "get_sky_east_store", "get_fabric_master_store",
     "get_color_translation_store", "get_boat_sample_store",
     "get_ui_translation_store", "get_app_settings_store",
+    "get_ai_correction_store",
     "get_production_tracking_store", "get_factory_progress_store",
     "get_cmpt_contract_store", "get_email_inbox_store",
     "get_factory_registry_store", "get_login_log_store",

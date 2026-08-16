@@ -230,6 +230,26 @@ def test_return_label_defaults_to_na_when_not_set(tmp_path):
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolated_corrections(tmp_path, monkeypatch):
+    """Point the learned-corrections store at a scratch file.
+
+    Without this, SkyEastStore._corrections() opens the CANONICAL database:
+    these tests then answer from whatever real corrections happen to be on
+    file, and — worse — record their own into it. A full run did exactly that,
+    leaving a row in data/po_history.db that no user action put there.
+    """
+    from po_extractor.store.ai_corrections_store import AiCorrectionStore
+    from po_extractor.store.sky_east_store import SkyEastStore
+
+    AiCorrectionStore._checked_paths.clear()
+    scratch = AiCorrectionStore(str(tmp_path / "corrections.db"))
+    monkeypatch.setattr(SkyEastStore, "_corrections",
+                        staticmethod(lambda: scratch))
+    return scratch
+
+
+
 @pytest.mark.parametrize("before, after", [
     ("(dark grey)", "Dark Grey"),                  # parens + case
     ("(black)(off-white)", "black off white"),     # parens + hyphen

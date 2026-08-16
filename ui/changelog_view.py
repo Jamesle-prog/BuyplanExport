@@ -10,6 +10,16 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.131.0",
+        "date": "2026-08-16",
+        "entries": [
+            {"type": "feat", "text": "**The AI is now asked once. After that the answer comes from the database.** When it works out that a value written one way means one already on file — a retyped colour, an abbreviation, a Chinese name against an English one — that conclusion is stored and used the next time the same spelling appears. It applies across contracts and files, and keeps working after a restart or a model change, which the old per-question cache did not."},
+            {"type": "feat", "text": "**A remembered answer can never introduce a value that wasn't already there.** A correction is applied only when its result is still one of the values on file for the row being matched — the same limit the AI itself works under. So *DK Grey → Dark Grey* does nothing to an item whose colours are Black and Cream. Learned corrections also apply with AI matching switched off, since by then they cost nothing."},
+            {"type": "feat", "text": "**Admin → Settings → 🧠 Learned AI corrections** lists everything the AI has worked out, with how often each has been used, and forgets any entry on request — a wrong one would otherwise keep being applied quietly, because it answers before the AI is consulted. Corrections you make by hand outrank the AI's and are never overwritten by them."},
+            {"type": "fix", "text": "**Tests no longer write into the live database.** The Sky East AI tests reached the real corrections table, so a full test run both read real entries and left its own behind. They now use a scratch file, and the stray entry has been removed."},
+        ],
+    },
+    {
         "version": "2.130.3",
         "date": "2026-08-06",
         "entries": [

@@ -211,6 +211,41 @@ def recognize_colors(
     return colors
 
 
+
+# ── Learned corrections (durable, unlike the caches above) ──────────────────
+# Tests stub the API and must not read real answers or write to the real DB;
+# they flip this the same way they flip _persist_enabled.
+_learn_enabled = True
+
+
+def _learned_lookup(client_color: str, candidates: list[str]) -> str:
+    """A correction already on file for *client_color*, restricted to
+    *candidates*. Empty string when there is none. Never raises."""
+    if not _learn_enabled:
+        return ""
+    try:
+        from ..store import get_ai_correction_store
+        from ..store.ai_corrections_store import KIND_COLOUR_LOOKUP
+        return get_ai_correction_store().lookup(
+            KIND_COLOUR_LOOKUP, "", client_color, candidates=candidates) or ""
+    except Exception:
+        return ""
+
+
+def _learned_record(client_color: str, picked: str, model: str) -> None:
+    """Remember what the API worked out, so the next file resolves the same
+    colour without an API call. Never raises."""
+    if not _learn_enabled or not picked:
+        return
+    try:
+        from ..store import get_ai_correction_store
+        from ..store.ai_corrections_store import KIND_COLOUR_LOOKUP
+        get_ai_correction_store().record(
+            KIND_COLOUR_LOOKUP, "", client_color, picked, model=model)
+    except Exception:
+        pass
+
+
 def match_color_to_candidates(
     client_color: str, candidates: list[str], api_key: str,
     model: str = "deepseek-chat",
@@ -241,7 +276,21 @@ def match_color_to_candidates(
     cost on datasets with many unresolvable colours. Transport/parse
     failures (API error, malformed response) are still never cached.
     """
-    if not client_color or not candidates or not api_key:
+    if not client_color or not candidates:
+        return ""
+
+    # Corrections already established for this spelling come first, before the
+    # in-memory and per-question caches and before any API key is required.
+    # Those caches key on the exact candidate list and model, so the same
+    # colour asked against a different candidate set costs another call; a
+    # recorded correction is the conclusion, and outlives both. It is still
+    # only applied when its target is one of THESE candidates, so it can never
+    # introduce a colour that isn't on file for the row being resolved.
+    learned = _learned_lookup(client_color, candidates)
+    if learned:
+        return learned
+
+    if not api_key:
         return ""
     cache_key = (client_color, tuple(sorted(candidates)))
     if cache_key in _match_cache:
@@ -285,4 +334,7 @@ def match_color_to_candidates(
     if ok:
         _match_cache[cache_key] = picked
         _persist_put("match", persist_key, model, picked)
+        # Only a real pick is worth learning: an honest "no candidate matches"
+        # is about this candidate set, not about the colour.
+        _learned_record(client_color, picked, model)
     return picked
