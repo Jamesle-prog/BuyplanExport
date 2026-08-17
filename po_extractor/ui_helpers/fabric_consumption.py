@@ -24,7 +24,6 @@ why.
 from __future__ import annotations
 
 import io
-from ..exporters._excel_helpers import neutralise_foreign_formulas
 
 # 毛门幅 (gross, billed width) = 排版有效门幅 (effective marker width) + selvage.
 GROSS_WIDTH_MARGIN_CM = 5.0
@@ -141,6 +140,10 @@ def consumption_template_bytes(rows: list[dict] | None = None) -> bytes:
     buf = io.BytesIO()
     # Any '=' text that arrived in the data becomes inert here; the
     # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    # Imported here, not at module scope: po_extractor.exporters'
+    # __init__ imports back into this package, so a module-level
+    # import makes a cycle and whichever side loads first fails.
+    from ..exporters._excel_helpers import neutralise_foreign_formulas
     neutralise_foreign_formulas(wb)
     wb.save(buf)
     return buf.getvalue()

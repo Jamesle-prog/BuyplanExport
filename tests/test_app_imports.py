@@ -94,3 +94,90 @@ def test_no_module_calls_t_without_binding_it():
         if not bound:
             offenders.append(os.path.relpath(path, _ROOT))
     assert not offenders, f"modules call t() without importing t: {offenders}"
+
+
+# ── Cold-import guard for circular imports ──────────────────────────────────
+
+def _tab_entry_modules():
+    """The view modules app.py imports lazily inside its tab functions.
+
+    Those imports run only when a tab is opened, so nothing else in the suite
+    reaches them — which is exactly why they need their own guard.
+    """
+    import re
+    with open(_APP, encoding="utf-8") as fh:
+        src = fh.read()
+    return sorted(set(re.findall(r"^\s+from (ui\.[\w.]+) import", src, re.M)))
+
+
+# Runs in a child interpreter. MODULES / PAIRS / ROOT are prepended by the
+# test; the result is one JSON line of failure descriptions.
+_CHILD = """
+import importlib, json, sys
+sys.path.insert(0, ROOT)
+
+
+def purge():
+    for name in [n for n in sys.modules
+                 if n in ("ui", "po_extractor")
+                 or n.startswith(("ui.", "po_extractor."))]:
+        del sys.modules[name]
+
+
+failures = []
+for name in MODULES:
+    purge()                 # must load as the FIRST project import
+    try:
+        importlib.import_module(name)
+    except Exception as exc:
+        failures.append("{}: {}: {}".format(name, type(exc).__name__, exc))
+
+for first, second in PAIRS:
+    purge()
+    try:
+        importlib.import_module(first)
+        importlib.import_module(second)
+    except Exception as exc:
+        failures.append("{} then {}: {}: {}".format(
+            first, second, type(exc).__name__, exc))
+
+print(json.dumps(failures))
+"""
+
+
+def test_every_tab_module_imports_from_cold():
+    """Each tab's module must import when it is the first thing loaded — what
+    happens when a user opens that tab first.
+
+    A circular import only fails for whichever side loads first, so once the
+    suite has pulled the packages in a working order the cycle is invisible.
+    That is how a release shipped which passed the entire suite and could not
+    open its own first tab: ui_helpers.excel_reports imported
+    exporters._excel_helpers at module scope, while exporters/__init__ imports
+    back into ui_helpers.excel_reports.
+
+    Deliberately run in a SUBPROCESS. Detecting this means emptying
+    sys.modules, and doing that in-process leaves the rest of the suite holding
+    stale module objects — twelve unrelated tests failed the first time this
+    was written that way.
+    """
+    import json
+    import subprocess
+    import sys
+
+    modules = _tab_entry_modules()
+    assert modules, "no lazy 'from ui.x import' found in app.py — parser broken"
+
+    # These two packages import each other; whichever loads first must work.
+    pairs = [("po_extractor.ui_helpers.excel_reports", "po_extractor.exporters"),
+             ("po_extractor.exporters", "po_extractor.ui_helpers.excel_reports")]
+
+    preamble = "ROOT = %r\nMODULES = %r\nPAIRS = %r\n" % (_ROOT, modules, pairs)
+    proc = subprocess.run([sys.executable, "-c", preamble + _CHILD],
+                          capture_output=True, text=True, timeout=600)
+    assert proc.returncode == 0, (
+        "cold-import child failed:\n" + proc.stdout + "\n" + proc.stderr)
+
+    failures = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert not failures, ("these fail when imported first (circular import?):"
+                          "\n  " + "\n  ".join(failures))

@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.131.1",
+        "date": "2026-08-17",
+        "entries": [
+            {"type": "fix", "text": "**Fixes the ImportError that stopped every tab from opening.** A change in v2.130.1 made two internal packages import each other, so whichever the app reached first failed to load — in practice, the moment you opened GIII. No data was affected; the app simply could not start a tab."},
+            {"type": "fix", "text": "**Added the check that should have caught it.** The whole test suite passed while this shipped, because the app loads each tab's code only when that tab is opened and nothing in the tests ever loaded one from cold. Every tab's module is now loaded from a clean start during testing — confirmed to fail on the bug and pass on the fix."},
+        ],
+    },
+    {
         "version": "2.131.0",
         "date": "2026-08-16",
         "entries": [

@@ -11,7 +11,6 @@ from typing import Callable
 import pandas as pd
 
 from po_extractor.ui_helpers.excel_format import write_excel_header_row
-from ..exporters._excel_helpers import neutralise_foreign_formulas
 
 # Standard size ordering for color-plan pivots.
 SIZE_ORDER: list[str] = [
@@ -66,6 +65,10 @@ def generate_color_plan_excel(df_size_rows: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
     # Any '=' text that arrived in the data becomes inert here; the
     # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    # Imported here, not at module scope: po_extractor.exporters'
+    # __init__ imports back into this package, so a module-level
+    # import makes a cycle and whichever side loads first fails.
+    from ..exporters._excel_helpers import neutralise_foreign_formulas
     neutralise_foreign_formulas(wb)
     wb.save(buf)
     return buf.getvalue()
@@ -414,6 +417,10 @@ def generate_po_summary_excel(
     buf = io.BytesIO()
     # Any '=' text that arrived in the data becomes inert here; the
     # exporter's own =SUM()/='Sheet'! formulas are left alone.
+    # Imported here, not at module scope: po_extractor.exporters'
+    # __init__ imports back into this package, so a module-level
+    # import makes a cycle and whichever side loads first fails.
+    from ..exporters._excel_helpers import neutralise_foreign_formulas
     neutralise_foreign_formulas(wb)
     wb.save(buf)
     return buf.getvalue()
