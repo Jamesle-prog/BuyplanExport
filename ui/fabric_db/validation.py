@@ -166,25 +166,25 @@ def _fabric_db_cross_system_section(fabric_store) -> None:
     with st.expander(label, expanded=any_issue):
         if not any_issue:
             st.caption(
-                "All mapped HHN codes exist in fabric_master, "
+                t("All mapped HHN codes exist in fabric_master, "
                 "every PO style has at least one fabric mapping, "
-                "and no stale mappings were found."
+                "and no stale mappings were found.")
             )
             return
 
         # Sub-section 1: HHN orphans
         if orphan_hhn:
-            st.markdown("**🔴 HHN codes in fabric mapping with no fabric_master record**")
+            st.markdown(t("**🔴 HHN codes in fabric mapping with no fabric_master record**"))
             st.caption(
-                "These HHN numbers appear in your fabric mapping (style_fabric_parts) "
+                t("These HHN numbers appear in your fabric mapping (style_fabric_parts) "
                 "but do not exist in the fabric master database. "
-                "The fabric master record may be missing or the HHN code was entered incorrectly."
+                "The fabric master record may be missing or the HHN code was entered incorrectly.")
             )
             df_hhn = pd.DataFrame({"HHN No. (公司面料编号)": orphan_hhn})
             st.dataframe(df_hhn, width="stretch", hide_index=True)
             csv_hhn = df_hhn.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
             st.download_button(
-                "⬇ Download HHN orphans (.csv)", data=csv_hhn,
+                t("⬇ Download HHN orphans (.csv)"), data=csv_hhn,
                 file_name="hhn_orphans.csv", mime=CSV_MIME,
                 key="xsys_hhn_csv", use_container_width=False,
             )
@@ -192,17 +192,17 @@ def _fabric_db_cross_system_section(fabric_store) -> None:
 
         # Sub-section 2: Coverage gaps
         if uncovered_styles:
-            st.markdown("**🟡 PO styles with no fabric mapping**")
+            st.markdown(t("**🟡 PO styles with no fabric mapping**"))
             st.caption(
-                "These style numbers appear in your PO/buy-plan history but have "
+                t("These style numbers appear in your PO/buy-plan history but have "
                 "no entry in the fabric mapping table (style_fabric_parts). "
-                "Add a fabric mapping so fabric data flows into the buy plan export."
+                "Add a fabric mapping so fabric data flows into the buy plan export.")
             )
             df_cov = pd.DataFrame({"Style No. (款号)": uncovered_styles})
             st.dataframe(df_cov, width="stretch", hide_index=True)
             csv_cov = df_cov.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
             st.download_button(
-                "⬇ Download coverage gaps (.csv)", data=csv_cov,
+                t("⬇ Download coverage gaps (.csv)"), data=csv_cov,
                 file_name="style_coverage_gaps.csv", mime=CSV_MIME,
                 key="xsys_cov_csv", use_container_width=False,
             )
@@ -210,11 +210,11 @@ def _fabric_db_cross_system_section(fabric_store) -> None:
 
         # Sub-section 3: Stale mappings
         if stale_mappings:
-            st.markdown("**🔵 Fabric mappings for styles no longer in PO history**")
+            st.markdown(t("**🔵 Fabric mappings for styles no longer in PO history**"))
             st.caption(
-                "These styles have a fabric mapping but no matching PO/SE records. "
+                t("These styles have a fabric mapping but no matching PO/SE records. "
                 "This is usually harmless (archived styles), but you may want to "
-                "clean up the mapping table to keep it tidy."
+                "clean up the mapping table to keep it tidy.")
             )
             df_stale = pd.DataFrame({"Style No. (款号)": stale_mappings})
             st.dataframe(df_stale, width="stretch", hide_index=True)

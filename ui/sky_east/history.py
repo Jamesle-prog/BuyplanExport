@@ -100,9 +100,9 @@ def _build_buyplan_color_lookups() -> BuyplanColorLookups:
         # any saved data exists — make the silent fallback to the Internal DB
         # explicit so they don't think they got progress-sourced data.
         st.warning(
-            "⚠ **大货进度表 not loaded** — falling back to the Internal DB "
+            t("⚠ **大货进度表 not loaded** — falling back to the Internal DB "
             "for all Chinese colours. Upload it via **📐 Reference Data → "
-            "HHN Contract Progress**.",
+            "HHN Contract Progress**."),
             icon="⚠️",
         )
         return BuyplanColorLookups(cn=cn_lookup, label=None, cn_code=None,
@@ -158,7 +158,7 @@ def _se_hist_multi_pc_download(store, pc_options: list[str],
             sel_dl_pcs = st.multiselect(
                 t("Select PC No.(s) to download:"),
                 pc_options,
-                placeholder="Choose one or more PC No.(s)...",
+                placeholder=t("Choose one or more PC No.(s)..."),
                 key="se_dl_pcs",
             )
         with dl_col2:
@@ -378,7 +378,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str],
                 sel_wl_pcs = st.multiselect(
                     t("Select PC No.(s) for wash label:"),
                     pc_options,
-                    placeholder="Choose one or more PC No.(s)...",
+                    placeholder=t("Choose one or more PC No.(s)..."),
                     key="se_wl_pcs",
                 )
             with wl_col2:
@@ -399,9 +399,9 @@ def _se_hist_wash_label_download(store, pc_options: list[str],
         mapped_styles = _wl_mapped_styles(SOURCE_SKY_EAST)
         if not mapped_styles:
             st.warning(
-                "No styles found in the Fabric Mapping database for Sky East. "
+                t("No styles found in the Fabric Mapping database for Sky East. "
                 "Go to the **📐 Reference Data** tab to import a mapping first, "
-                "or switch to **PC No.** mode to download by contract."
+                "or switch to **PC No.** mode to download by contract.")
             )
             has_selection = False
         else:
@@ -411,7 +411,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str],
                 sel_wl_styles = st.multiselect(
                     t("Select Style(s) for wash label:"),
                     mapped_styles,
-                    placeholder="Choose one or more styles...",
+                    placeholder=t("Choose one or more styles..."),
                     key="se_wl_styles",
                 )
             with wl_col2:
@@ -422,10 +422,10 @@ def _se_hist_wash_label_download(store, pc_options: list[str],
                         {"se_wl_styles": mapped_styles}
                     ),
                 )
-            st.caption(
-                f"{len(mapped_styles)} style(s) available from stored fabric mapping. "
-                "Composition will be sourced from the **Fabric DB** (面料统计表)."
-            )
+            st.caption(t(
+                "{n} style(s) available from stored fabric mapping. Composition will "
+                "be sourced from the **Fabric DB** (面料统计表)."
+            ).format(n=len(mapped_styles)))
             has_selection = bool(sel_wl_styles)
 
     else:  # "Upload Mapping File"
@@ -436,7 +436,7 @@ def _se_hist_wash_label_download(store, pc_options: list[str],
             "This file is used only for this download and is **not** saved to the database."
         ))
         wl_upload_file = st.file_uploader(
-            "Fabric mapping file (.xlsx / .xls)",
+            t("Fabric mapping file (.xlsx / .xls)"),
             type=_EXCEL_FILE_TYPES,
             key="se_wl_upload_map",
             label_visibility="collapsed",
@@ -446,17 +446,17 @@ def _se_hist_wash_label_download(store, pc_options: list[str],
                 from ui.sky_east._shared import _parse_fabric_mapping_bytes
                 upload_fabric_map = _parse_fabric_mapping_bytes(wl_upload_file.getvalue())
             except Exception as exc:
-                st.error(f"Could not parse file: {exc}")
+                st.error(t("Could not parse file: {exc}").format(exc=exc))
                 upload_fabric_map = {}
 
             if upload_fabric_map:
                 n_styles = len(upload_fabric_map)
-                st.info(
-                    f"**{wl_upload_file.name}** — {n_styles} style(s) found. "
-                    "Composition will be sourced from the **Fabric DB** (面料统计表)."
-                )
+                st.info(t(
+                    "**{file}** — {n} style(s) found. Composition will be sourced "
+                    "from the **Fabric DB** (面料统计表)."
+                ).format(file=wl_upload_file.name, n=n_styles))
             else:
-                st.warning("No valid styles found in the uploaded file.")
+                st.warning(t("No valid styles found in the uploaded file."))
         has_selection = bool(upload_fabric_map)
 
     # ── Pending validation — show correction UI before generating ─────────────
@@ -557,11 +557,10 @@ def _show_wl_validation_ui(pending: dict) -> None:
     # ── Summary header ────────────────────────────────────────────────────────
     hdr_col, dl_col = st.columns([3, 1])
     with hdr_col:
-        st.warning(
-            f"⚠️ **{n} composition issue{'s' if n != 1 else ''} found.** "
-            "Review the table, edit the **Composition** column where needed, "
-            "then click **Apply & Generate**."
-        )
+        st.warning(t(
+            "⚠️ **{n} composition issue(s) found.** Review the table, edit the "
+            "**Composition** column where needed, then click **Apply & Generate**."
+        ).format(n=n))
     with dl_col:
         # Build Excel bytes for the error table so user can fix offline
         _err_df = _pd.DataFrame(errors, columns=[
@@ -588,7 +587,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
                 _ws.column_dimensions[_col[0].column_letter].width = min(_max_w + 4, 60)
         st.markdown("<br>", unsafe_allow_html=True)
         st.download_button(
-            "📥 Download errors (.xlsx)",
+            t("📥 Download errors (.xlsx)"),
             data=_buf.getvalue(),
             file_name="WashLabel_CompositionErrors.xlsx",
             mime=XLSX_MIME,
@@ -597,9 +596,9 @@ def _show_wl_validation_ui(pending: dict) -> None:
         )
 
     # ── Issue-type legend ─────────────────────────────────────────────────────
-    with st.expander("ℹ️ Issue types explained", expanded=False):
+    with st.expander(t("ℹ️ Issue types explained"), expanded=False):
         st.markdown(
-            "| Type | Meaning |\n"
+            t("| Type | Meaning |\n"
             "|------|---------|\n"
             "| **[Sum ≠ 100%]** | Fiber percentages don't add up to 100 |\n"
             "| **[Cannot parse]** | No valid `{pct}%{Fiber}` tokens found |\n"
@@ -607,7 +606,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
             "| **[Wrong capitalization]** | Fiber name must start with a capital letter |\n"
             "| **Missing composition** | No composition value at all |\n\n"
             "**Format:** `85%Polyester 15%Elastane` · "
-            "**Tip:** fix compositions in the **🧵 Fabric DB** tab to skip this step next time."
+            "**Tip:** fix compositions in the **🧵 Fabric DB** tab to skip this step next time.")
         )
 
     # ── Editable error table ──────────────────────────────────────────────────
@@ -634,7 +633,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
         column_config={
             "Style":       st.column_config.TextColumn("Style",       disabled=True, width="small"),
             "Combo":       st.column_config.NumberColumn("Combo",     disabled=True, width="small",
-                               help="Fabric combination row index (0 = first row for this style)"),
+                               help=t("Fabric combination row index (0 = first row for this style)")),
             "Seq":         st.column_config.NumberColumn("Seq",       disabled=True, width="small"),
             "Body Part":   st.column_config.TextColumn("Body Part",   disabled=True, width="medium"),
             "Fabric Code": st.column_config.TextColumn("Fabric Code", disabled=True, width="medium"),
@@ -643,8 +642,8 @@ def _show_wl_validation_ui(pending: dict) -> None:
                 disabled=False,
                 width="large",
                 help=(
-                    "Edit directly. Format: '85%Polyester 15%Elastane' — must sum to 100%. "
-                    "Fiber names must start with a capital letter and be in the fiber dictionary."
+                    t("Edit directly. Format: '85%Polyester 15%Elastane' — must sum to 100%. "
+                    "Fiber names must start with a capital letter and be in the fiber dictionary.")
                 ),
             ),
             "Issue":       st.column_config.TextColumn("Issue",       disabled=True, width="large"),
@@ -652,7 +651,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
                 "Suggestion",
                 disabled=True,
                 width="medium",
-                help="Best-guess correction from the fiber dictionary (copy into Composition if correct).",
+                help=t("Best-guess correction from the fiber dictionary (copy into Composition if correct)."),
             ),
         },
         key="se_wl_validation_editor",
@@ -662,7 +661,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
     c_apply, c_skip, c_cancel = st.columns([2, 2, 1])
 
     with c_apply:
-        if st.button("✅ Apply corrections & Generate", type="primary",
+        if st.button(t("✅ Apply corrections & Generate"), type="primary",
                      key="se_wl_val_apply", use_container_width=True):
             # Re-validate every edited row with the full validator
             all_fibers = _get_fibers()
@@ -712,7 +711,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
                 fragment_rerun()
 
     with c_skip:
-        if st.button("⚠️ Generate anyway (keep errors)", key="se_wl_val_skip",
+        if st.button(t("⚠️ Generate anyway (keep errors)"), key="se_wl_val_skip",
                      use_container_width=True):
             fabric_parts: dict = pending["fabric_parts"]
             wl_bytes = _write_wash_label_excel(
@@ -727,7 +726,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
             fragment_rerun()
 
     with c_cancel:
-        if st.button("❌ Cancel", key="se_wl_val_cancel", use_container_width=True):
+        if st.button(t("❌ Cancel"), key="se_wl_val_cancel", use_container_width=True):
             st.session_state[SK.SE_WL_PENDING] = None
             fragment_rerun()
 
@@ -763,16 +762,16 @@ def _se_hist_amendment_history(store, df_items, sel_pcs: list[str]) -> None:
     """Amendment-history expander for a single style."""
     with st.expander(t("View amendment history for a style")):
         styles_in_pc = df_items["style"].dropna().unique().tolist() if not df_items.empty else []
-        sel_style = st.selectbox("Style:", [""] + styles_in_pc, key="se_hist_style")
+        sel_style = st.selectbox(t("Style:"), [""] + styles_in_pc, key="se_hist_style")
         if not sel_style:
             return
         hist_frames = [store.list_item_history(pc, style=sel_style) for pc in sel_pcs]
         non_empty_frames = [f for f in hist_frames if not f.empty]
         df_hist = pd.concat(non_empty_frames, ignore_index=True) if non_empty_frames else pd.DataFrame()
         if df_hist.empty:
-            st.info(f"No amendment history for {sel_style} in PC(s) {', '.join(sel_pcs)}.")
+            st.info(t("No amendment history for {style} in PC(s) {pcs}.").format(style=sel_style, pcs=', '.join(sel_pcs)))
             return
-        st.caption(f"{len(df_hist)} archived version(s)")
+        st.caption(t("{n} archived version(s)").format(n=len(df_hist)))
         size_cols_h = [c for c in ["xs", "s", "m", "l", "xl", "xxl"] if c in df_hist.columns]
         show_h = [c for c in
                   ["archived_at", "color_name", "zalando_po", "total_qty",
@@ -803,7 +802,7 @@ def _se_hist_item_browser(store, pc_options: list[str]) -> None:
 
     sel_pcs = st.multiselect(t("Browse items for PC No.:"), pc_options,
                              key="se_hist_pc",
-                             placeholder="Select one or more PC Nos.")
+                             placeholder=t("Select one or more PC Nos."))
     if not sel_pcs:
         return
     df_items = store.list_items(pc_nos=sel_pcs)
@@ -822,7 +821,7 @@ def _se_hist_delete_section(store, pc_options: list[str]) -> None:
     """Delete-contracts controls."""
     st.markdown(f"**{t('Delete contracts from history')}**")
     to_del = st.multiselect(t("Select PC No.(s) to delete:"), pc_options,
-                            placeholder="Select PC No.(s) to remove...",
+                            placeholder=t("Select PC No.(s) to remove..."),
                             key="se_del_pcs")
     if st.button(t("Delete selected"), disabled=not to_del, key="se_del_btn"):
         n = store.delete_contracts(to_del)
@@ -913,7 +912,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                 t("PC No.(s) to include:"),
                 pc_options,
                 key="se_bp_sel",
-                placeholder="Select one or more PC Nos...",
+                placeholder=t("Select one or more PC Nos..."),
             )
         with _bp_col2:
             st.markdown("<br>", unsafe_allow_html=True)
@@ -1087,11 +1086,10 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 if len(_new_brands) > 8:
                                     _list += f" … +{len(_new_brands) - 8} more"
                                 st.warning(
-                                    f"🆕 {len(_new_brands)} new brand(s) found and added "
-                                    f"to **Admin → 🚢 船样要求**: {_list}. "
-                                    "Open that admin panel to fill in the shipping-sample "
-                                    "requirement text — until then column **P** will be "
-                                    "blank for these brands.",
+                                    t("🆕 {n} new brand(s) found and added to **Admin → 🚢 船样要求**: "
+                                      "{brands}. Open that admin panel to fill in the shipping-sample "
+                                      "requirement text — until then column **P** will be blank for "
+                                      "these brands.").format(n=len(_new_brands), brands=_list),
                                     icon="🚢",
                                 )
 
@@ -1160,10 +1158,9 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                         # Replay the load's read errors so the photo-issue log
                         # stays truthful on cached runs too.
                         _bad_photos = _photo_cached.get("errors") or []
-                        st.caption(
-                            f"🖼 {len(style_image_map)}/{len(styles)} style "
-                            f"photo(s) reused from this session (no re-read)"
-                        )
+                        st.caption(t(
+                            "🖼 {n}/{total} style photo(s) reused from this session (no re-read)"
+                        ).format(n=len(style_image_map), total=len(styles)))
                         _step_times.append(("Style photos (session cache)", 0.0))
                     else:
                         _say(t("Reading style photos from") + f" {_img_folder} …")
@@ -1273,7 +1270,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             f"{t('Recognition')}: **{_reco_label}**"
                         )
 
-                        st.write("Building main buy plan (Template)...")
+                        st.write(t("Building main buy plan (Template)..."))
                         _t_bp = time.time()
                         _bp_progress = st.progress(0, text="Starting…")
 
@@ -1300,7 +1297,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                             # Filename: SkyEast_HHPPC040_HHPPC041_BuyPlan_20260702-1530.xlsx
                             _pc_tag = "_".join(_effective_sel) if len(_effective_sel) <= 4 else f"{len(_effective_sel)}PCs"
                             st.session_state[SK.SE_BP_NAME] = f"SkyEast_{_pc_tag}_BuyPlan_{_ts}.xlsx"
-                            st.write(f"✔ Buy plan done in {time.time() - _t_bp:.1f}s")
+                            st.write(t("✔ Buy plan done in {secs}s").format(secs=f"{time.time() - _t_bp:.1f}"))
                             _step_times.append(("Buy plan export", time.time() - _t_bp))
                             _out_folder = (st.session_state.get(SK.SE_OUTPUT_DIR) or "").strip()
                             if _out_folder:
@@ -1325,10 +1322,10 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                     st.warning(
                                         f"⚠️ {t('Could not save to output folder')}: {_exc}")
                         except Exception as exc:
-                            st.error(f"Buy plan failed: {exc}")
+                            st.error(t("Buy plan failed: {exc}").format(exc=exc))
                             style_totals = {}
 
-                        st.write("Building 核料 workbooks (Template_P)...")
+                        st.write(t("Building 核料 workbooks (Template_P)..."))
                         _t_nk = time.time()
                         try:
                             nk_paths = export_sky_east_nukuryou(
@@ -1348,7 +1345,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                 st.session_state[SK.SE_NK_BYTES] = None
                                 st.session_state[SK.SE_NK_COUNT] = 0
                                 st.session_state[SK.SE_NK_REASON] = check_nukuryou_ready(df_items)
-                            st.write(f"✔ 核料 done in {time.time() - _t_nk:.1f}s")
+                            st.write(t("✔ 核料 done in {secs}s").format(secs=f"{time.time() - _t_nk:.1f}"))
                             _step_times.append(("核料 export", time.time() - _t_nk))
                             _out_folder = (st.session_state.get(SK.SE_OUTPUT_DIR) or "").strip()
                             if _out_folder and nk_paths:
@@ -1366,13 +1363,13 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                                     st.warning(
                                         f"⚠️ {t('Could not save to output folder')}: {_exc}")
                         except Exception as exc:
-                            st.warning(f"核料 workbooks skipped: {exc}")
+                            st.warning(t("核料 workbooks skipped: {exc}").format(exc=exc))
                             st.session_state[SK.SE_NK_BYTES] = None
                             st.session_state[SK.SE_NK_COUNT] = 0
                             st.session_state[SK.SE_NK_REASON] = str(exc)
 
                         if style_totals:
-                            st.write("Running cross-comparison...")
+                            st.write(t("Running cross-comparison..."))
                             _t_cmp = time.time()
                             try:
                                 cmp_df = build_cross_comparison(style_totals, df_items)
@@ -1475,7 +1472,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
         with dl_cols[0]:
             if st.session_state.get(SK.SE_BP_BYTES):
                 st.download_button(
-                    "Buy Plan (.xlsx)",
+                    t("Buy Plan (.xlsx)"),
                     data=st.session_state[SK.SE_BP_BYTES],
                     file_name=st.session_state.get(SK.SE_BP_NAME, "Sky_East_BuyPlan.xlsx"),
                     mime=XLSX_MIME,
@@ -1499,7 +1496,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                     else "Sky_East_核料.zip"
                 )
                 st.download_button(
-                    f"核料 Workbooks (.zip) -- {n} file(s)",
+                    t("核料 Workbooks (.zip) -- {n} file(s)").format(n=n),
                     data=st.session_state[SK.SE_NK_BYTES],
                     file_name=_nk_name,
                     mime=ZIP_MIME,
@@ -1510,11 +1507,11 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             elif st.session_state.get(SK.SE_BP_BYTES):
                 _nk_reason = st.session_state.get(SK.SE_NK_REASON)
                 if _nk_reason:
-                    st.info(f"No 核料 workbooks generated — {_nk_reason}", icon="ℹ️")
+                    st.info(t("No 核料 workbooks generated — {reason}").format(reason=_nk_reason), icon="ℹ️")
                 else:
                     st.info(
-                        "No 核料 workbooks generated -- check that Template_P "
-                        "is installed in Admin → Templates.",
+                        t("No 核料 workbooks generated -- check that Template_P "
+                        "is installed in Admin → Templates."),
                         icon="ℹ️",
                     )
 
@@ -1671,9 +1668,9 @@ def _se_color_miss_log_section(misses_df=None) -> None:
             }),
             width="stretch", hide_index=True,
         )
-        if st.button("🗑️ Clear colour resolution log", key="se_clear_color_miss_log"):
+        if st.button(t("🗑️ Clear colour resolution log"), key="se_clear_color_miss_log"):
             n = store.clear_color_misses()
-            st.success(f"Cleared {n} logged issue(s).")
+            st.success(t("Cleared {n} logged issue(s).").format(n=n))
             fragment_rerun()
 
 
@@ -1694,13 +1691,13 @@ def _se_hist_email_section() -> None:
     from auth.users import get_user_email
 
     st.divider()
-    st.markdown("**📧 Send via Email**")
+    st.markdown(t("**📧 Send via Email**"))
 
     if not is_email_configured():
         st.info(
-            "SMTP is not configured on the server. Set `PO_SMTP_HOST`, "
+            t("SMTP is not configured on the server. Set `PO_SMTP_HOST`, "
             "`PO_SMTP_USER`, `PO_SMTP_PASSWORD` (and optionally `PO_SMTP_FROM`, "
-            "`PO_SMTP_PORT`) in the environment, then restart the app.",
+            "`PO_SMTP_PORT`) in the environment, then restart the app."),
             icon="ℹ️",
         )
         return
@@ -1713,28 +1710,28 @@ def _se_hist_email_section() -> None:
     if "brevo" in _smtp_s["host"].lower() and (
         not _eff_sender or _eff_sender.lower().endswith("@smtp-brevo.com")
     ):
-        st.warning(
-            "⚠️ **Email will not be delivered.** Your Sender address is "
-            f"`{_eff_sender}` — Brevo silently drops emails whose From address is "
-            "not a verified sender. Go to **⚙️ Admin → 📧 Email** and fill in a "
-            "verified Sender address (e.g. `orders@yourdomain.com`), then try again."
-        )
+        st.warning(t(
+            "⚠️ **Email will not be delivered.** Your Sender address is `{sender}` — "
+            "Brevo silently drops emails whose From address is not a verified sender. "
+            "Go to **⚙️ Admin → 📧 Email** and fill in a verified Sender address "
+            "(e.g. `orders@yourdomain.com`), then try again."
+        ).format(sender=_eff_sender))
 
     default_to = get_user_email(st.session_state.username)
     c_to, c_send = st.columns([4, 1])
     with c_to:
         recipient = st.text_input(
-            "Recipient email",
+            t("Recipient email"),
             value=default_to,
             key="se_email_to",
             placeholder="user@example.com",
-            help="Defaults to the email on your user profile (Admin → Users). "
-                 "You can override it for one-off sends.",
+            help=t("Defaults to the email on your user profile (Admin → Users). "
+                 "You can override it for one-off sends."),
         )
     with c_send:
         st.write("")  # vertical alignment with text_input
         send_clicked = st.button(
-            "Send", type="primary", use_container_width=True,
+            t("Send"), type="primary", use_container_width=True,
             key="se_email_send", disabled=not recipient.strip(),
         )
 
@@ -1759,11 +1756,11 @@ def _se_hist_email_section() -> None:
     try:
         with st.spinner(f"Sending to {recipient}…"):
             send_email_with_attachments(recipient, subject, body, attachments)
-        st.success(f"Sent {len(attachments)} attachment(s) to {recipient}.")
+        st.success(t("Sent {n} attachment(s) to {to}.").format(n=len(attachments), to=recipient))
     except EmailError as exc:
         from ui.admin_smtp import _smtp_error_hint
         from auth import smtp_settings as _smtp_cfg
-        st.error(f"Email failed: {exc}")
+        st.error(t("Email failed: {exc}").format(exc=exc))
         hint = _smtp_error_hint(exc, host=_smtp_cfg.load()["host"])
         if hint:
             st.warning(hint + "\n\nFix settings in **⚙️ Admin → 📧 Email**.")

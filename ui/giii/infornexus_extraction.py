@@ -174,7 +174,7 @@ def _parse_infornexus_pdfs(pdf_files) -> list[dict]:
         try:
             po = _parse_infornexus_pdf(uf.read())
         except Exception as exc:
-            st.warning(f"Parse error in {uf.name}: {exc}")
+            st.warning(t("Parse error in {name}: {exc}").format(name=uf.name, exc=exc))
             continue
         if po['po_number'] == '?':
             po['po_number'] = re.sub(r'[Oo]', '0', uf.name.split('.')[0])
@@ -448,9 +448,9 @@ def show_infornexus_upload_section(files=None) -> None:
     if files is None:
         col_in, col_kl = st.columns(2)
         with col_in:
-            st.markdown("**InforNexus PDFs**")
+            st.markdown(t("**InforNexus PDFs**"))
             in_files = st.file_uploader(
-                "InforNexus PDFs", type=["pdf"], accept_multiple_files=True,
+                t("InforNexus PDFs"), type=["pdf"], accept_multiple_files=True,
                 label_visibility="collapsed", key="in_uploader",
             )
             if in_files:
@@ -464,9 +464,9 @@ def show_infornexus_upload_section(files=None) -> None:
         col_kl = st.container()
 
     with col_kl:
-        st.markdown("**KL Fax PDFs** *(for comparison)*")
+        st.markdown(t("**KL Fax PDFs** *(for comparison)*"))
         kl_files = st.file_uploader(
-            "KL PDFs", type=["pdf"], accept_multiple_files=True,
+            t("KL PDFs"), type=["pdf"], accept_multiple_files=True,
             label_visibility="collapsed", key="in_kl_uploader",
         )
         if kl_files:

@@ -64,13 +64,13 @@ def _show_se_upload_section():
                 type=["xlsx", "xls"],
                 key="se_ean_uploader",
                 help=(
-                    "**Lookup keys (all four must match):**\n"
+                    t("**Lookup keys (all four must match):**\n"
                     "- Purchase Order Number\n"
                     "- Color name\n"
                     "- Brand\n"
                     "- Style No.\n\n"
                     "**Returns:** Config SKU\n\n"
-                    "Conflicting values for the same combination are flagged in the log."
+                    "Conflicting values for the same combination are flagged in the log.")
                 ),
             )
             st.caption(
@@ -82,7 +82,7 @@ def _show_se_upload_section():
                 type=["xlsx", "xls"],
                 key="se_progress_uploader",
                 help=(
-                    "**Sheet:** first sheet with '2026' or 'Zalando' in its name\n\n"
+                    t("**Sheet:** first sheet with '2026' or 'Zalando' in its name\n\n"
                     "**Lookup keys:**\n"
                     "- Col 5: 款式 (Style No.)\n"
                     "- Col 7: 颜色 (Color)\n\n"
@@ -90,7 +90,7 @@ def _show_se_upload_section():
                     "- Col 2: 合同号 (HHN Contract No.)\n"
                     "- Col 4: Image (DISPIMG)\n"
                     "- Col 10: PO离厂日期 (Ex-Fty Date)\n\n"
-                    "Column positions are auto-detected by header name."
+                    "Column positions are auto-detected by header name.")
                 ),
             )
             st.caption(t(
@@ -111,7 +111,7 @@ def _show_se_upload_section():
         t("Mask prices"),
         value=False,
         key="se_mask_prices",
-        help="Replace FOB / cost / price columns with *** before download.",
+        help=t("Replace FOB / cost / price columns with *** before download."),
     )
 
     # ── How an already-imported contract is written ──────────────────────────

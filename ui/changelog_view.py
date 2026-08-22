@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.132.0",
+        "date": "2026-08-22",
+        "entries": [
+            {"type": "fix", "text": "**The Chinese UI is no longer half English.** A design-system audit found 226 widget labels, 22 help texts, 8 prompts and 44 headings or status lines that bypassed the app's own `t()` rule — the Master PO View, Contract History, Fabric import and Production Tracking all rendered partly in English under the 中文 toggle. Every one now goes through `t()`; sentences with a number in the middle use one translatable key (`\"Deleted {n} PO(s).\"`) rather than three fragments, so the Chinese reads as a sentence. 289 Chinese seeds were added to the translation store, and the admin Translations panel can refine any of them."},
+            {"type": "fix", "text": "**Nine cutting-plan messages were never translatable.** Their keys carried a placeholder (`\"PO ordered {po:,}, plan cuts {cut:,} — {pct:+.1f}%.\"`) and had no Chinese seed, so they showed English whatever the toggle said. Seeded now; the new guard would have caught them."},
+            {"type": "refactor", "text": "**The rule is machine-enforced, the way the log-escaping rule already is.** A new test walks every UI module's syntax tree and fails if a Streamlit widget, `help=`, a prompt-style `placeholder=`, or `st.markdown`/`st.write` receives an English literal — and separately fails if any placeholder-bearing key lacks a Chinese seed. It knows the difference between prose and values: example inputs (`you@example.com`, `e.g. MQ-BD181446`, folder paths), date formats, HTML, code-fenced documentation and unit abbreviations (`克重GSM`) are left alone, because those must stay exactly as the user is expected to see or type them."},
+        ],
+    },
+    {
         "version": "2.131.1",
         "date": "2026-08-17",
         "entries": [

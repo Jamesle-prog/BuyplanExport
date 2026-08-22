@@ -173,7 +173,8 @@ class ProgressTracker:
         self._bar.progress(1.0)
         elapsed = time.time() - self.start
         m, s = divmod(int(elapsed), 60)
-        self._txt.caption(f"Completed in {m}:{s:02d}")
+        from ui.i18n import t as _t
+        self._txt.caption(_t("Completed in {m}:{s}").format(m=m, s=f"{s:02d}"))
 
     def _refresh(self, label: str = "") -> None:
         frac    = self.current / self.total
@@ -191,7 +192,8 @@ class ProgressTracker:
         step_str = f"Step {self.current}/{self.total}" if self.current else "Starting..."
         detail   = f" -- {label}" if label else ""
         self._bar.progress(min(frac, 1.0))
-        self._txt.caption(f"{step_str}{detail}  ·  {elapsed_str} elapsed{eta_str}")
+        from ui.i18n import t as _t
+        self._txt.caption(f"{step_str}{detail}  ·  {elapsed_str} {_t('elapsed')}{eta_str}")
 
 
 # ---------------------------------------------------------------------------
@@ -387,12 +389,12 @@ def show_image_folder_expander(session_key: str, apply_key: str) -> None:
     history: list[str] = st.session_state[hist_key]
 
     with st.expander(_t("Image folder (load & save style photos)")):
-        st.caption(
+        st.caption(_t(
             "Images are loaded from and saved here as `{style}_front.png` / `{style}_back.png` "
             "and also as `{picture_id}.png` for internal lookup. A style filed as a "
             "single `{style}.png` is used as its front photo. "
             "Leave blank to use the built-in default folder."
-        )
+        ))
 
         # ------------------------------------------------------------------
         # History dropdown (only shown when there is history)
@@ -769,11 +771,12 @@ def save_images_to_disk(image_dict: dict,
                         with open(fname, "wb") as f:
                             f.write(img_bytes)
     except OSError as exc:
-        st.warning(
-            f"⚠️ Could not save images to '{folder}' ({exc}). "
-            "Photos will still be found via the local extracted-images fallback; "
-            "check the configured image folder in Admin Settings if this persists."
-        )
+        from ui.i18n import t as _t
+        st.warning(_t(
+            "⚠️ Could not save images to '{folder}' ({exc}). Photos will still be "
+            "found via the local extracted-images fallback; check the configured "
+            "image folder in Admin Settings if this persists."
+        ).format(folder=folder, exc=exc))
 
 
 # Ceiling on how many bytes of full-resolution photos one call may hold in

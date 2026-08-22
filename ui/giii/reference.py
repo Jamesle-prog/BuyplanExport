@@ -135,22 +135,22 @@ def _show_giii_reference_section():
     """Style-Fabric mapping template download + upload for GIII."""
     store = get_store()
 
-    st.markdown("#### 📋 Style-Fabric Mapping (GIII)")
+    st.markdown(t("#### 📋 Style-Fabric Mapping (GIII)"))
     st.caption(
-        "Map each GIII style to up to 4 HHN fabric codes. "
-        "Composition is looked up automatically from the fabric database."
+        t("Map each GIII style to up to 4 HHN fabric codes. "
+        "Composition is looked up automatically from the fabric database.")
     )
 
     mapping_file = st.file_uploader(
-        "Upload filled-in mapping (.xlsx)",
+        t("Upload filled-in mapping (.xlsx)"),
         type=["xlsx", "xls"],
         key="giii_mapping_uploader",
-        help="Fill in the template and upload here. "
-             "Fabric composition will be looked up automatically.",
+        help=t("Fill in the template and upload here. "
+             "Fabric composition will be looked up automatically."),
     )
     st.caption(
-        "💡 Need a blank template? Get it from **Admin → 📄 Templates → "
-        "Style-Fabric Mapping Template**."
+        t("💡 Need a blank template? Get it from **Admin → 📄 Templates → "
+        "Style-Fabric Mapping Template**.")
     )
 
     st.markdown("---")
@@ -158,29 +158,27 @@ def _show_giii_reference_section():
     if mapping_file:
         col_imp, col_dry = st.columns(2)
         with col_imp:
-            if st.button("▶ Import Mapping", type="primary",
+            if st.button(t("▶ Import Mapping"), type="primary",
                          use_container_width=True, key="giii_import_btn"):
                 _run_giii_mapping_import(mapping_file)
         with col_dry:
-            if st.button("🔍 Preview (dry run)", use_container_width=True,
+            if st.button(t("🔍 Preview (dry run)"), use_container_width=True,
                          key="giii_preview_btn"):
                 _run_giii_mapping_import(mapping_file, dry_run=True)
 
     if st.session_state.get(SK.GIII_MAPPING):
         r = st.session_state.giii_mapping_result
         if r.get("dry_run"):
-            st.info(
-                f"**Dry-run preview** — {r['styles']} style(s), "
-                f"{r['parts']} fabric part(s) found, "
-                f"{r['enriched']} would be enriched from the HHN cache. "
-                "Press **Import Mapping** to commit."
-            )
+            st.info(t(
+                "**Dry-run preview** — {styles} style(s), {parts} fabric part(s) "
+                "found, {enriched} would be enriched from the HHN cache. Press "
+                "**Import Mapping** to commit."
+            ).format(styles=r['styles'], parts=r['parts'], enriched=r['enriched']))
         else:
-            st.success(
-                f"✅ Imported {r['styles']} style(s), "
-                f"{r['parts']} fabric part(s) saved "
-                f"({r['enriched']} enriched with composition from cache)."
-            )
+            st.success(t(
+                "✅ Imported {styles} style(s), {parts} fabric part(s) saved "
+                "({enriched} enriched with composition from cache)."
+            ).format(styles=r['styles'], parts=r['parts'], enriched=r['enriched']))
         if r.get("bad_format_hhns"):
             st.warning(
                 f"⚠️ {len(r['bad_format_hhns'])} HHN code(s) do not match the expected "
@@ -207,7 +205,7 @@ def _show_giii_reference_section():
     df_giii = store.load_fabric_parts(source="giii")
     if not df_giii.empty:
         n_styles = df_giii["style"].nunique()
-        with st.expander(f"Stored GIII fabric parts ({n_styles} styles)", expanded=False):
+        with st.expander(t("Stored GIII fabric parts ({n} styles)").format(n=n_styles), expanded=False):
             st.dataframe(
                 df_giii.rename(columns={
                     "style": "Style", "seq": "Seq", "body_part": "Body Part",
@@ -217,9 +215,9 @@ def _show_giii_reference_section():
                 }).drop(columns=["id", "source"], errors="ignore"),
                 use_container_width=True, hide_index=True,
             )
-            if st.button("🗑 Clear GIII fabric parts", key="giii_clear_parts"):
+            if st.button(t("🗑 Clear GIII fabric parts"), key="giii_clear_parts"):
                 store.delete_fabric_parts("giii")
-                st.success("GIII fabric parts cleared.")
+                st.success(t("GIII fabric parts cleared."))
                 st.rerun()
 
     st.markdown("---")
@@ -333,7 +331,7 @@ def _run_giii_mapping_import(mapping_file, dry_run: bool = False,
         try:
             style_parts = _parse_fabric_mapping_file(path)
         except Exception as exc:
-            st.error(f"Could not parse mapping file: {exc}")
+            st.error(t("Could not parse mapping file: {exc}").format(exc=exc))
             return
 
         store = get_store()

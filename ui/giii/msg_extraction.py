@@ -456,7 +456,7 @@ def show_msg_upload_section(files=None) -> None:
 
     if files is None:
         uploaded_msgs = st.file_uploader(
-            "Upload .msg or fax PDF files",
+            t("Upload .msg or fax PDF files"),
             type=["msg", "pdf"],
             accept_multiple_files=True,
             label_visibility="collapsed",

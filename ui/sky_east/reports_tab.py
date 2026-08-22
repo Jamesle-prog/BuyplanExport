@@ -83,7 +83,7 @@ def _show_se_reports_tab(pin_mode: str | None = None) -> None:
             t("PC No.(s) to include:"),
             pc_options,
             key="se_gen_pcs",
-            placeholder="Select one or more PC Nos...",
+            placeholder=t("Select one or more PC Nos..."),
         )
     with all_col:
         st.markdown("<br>", unsafe_allow_html=True)

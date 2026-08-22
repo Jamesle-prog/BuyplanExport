@@ -153,7 +153,7 @@ def _extract_and_parse_tk_eu(msg_files) -> list[dict]:
         try:
             po = _parse_tk_eu_pdf(pdf_data)
         except Exception as exc:
-            st.warning(f"Parse error in {name}: {exc}")
+            st.warning(t("Parse error in {name}: {exc}").format(name=name, exc=exc))
             continue
 
         # Derive PO number from filename if not found
@@ -394,7 +394,7 @@ def show_tk_eu_upload_section(files=None) -> None:
 
     if files is None:
         uploaded_msgs = st.file_uploader(
-            "Upload TK EU .msg or fax PDF files",
+            t("Upload TK EU .msg or fax PDF files"),
             type=["msg", "pdf"],
             accept_multiple_files=True,
             label_visibility="collapsed",

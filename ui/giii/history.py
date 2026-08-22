@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from ui.i18n import t
 from auth.users import company_scope, is_admin
 from ui.session_keys import SK
 from ui.shared import guard_multiselect_state
@@ -18,8 +19,8 @@ def _show_history(exc_df=None, pos_df=None):
     # falls through the store's falsy check to an unfiltered query.
     if not is_admin(st.session_state.username) and not user_cos:
         st.info(
-            "No companies assigned to your account. "
-            "Contact an administrator to be granted access."
+            t("No companies assigned to your account. "
+            "Contact an administrator to be granted access.")
         )
         return
     # *pos_df* is the company-scoped list_pos frame fetched once per rerun in
@@ -35,14 +36,14 @@ def _show_history(exc_df=None, pos_df=None):
                     if exc_df is not None and not exc_df.empty and "status" in exc_df.columns else 0)
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Total POs",    f"{total_pos:,}")
-    m2.metric("Total Units",  f"{total_units:,}")
-    m3.metric("Companies",    companies)
-    m4.metric("Pending Exceptions", pending_exc, delta=None,
+    m1.metric(t("Total POs"),    f"{total_pos:,}")
+    m2.metric(t("Total Units"),  f"{total_units:,}")
+    m3.metric(t("Companies"),    companies)
+    m4.metric(t("Pending Exceptions"), pending_exc, delta=None,
               delta_color="inverse" if pending_exc else "off")
 
     if df.empty:
-        st.info("No POs stored yet. Extract some PDFs and they will appear here automatically.")
+        st.info(t("No POs stored yet. Extract some PDFs and they will appear here automatically."))
         return
 
     st.divider()
@@ -68,21 +69,21 @@ def _show_history(exc_df=None, pos_df=None):
         "extracted_at":      live_label("extracted_at", "Extracted At"),
         "file_name":         live_label("source_file", "Source File"),
     }
-    show_all = st.toggle("Show all columns", value=False, key="hist_show_all")
+    show_all = st.toggle(t("Show all columns"), value=False, key="hist_show_all")
     active_cols = all_cols if show_all else essential_cols
     show_df = df[[c for c in active_cols if c in df.columns]].rename(columns=rename_map)
     st.dataframe(show_df, width="stretch", hide_index=True)
 
     # ── Version history ───────────────────────────────────────────────────────
-    with st.expander("📜 View version history for a PO"):
-        inspect_po = st.selectbox("Select PO:", [""] + df["po_number"].tolist(),
+    with st.expander(t("📜 View version history for a PO")):
+        inspect_po = st.selectbox(t("Select PO:"), [""] + df["po_number"].tolist(),
                                   key="inspect_po")
         if inspect_po:
             hist = store.list_history(inspect_po)
             if hist.empty:
-                st.info("No previous versions — this PO has never been updated.")
+                st.info(t("No previous versions — this PO has never been updated."))
             else:
-                st.caption(f"{len(hist)} archived version(s) for {inspect_po}")
+                st.caption(t("{n} archived version(s) for {po}").format(n=len(hist), po=inspect_po))
                 st.dataframe(hist, width="stretch", hide_index=True)
 
     # ── Master table (admin only) ─────────────────────────────────────────────
@@ -93,18 +94,18 @@ def _show_history(exc_df=None, pos_df=None):
     st.divider()
 
     # ── Delete ────────────────────────────────────────────────────────────────
-    st.markdown("**Delete POs from history**")
+    st.markdown(t("**Delete POs from history**"))
     po_options = df["po_number"].tolist()
     # Guard: after a delete the reran multiselect would hold PO numbers no
     # longer in options — StreamlitAPIException on 1.57, silent wipe on 1.58.
     guard_multiselect_state("del_pos", po_options)
-    to_delete = st.multiselect("Select POs to delete:", po_options,
-                               placeholder="Select POs to remove…",
+    to_delete = st.multiselect(t("Select POs to delete:"), po_options,
+                               placeholder=t("Select POs to remove…"),
                                key="del_pos")
-    if st.button("🗑 Delete selected", disabled=not to_delete):
+    if st.button(t("🗑 Delete selected"), disabled=not to_delete):
         n = store.delete_pos(to_delete)
         st.session_state.pop("del_pos", None)   # drop stale selection pre-rerun
-        st.success(f"Deleted {n} PO(s).")
+        st.success(t("Deleted {n} PO(s).").format(n=n))
         st.rerun()
 
     st.divider()
@@ -115,7 +116,7 @@ def _show_history(exc_df=None, pos_df=None):
     exc_label = f"⚠️ Exception Queue ({pending_exc} pending)" if pending_exc else "⚠️ Exception Queue"
     with st.expander(exc_label, expanded=pending_exc > 0):
         if exc_df.empty:
-            st.info("No exceptions.")
+            st.info(t("No exceptions."))
         else:
             st.dataframe(exc_df, width="stretch", hide_index=True)
             # Chosen from the rows this user can actually see, not typed. As a
@@ -124,18 +125,18 @@ def _show_history(exc_df=None, pos_df=None):
             # client could change another client's exception status.
             _ids = [int(i) for i in exc_df["id"]]
             exc_id = st.selectbox(
-                "Exception ID to update:", _ids, index=None,
-                placeholder="— select an exception —", key="exc_id")
-            new_status = st.selectbox("New status:", ["pending", "triaged", "corrected", "closed"],
+                t("Exception ID to update:"), _ids, index=None,
+                placeholder=t("— select an exception —"), key="exc_id")
+            new_status = st.selectbox(t("New status:"), ["pending", "triaged", "corrected", "closed"],
                                       key="exc_status")
-            if st.button("Update exception status", key="update_exc",
+            if st.button(t("Update exception status"), key="update_exc",
                          disabled=exc_id is None):
                 # Re-checked against the store at the moment of writing: the
                 # list above is a render-time snapshot, and the widget key
                 # outlives it.
                 if int(exc_id) not in store.exception_ids(user_cos):
-                    st.error("That exception isn't one of yours.")
+                    st.error(t("That exception isn't one of yours."))
                 else:
                     store.update_exception_status(int(exc_id), new_status)
-                    st.success("Updated.")
+                    st.success(t("Updated."))
                     st.rerun()

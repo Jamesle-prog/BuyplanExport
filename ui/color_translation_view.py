@@ -21,8 +21,8 @@ _CT_COL_CFG = {
     "Delete":        st.column_config.CheckboxColumn(
         "🗑",
         width="small",
-        help="Tick rows to delete, then click the **Delete selected** button "
-             "below the table.",
+        help=t("Tick rows to delete, then click the **Delete selected** button "
+             "below the table."),
         default=False,
     ),
     "Client":        st.column_config.TextColumn("Client", width="small"),
@@ -30,8 +30,8 @@ _CT_COL_CFG = {
     "English Color": st.column_config.TextColumn(
         "English Color",
         width="medium",
-        help="Case-insensitive — \"NAVY\", \"navy\", \"Navy\" all collapse "
-             "to the same row (stored as title case).",
+        help=t("Case-insensitive — \"NAVY\", \"navy\", \"Navy\" all collapse "
+             "to the same row (stored as title case)."),
     ),
     "Chinese Color": st.column_config.TextColumn("Chinese Color (中文颜色)", width="medium"),
     "中文颜色代码":   st.column_config.TextColumn("中文颜色代码", width="small"),
@@ -39,17 +39,17 @@ _CT_COL_CFG = {
         "Light/Dark (深浅)",
         width="small",
         options=["", "light", "dark"],
-        help="Whether the body colour is light or dark.  Auto-derived from "
+        help=t("Whether the body colour is light or dark.  Auto-derived from "
              "the English colour name when left blank — used to pick the "
-             "main label colour (light body → 白色, dark body → 黑色).",
+             "main label colour (light body → 白色, dark body → 黑色)."),
     ),
     "Label Color":   st.column_config.SelectboxColumn(
         "Label Color (主标颜色)",
         width="small",
         options=["", "黑色", "白色"],
-        help="Main label colour written into column I of the buyplan.  "
+        help=t("Main label colour written into column I of the buyplan.  "
              "Auto-derived from Light/Dark when blank: "
-             "light → 白色, dark → 黑色.",
+             "light → 白色, dark → 黑色."),
     ),
     "Notes":         st.column_config.TextColumn("Notes", width="medium"),
 }
@@ -419,7 +419,7 @@ def show_color_translation_tab() -> None:
         a_brand_v = "" if a_brand == "All brands" else a_brand
         a_en = f3.text_input(
             t("English colour"),
-            placeholder="(any)", key="ct_audit_en",
+            placeholder=t("(any)"), key="ct_audit_en",
             help=t("Case-insensitive — \"navy\", \"NAVY\" both match."),
         )
         a_limit = f4.number_input(

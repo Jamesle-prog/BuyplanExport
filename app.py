@@ -16,7 +16,7 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
 
 import streamlit as st
 
-APP_VERSION = "2.131.1"
+APP_VERSION = "2.132.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -172,14 +172,14 @@ for key, default in [
 # ---------------------------------------------------------------------------
 license_ok, license_msg = validate_license()
 if not license_ok:
-    st.error(f"⛔ License error: {license_msg}")
+    st.error(t("⛔ License error: {msg}").format(msg=license_msg))
     st.stop()
 
 # ---------------------------------------------------------------------------
 # Guard: no users yet → show setup prompt
 # ---------------------------------------------------------------------------
 if not user_exists():
-    st.warning("No user accounts found. Run `python setup_users.py` to create accounts, then restart the app.")
+    st.warning(t("No user accounts found. Run `python setup_users.py` to create accounts, then restart the app."))
     st.stop()
 
 

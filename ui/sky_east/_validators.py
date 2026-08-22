@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import streamlit as st
+from ui.i18n import t
 
 
 def _se_report_sku_conflicts(config_sku_lookup, log: list[str]) -> None:
@@ -10,10 +11,10 @@ def _se_report_sku_conflicts(config_sku_lookup, log: list[str]) -> None:
     if not (config_sku_lookup and config_sku_lookup.conflicts):
         return
     n_conf = len(config_sku_lookup.conflicts)
-    st.warning(
-        f"{n_conf} Config SKU conflict(s) detected -- "
-        "the same PO + Color + Brand + Style maps to multiple different Config SKU values."
-    )
+    st.warning(t(
+        "{n} Config SKU conflict(s) detected -- the same PO + Color + Brand + "
+        "Style maps to multiple different Config SKU values."
+    ).format(n=n_conf))
     log.append(f"{html.escape(str(n_conf))} Config SKU conflict(s) -- review required:")
     for c in config_sku_lookup.conflicts:
         msg = (f"  PO={c['po']} | Color={c['color']} | "
@@ -48,7 +49,7 @@ def _se_validate_contracts(contracts, log: list[str]) -> None:
     for key, label in ISSUE_CATEGORIES:
         issues = report["issues"][key]
         if issues:
-            st.warning(f"{label} -- {len(issues)} issue(s) found")
+            st.warning(f"{label} -- " + t("{n} issue(s) found").format(n=len(issues)))
             log.append(f"{html.escape(str(label))} ({html.escape(str(len(issues)))} issue(s)):")
             for msg in issues[:20]:
                 log.append(f"  {html.escape(str(msg))}")

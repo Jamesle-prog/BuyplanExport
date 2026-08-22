@@ -9,6 +9,7 @@ import time
 import pandas as pd
 import streamlit as st
 
+from ui.i18n import t
 from ui.shared import fragment_rerun
 
 from auth.users import is_admin
@@ -43,7 +44,7 @@ def _fabric_db_show_flash() -> None:
     (st.success if kind == "success" else st.info)(flash["text"])
     col_map = flash.get("col_map") or {}
     if col_map:
-        with st.expander("🗂 Detected column layout", expanded=False):
+        with st.expander(t("🗂 Detected column layout"), expanded=False):
             rows = [
                 {"Column": _col_letter(c), "Field": f}
                 for f, c in sorted(col_map.items(), key=lambda x: x[1])
@@ -83,11 +84,11 @@ def _fabric_db_do_propose(store, uploaded, clear_first: bool = False) -> None:
             m, s = divmod(int(time.time() - t0), 60)
 
             if result.get("blocked_by_pending"):
-                st.error(
-                    f"Another proposal by **{result['pending_proposed_by']}** is "
-                    f"already awaiting review — approve, reject, or cancel it "
-                    f"first (see the Pending Review panel above)."
-                )
+                st.error(t(
+                    "Another proposal by **{who}** is already awaiting review — "
+                    "approve, reject, or cancel it first (see the Pending Review "
+                    "panel above)."
+                ).format(who=result['pending_proposed_by']))
                 return
             if result.get("unchanged"):
                 st.session_state[SK.FABRIC_DB_FLASH] = {
@@ -125,7 +126,7 @@ def _fabric_db_do_propose(store, uploaded, clear_first: bool = False) -> None:
             )
             fragment_rerun()
         except Exception as exc:
-            st.error(f"Upload check failed: {exc}")
+            st.error(t("Upload check failed: {exc}").format(exc=exc))
 
 
 def _fabric_db_pending_review_section(store) -> None:
@@ -143,12 +144,12 @@ def _fabric_db_pending_review_section(store) -> None:
     mode = "Full replacement (Delete All & Reimport)" if pending["clear_first"] else "Update / Add"
     when = str(pending["created_at"])[:19].replace("T", " ")
 
-    st.warning(
-        f"📋 **Fabric list change awaiting review** — proposed by "
-        f"**{pending['proposed_by']}** at {when} · `{pending['source_file'] or '—'}` "
-        f"· {mode}"
-    )
-    with st.expander("Review pending fabric list change", expanded=True):
+    st.warning(t(
+        "📋 **Fabric list change awaiting review** — proposed by **{who}** at "
+        "{when} · `{file}` · {mode}"
+    ).format(who=pending['proposed_by'], when=when,
+             file=pending['source_file'] or '—', mode=mode))
+    with st.expander(t("Review pending fabric list change"), expanded=True):
         st.markdown(
             f"**+{pending['diff_added']}** new / "
             f"**-{pending['diff_removed']}** removed / "
@@ -159,7 +160,7 @@ def _fabric_db_pending_review_section(store) -> None:
 
         warnings = pending.get("warnings") or []
         if warnings:
-            with st.expander(f"⚠️ {len(warnings)} data-quality warning(s)", expanded=False):
+            with st.expander(t("⚠️ {n} data-quality warning(s)").format(n=len(warnings)), expanded=False):
                 for w in warnings:
                     st.markdown(f"- {w}")
 
@@ -175,15 +176,15 @@ def _fabric_db_pending_review_section(store) -> None:
             st.dataframe(df, width="stretch", hide_index=True, height=300)
         else:
             st.info(
-                "No differences against the current data any more (the table "
+                t("No differences against the current data any more (the table "
                 "may have changed since this was proposed) — approving will "
-                "not create a new version."
+                "not create a new version.")
             )
 
         if pending["high_risk"]:
             st.error(
-                "⚠️ **High-risk bulk change** — this proposal removes more than "
-                "10 records or touches over 20% of the table."
+                t("⚠️ **High-risk bulk change** — this proposal removes more than "
+                "10 records or touches over 20% of the table.")
             )
 
         if admin:
@@ -195,11 +196,11 @@ def _fabric_db_pending_review_section(store) -> None:
             ack_ok = True
             if pending["high_risk"]:
                 ack_ok = st.checkbox(
-                    "I understand this is a bulk change and have checked the diff above",
+                    t("I understand this is a bulk change and have checked the diff above"),
                     key="fabric_db_review_risk_ack",
                 )
             col_a, col_r, col_c = st.columns(3)
-            if col_a.button("✅ Approve & apply", type="primary",
+            if col_a.button(t("✅ Approve & apply"), type="primary",
                             use_container_width=True, disabled=not ack_ok,
                             key="fabric_db_review_approve"):
                 try:
@@ -219,7 +220,7 @@ def _fabric_db_pending_review_section(store) -> None:
                     fragment_rerun()
                 except ValueError as exc:
                     st.error(str(exc))
-            if col_r.button("❌ Reject", use_container_width=True,
+            if col_r.button(t("❌ Reject"), use_container_width=True,
                             key="fabric_db_review_reject"):
                 try:
                     store.reject_pending(pending["id"], reviewed_by=user,
@@ -232,7 +233,7 @@ def _fabric_db_pending_review_section(store) -> None:
                 except ValueError as exc:
                     st.error(str(exc))
             if (user == pending["proposed_by"] or admin) and \
-                    col_c.button("↩ Withdraw proposal", use_container_width=True,
+                    col_c.button(t("↩ Withdraw proposal"), use_container_width=True,
                                  key="fabric_db_review_cancel"):
                 store.cancel_pending(pending["id"], by=user)
                 st.session_state[SK.FABRIC_DB_FLASH] = {
@@ -240,9 +241,9 @@ def _fabric_db_pending_review_section(store) -> None:
                 }
                 fragment_rerun()
         else:
-            st.info("Waiting for an admin to review this change.")
+            st.info(t("Waiting for an admin to review this change."))
             if user == pending["proposed_by"]:
-                if st.button("↩ Withdraw my proposal", key="fabric_db_review_cancel_own"):
+                if st.button(t("↩ Withdraw my proposal"), key="fabric_db_review_cancel_own"):
                     store.cancel_pending(pending["id"], by=user)
                     st.session_state[SK.FABRIC_DB_FLASH] = {
                         "kind": "info", "text": "↩ Proposal withdrawn.",
@@ -255,25 +256,25 @@ def _fabric_db_upload_section(store, count: int) -> None:
 
     Uploads are STAGED for peer review, never applied directly -- and a new
     upload is blocked while another proposal is still awaiting review."""
-    with st.expander("📂 Import Fabric Table (面料统计表.xlsx)",
+    with st.expander(t("📂 Import Fabric Table (面料统计表.xlsx)"),
                      expanded=(count == 0)):
 
         if store.get_pending():
             st.info(
-                "A fabric list change is already awaiting review — approve, "
+                t("A fabric list change is already awaiting review — approve, "
                 "reject, or withdraw it (panel above) before submitting "
-                "another upload."
+                "another upload.")
             )
             return
 
         st.caption(
-            "🔒 Uploads are submitted for review — an admin must approve the "
+            t("🔒 Uploads are submitted for review — an admin must approve the "
             "change before it takes effect. Buy plans keep using the current "
-            "approved version until then."
+            "approved version until then.")
         )
 
         mode = st.radio(
-            "Import mode",
+            t("Import mode"),
             ["➕ Update / Add", "🗑 Clear All & Reimport"],
             horizontal=True,
             key="fabric_db_import_mode",
@@ -282,63 +283,63 @@ def _fabric_db_upload_section(store, count: int) -> None:
 
         if mode == "➕ Update / Add":
             st.caption(
-                "Existing records with the same 公司面料编号 will be updated; "
-                "new records will be added.  No data is deleted."
+                t("Existing records with the same 公司面料编号 will be updated; "
+                "new records will be added.  No data is deleted.")
             )
             uploaded = st.file_uploader(
-                "面料统计表.xlsx",
+                t("面料统计表.xlsx"),
                 type=["xlsx", "xlsm", "xls"],
                 key="fabric_db_uploader",
                 label_visibility="collapsed",
             )
-            if uploaded and st.button("📋  Submit for Review", type="primary",
+            if uploaded and st.button(t("📋  Submit for Review"), type="primary",
                                        key="fabric_db_import"):
                 _fabric_db_do_propose(store, uploaded)
 
         else:  # Clear All & Reimport
             st.warning(
-                "**Every existing record will be replaced** by the new file "
+                t("**Every existing record will be replaced** by the new file "
                 "once the proposal is approved. Use this when the column "
-                "layout has changed or you need a clean slate."
+                "layout has changed or you need a clean slate.")
             )
             reimport_file = st.file_uploader(
-                "面料统计表.xlsx (full replacement)",
+                t("面料统计表.xlsx (full replacement)"),
                 type=["xlsx", "xlsm", "xls"],
                 key="fabric_db_reimport_uploader",
                 label_visibility="collapsed",
             )
             confirmed = st.checkbox(
-                "I understand approval of this proposal will replace ALL existing fabric records",
+                t("I understand approval of this proposal will replace ALL existing fabric records"),
                 key="fabric_db_clear_confirm",
             )
             if reimport_file and confirmed:
-                if st.button("📋  Submit Full Replacement for Review", type="primary",
+                if st.button(t("📋  Submit Full Replacement for Review"), type="primary",
                              key="fabric_db_clear_reimport"):
                     _fabric_db_do_propose(store, reimport_file, clear_first=True)
             elif reimport_file and not confirmed:
-                st.caption("☝️ Tick the checkbox above to enable the button.")
+                st.caption(t("☝️ Tick the checkbox above to enable the button."))
 
 
 def _fabric_db_delete_section(store) -> None:
     """Expander: search and delete individual fabric records by 公司面料编号."""
-    with st.expander("🗑 Delete Selected Records", expanded=False):
+    with st.expander(t("🗑 Delete Selected Records"), expanded=False):
         st.caption(
-            "Search for fabrics to delete.  Select one or more rows, then confirm deletion."
+            t("Search for fabrics to delete.  Select one or more rows, then confirm deletion.")
         )
 
         del_q = st.text_input(
-            "Search by 公司面料编号, composition, or supplier",
+            t("Search by 公司面料编号, composition, or supplier"),
             placeholder="e.g. BO-DW240485 · Cotton · 德帽",
             key="fabric_db_del_search",
         )
 
         if not del_q.strip():
-            st.info("Enter a search term above to find records.")
+            st.info(t("Enter a search term above to find records."))
             return
 
         rows = store.search(del_q.strip(), limit=200)
         if not rows:
-            st.warning("No records match your search.")
+            st.warning(t("No records match your search."))
             return
 
         df = pd.DataFrame(rows)
@@ -348,7 +349,7 @@ def _fabric_db_delete_section(store) -> None:
         # Let the user pick rows via multiselect on quality_no
         all_qnos = df["quality_no"].tolist()
         selected = st.multiselect(
-            f"Select record(s) to delete ({len(all_qnos)} found):",
+            t("Select record(s) to delete ({n} found):").format(n=len(all_qnos)),
             options=all_qnos,
             key="fabric_db_del_sel",
         )
@@ -374,7 +375,7 @@ def _fabric_db_delete_section(store) -> None:
                    + ", ".join(f"`{q}`" for q in selected[:10])
                    + (" …" if len(selected) > 10 else ""))
 
-        if st.button(f"🗑  Delete {len(selected)} record(s)", type="primary",
+        if st.button(t("🗑️ Delete {n} record(s)").format(n=len(selected)), type="primary",
                      key="fabric_db_del_confirm"):
             deleted = store.delete_by_quality_nos(selected)
             st.session_state[SK.FABRIC_DB_FLASH] = {

@@ -212,7 +212,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             disabled=not selected,
             use_container_width=True,
             key="rpt_gen_kl_btn",
-            help="Two-sheet Excel: PO Detail + Summary (KL-reference format)",
+            help=t("Two-sheet Excel: PO Detail + Summary (KL-reference format)"),
         ):
             st.session_state.pop("rpt_kl_bytes", None)
             kl_df = filt_df[filt_df["po_number"].isin(selected)]

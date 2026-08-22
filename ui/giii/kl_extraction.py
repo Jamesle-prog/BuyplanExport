@@ -501,7 +501,7 @@ def show_kl_upload_section(files=None) -> None:
 
     if files is None:
         uploaded_pdfs = st.file_uploader(
-            "Upload KL PO PDF files",
+            t("Upload KL PO PDF files"),
             type=["pdf"],
             accept_multiple_files=True,
             label_visibility="collapsed",

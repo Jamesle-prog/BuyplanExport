@@ -8,6 +8,7 @@ import tempfile
 import zipfile
 
 import streamlit as st
+from ui.i18n import t
 
 from auth.companies import COMPANY_SKY_EAST, SOURCE_SKY_EAST
 from po_extractor.utils.price_mask import mask_prices_excel_batch
@@ -88,10 +89,10 @@ def _se_init_lookups(ref_info: dict, tracker, log: list[str]):
         try:
             config_sku_lookup = ConfigSKULookup(ref_info["ean"])
             n = len(config_sku_lookup)
-            st.write(f"  Config SKU lookup ready ({n} combination(s))")
+            st.write("  " + t("Config SKU lookup ready ({n} combination(s))").format(n=n))
             log.append(f"Config SKU lookup: {html.escape(str(n))} combinations loaded")
         except Exception as exc:
-            st.write(f"  Config SKU lookup error: {exc}")
+            st.write("  " + t("Config SKU lookup error: {exc}").format(exc=exc))
             log.append(f"Config SKU lookup error: {html.escape(str(exc))}")
 
     if "fabric" in ref_info:
@@ -105,13 +106,13 @@ def _se_init_lookups(ref_info: dict, tracker, log: list[str]):
                 st.session_state[SK.SE_FABRIC_LOOKUP] = fabric_lookup
                 n_styles = len(style_parts_map)
                 n_parts  = sum(len(v) for v in style_parts_map.values())
-                st.write(f"  Fabric mapping ready ({n_styles} style(s), {n_parts} fabric code(s) saved)")
+                st.write("  " + t("Fabric mapping ready ({styles} style(s), {parts} fabric code(s) saved)").format(styles=n_styles, parts=n_parts))
                 log.append(f"Fabric mapping: {html.escape(str(n_styles))} styles, {html.escape(str(n_parts))} fabric codes saved to DB")
             else:
-                st.write("  Fabric mapping file parsed -- no valid style rows found")
+                st.write("  " + t("Fabric mapping file parsed -- no valid style rows found"))
                 log.append("Fabric mapping: no valid rows found")
         except Exception as exc:
-            st.write(f"  Fabric mapping error: {exc}")
+            st.write("  " + t("Fabric mapping error: {exc}").format(exc=exc))
             log.append(f"Fabric mapping error: {html.escape(str(exc))}")
 
     if "progress" in ref_info:
@@ -120,7 +121,7 @@ def _se_init_lookups(ref_info: dict, tracker, log: list[str]):
         try:
             progress_lookup = ProgressLookup(ref_info["progress"])
             st.session_state[SK.SE_PROGRESS_LKUP] = progress_lookup
-            st.write(f"  Progress lookup ready ({len(progress_lookup)} records)")
+            st.write("  " + t("Progress lookup ready ({n} records)").format(n=len(progress_lookup)))
             log.append(f"Progress lookup: {html.escape(str(len(progress_lookup)))} records")
         except Exception as exc:
             log.append(f"Progress lookup error: {html.escape(str(exc))}")
@@ -131,7 +132,7 @@ def _se_init_lookups(ref_info: dict, tracker, log: list[str]):
         from ui.sky_east._shared import get_progress_lookup
         progress_lookup = get_progress_lookup(SOURCE_SKY_EAST)
         if progress_lookup is not None:
-            st.write(f"  Progress lookup: using {len(progress_lookup)} saved record(s)")
+            st.write("  " + t("Progress lookup: using {n} saved record(s)").format(n=len(progress_lookup)))
             log.append(
                 f"Progress lookup: using {html.escape(str(len(progress_lookup)))} saved record(s) "
                 "from the database (no file uploaded this run)"
@@ -158,7 +159,7 @@ def _se_log_color_cleanups(contracts, log: list[str]) -> None:
                     f"  '{raw}' -> '{cleaned}'  ({'; '.join(steps)})"
                 )
     if cleanup_lines:
-        st.write(f"Color cleanup ({len(cleanup_lines)} value(s)):")
+        st.write(t("Color cleanup ({n} value(s)):").format(n=len(cleanup_lines)))
         for line in cleanup_lines:
             st.write(line)
         log.append(f"Color cleanup ({html.escape(str(len(cleanup_lines)))} value(s)):")
@@ -216,7 +217,7 @@ def _se_mask_order_files(order_paths, log: list[str]) -> bytes | None:
     """Run Excel price masking on order files; return zip bytes or None."""
     if not order_paths:
         return None
-    st.write("Masking prices in source files...")
+    st.write(t("Masking prices in source files..."))
     import shutil as _shutil2
     mask_out_dir = tempfile.mkdtemp()
     try:
@@ -228,7 +229,7 @@ def _se_mask_order_files(order_paths, log: list[str]) -> bytes | None:
             api_key=_ai_key, model=_ai_model,
         )
         for _me in _mask_errors:
-            st.warning(f"Price-mask failed — {_me} (file NOT in masked zip)")
+            st.warning(t("Price-mask failed — {exc} (file NOT in masked zip)").format(exc=_me))
             log.append(f"⚠️ price-mask failed — {html.escape(str(_me))}")
         if not masked_files:
             return None
@@ -236,7 +237,7 @@ def _se_mask_order_files(order_paths, log: list[str]) -> bytes | None:
         with zipfile.ZipFile(mbuf, "w", zipfile.ZIP_DEFLATED) as zf:
             for mp in masked_files:
                 zf.write(mp, os.path.basename(mp))
-        st.write(f"  {len(masked_files)} masked file(s) ready for download")
+        st.write("  " + t("{n} masked file(s) ready for download").format(n=len(masked_files)))
         log.append(f"{html.escape(str(len(masked_files)))} price-masked file(s) created")
         return mbuf.getvalue()
     finally:
@@ -264,7 +265,7 @@ def _se_patch_contract_numbers(store, contracts, progress_lookup, log: list[str]
                 if ok:
                     patched += 1
     if patched:
-        st.write(f"  Patched HHN Contract No. for {patched} item(s)")
+        st.write("  " + t("Patched HHN Contract No. for {n} item(s)").format(n=patched))
         log.append(f"HHN Contract No. patched for {html.escape(str(patched))} item(s)")
 
 
@@ -283,7 +284,7 @@ def _se_save_fabric_parts_universal(contracts, fabric_lookup, log: list[str]) ->
     n_fp = sfp_store.save_fabric_parts_batch(
         SOURCE_SKY_EAST, style_parts_map, enrich_from_lookup=enrich_arg,
     )
-    st.write(f"  {n_fp} fabric part(s) saved to universal fabric table")
+    st.write("  " + t("{n} fabric part(s) saved to universal fabric table").format(n=n_fp))
     log.append(f"{html.escape(str(n_fp))} fabric part(s) saved ({html.escape(str(SOURCE_SKY_EAST))})")
 
 
@@ -324,25 +325,25 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
 
             for fname, path in order_paths:
                 tracker.step(f"Parsing {fname}")
-                st.write(f"Parsing {fname}...")
+                st.write(t("Parsing {name}...").format(name=fname))
                 try:
                     contract = se_parse(path,
                                         processed_by=st.session_state.get(SK.USERNAME, ""))
                     contracts.append(contract)
                     pc = contract.pc_no or "(no PC No.)"
                     n  = len(contract.items)
-                    st.write(f"  {fname} -> PC {pc}, {n} item(s)")
+                    st.write("  " + t("{file} -> PC {pc}, {n} item(s)").format(file=fname, pc=pc, n=n))
                     log.append(
                         f'<span style="color:#198754">{html.escape(str(fname))}</span> '
                         f'-> PC <b>{html.escape(str(pc))}</b>, {html.escape(str(n))} item(s)'
                     )
                     added = image_cache.add_file(path)
                     if added:
-                        st.write(f"  {added} image(s) extracted from {fname}")
+                        st.write("  " + t("{n} image(s) extracted from {file}").format(n=added, file=fname))
                         log.append(f"{html.escape(str(added))} image(s) from {html.escape(str(fname))}")
                     if contract.skipped_zero_qty:
                         n_skip = len(contract.skipped_zero_qty)
-                        st.write(f"  ⚠️ {n_skip} zero-unit row(s) ignored in {fname}")
+                        st.write("  " + t("⚠️ {n} zero-unit row(s) ignored in {file}").format(n=n_skip, file=fname))
                         for s in contract.skipped_zero_qty:
                             log.append(
                                 f'<span style="color:#fd7e14">⚠️ Ignored (0 units)</span> '
@@ -397,11 +398,11 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             _se_report_sku_conflicts(config_sku_lookup, log)
 
             tracker.step("Validating import data")
-            st.write("Validating import data...")
+            st.write(t("Validating import data..."))
             _se_validate_contracts(contracts, log)
 
             tracker.step("Saving to database")
-            st.write("Saving to database...")
+            st.write(t("Saving to database..."))
             store   = get_sky_east_store()
             results = store.save_many_contracts_checked(contracts, mode=save_mode)
             from ui.sky_east._missing_compute import _compute_se_missing_df
@@ -423,12 +424,12 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
                 + (f", {total_pend} Return Label conflict(s) held for review" if total_pend else "")
             )
             if total_gone:
-                st.write("  Removed items are archived and remain in item history.")
+                st.write("  " + t("Removed items are archived and remain in item history."))
             if total_ai:
                 for r in results:
                     for style, matched, incoming, po in r.get("ai_matched_items", []):
-                        st.write(f"  🤖 {style} / {po}: treated \"{incoming}\" as "
-                                 f"\"{matched}\" (already on file)")
+                        st.write("  " + t('🤖 {style} / {po}: treated "{incoming}" as "{matched}" (already on file)').format(
+                            style=style, po=po, incoming=incoming, matched=matched))
                         log.append(
                             f"AI colour match: {html.escape(str(style))} / "
                             f"{html.escape(str(po))} -- \"{html.escape(str(incoming))}\" "
@@ -471,7 +472,7 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
                             if b not in _pending_brands:
                                 _pending_brands.append(b)
                         st.session_state[SK.SE_NEW_BRAND_PENDING] = _pending_brands
-                        st.write(f"  {len(_unseen)} new brand(s) need a shipping sample requirement")
+                        st.write("  " + t("{n} new brand(s) need a shipping sample requirement").format(n=len(_unseen)))
                         log.append(f"{html.escape(str(len(_unseen)))} new brand(s) need a shipping sample requirement")
             except Exception as _brand_exc:
                 log.append(f"⚠️ New-brand shipping-sample check skipped: {html.escape(str(_brand_exc))}")

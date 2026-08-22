@@ -123,7 +123,7 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
             with open(path, "rb") as fh:
                 file_hash = _hl.md5(fh.read()).hexdigest()
             if file_hash in seen_hashes:
-                st.write(f"⚠️ {name} — identical file already in this batch, skipped")
+                st.write(t("⚠️ {name} — identical file already in this batch, skipped").format(name=name))
                 log.append(f'<span style="color:#b08800">⚠️ {html.escape(str(name))}</span> — duplicate file skipped')
                 tracker.step(f"Skipped duplicate: {name}")
                 continue
@@ -137,7 +137,7 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
                 po.metadata.source_file_hash = file_hash
                 pos.append(po)
                 n = len(po.size_rows)
-                st.write(f"✅ {name} — {n} size row(s)")
+                st.write(t("✅ {name} — {n} size row(s)").format(name=name, n=n))
                 log.append(f'<span class="badge-ok">✅ {html.escape(str(name))}</span> — {html.escape(str(n))} size row(s)')
             except Exception as e:
                 st.write(f"❌ {name}: {e}")
@@ -155,33 +155,33 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
 
         # 3. Save to persistent store with conflict detection
         tracker.step("Saving to history")
-        st.write("Checking for duplicates / updates…")
+        st.write(t("Checking for duplicates / updates…"))
         save_results = get_store().save_many_checked(pos)
         _log_save_results(save_results, log)
 
         # 4. Export CSVs + all Excel outputs
         tracker.step("Generating CSV exports")
-        st.write("Generating CSV exports…")
+        st.write(t("Generating CSV exports…"))
         result = export_csvs(pos, out_dir)
         # Enrich size rows with Chinese color names and overwrite the by-size CSV
         result["df_size"] = _enrich_cn_color(result["df_size"], result["df_meta"])
         result["df_size"].to_csv(result["by_size_color"], index=False, encoding="utf-8-sig")
 
         tracker.step("Generating buy plan")
-        st.write("Generating buy plan Excel…")
+        st.write(t("Generating buy plan Excel…"))
         buyplan_path = export_buyplan(result["df_size"], result["df_meta"], out_dir,
                                        images_dir=_get_images_dir("giii_images_dir"))
 
         tracker.step("Generating color plan")
-        st.write("Generating color plan Excel…")
+        st.write(t("Generating color plan Excel…"))
         color_plan_path = export_color_plan(result["df_size"], out_dir)
 
         tracker.step("Generating PO summary")
-        st.write("Generating PO summary Excel…")
+        st.write(t("Generating PO summary Excel…"))
         po_summary_path = export_po_summary(result["df_size"], result["df_meta"], out_dir)
 
         tracker.step("Generating cross-check")
-        st.write("Generating cross-check Excel…")
+        st.write(t("Generating cross-check Excel…"))
         cross_check_path = export_cross_check(
             result["df_size"], buyplan_path, color_plan_path, po_summary_path, out_dir,
         )
@@ -190,7 +190,7 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
         masked_paths = []
         if mask_prices:
             tracker.step(f"Masking prices in {len(pdf_paths)} PDF(s)")
-            st.write(f"Masking prices in {len(pdf_paths)} PDF(s)…")
+            st.write(t("Masking prices in {n} PDF(s)…").format(n=len(pdf_paths)))
             _mask_errors: list[str] = []
             _ai_key, _ai_model = _mask_ai_creds()
             # Retail MSRP is public — never mask it (keep any parsed MSRP value).
@@ -200,7 +200,7 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
                                              api_key=_ai_key, model=_ai_model,
                                              keep=_keep_msrp)
             for _me in _mask_errors:
-                st.warning(f"Price-mask failed — {_me} (file NOT in masked output)")
+                st.warning(t("Price-mask failed — {exc} (file NOT in masked output)").format(exc=_me))
 
         tracker.done()
         status.update(label="Done!", state="complete")
@@ -321,7 +321,7 @@ def _run_from_history(po_numbers: list[str], result_key: str = "history_results"
     df_meta = _all[_all["po_number"].isin(po_numbers)].reset_index(drop=True) if not _all.empty else store.load_metadata(po_numbers)
 
     if df_size.empty:
-        st.warning("No size data found for selected POs.")
+        st.warning(t("No size data found for selected POs."))
         return
 
     df_size = _enrich_cn_color(df_size, df_meta)
@@ -333,17 +333,17 @@ def _run_from_history(po_numbers: list[str], result_key: str = "history_results"
         # Legacy grid buy plan — cross-check totals source only.
         buyplan_path = export_buyplan(df_size, df_meta, out_dir,
                                        images_dir=_get_images_dir("giii_images_dir"))
-        st.write("Building color plan…")
+        st.write(t("Building color plan…"))
         color_plan_path = export_color_plan(df_size, out_dir)
-        st.write("Building PO summary…")
+        st.write(t("Building PO summary…"))
         po_summary_path = export_po_summary(df_size, df_meta, out_dir)
-        st.write("Building cross-check…")
+        st.write(t("Building cross-check…"))
         cross_check_path = export_cross_check(
             df_size, buyplan_path, color_plan_path, po_summary_path, out_dir,
         )
         # Buy Plan download = 生产计划单 (same shared builder as the upload flow
         # and Reports → Create Buy Plan).
-        st.write("Building buy plan (生产计划单)…")
+        st.write(t("Building buy plan (生产计划单)…"))
         from ui.giii._buyplan import build_giii_production_plan
         from ui.stores import get_cprs_client as _get_cprs_client
         try:
@@ -351,7 +351,7 @@ def _run_from_history(po_numbers: list[str], result_key: str = "history_results"
                 po_numbers, store, cprs=_get_cprs_client())
         except Exception as _bp_exc:
             _prod_bytes = None
-            st.warning(f"生产计划单 build failed — falling back to grid: {_bp_exc}")
+            st.warning(t("生产计划单 build failed — falling back to grid: {exc}").format(exc=_bp_exc))
         status.update(label="Done!", state="complete")
 
     outputs = {}
@@ -680,7 +680,7 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
                                          api_key=_ai_key, model=_ai_model,
                                          on_progress=_mask_prog, keep=_keep_msrp)
         for _me in _mask_errors:
-            st.warning(f"Price-mask failed — {_me} (file NOT in masked output)")
+            st.warning(t("Price-mask failed — {exc} (file NOT in masked output)").format(exc=_me))
 
     out: dict = {}
     for key, path in [("color_plan", cp), ("po_summary", ps), ("cross_check", cc)]:
@@ -786,12 +786,12 @@ def _run_smart_processing_body(detections, saved_paths: dict[str, str],
         for co, items in grouped.items():
             summary_lines.append(
                 f"**{co}**: {len(items)} file(s) — {_fmt_breakdown(items)}")
-        st.write("Detected groups: " + " | ".join(summary_lines))
+        st.write(t("Detected groups:") + " " + " | ".join(summary_lines))
 
         # ── Process each company group ────────────────────────────────────────
         for company, d_list in grouped.items():
-            st.write(f"\n--- Processing **{company}** "
-                     f"({len(d_list)} file(s) — {_fmt_breakdown(d_list)}) ---")
+            st.write("\n" + t("--- Processing **{company}** ({n} file(s) — {formats}) ---").format(
+                company=company, n=len(d_list), formats=_fmt_breakdown(d_list)))
             paths = [saved_paths[d.filename] for d in d_list if d.filename in saved_paths]
             fmt_ids = {d.format_id for d in d_list}
 
@@ -814,13 +814,13 @@ def _run_smart_processing_body(detections, saved_paths: dict[str, str],
                     deepseek_model=deepseek_model,
                 )
             else:
-                st.write(f"  ⚠️ {company} — no supported pipeline (format: {fmt_ids})")
+                st.write("  " + t("⚠️ {company} — no supported pipeline (format: {formats})").format(company=company, formats=fmt_ids))
                 log.append(f"⚠️ {html.escape(str(company))}: skipped (unsupported format {html.escape(str(fmt_ids))})")
                 continue
 
             if grp_out:
                 outputs["groups"][company] = grp_out
-                st.write(f"  ✅ {company} complete.")
+                st.write("  " + t("✅ {company} complete.").format(company=company))
 
         if not outputs["groups"]:
             status.update(label="No files could be processed.", state="error")

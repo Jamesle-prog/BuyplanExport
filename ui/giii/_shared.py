@@ -1,7 +1,8 @@
 """Shared constants and helpers for the GIII tab sub-modules."""
 from __future__ import annotations
 import re
-import streamlit as st
+import streamlit as st
+from ui.i18n import t
 from po_extractor.ui_helpers import (
     live_label_for,
     load_live_schema, schema_seed_rows,
@@ -171,7 +172,7 @@ def iter_pdf_payloads(files):
             try:
                 msg = extract_msg.openMsg(msg_path)
             except Exception as exc:
-                st.warning(f"Could not open {uf.name}: {exc}")
+                st.warning(t("Could not open {name}: {exc}").format(name=uf.name, exc=exc))
                 continue
 
             pdf_data = None
@@ -180,7 +181,7 @@ def iter_pdf_payloads(files):
                     pdf_data = att.data
                     break
             if pdf_data is None:
-                st.warning(f"No PDF attachment in {uf.name} — skipped.")
+                st.warning(t("No PDF attachment in {name} — skipped.").format(name=uf.name))
                 continue
 
             yield uf.name, pdf_data, (msg.subject or '')

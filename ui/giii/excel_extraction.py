@@ -30,8 +30,8 @@ def _log_photo_matches(df, photo_map: dict, log: list) -> None:
     """
     if not photo_map:
         st.warning(
-            "📷 No photos loaded — the configured image folder is empty or "
-            "doesn't contain any .png/.jpg files."
+            t("📷 No photos loaded — the configured image folder is empty or "
+            "doesn't contain any .png/.jpg files.")
         )
         log.append("📷 No photos loaded from image folder")
         return
@@ -214,21 +214,21 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
             from po_extractor.lookups import ProgressLookup
             try:
                 progress_lookup = ProgressLookup(data=progress_file.getvalue())
-                st.write(f"  📊 Progress lookup ready ({len(progress_lookup)} record(s))")
+                st.write("  " + t("📊 Progress lookup ready ({n} record(s))").format(n=len(progress_lookup)))
                 log.append(f"📊 Progress lookup: {html.escape(str(len(progress_lookup)))} record(s)")
             except Exception as exc:
-                st.warning(f"Could not load progress file: {exc}")
+                st.warning(t("Could not load progress file: {exc}").format(exc=exc))
                 log.append(f"⚠️ Progress lookup error: {html.escape(str(exc))}")
 
         # 2. Load photos from configured image folder
         images_folder = _get_images_dir("excel_images_dir")
         photo_map: dict[str, bytes] = _load_photo_map_from_dir(images_folder)
         if photo_map:
-            st.write(f"  📷 {len(photo_map)} photo(s) loaded from image folder")
+            st.write("  " + t("📷 {n} photo(s) loaded from image folder").format(n=len(photo_map)))
             log.append(f"📷 {html.escape(str(len(photo_map)))} photo(s) loaded from image folder")
 
         # 3. Combine all Excel files
-        st.write(f"Merging {len(excel_paths)} Excel file(s)…")
+        st.write(t("Merging {n} Excel file(s)…").format(n=len(excel_paths)))
         result = combine_excel_files(excel_paths, sheet_name=sheet_name)
 
         for skipped in result.skipped_files:
@@ -238,7 +238,7 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
         for src in result.source_files:
             n_rows = (len(result.df[result.df["_source_file"] == src])
                       if "_source_file" in result.df.columns else "?")
-            st.write(f"  ✅ {src} — {n_rows} row(s)")
+            st.write("  " + t("✅ {file} — {n} row(s)").format(file=src, n=n_rows))
             log.append(f'<span style="color:#198754">✅ {html.escape(str(src))}</span> — {html.escape(str(n_rows))} rows')
 
         if result.df.empty:
@@ -254,10 +254,10 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
         # 5. Repeat-order summary
         repeat_lines = repeat_order_summary(result)
         if repeat_lines:
-            st.info(
-                f"**{len(repeat_lines)} repeat order group(s) detected** — "
-                "same style/color in multiple POs. Each PO row is kept separately."
-            )
+            st.info(t(
+                "**{n} repeat order group(s) detected** — same style/color in "
+                "multiple POs. Each PO row is kept separately."
+            ).format(n=len(repeat_lines)))
             for line in repeat_lines:
                 st.caption(f"  ↩ {line}")
                 log.append(f"↩ {html.escape(str(line))}")
@@ -265,13 +265,13 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
         total_styles = (result.df["Main Supplier Config SKU"].nunique()
                         if "Main Supplier Config SKU" in result.df.columns else 0)
         total_rows = len(result.df)
-        st.write(f"Combined: {total_rows} row(s), {total_styles} style(s)")
+        st.write(t("Combined: {rows} row(s), {styles} style(s)").format(rows=total_rows, styles=total_styles))
 
         # 6. Save fabric parts to universal table
         _save_fabric_parts_from_df(result.df, source="zalando")
 
         # 7. Generate buy plan
-        st.write("Generating Zalando buy plan…")
+        st.write(t("Generating Zalando buy plan…"))
 
         # Photo-match diagnostic — visible on the page
         _log_photo_matches(result.df, photo_map, log)
@@ -311,7 +311,7 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
                         f"  ({'; '.join(steps)})"
                     )
             if cleanup_lines:
-                st.write(f"🧹 Color cleanup ({len(cleanup_lines)} value(s)):")
+                st.write(t("🧹 Color cleanup ({n} value(s)):").format(n=len(cleanup_lines)))
                 for line in cleanup_lines:
                     st.write(line)
                 log.append(f"🧹 Color cleanup ({html.escape(str(len(cleanup_lines)))} value(s)):")
@@ -359,10 +359,10 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
                 ]
 
             filled = (_enriched_df["合同号"] != "").sum()
-            st.write(f"  合同号: {filled}/{len(_enriched_df)} row(s) matched")
+            st.write("  " + t("合同号: {n}/{total} row(s) matched").format(n=filled, total=len(_enriched_df)))
             log.append(f"合同号 enrichment: {html.escape(str(filled))}/{html.escape(str(len(_enriched_df)))} rows filled")
             cn_filled = (_enriched_df["中文颜色"].astype(str).str.strip() != "").sum()
-            st.write(f"  中文颜色: {cn_filled}/{len(_enriched_df)} row(s) (from 大货进度表)")
+            st.write("  " + t("中文颜色: {n}/{total} row(s) (from 大货进度表)").format(n=cn_filled, total=len(_enriched_df)))
             log.append(f"中文颜色 enrichment: {html.escape(str(cn_filled))}/{html.escape(str(len(_enriched_df)))} rows (大货进度表)")
 
         buyplan_path = export_hhp_buyplan(_enriched_df, out_dir, photo_map=photo_map,
@@ -371,14 +371,14 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
         st.write(f"  → {os.path.basename(buyplan_path)}")
 
         # 8. Generate Template_P workbooks
-        st.write("Generating Template_P (color plan) workbooks…")
+        st.write(t("Generating Template_P (color plan) workbooks…"))
         template_p_files = export_hhp_template_p(result.df, out_dir)
-        st.write(f"  → {len(template_p_files)} workbook(s)")
+        st.write("  " + t("→ {n} workbook(s)").format(n=len(template_p_files)))
 
         # 9. Mask prices (optional)
         masked_excel_zip = None
         if mask_prices and excel_paths:
-            st.write("Masking prices in source files…")
+            st.write(t("Masking prices in source files…"))
             mask_out_dir = tempfile.mkdtemp()
             try:
                 _mask_errors: list[str] = []
@@ -387,7 +387,7 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
                                                        errors=_mask_errors,
                                                        api_key=_ai_key, model=_ai_model)
                 for _me in _mask_errors:
-                    st.warning(f"Price-mask failed — {_me} (file NOT in masked zip)")
+                    st.warning(t("Price-mask failed — {exc} (file NOT in masked zip)").format(exc=_me))
                     log.append(f"⚠️ price-mask failed — {html.escape(str(_me))}")
                 if masked_files:
                     mbuf = io.BytesIO()
@@ -395,7 +395,7 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
                         for mp in masked_files:
                             zf.write(mp, os.path.basename(mp))
                     masked_excel_zip = mbuf.getvalue()
-                    st.write(f"  🔒 {len(masked_files)} masked file(s) ready for download")
+                    st.write("  " + t("🔒 {n} masked file(s) ready for download").format(n=len(masked_files)))
                     log.append(f"🔒 {html.escape(str(len(masked_files)))} price-masked file(s) created")
             finally:
                 _shutil.rmtree(mask_out_dir, ignore_errors=True)

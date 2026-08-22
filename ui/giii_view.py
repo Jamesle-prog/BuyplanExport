@@ -75,7 +75,7 @@ def _show_excel_tab():
             type=["xlsx", "xlsm", "xls"],
             accept_multiple_files=True,
             label_visibility="collapsed",
-            help="Each file must contain a sheet named '1.1.PO_Client' with the two-row header mapping.",
+            help=t("Each file must contain a sheet named '1.1.PO_Client' with the two-row header mapping."),
             key="excel_uploader",
         )
         if uploaded_excels:
@@ -87,7 +87,7 @@ def _show_excel_tab():
         sheet_name = st.text_input(
             t("Source sheet name"),
             value="1.1.PO_Client",
-            help="Name of the mapping sheet inside each Excel file.",
+            help=t("Name of the mapping sheet inside each Excel file."),
             key="excel_sheet_name",
         )
 
@@ -96,7 +96,7 @@ def _show_excel_tab():
         client_profile = st.selectbox(
             t("Client profile"),
             ["(auto-detect)"] + list(CLIENT_ALIASES.keys()),
-            help="Pre-loads known column aliases for the selected client.",
+            help=t("Pre-loads known column aliases for the selected client."),
             key="excel_client_profile",
         )
 
@@ -127,7 +127,7 @@ def _show_excel_tab():
             "in the buy plan.  Leave blank to skip."
         ))
         progress_file = st.file_uploader(
-            "大货进度表 Excel",
+            t("大货进度表 Excel"),
             type=["xlsx", "xlsm", "xls"],
             key="excel_progress_file",
             label_visibility="collapsed",
@@ -143,7 +143,7 @@ def _show_excel_tab():
         t("Mask prices in output files"),
         value=False,
         key="excel_mask_prices",
-        help="Replace FOB / cost / price columns with *** before download.",
+        help=t("Replace FOB / cost / price columns with *** before download."),
     )
 
     if st.button("▶  " + t("Process Excel Files"), type="primary", use_container_width=True, key="run_excel"):
@@ -233,7 +233,7 @@ def _show_giii_upload_section():
         "🔒 " + t("Mask prices"),
         value=False,
         key="smart_mask_prices",
-        help="Replace FOB / cost / price values with *** in all output files.",
+        help=t("Replace FOB / cost / price values with *** in all output files."),
     )
 
     # Only the Excel/HHP sub-pipeline enriches from fabric_master (the main
@@ -423,7 +423,7 @@ def show_smart_upload_tab():
             "extractor below."
         ))
         other_files = st.file_uploader(
-            "Other PO files", type=["msg", "pdf"], accept_multiple_files=True,
+            t("Other PO files"), type=["msg", "pdf"], accept_multiple_files=True,
             label_visibility="collapsed", key="other_po_uploader",
         )
         if other_files:

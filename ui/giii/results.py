@@ -105,20 +105,20 @@ def _build_master_display_df() -> pd.DataFrame:
 
 def _show_master_po_table():
     """Admin-only interactive table: all POs across all clients, with style photos."""
-    st.subheader("🗂 Master PO View — All Clients")
+    st.subheader(t("🗂 Master PO View — All Clients"))
 
     display_df = _build_master_display_df()
     if display_df.empty:
-        st.info("No POs saved yet.")
+        st.info(t("No POs saved yet."))
         return
 
-    st.caption(f"{len(display_df):,} row(s) across all clients")
+    st.caption(t("{n} row(s) across all clients").format(n=f"{len(display_df):,}"))
 
     col_cfg = {"Photo": st.column_config.ImageColumn("Photo", width="small")}
 
     # Optional company filter
     companies = sorted(display_df["Company"].dropna().unique().tolist())
-    sel_cos = st.multiselect("Filter by Company:", companies, key="master_co_filter")
+    sel_cos = st.multiselect(t("Filter by Company:"), companies, key="master_co_filter")
     if sel_cos:
         mask = display_df["Company"].isin(sel_cos)
         display_df = display_df[mask].reset_index(drop=True)
@@ -129,7 +129,7 @@ def _show_master_po_table():
     # (persisted_download convention) — a download_button nested inside the
     # build-button's `if` vanished on the next rerun, forcing two clicks and
     # losing the button after any widget interaction.
-    if st.button("⬇ Download Master Table", key="master_dl_btn"):
+    if st.button(t("⬇ Download Master Table"), key="master_dl_btn"):
         from openpyxl import Workbook
         dl_df = display_df.drop(columns=["Photo"])
         wb = Workbook(); ws = wb.active; ws.title = "Master PO"
@@ -146,13 +146,13 @@ def _show_master_po_table():
 
 def _show_downloads(outputs: dict, key_prefix: str = "dl"):
     st.divider()
-    st.subheader("📥 Downloads")
+    st.subheader(t("📥 Downloads"))
 
 
     row1 = st.columns(3)
     with row1[0]:
         st.download_button(
-            label="📋 Buy Plan (生产计划单) (.xlsx)",
+            label=t("📋 Buy Plan (生产计划单) (.xlsx)"),
             data=outputs["buyplan_bytes"],
             file_name=outputs["buyplan_name"],
             mime=_XLSX_MIME,
@@ -160,64 +160,64 @@ def _show_downloads(outputs: dict, key_prefix: str = "dl"):
             type="primary",
             key=f"{key_prefix}_buyplan",
         )
-        st.caption("One sheet per style + 汇总 summaries + UPC + fabric/artwork")
+        st.caption(t("One sheet per style + 汇总 summaries + UPC + fabric/artwork"))
 
     with row1[1]:
         st.download_button(
-            label="🎨 Color Plan (.xlsx)",
+            label=t("🎨 Color Plan (.xlsx)"),
             data=outputs["color_plan_bytes"],
             file_name=outputs["color_plan_name"],
             mime=_XLSX_MIME,
             use_container_width=True,
             key=f"{key_prefix}_colorplan",
         )
-        st.caption("Color × Size totals per style (one tab per style)")
+        st.caption(t("Color × Size totals per style (one tab per style)"))
 
     with row1[2]:
         st.download_button(
-            label="📋 PO Summary (.xlsx)",
+            label=t("📋 PO Summary (.xlsx)"),
             data=outputs["po_summary_bytes"],
             file_name=outputs["po_summary_name"],
             mime=_XLSX_MIME,
             use_container_width=True,
             key=f"{key_prefix}_posummary",
         )
-        st.caption("One row per Style+PO with sizes, Total, COO, X-Factory Date")
+        st.caption(t("One row per Style+PO with sizes, Total, COO, X-Factory Date"))
 
     row2 = st.columns(3)
     with row2[0]:
         st.download_button(
-            label="✅ Cross Check (.xlsx)",
+            label=t("✅ Cross Check (.xlsx)"),
             data=outputs["cross_check_bytes"],
             file_name=outputs["cross_check_name"],
             mime=_XLSX_MIME,
             use_container_width=True,
             key=f"{key_prefix}_crosscheck",
         )
-        st.caption("Verifies unit totals match across all three outputs")
+        st.caption(t("Verifies unit totals match across all three outputs"))
 
     with row2[1]:
         st.download_button(
-            label="📁 Extracted Data (.zip)",
+            label=t("📁 Extracted Data (.zip)"),
             data=outputs["csvs_zip"],
             file_name="extracted_data.zip",
             mime=ZIP_MIME,
             use_container_width=True,
             key=f"{key_prefix}_csvzip",
         )
-        st.caption("3 CSVs: by size/color, style-color totals, metadata")
+        st.caption(t("3 CSVs: by size/color, style-color totals, metadata"))
 
     if "masked_zip" in outputs:
         with row2[2]:
             st.download_button(
-                label="🔒 Masked PDFs (.zip)",
+                label=t("🔒 Masked PDFs (.zip)"),
                 data=outputs["masked_zip"],
                 file_name="masked_pdfs.zip",
                 mime=ZIP_MIME,
                 use_container_width=True,
                 key=f"{key_prefix}_masked",
             )
-            st.caption("Price-redacted copies of all uploaded PDFs")
+            st.caption(t("Price-redacted copies of all uploaded PDFs"))
 
     _show_requirements_download(outputs, key_prefix)
 
@@ -444,12 +444,12 @@ def _show_requirements_api_section(outputs: dict, key_prefix: str) -> None:
 
 def _show_excel_downloads(outputs: dict):
     st.divider()
-    st.subheader("📥 Downloads")
+    st.subheader(t("📥 Downloads"))
 
     col1, col2, col3 = st.columns(3)
     with col1:
         st.download_button(
-            label="📊 Zalando Buy Plan (.xlsx)",
+            label=t("📊 Zalando Buy Plan (.xlsx)"),
             data=outputs["buyplan_bytes"],
             file_name=outputs["buyplan_name"],
             mime=_XLSX_MIME,
@@ -457,35 +457,35 @@ def _show_excel_downloads(outputs: dict):
             type="primary",
             key="excel_dl_buyplan",
         )
-        st.caption("One sheet per style — fabric, photos, PO rows, size grid")
+        st.caption(t("One sheet per style — fabric, photos, PO rows, size grid"))
 
     with col2:
         if outputs.get("template_p_zip"):
             st.download_button(
-                label=f"🎨 Template_P — {outputs.get('template_p_count', 0)} workbook(s) (.zip)",
+                label=t("🎨 Template_P — {n} workbook(s) (.zip)").format(n=outputs.get('template_p_count', 0)),
                 data=outputs["template_p_zip"],
                 file_name="Zalando_面料_by_Fabric.zip",
                 mime=ZIP_MIME,
                 use_container_width=True,
                 key="excel_dl_templatep",
             )
-            st.caption("Color × Size pivot grouped by Fabric1_Code")
+            st.caption(t("Color × Size pivot grouped by Fabric1_Code"))
 
     if "repeat_csv" in outputs:
         with col3:
             st.download_button(
-                label=f"↩ Repeat Orders Report ({outputs['repeat_count']} group(s))",
+                label=t("↩ Repeat Orders Report ({n} group(s))").format(n=outputs['repeat_count']),
                 data=outputs["repeat_csv"],
                 file_name="repeat_orders.csv",
                 mime=CSV_MIME,
                 use_container_width=True,
                 key="excel_dl_repeats",
             )
-            st.caption("Styles with same color appearing in multiple POs")
+            st.caption(t("Styles with same color appearing in multiple POs"))
 
     if "masked_zip" in outputs:
         st.download_button(
-            label="🔒 Download Masked Files (.zip)",
+            label=t("🔒 Download Masked Files (.zip)"),
             data=outputs["masked_zip"],
             file_name="zalando_masked.zip",
             mime=ZIP_MIME,
@@ -494,19 +494,19 @@ def _show_excel_downloads(outputs: dict):
         )
 
     if outputs.get("conflict_count", 0):
-        st.warning(
-            f"{outputs['conflict_count']} quantity conflict(s) found across files — "
-            "see processing log for details."
-        )
+        st.warning(t(
+            "{n} quantity conflict(s) found across files — see processing log "
+            "for details."
+        ).format(n=outputs['conflict_count']))
 
 
 def _show_smart_downloads(outputs: dict):
     st.divider()
-    st.subheader("📥 Downloads")
+    st.subheader(t("📥 Downloads"))
     groups: dict = outputs.get("groups", {})
 
     if not groups:
-        st.warning("No output was generated.")
+        st.warning(t("No output was generated."))
         return
 
     for company, grp in groups.items():
@@ -534,20 +534,20 @@ def _show_smart_downloads(outputs: dict):
             cols2 = st.columns(3)
             with cols2[0]:
                 st.download_button(
-                    "✅ Cross Check (.xlsx)", grp["cross_check_bytes"],
+                    t("✅ Cross Check (.xlsx)"), grp["cross_check_bytes"],
                     file_name=grp["cross_check_name"], mime=_XLSX_MIME,
                     use_container_width=True, key=f"dl_{company}_cc",
                 )
             with cols2[1]:
                 st.download_button(
-                    "📁 Extracted Data (.zip)", grp["csvs_zip"],
+                    t("📁 Extracted Data (.zip)"), grp["csvs_zip"],
                     file_name=f"{company}_data.zip", mime=ZIP_MIME,
                     use_container_width=True, key=f"dl_{company}_csv",
                 )
             if "masked_zip" in grp:
                 with cols2[2]:
                     st.download_button(
-                        "🔒 Masked PDFs (.zip)", grp["masked_zip"],
+                        t("🔒 Masked PDFs (.zip)"), grp["masked_zip"],
                         file_name=f"{company}_masked.zip", mime=ZIP_MIME,
                         use_container_width=True, key=f"dl_{company}_mask",
                     )
@@ -562,21 +562,21 @@ def _show_smart_downloads(outputs: dict):
             cols = st.columns(3)
             with cols[0]:
                 st.download_button(
-                    "📊 Buy Plan (.xlsx)", grp["buyplan_bytes"],
+                    t("📊 Buy Plan (.xlsx)"), grp["buyplan_bytes"],
                     file_name=grp["buyplan_name"], mime=_XLSX_MIME,
                     use_container_width=True, type="primary",
                     key=f"dl_{company}_bp",
                 )
-                st.caption("Fabric, photos, PO rows, size grid per style")
+                st.caption(t("Fabric, photos, PO rows, size grid per style"))
             with cols[1]:
                 st.download_button(
-                    f"🎨 Template_P — {grp['template_p_count']} workbook(s) (.zip)",
+                    t("🎨 Template_P — {n} workbook(s) (.zip)").format(n=grp['template_p_count']),
                     grp["template_p_zip"],
                     file_name=f"{company}_面料_workbooks.zip", mime=ZIP_MIME,
                     use_container_width=True,
                     key=f"dl_{company}_tp",
                 )
-                st.caption("Color × Size pivot grouped by Fabric code")
+                st.caption(t("Color × Size pivot grouped by Fabric code"))
             repeats = grp.get("repeat_orders", {})
             if repeats:
                 import csv as _csv
@@ -587,19 +587,19 @@ def _show_smart_downloads(outputs: dict):
                 w.writeheader(); w.writerows(rows)
                 with cols[2]:
                     st.download_button(
-                        f"↩ Repeat Orders ({len(repeats)} group(s))",
+                        t("↩ Repeat Orders ({n} group(s))").format(n=len(repeats)),
                         rbuf.getvalue().encode(),
                         file_name=f"{company}_repeat_orders.csv",
                         mime=CSV_MIME, use_container_width=True,
                         key=f"dl_{company}_rep",
                     )
-                    st.caption("Styles appearing in multiple POs")
+                    st.caption(t("Styles appearing in multiple POs"))
             if "masked_zip" in grp:
                 st.download_button(
-                    "🔒 Masked Files (.zip)", grp["masked_zip"],
+                    t("🔒 Masked Files (.zip)"), grp["masked_zip"],
                     file_name=f"{company}_masked.zip", mime=ZIP_MIME,
                     use_container_width=True,
                     key=f"dl_{company}_mask",
                 )
             if grp.get("conflicts"):
-                st.warning(f"{len(grp['conflicts'])} quantity conflict(s) — see log.")
+                st.warning(t("{n} quantity conflict(s) — see log.").format(n=len(grp['conflicts'])))

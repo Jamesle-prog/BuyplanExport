@@ -220,7 +220,7 @@ def _render_stage_row(stage: str, record: dict, rid: int) -> None:
     with col2:
         current_status = record.get(f"{stage}_status") or "Not Started"
         st.selectbox(
-            "Status",
+            t("Status"),
             STATUS_OPTIONS,
             index=STATUS_OPTIONS.index(current_status) if current_status in STATUS_OPTIONS else 0,
             key=_wkey(rid, f"{stage}_status"),
@@ -230,7 +230,7 @@ def _render_stage_row(stage: str, record: dict, rid: int) -> None:
     with col3:
         planned_val = _parse_date(record.get(f"{stage}_planned"))
         st.date_input(
-            "Planned",
+            t("Planned"),
             value=planned_val,
             key=_wkey(rid, f"{stage}_planned"),
             label_visibility="collapsed",
@@ -239,7 +239,7 @@ def _render_stage_row(stage: str, record: dict, rid: int) -> None:
     with col4:
         actual_val = _parse_date(record.get(f"{stage}_actual"))
         st.date_input(
-            "Actual",
+            t("Actual"),
             value=actual_val,
             key=_wkey(rid, f"{stage}_actual"),
             label_visibility="collapsed",
@@ -248,7 +248,7 @@ def _render_stage_row(stage: str, record: dict, rid: int) -> None:
     with col5:
         exp_days = record.get(f"{stage}_expected_days")
         st.number_input(
-            "Exp.Days",
+            t("Exp.Days"),
             min_value=0,
             step=1,
             value=int(exp_days) if exp_days is not None else 0,
@@ -259,7 +259,7 @@ def _render_stage_row(stage: str, record: dict, rid: int) -> None:
     with col6:
         notes_val = record.get(f"{stage}_notes") or ""
         st.text_input(
-            "Notes",
+            t("Notes"),
             value=notes_val,
             key=_wkey(rid, f"{stage}_notes"),
             label_visibility="collapsed",
@@ -289,7 +289,7 @@ def _render_dep_row(stage: str, record: dict, rid: int) -> None:
         guard_multiselect_state(wkey, options)
 
     selected = st.multiselect(
-        "Required for:",
+        t("Required for:"),
         options=options,
         key=wkey,
     )
@@ -364,7 +364,7 @@ def _render_optional_samples_section(record: dict, rid: int) -> None:
     with st.expander(t("Optional Samples"), expanded=any_applicable):
         for stage in STAGES_GROUP_B_OPTIONAL:
             applicable = st.toggle(
-                f"Include {STAGE_LABELS[stage]}",
+                t("Include {stage}").format(stage=STAGE_LABELS[stage]),
                 value=bool(record.get(f"{stage}_applicable", 0)),
                 key=_wkey(rid, f"{stage}_applicable"),
             )
@@ -381,7 +381,7 @@ def _render_optional_samples_section(record: dict, rid: int) -> None:
                 else:
                     guard_multiselect_state(dep_wkey, [pp_label])
                 selected = st.multiselect(
-                    "Required for:",
+                    t("Required for:"),
                     options=[pp_label],
                     key=dep_wkey,
                 )
@@ -406,30 +406,30 @@ def _render_pp_sample_section(record: dict, rid: int, readiness: str) -> None:
 
     # ── Substitute materials toggle ──────────────────────────────────────────
     use_sub = st.toggle(
-        "🔄 Use Substitute Materials for Samples",
+        t("🔄 Use Substitute Materials for Samples"),
         value=bool(record.get("use_substitute_materials", 1)),
         key=_wkey(rid, "use_substitute_materials"),
         help=(
-            "ON: Sample Trim/Fabric Purchase gate samples; bulk Group A "
+            t("ON: Sample Trim/Fabric Purchase gate samples; bulk Group A "
             "runs in parallel.\n"
-            "OFF: All bulk Group A stages must be Done before any sample starts."
+            "OFF: All bulk Group A stages must be Done before any sample starts.")
         ),
     )
     if use_sub:
         st.info(
-            "🔄 Substitute mode: Sample Trim/Fabric Purchase gate samples. "
-            "Bulk confirmations run in parallel."
+            t("🔄 Substitute mode: Sample Trim/Fabric Purchase gate samples. "
+            "Bulk confirmations run in parallel.")
         )
     else:
         st.warning(
-            "⚠️ Confirmed materials mode: Trim Purchase, Trim Layout, "
+            t("⚠️ Confirmed materials mode: Trim Purchase, Trim Layout, "
             "Fabric Purchase, and Fabric Color (LD) must all be Done before "
-            "any sample can start."
+            "any sample can start.")
         )
 
     _render_optional_samples_section(record, rid)
 
-    st.markdown("#### PP Sample *(Compulsory)*")
+    st.markdown(t("#### PP Sample *(Compulsory)*"))
     _render_readiness_badge("PP Sample", readiness)
     _stage_col_headers()
     _render_stage_row("pp_sample", record, rid)
@@ -444,7 +444,7 @@ def _render_group_c_section(record: dict, rid: int, readiness_cutting: str) -> N
         expanded=_done < _total,
     ):
         # Cutting gets a readiness badge
-        st.markdown("#### Cutting")
+        st.markdown(t("#### Cutting"))
         _render_readiness_badge("Cutting", readiness_cutting)
         _stage_col_headers()
         _render_stage_row("cutting", record, rid)
@@ -472,7 +472,7 @@ def _render_group_d_section(record: dict, rid: int) -> None:
 
 def _render_qc_section(record: dict, rid: int, reminders: list[dict]) -> None:
     """Render the QC Inspections section."""
-    st.subheader("🔍 QC Inspections")
+    st.subheader(t("🔍 QC Inspections"))
     reminder_map = {r["key"]: r for r in reminders}
 
     for key in QC_INSPECTIONS:
@@ -487,7 +487,7 @@ def _render_qc_section(record: dict, rid: int, reminders: list[dict]) -> None:
             )
             if final_result != "Fail":
                 st.caption(
-                    "🔁 Re-Final Inspection — appears when Final result is 'Fail'"
+                    t("🔁 Re-Final Inspection — appears when Final result is 'Fail'")
                 )
                 continue
 
@@ -496,13 +496,9 @@ def _render_qc_section(record: dict, rid: int, reminders: list[dict]) -> None:
         if key in reminder_map:
             rem = reminder_map[key]
             if rem["overdue"]:
-                st.error(
-                    f"⚠️ Booking OVERDUE — deadline was {rem['deadline']}"
-                )
+                st.error(t("⚠️ Booking OVERDUE — deadline was {date}").format(date=rem['deadline']))
             else:
-                st.warning(
-                    f"⚠️ Book by {rem['deadline']} — reminder triggered"
-                )
+                st.warning(t("⚠️ Book by {date} — reminder triggered").format(date=rem['deadline']))
 
         # Row 1 — booking fields
         col1, col2, col3, col4 = st.columns([2.5, 1.5, 2, 2])
@@ -660,7 +656,7 @@ def _do_save(record: dict, store, username: str, rid: int) -> None:
         dep_fields=dep_fields,
         qc_fields=qc_fields,
     )
-    st.success("✅ Record saved.")
+    st.success(t("✅ Record saved."))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -760,7 +756,7 @@ def show_production_tracking_tab(
     _stored_label = _TAB_LABELS[_stored]
     index = labels.index(_stored_label) if _stored_label in labels else 0
     active_label = st.radio(
-        "Sub-section", labels, horizontal=True, index=index,
+        t("Sub-section"), labels, horizontal=True, index=index,
         key="pt_tab_radio", format_func=t, label_visibility="collapsed",
     )
     st.session_state[SK.PT_ACTIVE_TAB] = _TAB_LABELS.index(active_label)
@@ -1171,7 +1167,7 @@ def _render_autoplan_section(records, store, username, today) -> None:
         # ── Draft a plan ───────────────────────────────────────────────────
         def _plan_panel():
             direction = st.radio(
-                "Direction",
+                t("Direction"),
                 ["backward", "forward"],
                 horizontal=True, key="pt_autoplan_dir",
                 format_func=lambda d: (t("倒推 Back from 离厂时间")
@@ -1257,7 +1253,7 @@ def _render_autoplan_section(records, store, username, today) -> None:
                 fill_date = st.date_input(t("Date"), value=today,
                                           key="pt_bulk_fill_date")
                 fill_which = st.radio(
-                    "Which field", [GRID_PLANNED, GRID_ACTUAL], horizontal=True,
+                    t("Which field"), [GRID_PLANNED, GRID_ACTUAL], horizontal=True,
                     key="pt_bulk_fill_field",
                     format_func=lambda m: (t("计划 Planned") if m == GRID_PLANNED
                                            else t("实际 Actual")),
@@ -1499,7 +1495,7 @@ def _render_grid_tab(records, store, po_store, username, today, admin_mode,
     if scope.can_edit_planned:
         mode_labels = {GRID_PLANNED: t("计划 Planned"), GRID_ACTUAL: t("实际 Actual")}
         mode = st.radio(
-            "Date mode", [GRID_PLANNED, GRID_ACTUAL], horizontal=True,
+            t("Date mode"), [GRID_PLANNED, GRID_ACTUAL], horizontal=True,
             key=SK.PT_GRID_MODE, format_func=lambda m: mode_labels[m],
             label_visibility="collapsed",
         )
@@ -1665,7 +1661,7 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
         "🔍 QC",
     ]
     pane = st.radio(
-        "Stage group", _PANES, horizontal=True, key="pt_edit_pane",
+        t("Stage group"), _PANES, horizontal=True, key="pt_edit_pane",
         format_func=t, label_visibility="collapsed",
     )
     st.caption(t(
@@ -1677,9 +1673,9 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
 
     # ── Factory / Company (read-only display) ────────────────────────────────
     meta_c1, meta_c2, meta_c3 = st.columns([2, 2, 4])
-    meta_c1.text_input("PO Number",  value=record.get("po_number") or "", disabled=True)
-    meta_c2.text_input("Style",      value=record.get("style")     or "", disabled=True)
-    meta_c3.text_input("Factory",    value=record.get("factory")   or "", disabled=True)
+    meta_c1.text_input(t("PO Number"),  value=record.get("po_number") or "", disabled=True)
+    meta_c2.text_input(t("Style"),      value=record.get("style")     or "", disabled=True)
+    meta_c3.text_input(t("Factory"),    value=record.get("factory")   or "", disabled=True)
 
     # Overall notes
     overall_notes_val = record.get("overall_notes") or ""
@@ -1708,12 +1704,12 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
     col_save, col_del = st.columns(2)
 
     with col_save:
-        if st.button("💾 Save", type="primary", use_container_width=True):
+        if st.button(t("💾 Save"), type="primary", use_container_width=True):
             _do_save(record, store, username, rid)
             fragment_rerun()
 
     with col_del:
-        if st.button("🗑️ Delete", use_container_width=True):
+        if st.button(t("🗑️ Delete"), use_container_width=True):
             st.session_state[SK.PT_DELETE_CONFIRM] = True
 
     if st.session_state.get(SK.PT_DELETE_CONFIRM):
@@ -1942,10 +1938,10 @@ def _render_add_tab(
 
     # ── Editable metadata ────────────────────────────────────────────────────
     mc1, mc2, mc3 = st.columns([2, 2, 4])
-    mc1.text_input("PO Number", value=chosen["po_number"], disabled=True)
-    mc2.text_input("Style",     value=chosen.get("style") or "", disabled=True)
+    mc1.text_input(t("PO Number"), value=chosen["po_number"], disabled=True)
+    mc2.text_input(t("Style"),     value=chosen.get("style") or "", disabled=True)
     factory_val = st.text_input(
-        "Factory",
+        t("Factory"),
         value=chosen.get("factory") or "",
         key="pt_add_factory",
     )
@@ -1954,7 +1950,7 @@ def _render_add_tab(
 
     st.divider()
 
-    if st.button("➕ Start Tracking", type="primary", use_container_width=True):
+    if st.button(t("➕ Start Tracking"), type="primary", use_container_width=True):
         stage_fields, dep_fields, qc_fields = _default_tracking_payload()
         new_id = store.upsert(
             po_number=chosen["po_number"],

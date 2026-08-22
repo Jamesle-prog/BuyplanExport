@@ -6,6 +6,7 @@ import io
 import pandas as pd
 import streamlit as st
 
+from ui.i18n import t
 from ui.shared import XLSX_MIME, CSV_MIME  # noqa: F401  (re-exported for sub-modules)
 
 # ---------------------------------------------------------------------------
@@ -55,9 +56,9 @@ FABRIC_DB_PAGE_SIZE = 200   # records per page
 def _fabric_db_stats_bar(count: int, last) -> None:
     """Render the 3-column stats bar (count / last import / source file)."""
     c1, c2, c3 = st.columns(3)
-    c1.metric("Total Fabrics", f"{count:,}")
-    c2.metric("Last Import", last["imported_at"][:10] if last else "—")
-    c3.metric("Source File", last["source_file"] if last else "—")
+    c1.metric(t("Total Fabrics"), f"{count:,}")
+    c2.metric(t("Last Import"), last["imported_at"][:10] if last else "—")
+    c3.metric(t("Source File"), last["source_file"] if last else "—")
 
 
 def _fabric_db_list_table(df: pd.DataFrame) -> None:
