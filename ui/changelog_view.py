@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.135.0",
+        "date": "2026-08-22",
+        "entries": [
+            {"type": "feat", "text": "**One palette for the Excel files the app designs.** Eight different header colours had grown across them — two dark blues, a slate, two light blues, a grey. `_excel_helpers` now defines the house palette once, in two roles: a **table header band** (white on blue) for the master table, PO summary, colour plan and the three blank templates the app hands out, and a **form section band** (dark on light blue) for multi-block documents — the cut plan and the 生产计划单 — where a dark band every few rows would shout. Totals, zebra rows, the attention highlight, grid lines, template hint text and the \"required\" red each have one value too."},
+            {"type": "feat", "text": "**Visible changes, so you know what moved:** the fabric-mapping and fabric-consumption upload templates and the blank buy-plan template now carry the same blue header as the PO summary (they were navy, light blue and slate); the 生产计划单 header is one shade lighter; PO-summary total rows are pale yellow like the cut plan's. Client-template exports — the HHP and Zalando buy plans and the KL-format summary — reproduce the client's own look and are deliberately untouched. A test keeps hard-coded colours out of the house exporters."},
+        ],
+    },
+    {
         "version": "2.134.0",
         "date": "2026-08-22",
         "entries": [

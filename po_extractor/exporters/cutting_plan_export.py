@@ -30,15 +30,19 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from ._excel_helpers import apply_print_settings, clean_sheet_name
-from ._excel_helpers import neutralise_foreign_formulas
+from ._excel_helpers import (
+    HOUSE_GRID_HEX, HOUSE_SECTION_HEX, HOUSE_SUBHEAD_HEX, HOUSE_TOTAL_HEX,
+    apply_print_settings, clean_sheet_name, house_fill,
+    neutralise_foreign_formulas,
+)
 
-_TITLE_FILL = PatternFill("solid", fgColor="DDEBF7")
-_HEAD_FILL = PatternFill("solid", fgColor="F2F2F2")
-_SUM_FILL = PatternFill("solid", fgColor="FFF2CC")
+# A form, not a table: section bands, not a dark header (see the palette).
+_TITLE_FILL = house_fill(HOUSE_SECTION_HEX)
+_HEAD_FILL = house_fill(HOUSE_SUBHEAD_HEX)
+_SUM_FILL = house_fill(HOUSE_TOTAL_HEX)
 _BOLD = Font(bold=True)
 _TITLE_FONT = Font(bold=True, size=11)
-_THIN = Side(style="thin", color="B0B0B0")
+_THIN = Side(style="thin", color=HOUSE_GRID_HEX)
 _BOX = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 _CENTER = Alignment(horizontal="center", vertical="center")
 

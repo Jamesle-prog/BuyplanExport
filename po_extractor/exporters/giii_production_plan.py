@@ -38,6 +38,7 @@ from ..ui_helpers.giii_requirements import (
     brand_from_po, pack_ratio, prepack_flag, strip_ratio,
 )
 from ._excel_helpers import neutralise_foreign_formulas
+from po_extractor.exporters._excel_helpers import HOUSE_HIGHLIGHT_HEX, HOUSE_SECTION_HEX, house_fill
 
 # ---------------------------------------------------------------------------
 # Style constants
@@ -46,8 +47,10 @@ _THIN   = Side(style="thin")
 _MEDIUM = Side(style="medium")
 _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 
-_HDR_FILL    = PatternFill("solid", fgColor="BDD7EE")   # light blue header
-_YELLOW_FILL = PatternFill("solid", fgColor="FFFF00")   # yellow highlights
+# A form, not a table: the light section band, with the highlight colour on
+# the one column the factory must check (see _excel_helpers' palette).
+_HDR_FILL    = house_fill(HOUSE_SECTION_HEX)
+_YELLOW_FILL = house_fill(HOUSE_HIGHLIGHT_HEX)
 _NO_FILL     = PatternFill("none")
 
 _CENTER   = Alignment(horizontal="center", vertical="center", wrap_text=True)

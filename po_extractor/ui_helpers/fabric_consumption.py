@@ -24,6 +24,7 @@ why.
 from __future__ import annotations
 
 import io
+from po_extractor.exporters._excel_helpers import HOUSE_HEADER_HEX, house_fill, house_header_font
 
 # 毛门幅 (gross, billed width) = 排版有效门幅 (effective marker width) + selvage.
 GROSS_WIDTH_MARGIN_CM = 5.0
@@ -113,15 +114,15 @@ def consumption_template_bytes(rows: list[dict] | None = None) -> bytes:
     An example row shows the expected shape; passing *rows* exports the stored
     data instead (for download-edit-reupload)."""
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.styles import Alignment
 
     wb = Workbook()
     ws = wb.active
     ws.title = "单耗排版"
-    hdr_fill = PatternFill("solid", fgColor="BDD7EE")
+    hdr_fill = house_fill(HOUSE_HEADER_HEX)
     for i, h in enumerate(_CONS_HEADERS, start=1):
         c = ws.cell(1, i, h)
-        c.font = Font(bold=True)
+        c.font = house_header_font()
         c.fill = hdr_fill
         c.alignment = Alignment(horizontal="center")
         ws.column_dimensions[c.column_letter].width = max(12, len(h) + 2)

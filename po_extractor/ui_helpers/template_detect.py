@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import io
+from po_extractor.exporters._excel_helpers import (
+    HOUSE_ALERT_TEXT, HOUSE_HEADER_HEX, HOUSE_MUTED_TEXT, house_fill, house_header_font,
+)
 
 
 def make_sample_buyplan_template() -> bytes:
     """Generate a downloadable sample buy-plan template."""
     import openpyxl
-    from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+    from openpyxl.styles import Alignment, Font, Border, Side
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -15,8 +18,8 @@ def make_sample_buyplan_template() -> bytes:
 
     def _hdr(cell, val):
         cell.value = val
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill(start_color="2E4053", end_color="2E4053", fill_type="solid")
+        cell.font = house_header_font()
+        cell.fill = house_fill(HOUSE_HEADER_HEX)
         cell.alignment = Alignment(horizontal="right", vertical="center")
 
     thin = Side(border_style="thin", color="AAAAAA")
@@ -43,7 +46,7 @@ def make_sample_buyplan_template() -> bytes:
     ws["K4"] = "{{division}}"
 
     ws["A5"] = "{{data_start}}"
-    ws["A5"].font = Font(italic=True, color="888888")
+    ws["A5"].font = Font(italic=True, color=HOUSE_MUTED_TEXT)
     ws["A5"].alignment = Alignment(horizontal="center")
 
     ws.column_dimensions["A"].width = 16

@@ -186,3 +186,40 @@ def test_session_key_detector_catches_every_form(tmp_path):
         encoding="utf-8",
     )
     assert [k for _, k in _literal_session_keys(f)] == ["a", "b", "c", "d", "e"]
+
+
+# ── Excel house palette ─────────────────────────────────────────────────────
+
+# Workbooks the app designs itself.  Client-template exports (HHP / Zalando
+# buy plans, the KL-format summary) reproduce the client's look and are not
+# listed — they may, and should, keep their own colours.
+HOUSE_EXPORTERS = [
+    "po_extractor/exporters/cutting_plan_export.py",
+    "po_extractor/exporters/giii_production_plan.py",
+    "po_extractor/ui_helpers/excel_format.py",
+    "po_extractor/ui_helpers/excel_reports.py",
+    "po_extractor/ui_helpers/fabric_consumption.py",
+    "po_extractor/ui_helpers/fabric_mapping_template.py",
+    "po_extractor/ui_helpers/template_detect.py",
+    "ui/giii/reference.py",
+]
+_HEX_LITERAL = re.compile(r'(fgColor|start_color|end_color|color)="[0-9A-Fa-f]{6}"')
+
+
+@pytest.mark.parametrize("rel", HOUSE_EXPORTERS)
+def test_house_exporters_take_colours_from_the_palette(rel):
+    """Eight different header fills had grown across these sheets.  Every
+    fill and header font now comes from _excel_helpers' HOUSE_* constants."""
+    src = io.open(REPO / rel, encoding="utf-8-sig").read()
+    stray = [m.group(0) for m in _HEX_LITERAL.finditer(src)
+             if m.group(0) not in ('color="AAAAAA"',)]      # thin-border grey, pre-existing
+    assert not stray, f"{rel}: hard-coded Excel colour(s) {stray} — use house_fill()/house_header_font()"
+
+
+def test_palette_has_two_header_roles_and_they_differ():
+    from po_extractor.exporters._excel_helpers import (
+        HOUSE_HEADER_HEX, HOUSE_SECTION_HEX, house_fill, house_header_font,
+    )
+    assert HOUSE_HEADER_HEX != HOUSE_SECTION_HEX
+    assert house_fill(HOUSE_HEADER_HEX).start_color.rgb.endswith(HOUSE_HEADER_HEX)
+    assert house_header_font(size=11).bold and house_header_font().color.rgb.endswith("FFFFFF")

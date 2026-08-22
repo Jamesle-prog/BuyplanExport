@@ -11,6 +11,7 @@ from typing import Callable
 import pandas as pd
 
 from po_extractor.ui_helpers.excel_format import write_excel_header_row
+from po_extractor.exporters._excel_helpers import HOUSE_ALT_ROW_HEX, HOUSE_HEADER_HEX, HOUSE_TOTAL_HEX, house_fill, house_header_font
 
 # Standard size ordering for color-plan pivots.
 SIZE_ORDER: list[str] = [
@@ -28,7 +29,6 @@ def generate_color_plan_excel(df_size_rows: pd.DataFrame) -> bytes:
     Returns b'' for empty input.
     """
     from openpyxl import Workbook
-    from openpyxl.styles import PatternFill
 
     if df_size_rows is None or df_size_rows.empty:
         return b""
@@ -55,7 +55,7 @@ def generate_color_plan_excel(df_size_rows: pd.DataFrame) -> bytes:
     ws.title = "Color Plan"
     write_excel_header_row(ws, list(pivot.columns))
 
-    alt_fill = PatternFill("solid", start_color="EEF2FF", end_color="EEF2FF")
+    alt_fill = house_fill(HOUSE_ALT_ROW_HEX)
     for ri, row in enumerate(pivot.itertuples(index=False), start=2):
         for ci, val in enumerate(row, start=1):
             cell = ws.cell(row=ri, column=ci, value=val)
@@ -100,7 +100,7 @@ def generate_po_summary_excel(
     """
     from openpyxl import Workbook
     from openpyxl.styles import (
-        PatternFill, Font, Alignment, Border, Side,
+        Font, Alignment, Border, Side,
     )
     from openpyxl.utils import get_column_letter
 
@@ -122,14 +122,14 @@ def generate_po_summary_excel(
         return str(val).strip() if val else ""
 
     # ── Helper styles ────────────────────────────────────────────────────────
-    HDR_FILL   = PatternFill("solid", start_color="4472C4", end_color="4472C4")
-    HDR_FONT   = Font(bold=True, color="FFFFFF", name="Calibri", size=10)
+    HDR_FILL   = house_fill(HOUSE_HEADER_HEX)
+    HDR_FONT   = house_header_font(name="Calibri", size=10)
     TITLE_FONT = Font(bold=True, name="Calibri", size=13)
     LABEL_FONT = Font(bold=True, name="Calibri", size=10)
     DATA_FONT  = Font(name="Calibri", size=10)
-    TOTAL_FILL = PatternFill("solid", start_color="D9E1F2", end_color="D9E1F2")
+    TOTAL_FILL = house_fill(HOUSE_TOTAL_HEX)
     TOTAL_FONT = Font(bold=True, name="Calibri", size=10)
-    ALT_FILL   = PatternFill("solid", start_color="F2F7FF", end_color="F2F7FF")
+    ALT_FILL   = house_fill(HOUSE_ALT_ROW_HEX)
     THIN_BORDER = Border(
         left=Side(style="thin", color="AAAAAA"),
         right=Side(style="thin", color="AAAAAA"),

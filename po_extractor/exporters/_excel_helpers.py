@@ -11,8 +11,46 @@ from typing import Any, Iterable
 import re
 
 import pandas as pd
+from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.properties import PageSetupProperties
+
+
+# ---------------------------------------------------------------------------
+# House palette — for workbooks the app designs itself
+# ---------------------------------------------------------------------------
+# Eight different header fills had grown across the app-designed sheets (two
+# dark blues, a slate, two light blues, a grey…).  Two roles, defined once:
+#
+#   HEADER  — a table's column-header band: white bold text on blue.  Used by
+#             the master table, PO summary, colour plan and the upload
+#             templates the app hands out.
+#   SECTION — a form's section-title band: dark text on light blue.  Used by
+#             multi-block documents (the cut plan, the 生产计划单) where a dark
+#             band every few rows would shout.
+#
+# Client-template exports (HHP / Zalando buy plans, the KL-format summary)
+# reproduce the client's own look and deliberately do NOT use these.
+HOUSE_HEADER_HEX    = "4472C4"   # table header band (Excel "Blue, Accent 1")
+HOUSE_HEADER_TEXT   = "FFFFFF"
+HOUSE_SECTION_HEX   = "DDEBF7"   # form section band (Accent 1, 80 % lighter)
+HOUSE_SUBHEAD_HEX   = "F2F2F2"   # column-label row inside a form section
+HOUSE_TOTAL_HEX     = "FFF2CC"   # totals / sum rows
+HOUSE_ALT_ROW_HEX   = "F2F7FF"   # zebra striping on long tables
+HOUSE_HIGHLIGHT_HEX = "FFFF00"   # a cell that needs the reader's attention
+HOUSE_GRID_HEX      = "B0B0B0"   # thin cell borders
+HOUSE_MUTED_TEXT    = "808080"   # example rows and hints in a blank template
+HOUSE_ALERT_TEXT    = "C00000"   # "required — do not leave blank" notes
+
+
+def house_fill(hex_colour: str) -> PatternFill:
+    """Solid fill for one of the HOUSE_*_HEX colours."""
+    return PatternFill("solid", start_color=hex_colour, end_color=hex_colour)
+
+
+def house_header_font(**kw) -> Font:
+    """White bold text for the HEADER band; extra kwargs pass to ``Font``."""
+    return Font(bold=True, color=HOUSE_HEADER_TEXT, **kw)
 
 
 # ---------------------------------------------------------------------------

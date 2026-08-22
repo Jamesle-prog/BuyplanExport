@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import io
+from po_extractor.exporters._excel_helpers import (
+    HOUSE_ALERT_TEXT, HOUSE_HEADER_HEX, HOUSE_MUTED_TEXT, house_fill, house_header_font,
+)
 
 BODY_PART_LIST = [
     "Main Body / 大身",
@@ -37,7 +40,7 @@ def generate_fabric_mapping_template() -> bytes:
       H: Fabric 4 Body Part / 面料4部位  (dropdown)   I: Fabric 4 Code / 面料4编号
     """
     import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.styles import Font, Alignment
     from openpyxl.utils import get_column_letter
     from openpyxl.worksheet.datavalidation import DataValidation
 
@@ -54,8 +57,8 @@ def generate_fabric_mapping_template() -> bytes:
     ]
     col_widths = [20, 24, 18, 24, 18, 24, 18, 24, 18]
 
-    hdr_fill = PatternFill("solid", fgColor="1F4E79")
-    hdr_font = Font(bold=True, color="FFFFFF", size=11)
+    hdr_fill = house_fill(HOUSE_HEADER_HEX)
+    hdr_font = house_header_font(size=11)
 
     for ci, (hdr, width) in enumerate(zip(headers, col_widths), start=1):
         cell = ws.cell(row=1, column=ci, value=hdr)
@@ -71,7 +74,7 @@ def generate_fabric_mapping_template() -> bytes:
         ["S25DDR2036", "Main Body / 大身",   "HHN-JA-01715", "Lining / 里布",        "HHN-MS-01794", "",                   "",             "", ""],
         ["S25JKT1042", "Upper Body / 上身",  "HHN-JA-02301", "Pocket Mesh / 网眼布", "HHN-PO-00891", "Sleeve / 袖子",       "HHN-JA-00712", "", ""],
     ]
-    ex_font = Font(color="808080", italic=True, size=10)
+    ex_font = Font(color=HOUSE_MUTED_TEXT, italic=True, size=10)
     for ri, row in enumerate(examples, start=2):
         for ci, val in enumerate(row, start=1):
             ws.cell(row=ri, column=ci, value=val).font = ex_font
@@ -83,7 +86,7 @@ def generate_fabric_mapping_template() -> bytes:
               "Fabric Code = HHN编号 (e.g. HHN-JA-01715).  "
               "Composition 成分 is looked up automatically from the Fabric DB.",
     )
-    note.font = Font(color="C00000", size=9, italic=True)
+    note.font = Font(color=HOUSE_ALERT_TEXT, size=9, italic=True)
     ws.merge_cells(start_row=4, start_column=1, end_row=4, end_column=9)
 
     # Excel's inline list formula is limited to 255 characters.  The body-part
