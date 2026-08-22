@@ -117,6 +117,8 @@ def test_no_deprecated_use_container_width():
     One API, or the next Streamlit release breaks half the buttons."""
     offenders = []
     for p in UI_FILES + [REPO / "app.py"]:
+        if p.name == "changelog_view.py":
+            continue                       # release notes mention the old name
         src = io.open(p, encoding="utf-8-sig").read()
         for i, line in enumerate(src.splitlines(), 1):
             if "use_container_width" in line:
