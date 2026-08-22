@@ -9,6 +9,7 @@ import zipfile
 
 import streamlit as st
 from ui.i18n import t
+from ui.log_markup import badge
 
 from auth.companies import COMPANY_SKY_EAST, SOURCE_SKY_EAST
 from po_extractor.utils.price_mask import mask_prices_excel_batch
@@ -334,7 +335,7 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
                     n  = len(contract.items)
                     st.write("  " + t("{file} -> PC {pc}, {n} item(s)").format(file=fname, pc=pc, n=n))
                     log.append(
-                        f'<span style="color:#198754">{html.escape(str(fname))}</span> '
+                        f'{badge("ok", html.escape(str(fname)))} '
                         f'-> PC <b>{html.escape(str(pc))}</b>, {html.escape(str(n))} item(s)'
                     )
                     added = image_cache.add_file(path)
@@ -346,13 +347,13 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
                         st.write("  " + t("⚠️ {n} zero-unit row(s) ignored in {file}").format(n=n_skip, file=fname))
                         for s in contract.skipped_zero_qty:
                             log.append(
-                                f'<span style="color:#fd7e14">⚠️ Ignored (0 units)</span> '
+                                f'{badge("warn", "Ignored (0 units)")} '
                                 f'{html.escape(str(fname))} row {html.escape(str(s["row"]))}: style <b>{html.escape(str(s["style"] or "—"))}</b>'
                                 + (f", PO {html.escape(str(s['po']))}" if s["po"] else "")
                             )
                 except Exception as exc:
                     st.write(f"  {fname}: {exc}")
-                    log.append(f'<span style="color:#dc3545">{html.escape(str(fname))}</span>: {html.escape(str(exc))}')
+                    log.append(f'{badge("err", html.escape(str(fname)))}: {html.escape(str(exc))}')
                     # Persist to the shared exception queue (same destination
                     # GIII parse failures go to) so the failure survives the
                     # session instead of living only in this log panel.

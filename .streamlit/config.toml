@@ -1,0 +1,13 @@
+# Streamlit configuration — committed on purpose (only secrets.toml is ignored).
+#
+# [theme] is the one setting Streamlit's own widgets obey.  Without it every
+# button, checkbox, slider and focus ring used Streamlit's default red
+# (#ff4b4b) while the login page and everything the app draws by hand used the
+# Threadline pink (#ff2e74) — two "primary" colours on one product.  This value
+# must stay equal to --tl-brand in app.py's token block; a test checks that.
+#
+# No `base` is set: the page follows the browser/OS light-dark preference, and
+# the app's CSS adapts its own colours with prefers-color-scheme to match.
+
+[theme]
+primaryColor = "#ff2e74"

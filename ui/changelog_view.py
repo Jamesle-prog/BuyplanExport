@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.133.0",
+        "date": "2026-08-22",
+        "entries": [
+            {"type": "feat", "text": "**One colour system.** Every colour the app draws by hand — the brand pink, the three processing-log status colours, the uploader and checkbox edges — is now a named token defined once at the top of the page CSS, with a dark-mode value alongside. Before, `app.py` defined `.badge-ok`/`.badge-err` and then two of the four log producers wrote their own `style=\"color:#dc3545\"` anyway; GIII warned in amber and Sky East in orange; and none of it adapted to dark mode, where amber on charcoal is unreadable."},
+            {"type": "feat", "text": "**Processing-log lines are a component.** `ui/log_markup.badge(kind, text)` emits the status span — `ok`, `warn`, `err`, each with its one class and one glyph — and is the only way a producer colours a line. Fourteen hand-written spans across four files now call it; the warning glyph is `⚠️` everywhere. It deliberately does not escape its text, so the escaping rule stays at the call site where the untrusted value is; the escaping test was extended to look inside `badge()` arguments, so handing it a bare variable fails the build exactly as a bare interpolation does."},
+            {"type": "fix", "text": "**Widgets and the login page finally agree on what colour the product is.** Streamlit's buttons, checkboxes, sliders and focus rings were its default red (`#ff4b4b`) while the login page and the app's own drawing used Threadline pink (`#ff2e74`) — two primary colours on one product. `.streamlit/config.toml` now sets `primaryColor` to the brand, and a test checks it equals the `--tl-brand` token so the two can't drift apart. This is a visible change: every primary button is now pink."},
+        ],
+    },
+    {
         "version": "2.132.0",
         "date": "2026-08-22",
         "entries": [

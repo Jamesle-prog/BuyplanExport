@@ -75,6 +75,7 @@ from po_extractor.ui_helpers import (
 )
 from po_extractor.utils.price_mask import mask_prices_batch
 from ui.i18n import t
+from ui.log_markup import badge
 from ui.session_keys import SK
 from ui.shared import ProgressTracker, images_dir as _get_images_dir
 from ui.stores import get_store
@@ -124,7 +125,7 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
                 file_hash = _hl.md5(fh.read()).hexdigest()
             if file_hash in seen_hashes:
                 st.write(t("⚠️ {name} — identical file already in this batch, skipped").format(name=name))
-                log.append(f'<span style="color:#b08800">⚠️ {html.escape(str(name))}</span> — duplicate file skipped')
+                log.append(f'{badge("warn", html.escape(str(name)))} — duplicate file skipped')
                 tracker.step(f"Skipped duplicate: {name}")
                 continue
             seen_hashes.add(file_hash)
@@ -138,10 +139,10 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
                 pos.append(po)
                 n = len(po.size_rows)
                 st.write(t("✅ {name} — {n} size row(s)").format(name=name, n=n))
-                log.append(f'<span class="badge-ok">✅ {html.escape(str(name))}</span> — {html.escape(str(n))} size row(s)')
+                log.append(f'{badge("ok", html.escape(str(name)))} — {html.escape(str(n))} size row(s)')
             except Exception as e:
                 st.write(f"❌ {name}: {e}")
-                log.append(f'<span class="badge-err">❌ {html.escape(str(name))}</span>: {html.escape(str(e))}')
+                log.append(f'{badge("err", html.escape(str(name)))}: {html.escape(str(e))}')
                 get_store().save_exception(
                     po_number="", file_name=name, company=company,
                     reason=str(e),
@@ -618,7 +619,7 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
     pos = []
     for name, h, po, tag, exc in parsed:
         if exc is not None:
-            log.append(f'<span style="color:#dc3545">❌ {html.escape(str(name))}: {html.escape(str(exc))}</span>')
+            log.append(badge("err", f'{html.escape(str(name))}: {html.escape(str(exc))}'))
             get_store().save_exception(
                 po_number="", file_name=name, company=company,
                 reason=str(exc), processed_by=username,
@@ -628,7 +629,7 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
         po.metadata.processed_by = username
         po.metadata.source_file_hash = h
         pos.append(po)
-        log.append(f'<span style="color:#198754">{html.escape(str(tag))} {html.escape(str(name))}</span> — {html.escape(str(len(po.size_rows)))} rows')
+        log.append(f'{badge("ok", f"{html.escape(str(tag))} {html.escape(str(name))}", glyph=False)} — {html.escape(str(len(po.size_rows)))} rows')
 
     if not pos:
         return None
@@ -661,8 +662,7 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
             _bp_selected, get_store(), cprs=_get_cprs_client())
     except Exception as _bp_exc:      # never let the buy plan fail the upload
         _prod_bytes = None
-        log.append(f'<span style="color:#dc3545">⚠ 生产计划单 build failed: '
-                   f'{html.escape(str(_bp_exc))}</span>')
+        log.append(badge("err", f'生产计划单 build failed: {html.escape(str(_bp_exc))}'))
 
     masked_paths = []
     if mask_prices:

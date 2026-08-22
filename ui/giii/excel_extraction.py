@@ -15,6 +15,7 @@ from po_extractor.ui_helpers.color_enrichment import enrich_hhp_colors
 from po_extractor.utils.price_mask import mask_prices_excel_batch
 from auth.companies import get_company
 from ui.i18n import t
+from ui.log_markup import badge
 from ui.stores import get_store, get_color_translation_store
 from ui.giii._shared import mask_ai_creds as _mask_ai_creds
 from ui.giii.extraction import _save_fabric_parts_from_df
@@ -89,17 +90,17 @@ def _process_excel_group(company: str, paths: list[str], out_dir: str,
 
     result = combine_excel_files(paths, sheet_name=sheet_name)
     for skipped in result.skipped_files:
-        log.append(f'<span style="color:#dc3545">❌ {html.escape(str(skipped))}</span>')
+        log.append(badge("err", html.escape(str(skipped))))
     for src in result.source_files:
         n = len(result.df[result.df["_source_file"] == src]) if "_source_file" in result.df.columns else "?"
-        log.append(f'<span style="color:#198754">✅ {html.escape(str(src))}</span> — {html.escape(str(n))} rows')
+        log.append(f'{badge("ok", html.escape(str(src)))} — {html.escape(str(n))} rows')
 
     if result.df.empty:
         log.append(f"⚠️ {html.escape(str(company))}: no data found.")
         return None
 
     for conflict in result.conflicts:
-        log.append(f'<span style="color:#b08800">⚠️ {html.escape(str(conflict))}</span>')
+        log.append(badge("warn", html.escape(str(conflict))))
 
     repeats = repeat_order_summary(result)
     for line in repeats:
@@ -233,13 +234,13 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
 
         for skipped in result.skipped_files:
             st.write(f"  ❌ {skipped}")
-            log.append(f'<span style="color:#dc3545">❌ {html.escape(str(skipped))}</span>')
+            log.append(badge("err", html.escape(str(skipped))))
 
         for src in result.source_files:
             n_rows = (len(result.df[result.df["_source_file"] == src])
                       if "_source_file" in result.df.columns else "?")
             st.write("  " + t("✅ {file} — {n} row(s)").format(file=src, n=n_rows))
-            log.append(f'<span style="color:#198754">✅ {html.escape(str(src))}</span> — {html.escape(str(n_rows))} rows')
+            log.append(f'{badge("ok", html.escape(str(src)))} — {html.escape(str(n_rows))} rows')
 
         if result.df.empty:
             status.update(label="No data found in the uploaded files.", state="error")
@@ -249,7 +250,7 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
         # 4. Conflict warnings
         for conflict in result.conflicts:
             st.warning(conflict)
-            log.append(f'<span style="color:#b08800">⚠️ {html.escape(str(conflict))}</span>')
+            log.append(badge("warn", html.escape(str(conflict))))
 
         # 5. Repeat-order summary
         repeat_lines = repeat_order_summary(result)

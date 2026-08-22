@@ -4,6 +4,7 @@ from __future__ import annotations
 import html
 import streamlit as st
 from ui.i18n import t
+from ui.log_markup import badge
 
 
 def _se_report_sku_conflicts(config_sku_lookup, log: list[str]) -> None:
@@ -21,7 +22,7 @@ def _se_report_sku_conflicts(config_sku_lookup, log: list[str]) -> None:
                f"Brand={c['brand']} | Style={c['style']} "
                f"-> conflicting values: {', '.join(c['values'])}")
         st.error(msg)
-        log.append(f'<span style="color:#dc3545">{html.escape(str(msg))}</span>')
+        log.append(badge("err", html.escape(str(msg))))
 
 
 def _se_validate_contracts(contracts, log: list[str]) -> None:

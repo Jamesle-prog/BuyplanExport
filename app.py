@@ -16,7 +16,7 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
 
 import streamlit as st
 
-APP_VERSION = "2.132.0"
+APP_VERSION = "2.133.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -72,15 +72,43 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 st.markdown("""
 <style>
+/* ── Design tokens ───────────────────────────────────────────────────────
+   The only place a colour is written down.  Everything below, and the
+   login page's --tl-* palette, reads these.  The brand accent must match
+   [theme] primaryColor in .streamlit/config.toml — that file colours the
+   Streamlit widgets themselves (buttons, checkboxes, sliders), this one
+   colours what the app draws by hand.  Status colours get a dark variant:
+   the light-mode amber is unreadable on a dark page.                    */
+:root {
+    --tl-brand:       #ff2e74;
+    --tl-brand-2:     #ff6a5b;     /* gradient partner for the brand accent */
+    --tl-ok:          #198754;
+    --tl-warn:        #b08800;
+    --tl-err:         #dc3545;
+    --tl-edge:        #ced4da;     /* dashed uploader border, checkbox rims */
+    --tl-edge-soft:   #9ca3af;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --tl-ok:        #4ade80;
+        --tl-warn:      #fbbf24;
+        --tl-err:       #f87171;
+        --tl-edge:      #4b5563;
+        --tl-edge-soft: #6b7280;
+    }
+}
+
 /* Subtle file uploader border */
 [data-testid="stFileUploader"] {
-    border: 2px dashed #ced4da;
+    border: 2px dashed var(--tl-edge);
     border-radius: 8px;
     padding: 0.5rem;
 }
-/* Status badges used in processing logs */
-.badge-ok  { color: #198754; font-weight: 600; }
-.badge-err { color: #dc3545; font-weight: 600; }
+/* Status badges in processing logs — emitted by ui/log_markup.badge().
+   Three kinds, one class each; producers never write a colour themselves. */
+.badge-ok   { color: var(--tl-ok);   font-weight: 600; }
+.badge-warn { color: var(--tl-warn); font-weight: 600; }
+.badge-err  { color: var(--tl-err);  font-weight: 600; }
 /* Metric label smaller on stat rows */
 [data-testid="stMetricLabel"] { font-size: 0.8rem; }
 
@@ -97,7 +125,7 @@ st.markdown("""
     transform: translateY(-50%);
     width: 1rem;
     height: 1rem;
-    border: 1.5px solid #9ca3af;
+    border: 1.5px solid var(--tl-edge-soft);
     border-radius: 3px;
     background: #fff;
     box-sizing: border-box;
@@ -105,8 +133,8 @@ st.markdown("""
 }
 [data-baseweb="menu"] [role="option"][aria-selected="true"]::before {
     content: '✓';
-    background: #ff4b4b;
-    border-color: #ff4b4b;
+    background: var(--tl-brand);
+    border-color: var(--tl-brand);
     color: #fff;
     font-size: 0.65rem;
     font-weight: 700;
@@ -291,7 +319,7 @@ _LOGIN_CSS = """
 .tl-logo {
     width: 44px; height: 44px; border-radius: 14px; font-size: 22px;
     display: flex; align-items: center; justify-content: center;
-    background: linear-gradient(135deg, #ff2e74, #ff6a5b);
+    background: linear-gradient(135deg, var(--tl-brand), var(--tl-brand-2));
     box-shadow: 0 10px 26px rgba(255,46,116,0.28);
 }
 .tl-word {
@@ -316,7 +344,7 @@ _LOGIN_CSS = """
 .tl-step-circle {
     width: clamp(50px, 4.2vw, 68px); height: clamp(50px, 4.2vw, 68px);
     border-radius: 50%; display: flex; align-items: center; justify-content: center;
-    background: var(--tl-circle); border: 1.5px solid var(--tl-chip); color: #ff2e74;
+    background: var(--tl-circle); border: 1.5px solid var(--tl-chip); color: var(--tl-brand);
 }
 .tl-step-circle svg { width: 40%; height: 40%; }
 .tl-step-label { font-size: clamp(12px, 0.95vw, 14px); font-weight: 700; white-space: nowrap; }
@@ -338,7 +366,7 @@ div[class*="st-key-login_lang"] button {
     padding: 6px 15px !important; box-shadow: none !important;
 }
 div[class*="st-key-login_lang"] button:hover {
-    border-color: #ff2e74 !important; color: #ff2e74 !important;
+    border-color: var(--tl-brand) !important; color: var(--tl-brand) !important;
 }
 
 .tl-welcome {
@@ -378,7 +406,7 @@ div[data-testid="stForm"] div[data-baseweb="input"] {
     transition: border-color .15s, box-shadow .15s;
 }
 div[data-testid="stForm"] div[data-baseweb="input"]:focus-within {
-    border-color: #ff2e74 !important;
+    border-color: var(--tl-brand) !important;
     box-shadow: 0 0 0 3.5px rgba(255,46,116,0.14) !important;
 }
 /* Everything inside the box stays flat — no second border, no second fill. */
@@ -399,7 +427,7 @@ div[data-testid="stFormSubmitButton"] button {
     width: 100%; border: none; border-radius: 14px; padding: 13px;
     color: #fff; font-weight: 700; font-size: 15.5px;
     font-family: 'Schibsted Grotesk', 'Noto Sans SC', sans-serif;
-    background: linear-gradient(135deg, #ff2e74, #ff6a5b);
+    background: linear-gradient(135deg, var(--tl-brand), var(--tl-brand-2));
     box-shadow: 0 12px 26px rgba(255,46,116,0.30);
     transition: filter .15s ease, transform .06s ease;
 }

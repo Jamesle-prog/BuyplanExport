@@ -32,8 +32,48 @@ PRODUCERS = [
 ]
 
 
+# Trusted markup helpers (ui/log_markup).  They wrap text in a status span and
+# do NOT escape it, so their arguments are held to the same rule as a bare
+# interpolation: every value must be escape()d or a literal.  The ``kind``
+# argument and keyword flags are literals by construction.
+_MARKUP_HELPERS = {"badge", "ok", "warn", "err"}
+
+
+def _is_escape_call(expr: ast.expr) -> bool:
+    return (isinstance(expr, ast.Call)
+            and isinstance(expr.func, ast.Attribute)
+            and expr.func.attr == "escape")
+
+
+def _is_safe(expr: ast.expr) -> bool:
+    """True when *expr* cannot carry unescaped attacker text into the log.
+
+    Safe: an ``html.escape(...)`` call; a string literal; an f-string whose
+    every placeholder is safe; a ``badge(...)``-family call whose every
+    argument is safe.  Anything else — a bare variable, an arbitrary call —
+    is not, even if it happens to be harmless today.
+    """
+    if _is_escape_call(expr):
+        return True
+    if isinstance(expr, ast.Constant):
+        return True
+    if isinstance(expr, ast.JoinedStr):
+        return all(_is_safe(v.value) for v in expr.values
+                   if isinstance(v, ast.FormattedValue))
+    if (isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name)
+            and expr.func.id in _MARKUP_HELPERS):
+        return (all(_is_safe(a) for a in expr.args)
+                and all(_is_safe(k.value) for k in expr.keywords))
+    return False
+
+
 def _unescaped_interpolations(path: Path) -> list[tuple[int, str]]:
-    """Return [(lineno, expr)] for log.append f-string values lacking escape()."""
+    """Return [(lineno, expr)] for log.append values lacking escape().
+
+    Checks every f-string placeholder inside the call, and — so a producer
+    can't sidestep the rule by handing a bare variable to ``badge()`` — every
+    argument of a markup-helper call passed directly to ``log.append``.
+    """
     tree = ast.parse(io.open(path, encoding="utf-8").read())
     bad: list[tuple[int, str]] = []
     for node in ast.walk(tree):
@@ -44,15 +84,16 @@ def _unescaped_interpolations(path: Path) -> list[tuple[int, str]]:
                 and node.func.value.id == "log"):
             continue
         for arg in node.args:
+            # badge(...) handed straight to log.append — check its arguments.
+            if (isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name)
+                    and arg.func.id in _MARKUP_HELPERS):
+                for a in list(arg.args) + [k.value for k in arg.keywords]:
+                    if not _is_safe(a):
+                        bad.append((node.lineno, ast.unparse(a)))
+                continue
             for sub in ast.walk(arg):
-                if not isinstance(sub, ast.FormattedValue):
-                    continue
-                expr = sub.value
-                escaped = (isinstance(expr, ast.Call)
-                           and isinstance(expr.func, ast.Attribute)
-                           and expr.func.attr == "escape")
-                if not escaped:
-                    bad.append((node.lineno, ast.unparse(expr)))
+                if isinstance(sub, ast.FormattedValue) and not _is_safe(sub.value):
+                    bad.append((node.lineno, ast.unparse(sub.value)))
     return bad
 
 
@@ -86,6 +127,36 @@ def test_detector_catches_a_planted_violation(tmp_path):
         "log = []\n"
         "fname = 'x'\n"
         "log.append(f'<span>{html.escape(str(fname))}</span>')\n",
+        encoding="utf-8",
+    )
+    assert _unescaped_interpolations(good) == []
+
+
+def test_badge_helper_does_not_open_a_hole(tmp_path):
+    """``badge()`` doesn't escape — so a bare variable handed to it, directly
+    or inside an f-string, must be flagged exactly like a bare interpolation,
+    while escaped arguments pass."""
+    bad = tmp_path / "bad_badge.py"
+    bad.write_text(
+        "from ui.log_markup import badge\n"
+        "log = []\n"
+        "fname = 'x'\n"
+        "log.append(badge('err', fname))\n"                       # direct
+        "log.append(f'{badge(\"ok\", fname)} — 3 rows')\n",       # nested
+        encoding="utf-8",
+    )
+    assert [ln for ln, _ in _unescaped_interpolations(bad)] == [4, 5]
+
+    good = tmp_path / "good_badge.py"
+    good.write_text(
+        "import html\n"
+        "from ui.log_markup import badge\n"
+        "log = []\n"
+        "fname = 'x'\n"
+        "log.append(badge('err', html.escape(str(fname))))\n"
+        "log.append(f'{badge(\"ok\", html.escape(str(fname)))} — 3 rows')\n"
+        "log.append(badge('warn', 'Ignored (0 units)'))\n"
+        "log.append(badge('ok', f'{html.escape(str(fname))}: done', glyph=False))\n",
         encoding="utf-8",
     )
     assert _unescaped_interpolations(good) == []

@@ -110,10 +110,12 @@ def test_process_excel_group_escapes_html_in_log(monkeypatch, tmp_path):
     assert "&lt;b&gt;evil&lt;/b&gt;" in joined
     assert "&lt;i&gt;STY1&lt;/i&gt;" in joined
     assert "&lt;u&gt;repeat&lt;/u&gt;" in joined
-    # The app's own <span> colour-coding markup must survive untouched.
-    assert '<span style="color:#dc3545">' in joined
-    assert '<span style="color:#198754">' in joined
-    assert '<span style="color:#b08800">' in joined
+    # The app's own status markup (ui.log_markup.badge) must survive untouched
+    # — and it is class-based, never an inline colour.
+    assert '<span class="badge-err">' in joined
+    assert '<span class="badge-ok">' in joined
+    assert '<span class="badge-warn">' in joined
+    assert 'style="color:' not in joined
 
 
 # ---------------------------------------------------------------------------
@@ -198,5 +200,5 @@ def test_run_excel_extraction_escapes_html_in_all_log_sites(monkeypatch, tmp_pat
     assert "&lt;u&gt;repeat&lt;/u&gt;" in joined
     assert "&lt;img src=x onerror=alert(1)&gt;" in joined   # cleanup_lines (raw colour)
 
-    # The app's own <span> colour-coding markup must survive untouched.
-    assert '<span style="color:#dc3545">' in joined
+    # The app's own status markup (ui.log_markup.badge) must survive untouched.
+    assert '<span class="badge-err">' in joined
