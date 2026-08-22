@@ -6,7 +6,7 @@ import streamlit as st
 from ui.i18n import t
 from auth.users import company_scope, is_admin
 from ui.session_keys import SK
-from ui.shared import guard_multiselect_state
+from ui.shared import guard_multiselect_state, delete_button
 from ui.stores import get_store
 from ui.giii._shared import _XLSX_MIME, live_label
 from ui.giii.results import _show_master_po_table
@@ -14,10 +14,10 @@ from ui.giii.results import _show_master_po_table
 
 def _show_history(exc_df=None, pos_df=None):
     store = get_store()
-    user_cos = company_scope(st.session_state.username)
+    user_cos = company_scope(st.session_state[SK.USERNAME])
     # Non-admin with no assigned companies must see nothing — an empty list
     # falls through the store's falsy check to an unfiltered query.
-    if not is_admin(st.session_state.username) and not user_cos:
+    if not is_admin(st.session_state[SK.USERNAME]) and not user_cos:
         st.info(
             t("No companies assigned to your account. "
             "Contact an administrator to be granted access.")
@@ -101,10 +101,10 @@ def _show_history(exc_df=None, pos_df=None):
     guard_multiselect_state("del_pos", po_options)
     to_delete = st.multiselect(t("Select POs to delete:"), po_options,
                                placeholder=t("Select POs to remove…"),
-                               key="del_pos")
-    if st.button(t("🗑 Delete selected"), disabled=not to_delete):
+                               key=SK.DEL_POS)
+    if delete_button(t("Delete selected"), key="giii_hist_delete", disabled=not to_delete):
         n = store.delete_pos(to_delete)
-        st.session_state.pop("del_pos", None)   # drop stale selection pre-rerun
+        st.session_state.pop(SK.DEL_POS, None)   # drop stale selection pre-rerun
         st.success(t("Deleted {n} PO(s).").format(n=n))
         st.rerun()
 

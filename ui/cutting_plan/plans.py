@@ -452,10 +452,10 @@ def _show_links(store, plan: dict) -> None:
         if st.button(t("Edit linked POs & styles"), key=f"cp_edit_{plan_id}"):
             st.session_state[SK.CP_EDIT_ID] = plan_id
             # Seed the editor with the plan's current PC No.s.
-            st.session_state["cp_edit_pcs"] = sorted(
+            st.session_state[SK.CP_EDIT_PCS] = sorted(
                 {l.get("pc_no", "") for l in links if l.get("pc_no")})
-            st.session_state.pop("cp_edit_pos", None)
-            st.session_state.pop("cp_edit_styles", None)
+            st.session_state.pop(SK.CP_EDIT_POS, None)
+            st.session_state.pop(SK.CP_EDIT_STYLES, None)
             fragment_rerun()
         return
 

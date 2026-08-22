@@ -9,7 +9,10 @@ import streamlit as st
 from po_extractor.config import PDF_MIME, XLSX_MIME
 from ui.i18n import t
 from ui.shared import (
-    _th, guard_multiselect_state, recent_folders, remember_folder,
+    _th, guard_multiselect_state,
+    output_folder_input as _output_folder_input,
+    safe_filename as _safe_filename,
+    save_copy_to_folder as _save_copy_to_folder,
 )
 from ui.stores import get_sky_east_store
 
@@ -99,72 +102,19 @@ def workbook_fabric_picker(xlsx_bytes: bytes, key: str) -> set:
 # Every cut-plan folder field writes to the same place — the cutting room's
 # drive — so they share one history rather than one per widget key. A folder
 # used on the Standard output screen is then already filled in on a plan's
-# own export and on the PDF panel.
+# own export and on the PDF panel.  The widgets themselves are the shared
+# ones in ui.shared; these wrappers only bind the history bucket.
 CP_FOLDER_KIND = "cutting_plan_output_dir"
 
 
 def output_folder_input(key: str) -> str:
-    """Optional folder to drop a copy of the generated file into.
-
-    The download button always works; this is for the shared drive the cutting
-    room reads, so the file doesn't have to be downloaded and moved by hand.
-
-    The last folder actually saved to is remembered across sessions and comes
-    back pre-filled — it is the same drive every time, and retyping it on
-    every export was pure friction. Clearing the field sticks for the rest of
-    the session; it is only seeded when the field has no value yet.
-    """
-    history = recent_folders(CP_FOLDER_KIND)
-    if key not in st.session_state and history:
-        st.session_state[key] = history[0]
-
-    if len(history) > 1:
-        pick_key = f"{key}__recent"
-
-        def _apply_recent() -> None:
-            chosen = st.session_state.get(pick_key)
-            if chosen:
-                st.session_state[key] = chosen
-
-        st.selectbox(
-            t("Recent folders"), [""] + history, key=pick_key,
-            on_change=_apply_recent, label_visibility="collapsed",
-            format_func=lambda p: p or t("Recent folders…"))
-
-    return (st.text_input(
-        t("Also save a copy to this folder (optional)"), key=key,
-        placeholder=r"D:\CutPlans\2026",
-        help=t("Leave blank to just download. The folder must already exist "
-               "and be writable from this machine. The last folder saved to "
-               "is remembered and filled in next time.")) or "").strip()
+    """Cut-plan output folder field — see ``ui.shared.output_folder_input``."""
+    return _output_folder_input(key, CP_FOLDER_KIND, placeholder=r"D:\CutPlans\2026")
 
 
 def save_copy_to_folder(data: bytes, filename: str, folder: str) -> None:
-    """Write *data* to ``folder/filename`` and report the outcome inline.
-
-    Best-effort and loud: a bad path tells the user which path failed and why,
-    and never takes the download with it. The filename is reduced to its base
-    name so a name carrying separators can't write outside *folder*.
-
-    A folder is remembered only once a file has actually landed in it, so the
-    suggestions can't fill up with typos and dead paths.
-    """
-    if not folder:
-        return
-    import os
-    safe = os.path.basename(str(filename)) or "output"
-    try:
-        if not os.path.isdir(folder):
-            st.warning(f"{t('Folder not found — nothing saved:')} {folder}")
-            return
-        path = os.path.join(folder, safe)
-        with open(path, "wb") as fh:
-            fh.write(data)
-    except OSError as exc:
-        st.warning(f"{t('Could not save to')} {folder} — {exc}")
-        return
-    remember_folder(CP_FOLDER_KIND, folder)
-    st.success(f"{t('Saved a copy to')} {path}")
+    """Save beside the download — see ``ui.shared.save_copy_to_folder``."""
+    _save_copy_to_folder(data, filename, folder, CP_FOLDER_KIND)
 
 
 def _cleaned_copy(xlsx_bytes: bytes, client: str = "",
@@ -550,10 +500,8 @@ def pdf_export_block(xlsx_bytes: bytes | None, base_name: str, key: str, *,
 
 
 def safe_filename(name: str, *, fallback: str = "cut_plan") -> str:
-    """Strip characters Windows/Excel reject from a download filename."""
-    cleaned = "".join(ch for ch in (name or "")
-                      if ch not in '\\/:*?"<>|').strip()
-    return cleaned or fallback
+    """``ui.shared.safe_filename`` with a cut-plan default."""
+    return _safe_filename(name, fallback=fallback)
 
 
 def plan_caption(plan: dict[str, Any]) -> str:

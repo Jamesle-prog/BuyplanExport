@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import streamlit as st
+from ui.session_keys import SK
 
 from ui.i18n import t
 from auth import smtp_settings
@@ -315,7 +316,7 @@ def show_smtp_admin() -> None:
                 "Verify senders at: https://app.brevo.com/senders")
         )
 
-    default_to = get_user_email(st.session_state.username) or configured["user"]
+    default_to = get_user_email(st.session_state[SK.USERNAME]) or configured["user"]
     tcol1, tcol2 = st.columns([4, 1])
     with tcol1:
         to = st.text_input(t("Send test email to"), value=default_to,

@@ -18,7 +18,7 @@ import socket
 import pandas as pd
 import streamlit as st
 
-from ui.shared import XLSX_MIME as _XLSX_MIME
+from ui.shared import XLSX_MIME as _XLSX_MIME, delete_button
 
 from auth.users import company_scope
 from ui.i18n import t
@@ -131,20 +131,20 @@ def show_upc_check_tab() -> None:
 
 def _mode_lookup(store, user_cos):
     def _on_scan():
-        upc = str(st.session_state.get("upc_lk_input", "")).strip()
-        st.session_state["upc_lk_input"] = ""
+        upc = str(st.session_state.get(SK.UPC_LK_INPUT, "")).strip()
+        st.session_state[SK.UPC_LK_INPUT] = ""
         if not upc:
             return
         rows = store.find_by_upc(upc, companies=user_cos)
-        st.session_state["upc_lk_last"] = {"upc": upc, "rows": rows}
-        hist = st.session_state.setdefault("upc_lk_hist", [])
+        st.session_state[SK.UPC_LK_LAST] = {"upc": upc, "rows": rows}
+        hist = st.session_state.setdefault(SK.UPC_LK_HIST, [])
         hist.insert(0, {"UPC": upc, "Matches": len(rows)})
         del hist[50:]
 
-    st.text_input(t("Scan UPC"), key="upc_lk_input", on_change=_on_scan,
+    st.text_input(t("Scan UPC"), key=SK.UPC_LK_INPUT, on_change=_on_scan,
                   placeholder=t("Scan or type a UPC, then Enter"))
 
-    last = st.session_state.get("upc_lk_last")
+    last = st.session_state.get(SK.UPC_LK_LAST)
     if last:
         if not last["rows"]:
             st.error(f"❌ `{last['upc']}` — " + t("not found in any stored PO"))
@@ -154,7 +154,7 @@ def _mode_lookup(store, user_cos):
             df = df[[c for c in _COLS if c in df.columns]].rename(columns=_COLS)
             st.dataframe(df, width="stretch", hide_index=True)
 
-    hist = st.session_state.get("upc_lk_hist")
+    hist = st.session_state.get(SK.UPC_LK_HIST)
     if hist:
         with st.expander(f"🕑 {t('Scan history')} ({len(hist)})"):
             st.dataframe(pd.DataFrame(hist), width="stretch", hide_index=True)
@@ -171,22 +171,22 @@ def _mode_verify(store, user_cos):
 
     po = st.selectbox(t("Select PO to verify against"), pos, key="upc_vf_po")
     # Reset the tally when the PO selection changes.
-    if st.session_state.get("upc_vf_po_active") != po:
-        st.session_state["upc_vf_po_active"] = po
-        st.session_state["upc_vf_results"] = []
+    if st.session_state.get(SK.UPC_VF_PO_ACTIVE) != po:
+        st.session_state[SK.UPC_VF_PO_ACTIVE] = po
+        st.session_state[SK.UPC_VF_RESULTS] = []
 
     expected = store.load_size_rows([po])
     exp_upcs = _valid_upcs(expected["UPC"]) if not expected.empty else set()
 
     def _on_scan():
-        upc = str(st.session_state.get("upc_vf_input", "")).strip()
-        st.session_state["upc_vf_input"] = ""
+        upc = str(st.session_state.get(SK.UPC_VF_INPUT, "")).strip()
+        st.session_state[SK.UPC_VF_INPUT] = ""
         if not upc:
             return
         rows = store.find_by_upc(upc, companies=user_cos)
         here = next((r for r in rows if r["po_number"] == po), None)
         other = "、".join(sorted({r["po_number"] for r in rows if r["po_number"] != po}))
-        res = st.session_state.setdefault("upc_vf_results", [])
+        res = st.session_state.setdefault(SK.UPC_VF_RESULTS, [])
         res.insert(0, {
             "ok": here is not None, "UPC": upc,
             "Size": here["size"] if here else "",
@@ -197,10 +197,10 @@ def _mode_verify(store, user_cos):
         })
         del res[500:]        # cap the session tally so it can't grow unbounded
 
-    st.text_input(t("Scan UPC to verify"), key="upc_vf_input", on_change=_on_scan,
+    st.text_input(t("Scan UPC to verify"), key=SK.UPC_VF_INPUT, on_change=_on_scan,
                   placeholder=t("Scan each carton/piece UPC, then Enter"))
 
-    results = st.session_state.get("upc_vf_results", [])
+    results = st.session_state.get(SK.UPC_VF_RESULTS, [])
     matched_upcs = {r["UPC"] for r in results if r["ok"]}
     c1, c2, c3 = st.columns(3)
     c1.metric("✅ " + t("Matched"), f"{len(matched_upcs)}/{len(exp_upcs)}")
@@ -236,26 +236,26 @@ def _mode_count(store, user_cos):
     st.radio(t("Scan action"), ["add", "remove"],
              format_func=lambda d: {"add": "➕ " + t("Add (+1)"),
                                     "remove": "➖ " + t("Remove (−1)")}[d],
-             horizontal=True, key="upc_ct_dir")
+             horizontal=True, key=SK.UPC_CT_DIR)
 
     def _on_scan():
-        upc = str(st.session_state.get("upc_ct_input", "")).strip()
-        st.session_state["upc_ct_input"] = ""
+        upc = str(st.session_state.get(SK.UPC_CT_INPUT, "")).strip()
+        st.session_state[SK.UPC_CT_INPUT] = ""
         if not upc:
             return
-        delta = 1 if st.session_state.get("upc_ct_dir") == "add" else -1
+        delta = 1 if st.session_state.get(SK.UPC_CT_DIR) == "add" else -1
         qty = store.adjust_stocktake(upc, delta)
         rows = store.find_by_upc(upc, companies=user_cos)
         r0 = rows[0] if rows else {}
-        st.session_state["upc_ct_last"] = {
+        st.session_state[SK.UPC_CT_LAST] = {
             "upc": upc, "qty": qty, "delta": delta,
             "style": r0.get("style", ""), "color": r0.get("color", ""),
             "size": r0.get("size", ""), "known": bool(rows)}
 
-    st.text_input(t("Scan UPC to count"), key="upc_ct_input", on_change=_on_scan,
+    st.text_input(t("Scan UPC to count"), key=SK.UPC_CT_INPUT, on_change=_on_scan,
                   placeholder=t("Each scan adjusts the count by ±1, then Enter"))
 
-    last = st.session_state.get("upc_ct_last")
+    last = st.session_state.get(SK.UPC_CT_LAST)
     if last:
         sign = "➕" if last["delta"] > 0 else "➖"
         ctx = (f"{last['style']} / {last['color']} / {last['size']}"
@@ -274,10 +274,10 @@ def _mode_count(store, user_cos):
         c1.download_button("⬇️ " + t("Download stocktake (.xlsx)"),
                            data=_xlsx(df, "盘点"), file_name="stocktake.xlsx",
                            mime=_XLSX_MIME, width="stretch", key="upc_ct_dl")
-        if c2.button("🗑 " + t("Clear stocktake"), width="stretch",
-                     key="upc_ct_clear"):
+        if delete_button(t("Clear stocktake"), width="stretch",
+                         key="upc_ct_clear", container=c2):
             store.clear_stocktake()
-            st.session_state.pop("upc_ct_last", None)
+            st.session_state.pop(SK.UPC_CT_LAST, None)
             st.success(t("Stocktake cleared."))
             st.rerun()
     else:

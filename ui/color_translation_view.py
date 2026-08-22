@@ -7,6 +7,7 @@ import tempfile
 
 import pandas as pd
 import streamlit as st
+from ui.session_keys import SK
 
 from ui.i18n import t
 from auth.companies import COMPANY_GIII, COMPANY_SKY_EAST
@@ -112,7 +113,7 @@ def _ct_export_bytes(count: int, nonce: int) -> bytes:
 
 def _bump_ct_nonce() -> None:
     """Invalidate the cached export after any data mutation."""
-    st.session_state["_ct_data_nonce"] = st.session_state.get("_ct_data_nonce", 0) + 1
+    st.session_state[SK.CT_DATA_NONCE] = st.session_state.get(SK.CT_DATA_NONCE, 0) + 1
 
 
 # ---------------------------------------------------------------------------
@@ -228,8 +229,8 @@ def show_color_translation_tab() -> None:
         # Export current data
         if count > 0:
             exp_col.download_button(
-                f"⬇ {t('Export all (.xlsx)')}",
-                data=_ct_export_bytes(count, st.session_state.get("_ct_data_nonce", 0)),
+                f"⬇️ {t('Export all (.xlsx)')}",
+                data=_ct_export_bytes(count, st.session_state.get(SK.CT_DATA_NONCE, 0)),
                 file_name="color_translations.xlsx",
                 mime=XLSX_MIME,
                 width="stretch",
@@ -467,7 +468,7 @@ def show_color_translation_tab() -> None:
             # reruns and the button itself says what a second click will do —
             # the old transient warning was easy to miss, and the armed flag
             # silently persisted so a much later click deleted immediately.
-            _armed = st.session_state.get("_ct_audit_confirm", False)
+            _armed = st.session_state.get(SK.CT_AUDIT_CONFIRM, False)
             if _armed:
                 st.warning(
                     f"⚠️ {t('This will erase the entire change history')} "
@@ -486,12 +487,12 @@ def show_color_translation_tab() -> None:
             ):
                 if _armed:
                     n = store.clear_audit_log()
-                    st.session_state.pop("_ct_audit_confirm", None)
+                    st.session_state.pop(SK.CT_AUDIT_CONFIRM, None)
                     st.success(f"{t('Cleared')} {n} {t('audit entries.')}")
                     fragment_rerun()
                 else:
-                    st.session_state["_ct_audit_confirm"] = True
+                    st.session_state[SK.CT_AUDIT_CONFIRM] = True
                     fragment_rerun()
             if _armed and cclr2.button(t("Cancel"), key="ct_audit_clear_cancel"):
-                st.session_state.pop("_ct_audit_confirm", None)
+                st.session_state.pop(SK.CT_AUDIT_CONFIRM, None)
                 fragment_rerun()

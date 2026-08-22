@@ -369,7 +369,7 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
 
             if not contracts:
                 status.update(label="No valid contracts could be parsed.", state="error")
-                st.session_state.se_log = log
+                st.session_state[SK.SE_LOG] = log
                 return
 
             ref_info: dict[str, str] = {}
@@ -486,11 +486,11 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             tracker.done()
             status.update(label="Done!", state="complete")
 
-        st.session_state.se_results    = results
-        st.session_state.se_log        = log
-        st.session_state.se_contracts  = contracts
-        st.session_state.se_masked_zip = masked_zip_bytes
-        st.session_state.se_image_cache = {
+        st.session_state[SK.SE_RESULTS]    = results
+        st.session_state[SK.SE_LOG]        = log
+        st.session_state[SK.SE_CONTRACTS]  = contracts
+        st.session_state[SK.SE_MASKED_ZIP] = masked_zip_bytes
+        st.session_state[SK.SE_IMAGE_CACHE] = {
             img_id: image_cache.get(img_id)
             for img_id in image_cache.all_ids()
             if image_cache.get(img_id)
@@ -498,13 +498,13 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
         _style_pid_map = _se_build_style_pid_map(contracts)
         # Save to the user's configured image folder (existing behaviour) …
         save_images_to_disk(
-            st.session_state.se_image_cache,
+            st.session_state[SK.SE_IMAGE_CACHE],
             _style_pid_map,
         )
         # … and ALWAYS to the persistent extracted-images fallback, so a later
         # buy-plan run can still find them after a restart or a changed folder.
         save_images_to_disk(
-            st.session_state.se_image_cache,
+            st.session_state[SK.SE_IMAGE_CACHE],
             _style_pid_map,
             img_dir=EXTRACTED_IMAGES_DIR,
         )
@@ -524,8 +524,8 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
         log.append(f"❌ {html.escape(str(exc))}")
         # Mirror the success path's exact keys (se_log / se_results) so the
         # results view reads this failure state, not a stale prior batch.
-        st.session_state.se_log = log
-        st.session_state.se_results = None
+        st.session_state[SK.SE_LOG] = log
+        st.session_state[SK.SE_RESULTS] = None
         st.error(f"{t('Sky East processing failed:')} {exc}")
     finally:
         # Clean up temp directory — all data is now in memory / DB / disk images

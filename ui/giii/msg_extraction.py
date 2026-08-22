@@ -572,7 +572,7 @@ def show_msg_upload_section(files=None) -> None:
     fname    = f"{prefix}_POs.xlsx" if prefix else "MSG_POs.xlsx"
 
     st.download_button(
-        label=t("⬇ Download Excel"),
+        label=t("⬇️ Download Excel"),
         data=xlsx_bytes,
         file_name=fname,
         mime=_XLSX_MIME,

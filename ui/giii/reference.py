@@ -4,6 +4,7 @@ import io
 import os
 import tempfile
 import streamlit as st
+from ui.shared import delete_button
 import pandas as pd
 from po_extractor.ui_helpers import (
     detect_fabric_mapping_columns as _detect_fabric_mapping_columns_impl,
@@ -167,7 +168,7 @@ def _show_giii_reference_section():
                 _run_giii_mapping_import(mapping_file, dry_run=True)
 
     if st.session_state.get(SK.GIII_MAPPING):
-        r = st.session_state.giii_mapping_result
+        r = st.session_state[SK.GIII_MAPPING]
         if r.get("dry_run"):
             st.info(t(
                 "**Dry-run preview** — {styles} style(s), {parts} fabric part(s) "
@@ -215,7 +216,7 @@ def _show_giii_reference_section():
                 }).drop(columns=["id", "source"], errors="ignore"),
                 width="stretch", hide_index=True,
             )
-            if st.button(t("🗑 Clear GIII fabric parts"), key="giii_clear_parts"):
+            if delete_button(t("Clear GIII fabric parts"), key="giii_clear_parts"):
                 store.delete_fabric_parts("giii")
                 st.success(t("GIII fabric parts cleared."))
                 st.rerun()
@@ -294,7 +295,7 @@ def _show_giii_consumption_section(store):
         file_name="fabric_consumption_view.xlsx",
         mime=_XLSX_MIME, key="cons_view_dl",
     )
-    if st.button("🗑 " + t("Clear all consumption data"), key="cons_clear"):
+    if delete_button(t("Clear all consumption data"), key="cons_clear"):
         store.clear_fabric_consumption()
         st.success(t("Consumption data cleared."))
         st.rerun()

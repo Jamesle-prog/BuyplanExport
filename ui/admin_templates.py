@@ -39,7 +39,7 @@ from po_extractor.ui_helpers import (
     make_sample_buyplan_template,
 )
 from po_extractor.utils.client_template import CLIENT_ALIASES, create_template
-from ui.shared import XLSX_MIME as _XLSX_MIME
+from ui.shared import XLSX_MIME as _XLSX_MIME, delete_button
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ def _sky_east_section() -> None:
                 if r["exists"]:
                     try:
                         st.download_button(
-                            f"⬇ {t('Download current')} `{r['file']}`",
+                            f"⬇️ {t('Download current')} `{r['file']}`",
                             data=read_sky_east_template(kind),
                             file_name=r["file"],
                             mime=_XLSX_MIME,
@@ -283,15 +283,15 @@ def _giii_section() -> None:
             with open(tpl_path, "rb") as fh:
                 tpl_bytes = fh.read()
             dc1.download_button(
-                f"⬇ {t('Download')} {selected_tpl['file']}",
+                f"⬇️ {t('Download')} {selected_tpl['file']}",
                 data=tpl_bytes,
                 file_name=selected_tpl["file"],
                 mime=_XLSX_MIME,
                 width="stretch",
                 key="admin_tpl_dl_existing",
             )
-            if dc2.button(f"🗑 {t('Delete this template')}", key="admin_tpl_delete",
-                          width="stretch"):
+            if delete_button(t("Delete this template"), key="admin_tpl_delete",
+                             width="stretch", container=dc2):
                 delete_client_template(del_client)
                 st.success(f"{t('Deleted template for')} '{del_client}'.")
                 st.rerun()
@@ -317,7 +317,7 @@ def _blank_templates_section() -> None:
             "client slot in the **GIII Per-Client Buy-Plan Templates** section above."
         ))
         st.download_button(
-            f"⬇ {t('Download sample buy-plan template')}",
+            f"⬇️ {t('Download sample buy-plan template')}",
             data=make_sample_buyplan_template(),
             file_name="GIII_BuyPlan_Template_Sample.xlsx",
             mime=_XLSX_MIME,
@@ -351,7 +351,7 @@ def _blank_templates_section() -> None:
                     os.unlink(tf_path)
             suffix = "" if client_for_tpl == "(generic)" else f"_{client_for_tpl}"
             st.download_button(
-                f"⬇ {t('Download mapping template')}",
+                f"⬇️ {t('Download mapping template')}",
                 data=tpl_buf,
                 file_name=f"PO_Client_Mapping_Template{suffix}.xlsx",
                 mime=_XLSX_MIME,
@@ -366,7 +366,7 @@ def _blank_templates_section() -> None:
             "to up to 4 HHN fabric codes. Same template for both pipelines."
         ))
         st.download_button(
-            f"⬇ {t('Download fabric mapping template')}",
+            f"⬇️ {t('Download fabric mapping template')}",
             data=generate_fabric_mapping_template(),
             file_name="Style_Fabric_Mapping_Template.xlsx",
             mime=_XLSX_MIME,

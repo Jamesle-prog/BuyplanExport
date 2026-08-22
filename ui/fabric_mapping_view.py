@@ -194,7 +194,7 @@ def _show_fabric_mapping_section() -> None:
             generate_fabric_mapping_template as _gen_tpl,
         )
         st.download_button(
-            f"📥 {t('Download Template')}",
+            f"⬇️ {t('Download Template')}",
             data=_gen_tpl(),
             file_name="FabricMapping_Template.xlsx",
             mime=XLSX_MIME,

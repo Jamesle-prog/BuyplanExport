@@ -497,7 +497,7 @@ def show_tk_eu_upload_section(files=None) -> None:
     fname    = f"{prefix}_TK_EU_POs.xlsx" if prefix else "TK_EU_POs.xlsx"
 
     st.download_button(
-        label=f"⬇ {t('Download Excel')}",
+        label=f"⬇️ {t('Download Excel')}",
         data=xlsx_bytes, file_name=fname,
         mime=_XLSX_MIME, type="primary",
         width="stretch", key="tk_eu_dl",

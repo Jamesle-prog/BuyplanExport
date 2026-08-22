@@ -15,7 +15,7 @@ import streamlit as st
 
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import _th, _tr, fragment_rerun, guard_multiselect_state, lazy_sections
+from ui.shared import _th, _tr, fragment_rerun, guard_multiselect_state, lazy_sections, show_flash
 from ui.stores import get_settlement_store
 
 # Column order of the lines table.  Contract facts, then what shipped, then
@@ -48,9 +48,7 @@ def show_settlement_tab() -> None:
         "The 结算统计表 workbook, read into the system. Excel stays the master "
         "— re-upload to refresh. Amounts are never added across currencies."))
 
-    flash = st.session_state.pop(SK.ST_FLASH, None)
-    if flash:
-        getattr(st, flash[0], st.info)(flash[1])
+    show_flash(SK.ST_FLASH)
 
     lazy_sections([
         (f"📥 {t('Import')}",        _render_import),

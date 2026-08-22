@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import streamlit as st
+from ui.session_keys import SK
 
 from ui.i18n import t
 from auth.companies import list_company_names
-from ui.shared import guard_multiselect_state
+from ui.shared import guard_multiselect_state, delete_button
 from auth.users import (
     ALL_MODULES, MODULE_LABELS, ROLE_ADMIN, create_user, delete_user,
     get_user, list_users, set_user_companies, set_user_email,
@@ -92,8 +93,8 @@ def show_user_admin() -> None:
                     st.success(t("Companies updated."))
                     st.rerun()
             with c3:
-                if uname != st.session_state.username:
-                    if st.button(f"🗑 {t('Delete user')}", key=f"del_{uname}"):
+                if uname != st.session_state[SK.USERNAME]:
+                    if delete_button(t("Delete user"), key=f"del_{uname}"):
                         delete_user(uname)
                         st.success(f"{t('Deleted')} {uname}.")
                         st.rerun()

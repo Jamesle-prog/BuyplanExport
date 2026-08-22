@@ -562,8 +562,8 @@ def show_infornexus_upload_section(files=None) -> None:
     with st.spinner(t("Building Excel…")):
         xlsx = build_comparison_excel(kl_results, in_results)
 
-    label = (f"⬇ {t('Download Comparison Excel')}" if kl_results
-             else f"⬇ {t('Download InforNexus Excel')}")
+    label = (f"⬇️ {t('Download Comparison Excel')}" if kl_results
+             else f"⬇️ {t('Download InforNexus Excel')}")
     first_po = in_results[0]['po_number'] if in_results else 'IN_POs'
     prefix   = re.sub(r'\d+R$', '', first_po)
     fname    = f"{prefix}_comparison.xlsx" if kl_results else f"{prefix}_IN_POs.xlsx"

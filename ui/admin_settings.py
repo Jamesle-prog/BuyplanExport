@@ -6,7 +6,7 @@ import os
 import streamlit as st
 
 from ui.i18n import t
-from ui.shared import _th, _tr
+from ui.shared import _th, _tr, delete_button
 from ui.session_keys import SK, COLOR_SOURCE_DB, COLOR_SOURCE_PROGRESS
 from ui.stores import get_app_settings_store
 from po_extractor.store.app_settings_store import (
@@ -393,8 +393,8 @@ def _show_ai_corrections() -> None:
         placeholder=t("— choose one to forget —"), key="aicorr_del")
     st.caption(t("Removing one makes the AI decide that value afresh next "
                  "time it appears."))
-    if st.button(f"🗑️ {t('Forget selected')}", disabled=dead is None,
-                 key="aicorr_del_btn"):
+    if delete_button(t("Forget selected"), disabled=dead is None,
+                     key="aicorr_del_btn"):
         if dead is not None and store.delete(int(dead)):
             st.success(t("Forgotten."))
             st.rerun()

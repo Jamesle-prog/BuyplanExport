@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import streamlit as st
+from ui.shared import delete_button
 
 from ui.i18n import t
 from auth.companies import (
@@ -70,7 +71,7 @@ def show_company_admin() -> None:
                     st.rerun()
             with btn_c2:
                 if co["name"] not in _PROTECTED:
-                    if st.button(f"🗑 {t('Delete')}", key=f"co_del_{co['name']}"):
+                    if delete_button(t("Delete"), key=f"co_del_{co['name']}"):
                         delete_company(co["name"])
                         st.success(f"{t('Deleted')} {co['name']}.")
                         st.rerun()

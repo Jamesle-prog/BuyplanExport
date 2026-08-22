@@ -183,7 +183,7 @@ def _show_import_export_tab(store) -> None:
                      width="stretch"):
             csv_bytes = store.to_csv().encode("utf-8-sig")
             st.download_button(
-                "📥 " + t("Download translations.csv"),
+                "⬇️ " + t("Download translations.csv"),
                 data=csv_bytes,
                 file_name="ui_translations.csv",
                 mime=CSV_MIME,

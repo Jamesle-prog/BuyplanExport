@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
+from ui.session_keys import SK
 
 from ui.i18n import t
 from ui.fabric_db._shared import (
@@ -19,7 +20,7 @@ def _fabric_db_paginated_list(store, total_count: int) -> None:
     n_pages   = max(1, (total_count + page_size - 1) // page_size)
 
     # Clamp stored page in case data shrank between reruns
-    cur = int(st.session_state.get("fabric_db_page", 1) or 1)
+    cur = int(st.session_state.get(SK.FABRIC_DB_PAGE, 1) or 1)
     cur = max(1, min(cur, n_pages))
 
     nav_l, nav_mid, nav_r = st.columns([1, 2, 1])
@@ -34,7 +35,7 @@ def _fabric_db_paginated_list(store, total_count: int) -> None:
             key="fabric_db_page_input",
         )
         if picked != cur:
-            st.session_state["fabric_db_page"] = int(picked)
+            st.session_state[SK.FABRIC_DB_PAGE] = int(picked)
             cur = int(picked)
     with nav_r:
         st.button(t("Next ▶"), disabled=(cur >= n_pages), key="fabric_db_next",

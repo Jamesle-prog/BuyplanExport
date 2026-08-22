@@ -8,6 +8,7 @@ import tempfile
 import zipfile
 
 import streamlit as st
+from ui.session_keys import SK
 
 from po_extractor.exporters import export_hhp_buyplan, export_hhp_template_p
 from po_extractor.parsers.client_excel_multi import combine_excel_files, repeat_order_summary
@@ -244,7 +245,7 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
 
         if result.df.empty:
             status.update(label="No data found in the uploaded files.", state="error")
-            st.session_state.excel_log = log
+            st.session_state[SK.EXCEL_LOG] = log
             return
 
         # 4. Conflict warnings
@@ -436,6 +437,6 @@ def _run_excel_extraction_body(uploaded_excels, sheet_name: str,
     outputs["conflict_count"] = len(result.conflicts)
     outputs["repeat_count"]   = len(result.repeat_orders)
 
-    st.session_state.excel_results = outputs
-    st.session_state.excel_log = log
+    st.session_state[SK.EXCEL_RESULTS] = outputs
+    st.session_state[SK.EXCEL_LOG] = log
     # Temp dirs are cleaned up by the caller's (_run_excel_extraction) finally block.

@@ -147,8 +147,8 @@ def _show_excel_tab():
     )
 
     if st.button("▶  " + t("Process Excel Files"), type="primary", width="stretch", key="run_excel"):
-        st.session_state.excel_results = None
-        st.session_state.excel_log = []
+        st.session_state[SK.EXCEL_RESULTS] = None
+        st.session_state[SK.EXCEL_LOG] = []
         _run_excel_extraction(
             uploaded_excels,
             sheet_name=sheet_name,
@@ -157,11 +157,11 @@ def _show_excel_tab():
             fabric_version_id=excel_fabric_version_id,
         )
 
-    if st.session_state.excel_log:
-        _show_processing_log(st.session_state.excel_log)
+    if st.session_state[SK.EXCEL_LOG]:
+        _show_processing_log(st.session_state[SK.EXCEL_LOG])
 
-    if st.session_state.excel_results:
-        _show_excel_downloads(st.session_state.excel_results)
+    if st.session_state[SK.EXCEL_RESULTS]:
+        _show_excel_downloads(st.session_state[SK.EXCEL_RESULTS])
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +304,7 @@ def _show_giii_upload_section():
             detections = detect_files(list(saved_paths.values()))
             st.session_state[SK.GIII_DETECTIONS] = detections
             st.session_state[SK.GIII_DETECT_SIG] = _det_sig
-        st.session_state.smart_detections = detections
+        st.session_state[SK.SMART_DETECTIONS] = detections
 
         # ── Detection summary table ───────────────────────────────────────────────
         table_rows = []
@@ -325,8 +325,8 @@ def _show_giii_upload_section():
 
         if st.button("▶  " + t("Process all files"), type="primary",
                      width="stretch", key="smart_run"):
-            st.session_state.smart_results = None
-            st.session_state.smart_log = []
+            st.session_state[SK.SMART_RESULTS] = None
+            st.session_state[SK.SMART_LOG] = []
             # No key → force regex regardless of the configured method, so a
             # deepseek/auto setting without a key still processes files.
             _eff_method = _method if (_method in ("deepseek", "auto") and _api_key) else "regex"
@@ -340,11 +340,11 @@ def _show_giii_upload_section():
         # Files have been read into memory (detection + processing) — temp dir no longer needed
         shutil.rmtree(tmpdir, ignore_errors=True)
 
-    if st.session_state.smart_log:
-        _show_processing_log(st.session_state.smart_log)
+    if st.session_state[SK.SMART_LOG]:
+        _show_processing_log(st.session_state[SK.SMART_LOG])
 
-    if st.session_state.smart_results:
-        _show_smart_downloads(st.session_state.smart_results)
+    if st.session_state[SK.SMART_RESULTS]:
+        _show_smart_downloads(st.session_state[SK.SMART_RESULTS])
 
 
 # ---------------------------------------------------------------------------
@@ -380,7 +380,7 @@ def show_smart_upload_tab():
     # gets [], which the stores read as "no rows". The guard this replaces
     # did the same job here, but every other call site had to remember to
     # repeat it — one of them didn't.
-    _user_cos = company_scope(st.session_state.username)
+    _user_cos = company_scope(st.session_state[SK.USERNAME])
     _exc_df = _store.list_exceptions(companies=_user_cos)
     # ONE full-table list_pos per rerun for the whole GIII tab — the
     # missing-fields badge, Contract History, and Generate/Export

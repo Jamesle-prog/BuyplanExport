@@ -2,6 +2,7 @@
 from __future__ import annotations
 import io
 import streamlit as st
+from ui.session_keys import SK
 import pandas as pd
 from po_extractor.ui_helpers import (
     write_excel_header_row as _write_excel_header_row,
@@ -129,7 +130,7 @@ def _show_master_po_table():
     # (persisted_download convention) — a download_button nested inside the
     # build-button's `if` vanished on the next rerun, forcing two clicks and
     # losing the button after any widget interaction.
-    if st.button(t("⬇ Download Master Table"), key="master_dl_btn"):
+    if st.button(f"⬇️ {t('Download Master Table')}", key="master_dl_btn"):
         from openpyxl import Workbook
         dl_df = display_df.drop(columns=["Photo"])
         wb = Workbook(); ws = wb.active; ws.title = "Master PO"
@@ -138,10 +139,10 @@ def _show_master_po_table():
             for ci, val in enumerate(row, start=1):
                 ws.cell(row=ri, column=ci, value=val)
         buf = io.BytesIO(); wb.save(buf)
-        st.session_state["master_dl_bytes"] = buf.getvalue()
-        st.session_state["master_dl_fname"] = "Master_PO_All_Clients.xlsx"
+        st.session_state[SK.GIII_MASTER_DL_BYTES] = buf.getvalue()
+        st.session_state[SK.GIII_MASTER_DL_FNAME] = "Master_PO_All_Clients.xlsx"
     persisted_download("master_dl", default_fname="Master_PO_All_Clients.xlsx",
-                       fixed_mime=_XLSX_MIME, label="⬇ Save Excel")
+                       fixed_mime=_XLSX_MIME, label=f"⬇️ {t('Save Excel')}")
 
 
 def _show_downloads(outputs: dict, key_prefix: str = "dl"):

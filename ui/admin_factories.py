@@ -14,14 +14,15 @@ names collect here for an admin to resolve.
 from __future__ import annotations
 
 import streamlit as st
+from ui.session_keys import SK
 
 from ui.i18n import t
-from ui.shared import fragment_rerun
+from ui.shared import fragment_rerun, delete_button
 from ui.stores import get_factory_registry_store
 
 
 def _current_user() -> str:
-    return st.session_state.get("username", "") or ""
+    return st.session_state.get(SK.USERNAME, "") or ""
 
 
 def show_factory_admin() -> None:
@@ -147,8 +148,8 @@ def _render_dictionary(store) -> None:
                 # The alias equal to the factory's own name can't be removed —
                 # deleting it would leave the factory unresolvable by its name.
                 if len(c["aliases"]) > 1 and not _is_canon[alias]:
-                    if ac2.button("🗑", key=f"fac_dela_{c['id']}_{abs(hash(alias))}",
-                                  help=t("Remove this name")):
+                    if delete_button("", key=f"fac_dela_{c['id']}_{abs(hash(alias))}",
+                                     help=t("Remove this name"), container=ac2):
                         store.remove_alias(alias)
                         fragment_rerun()
 
@@ -165,8 +166,8 @@ def _render_dictionary(store) -> None:
                     st.error(str(exc))
 
             with b2:
-                if st.button(f"🗑 {t('Delete factory')}",
-                             key=f"fac_delc_{c['id']}"):
+                if delete_button(t("Delete factory"),
+                                 key=f"fac_delc_{c['id']}"):
                     store.delete_canonical(c["id"])
                     st.success(f"{t('Deleted')}: {c['name']}")
                     fragment_rerun()

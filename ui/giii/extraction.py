@@ -151,7 +151,7 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
 
         if not pos:
             status.update(label="No valid POs could be parsed.", state="error")
-            st.session_state.parse_log = log
+            st.session_state[SK.PARSE_LOG] = log
             return
 
         # 3. Save to persistent store with conflict detection
@@ -245,8 +245,8 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
         outputs["requirements_bytes"], outputs["requirements_warns"] = _req
     _stash_requirements_api_requests(outputs, pos)
 
-    st.session_state.results = outputs
-    st.session_state.parse_log = log
+    st.session_state[SK.RESULTS] = outputs
+    st.session_state[SK.PARSE_LOG] = log
     # Temp dirs are cleaned up by the caller's (_run_extraction) finally block.
 
 
@@ -827,7 +827,7 @@ def _run_smart_processing_body(detections, saved_paths: dict[str, str],
         else:
             status.update(label="Done!", state="complete")
 
-    st.session_state.smart_results = outputs
-    st.session_state.smart_log = log
+    st.session_state[SK.SMART_RESULTS] = outputs
+    st.session_state[SK.SMART_LOG] = log
 
 

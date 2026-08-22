@@ -39,7 +39,7 @@ def _fabric_db_validation_section(store) -> None:
         dl1, dl2 = st.columns(2)
         csv_bytes = df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
         dl1.download_button(
-            f"⬇ {t('Download issues (.csv)')}", data=csv_bytes,
+            f"⬇️ {t('Download issues (.csv)')}", data=csv_bytes,
             file_name=f"{stem}.csv", mime=CSV_MIME,
             key=f"{stem}_csv", width="stretch",
         )
@@ -47,7 +47,7 @@ def _fabric_db_validation_section(store) -> None:
         with pd.ExcelWriter(buf, engine="openpyxl") as xw:
             df.to_excel(xw, index=False, sheet_name="Issues")
         dl2.download_button(
-            f"⬇ {t('Download issues (.xlsx)')}", data=buf.getvalue(),
+            f"⬇️ {t('Download issues (.xlsx)')}", data=buf.getvalue(),
             file_name=f"{stem}.xlsx", mime=XLSX_MIME,
             key=f"{stem}_xlsx", width="stretch",
         )
@@ -184,7 +184,7 @@ def _fabric_db_cross_system_section(fabric_store) -> None:
             st.dataframe(df_hhn, width="stretch", hide_index=True)
             csv_hhn = df_hhn.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
             st.download_button(
-                t("⬇ Download HHN orphans (.csv)"), data=csv_hhn,
+                t("⬇️ Download HHN orphans (.csv)"), data=csv_hhn,
                 file_name="hhn_orphans.csv", mime=CSV_MIME,
                 key="xsys_hhn_csv", width="content",
             )
@@ -202,7 +202,7 @@ def _fabric_db_cross_system_section(fabric_store) -> None:
             st.dataframe(df_cov, width="stretch", hide_index=True)
             csv_cov = df_cov.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
             st.download_button(
-                t("⬇ Download coverage gaps (.csv)"), data=csv_cov,
+                t("⬇️ Download coverage gaps (.csv)"), data=csv_cov,
                 file_name="style_coverage_gaps.csv", mime=CSV_MIME,
                 key="xsys_cov_csv", width="content",
             )

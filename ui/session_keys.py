@@ -122,6 +122,7 @@ class SK:
     CP_STD_BYTES    = "cp_std_bytes"     # generated standard cut plan bytes
     CP_STD_FNAME    = "cp_std_fname"
     CP_STD_CN_CONFLICTS = "cp_std_cn_conflicts"  # plan-vs-PO colour disagreements
+    CP_SECTION_NAV  = "cp_section_nav"   # selected section of the cutting plan tab
 
     # ── Settlement (💰 结算统计表) ────────────────────────────────────────────
     ST_PARSED    = "st_parsed"      # dict — parsed upload awaiting import
@@ -134,6 +135,71 @@ class SK:
     FC_PARSE_SIG = "fc_parse_sig"   # uploader signature the parse was built from
     FC_FLASH     = "fc_flash"       # one-shot (kind, message) after an import
     FC_NAV       = "fc_nav"         # selected section of the fabric condition tab
+
+    # ── Widget / state keys promoted from string literals (v2.134.0) ─────────
+    # Each was used as a raw literal somewhere in ui/; they are widget keys
+    # as often as plain state, so the same constant is passed as key= too.
+    # CMPT
+    CMPT_DETAIL_SEL   = "cmpt_detail_sel"
+    CMPT_NEW_LINES_DF = "cmpt_new_lines_df"
+    CMPT_NEW_NO       = "cmpt_new_no"
+    # Colors
+    CT_AUDIT_CONFIRM = "_ct_audit_confirm"
+    CT_DATA_NONCE    = "_ct_data_nonce"
+    # Cutting Plan
+    CP_EDIT_PCS    = "cp_edit_pcs"
+    CP_EDIT_POS    = "cp_edit_pos"
+    CP_EDIT_STYLES = "cp_edit_styles"
+    CP_STD_PLANS   = "cp_std_plans"
+    # Fabric DB
+    FABRIC_DB_DEL_SEL = "fabric_db_del_sel"
+    FABRIC_DB_PAGE    = "fabric_db_page"
+    # GIII — Excel pipeline
+    EXCEL_LOG     = "excel_log"
+    EXCEL_RESULTS = "excel_results"
+    # GIII — Reports tab
+    RPT_ALL_RESULTS    = "rpt_all_results"
+    RPT_API_REQS_CACHE = "rpt_api_reqs_cache"
+    RPT_BP_BYTES       = "rpt_bp_bytes"
+    RPT_CPRS_PREVIEW   = "rpt_cprs_preview"
+    RPT_CPRS_TRANSLATE = "rpt_cprs_translate"
+    RPT_CPRS_WARNS     = "rpt_cprs_warns"
+    RPT_CP_BYTES       = "rpt_cp_bytes"
+    RPT_DIM_CODE       = "rpt_dim_code"
+    RPT_DIM_ROWS       = "rpt_dim_rows"
+    RPT_KL_BYTES       = "rpt_kl_bytes"
+    RPT_PCS_BOX        = "rpt_pcs_box"
+    RPT_PO_SELECT      = "rpt_po_select"
+    RPT_PS_BYTES       = "rpt_ps_bytes"
+    # GIII — history
+    DEL_POS = "del_pos"
+    # GIII — smart upload
+    SMART_DETECTIONS = "smart_detections"
+    SMART_LOG        = "smart_log"
+    SMART_RESULTS    = "smart_results"
+    # Production Tracking
+    PT_FU_DEL_SEL = "pt_fu_del_sel"
+    PT_REMOVE_SEL = "pt_remove_sel"
+    PT_TAB_RADIO  = "pt_tab_radio"
+    TRACKER_COLS  = "tracker_cols"
+    TRK_COLS      = "trk_cols"
+    # Sky East
+    SE_BP_SEL  = "se_bp_sel"
+    SE_GEN_PCS = "se_gen_pcs"
+    SE_HIST_PC = "se_hist_pc"
+    # Summary
+    SUM_GIII_COLS = "sum_giii_cols"
+    SUM_SE_COLS   = "sum_se_cols"
+    # UPC Check
+    UPC_CT_DIR       = "upc_ct_dir"
+    UPC_CT_INPUT     = "upc_ct_input"
+    UPC_CT_LAST      = "upc_ct_last"
+    UPC_LK_HIST      = "upc_lk_hist"
+    UPC_LK_INPUT     = "upc_lk_input"
+    UPC_LK_LAST      = "upc_lk_last"
+    UPC_VF_INPUT     = "upc_vf_input"
+    UPC_VF_PO_ACTIVE = "upc_vf_po_active"
+    UPC_VF_RESULTS   = "upc_vf_results"
 
 
 # Allowed values for ``SK.SE_COLOR_SOURCE`` — controls where the buy-plan

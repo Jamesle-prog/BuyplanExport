@@ -16,7 +16,7 @@ import streamlit as st
 
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import _th, _tr, fragment_rerun, guard_multiselect_state, lazy_sections
+from ui.shared import _th, _tr, fragment_rerun, guard_multiselect_state, lazy_sections, show_flash
 from ui.stores import get_fabric_condition_store
 
 _COLUMN_RENAME = {
@@ -50,9 +50,7 @@ def show_fabric_condition_tab() -> None:
         "('176-178', '100层左右', '无', '同上'), and rounding any of them "
         "would silently lose the part that didn't fit a number."))
 
-    flash = st.session_state.pop(SK.FC_FLASH, None)
-    if flash:
-        getattr(st, flash[0], st.info)(flash[1])
+    show_flash(SK.FC_FLASH)
 
     lazy_sections([
         (f"📥 {t('Import')}", _render_import),

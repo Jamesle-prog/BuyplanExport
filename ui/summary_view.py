@@ -187,15 +187,15 @@ def _show_po_tracker(df: pd.DataFrame) -> None:
     avail = [k for k in _TRACKER_COLS if k in df.columns]
     default = [k for k in _DEFAULT_COLS if k in avail]
     # Seed-once + guard (never key= AND default= together — CLAUDE.md).
-    if "tracker_cols" not in st.session_state:
-        st.session_state["tracker_cols"] = default
+    if SK.TRACKER_COLS not in st.session_state:
+        st.session_state[SK.TRACKER_COLS] = default
     else:
         guard_multiselect_state("tracker_cols", avail)
     picked = st.multiselect(
         t("Columns"),
         options=avail,
         format_func=lambda k: _TRACKER_COLS.get(k, k),
-        key="tracker_cols",
+        key=SK.TRACKER_COLS,
     )
     show_cols = picked or default
     display_df = df[show_cols].rename(columns=_TRACKER_COLS)
@@ -453,15 +453,15 @@ def _show_overview(user_cos: list[str], admin_mode: bool,
                             if k in giii_avail]
 
             # Seed-once + guard (never key= AND default= together — CLAUDE.md).
-            if "sum_giii_cols" not in st.session_state:
-                st.session_state["sum_giii_cols"] = giii_default
+            if SK.SUM_GIII_COLS not in st.session_state:
+                st.session_state[SK.SUM_GIII_COLS] = giii_default
             else:
                 guard_multiselect_state("sum_giii_cols", giii_avail)
             picked = st.multiselect(
                 t("Columns to display"),
                 options=giii_avail,
                 format_func=lambda k: giii_field_labels.get(k, k),
-                key="sum_giii_cols",
+                key=SK.SUM_GIII_COLS,
             )
             show_cols = picked or giii_default
             labels = _tr({k: giii_field_labels[k] for k in show_cols})
@@ -494,15 +494,15 @@ def _show_overview(user_cos: list[str], admin_mode: bool,
                           if k in se_avail]
 
             # Seed-once + guard (never key= AND default= together — CLAUDE.md).
-            if "sum_se_cols" not in st.session_state:
-                st.session_state["sum_se_cols"] = se_default
+            if SK.SUM_SE_COLS not in st.session_state:
+                st.session_state[SK.SUM_SE_COLS] = se_default
             else:
                 guard_multiselect_state("sum_se_cols", se_avail)
             se_picked = st.multiselect(
                 t("Columns to display"),
                 options=se_avail,
                 format_func=lambda k: se_field_labels.get(k, k),
-                key="sum_se_cols",
+                key=SK.SUM_SE_COLS,
             )
             se_show = se_picked or se_default
             se_labels = _tr({k: se_field_labels[k] for k in se_show})

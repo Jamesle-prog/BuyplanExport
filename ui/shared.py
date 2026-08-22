@@ -303,6 +303,170 @@ def persisted_download(
 
 
 # ---------------------------------------------------------------------------
+# One-shot flash messages
+# ---------------------------------------------------------------------------
+
+_FLASH_KINDS = ("success", "info", "warning", "error")
+
+
+def set_flash(key: str, message: str, kind: str = "success") -> None:
+    """Queue a one-shot message to show after the rerun an action triggers.
+
+    Pair with :func:`show_flash` at the top of the view.  The canonical shape
+    is a ``(kind, message)`` tuple; ``show_flash`` also accepts the older
+    plain-string and dict shapes so no producer is forced to change.
+    """
+    st.session_state[key] = (kind, message)
+
+
+def show_flash(key: str, *, default_kind: str = "success"):
+    """Pop and render the one-shot message stored under *key*.
+
+    Six views used to hand-roll this in three different shapes.  Accepted:
+
+    * ``(kind, message)`` — the canonical tuple (``set_flash`` writes this).
+    * ``"message"``       — rendered as *default_kind*, or as an error when
+      it starts with ``❌`` (the mailbox-check convention).
+    * ``{"kind": …, "text": …, …}`` — rendered from those two fields.
+
+    Returns the raw flash so a caller with extra payload (the fabric-import
+    dict carries a column map) can render the rest, or ``None`` when there
+    was nothing to show.
+    """
+    flash = st.session_state.pop(key, None)
+    if not flash:
+        return None
+    if isinstance(flash, (tuple, list)) and len(flash) == 2:
+        kind, message = flash
+    elif isinstance(flash, dict):
+        kind, message = flash.get("kind", "info"), flash.get("text", "")
+    else:
+        message = str(flash)
+        kind = "error" if message.startswith("❌") else default_kind
+    if kind not in _FLASH_KINDS:
+        kind = "info"
+    if message:
+        getattr(st, kind)(message)
+    return flash
+
+
+# ---------------------------------------------------------------------------
+# Destructive actions
+# ---------------------------------------------------------------------------
+
+DELETE_GLYPH = "🗑️"
+
+
+def delete_button(label: str, key: str, *, confirm: str | None = None,
+                  disabled: bool = False, width: str = "content",
+                  help: str | None = None, container=None) -> bool:
+    """A delete / remove button with the one glyph and style the app uses.
+
+    Sixteen delete buttons used to choose between ``🗑`` and ``🗑️``, between
+    plain and ``type="primary"``, and between a bare click and a tick-box.
+    This is the one way to draw one.
+
+    ``confirm`` — when given, a checkbox with that text gates the button: it
+    stays disabled until ticked and turns primary (red) once it is, so the
+    destructive click is deliberate.  Use it for anything that can't be
+    undone (a user, a contract, a plan); leave it off for removing a row from
+    a list the user is still editing.
+
+    Returns True on the click (with the tick, when one is required).
+    *container* lets the button live in a column; an empty *label* gives an
+    icon-only button for tight rows.
+    """
+    host = container if container is not None else st
+    armed = True
+    if confirm:
+        armed = bool(host.checkbox(confirm, key=f"{key}__confirm"))
+    text = f"{DELETE_GLYPH} {label}".strip()
+    clicked = host.button(
+        text, key=key,
+        type="primary" if (confirm and armed) else "secondary",
+        disabled=disabled or not armed, width=width, help=help,
+    )
+    return bool(armed and not disabled and clicked)
+
+
+# ---------------------------------------------------------------------------
+# Output folder (save a copy beside the download)
+# ---------------------------------------------------------------------------
+
+def safe_filename(name: str, *, fallback: str = "output") -> str:
+    """Strip characters Windows and Excel reject from a download filename."""
+    cleaned = "".join(ch for ch in (name or "") if ch not in '\\/:*?"<>|').strip()
+    return cleaned or fallback
+
+
+def output_folder_input(key: str, kind: str, *, placeholder: str = r"D:\Exports") -> str:
+    """Optional folder to drop a copy of a generated file into.
+
+    The download button always works; this is for a shared drive other people
+    read, so the file doesn't have to be downloaded and moved by hand.
+
+    The last folder actually saved to under *kind* is remembered across
+    sessions and comes back pre-filled; once more than one has been used a
+    picker offers the recent ones.  *kind* is a logical bucket (see
+    :func:`recent_folders`) — every field that writes to the same destination
+    should share one.  Clearing the field sticks for the rest of the session;
+    it is only seeded when the field has no value yet.
+    """
+    from ui.i18n import t as _t
+    history = recent_folders(kind)
+    if key not in st.session_state and history:
+        st.session_state[key] = history[0]
+
+    if len(history) > 1:
+        pick_key = f"{key}__recent"
+
+        def _apply_recent() -> None:
+            chosen = st.session_state.get(pick_key)
+            if chosen:
+                st.session_state[key] = chosen
+
+        st.selectbox(
+            _t("Recent folders"), [""] + history, key=pick_key,
+            on_change=_apply_recent, label_visibility="collapsed",
+            format_func=lambda p: p or _t("Recent folders…"))
+
+    return (st.text_input(
+        _t("Also save a copy to this folder (optional)"), key=key,
+        placeholder=placeholder,
+        help=_t("Leave blank to just download. The folder must already exist "
+                "and be writable from this machine. The last folder saved to "
+                "is remembered and filled in next time.")) or "").strip()
+
+
+def save_copy_to_folder(data: bytes, filename: str, folder: str, kind: str) -> None:
+    """Write *data* to ``folder/filename`` and report the outcome inline.
+
+    Best-effort and loud: a bad path tells the user which path failed and why,
+    and never takes the download with it.  The filename is reduced to its
+    base name so a name carrying separators can't write outside *folder*.
+
+    A folder is remembered under *kind* only once a file has actually landed
+    in it, so the suggestions can't fill up with typos and dead paths.
+    """
+    if not folder:
+        return
+    from ui.i18n import t as _t
+    safe = os.path.basename(str(filename)) or "output"
+    try:
+        if not os.path.isdir(folder):
+            st.warning(f"{_t('Folder not found — nothing saved:')} {folder}")
+            return
+        path = os.path.join(folder, safe)
+        with open(path, "wb") as fh:
+            fh.write(data)
+    except OSError as exc:
+        st.warning(f"{_t('Could not save to')} {folder} — {exc}")
+        return
+    remember_folder(kind, folder)
+    st.success(f"{_t('Saved a copy to')} {path}")
+
+
+# ---------------------------------------------------------------------------
 # Image folder expander widget
 # ---------------------------------------------------------------------------
 

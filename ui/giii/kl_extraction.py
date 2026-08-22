@@ -610,7 +610,7 @@ def show_kl_upload_section(files=None) -> None:
     fname    = f"{prefix}_KL_POs.xlsx" if prefix else "KL_POs.xlsx"
 
     st.download_button(
-        label=t("⬇ Download Excel"),
+        label=t("⬇️ Download Excel"),
         data=xlsx_bytes,
         file_name=fname,
         mime=_XLSX_MIME,

@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.134.0",
+        "date": "2026-08-22",
+        "entries": [
+            {"type": "refactor", "text": "**Three things every view used to build for itself are now shared components.** `show_flash()` renders the one-shot banner after a save or delete — six views had hand-rolled it in three different storage shapes, all still accepted. `delete_button()` draws every delete / remove / clear button with the one glyph (`🗑️`) and, when given a confirmation text, gates the click behind a tick-box and turns the button red once armed — sixteen buttons had each chosen their own glyph and emphasis. The \"save a copy to this folder\" field and its folder memory moved up from the cutting-plan module so any export can offer it."},
+            {"type": "refactor", "text": "**Session-state keys are constants, everywhere.** 152 accesses across 24 files spelt their key as a string or attribute (`st.session_state[\"rpt_bp_bytes\"]`, `st.session_state.username`) — the thing CLAUDE.md says never to do, because a typo silently reads an empty slot. Every one now uses an `SK.` constant; 49 constants were added, grouped by module, and the same constant is passed as the widget's `key=` so the pair reads as one thing. A test fails on any literal form, including `\"x\" in st.session_state`."},
+            {"type": "refactor", "text": "**One download glyph.** Download buttons had said `⬇️`, `⬇`, `💾` and `📥` interchangeably. The download verb is `⬇️`; `💾` still means *save* on save buttons and `📥` still names the Downloads section, which is why those were the wrong glyphs for a download. The Cutting Plan tab also stops duplicating `lazy_sections` by hand."},
+        ],
+    },
+    {
         "version": "2.133.1",
         "date": "2026-08-22",
         "entries": [

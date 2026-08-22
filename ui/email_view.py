@@ -26,7 +26,7 @@ import streamlit as st
 
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import lazy_sections, fragment_rerun, XLSX_MIME
+from ui.shared import lazy_sections, fragment_rerun, XLSX_MIME, show_flash, delete_button
 from ui.stores import get_email_inbox_store
 
 from po_extractor.store.email_inbox_store import (
@@ -186,9 +186,7 @@ def _render_inbox(username: str) -> None:
         if last:
             st.caption(f"{t('Last checked')}: {last}")
 
-    flash = st.session_state.pop(SK.EMAIL_FETCH_FLASH, "")
-    if flash:
-        (st.error if flash.startswith("❌") else st.info)(flash)
+    show_flash(SK.EMAIL_FETCH_FLASH, default_kind="info")
 
     messages = store.list_messages(limit=100)
     if not messages:
@@ -217,8 +215,8 @@ def _render_inbox(username: str) -> None:
             for att in atts:
                 _render_attachment(att, msg, username)
                 st.divider()
-            if st.button(f"🗑 {t('Remove from list')}",
-                         key=f"em_delmsg_{msg['id']}",
+            if delete_button(t("Remove from list"),
+                             key=f"em_delmsg_{msg['id']}",
                          help=t("Clears it from this list only — the message "
                                 "stays in the mailbox.")):
                 store.delete_messages([msg["id"]])

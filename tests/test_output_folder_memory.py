@@ -39,10 +39,10 @@ class _FakeSt:
 
 @pytest.fixture
 def fake_st(monkeypatch):
-    import ui.cutting_plan._shared as cp_shared
-
+    # The widgets live in ui.shared now; the cutting-plan module only binds
+    # the history bucket.  Patch where the st calls actually happen.
     stub = _FakeSt()
-    monkeypatch.setattr(cp_shared, "st", stub)
+    monkeypatch.setattr(shared, "st", stub)
     return stub
 
 

@@ -26,7 +26,7 @@ from auth.companies import list_company_names
 from auth.users import get_user_companies, is_admin
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import _th
+from ui.shared import _th, delete_button
 from ui.stores import get_boat_sample_store, list_all_brands
 
 
@@ -195,8 +195,8 @@ def render_boat_sample_editor(companies: list[str], *, key_prefix: str) -> None:
         format_func=lambda i: options[i], index=None,
         placeholder=t("— choose —"), key=f"{key_prefix}_del",
     )
-    if st.button(f"🗑️ {t('Delete selected')}", disabled=del_idx is None,
-                 key=f"{key_prefix}_del_btn"):
+    if delete_button(t("Delete selected"), disabled=del_idx is None,
+                     key=f"{key_prefix}_del_btn"):
         if del_idx is not None:
             target = rows[del_idx]
             if target["company"] not in allowed:      # same guard as the save

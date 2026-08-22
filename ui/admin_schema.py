@@ -131,7 +131,7 @@ def show_schema_editor(
         buf = io.BytesIO()
         wb.save(buf)
         st.download_button(
-            f"⬇ {t('Download mapping as Excel')}",
+            f"⬇️ {t('Download mapping as Excel')}",
             data=buf.getvalue(),
             file_name="Column_Mapping.xlsx",
             mime=_XLSX_MIME,

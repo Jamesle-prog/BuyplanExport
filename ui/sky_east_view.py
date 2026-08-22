@@ -162,13 +162,13 @@ def _show_se_upload_section():
     if st.button(t("Process Sky East Files"), type="primary",
                  width="stretch", key="se_run",
                  disabled=needs_confirm):
-        st.session_state.se_results = None
-        st.session_state.se_log = []
-        st.session_state.se_contracts = None
-        st.session_state.se_image_cache = {}
+        st.session_state[SK.SE_RESULTS] = None
+        st.session_state[SK.SE_LOG] = []
+        st.session_state[SK.SE_CONTRACTS] = None
+        st.session_state[SK.SE_IMAGE_CACHE] = {}
         # New upload run → freshly extracted photos may supersede cached ones
         st.session_state.pop(SK.SE_PHOTO_CACHE, None)
-        st.session_state.se_masked_zip = None
+        st.session_state[SK.SE_MASKED_ZIP] = None
         _run_sky_east_processing(order_files, ean_file, progress_file,
                                  mask_prices=se_mask, save_mode=save_mode)
         # One tick authorises one run — the next upload has to confirm again,
@@ -176,8 +176,8 @@ def _show_se_upload_section():
         st.session_state.pop(SK.SE_REPLACE_CONFIRM, None)
         st.rerun()
 
-    if st.session_state.se_log:
-        show_processing_log(st.session_state.se_log)
+    if st.session_state[SK.SE_LOG]:
+        show_processing_log(st.session_state[SK.SE_LOG])
 
     _rl_pending = st.session_state.get(SK.SE_RL_PENDING)
     if _rl_pending:
@@ -190,15 +190,15 @@ def _show_se_upload_section():
     if st.session_state.get(SK.SE_MASKED_ZIP):
         st.download_button(
             t("Download Masked Files (.zip)"),
-            data=st.session_state.se_masked_zip,
+            data=st.session_state[SK.SE_MASKED_ZIP],
             file_name="sky_east_masked.zip",
             mime=ZIP_MIME,
             width="stretch",
             key="se_masked_dl",
         )
 
-    if st.session_state.se_results:
-        _n_saved = len(st.session_state.se_results)
+    if st.session_state[SK.SE_RESULTS]:
+        _n_saved = len(st.session_state[SK.SE_RESULTS])
         st.success(
             f"✅ {t('Saved')} {_n_saved} PC No.(s). " + t(
                 "**Next step →** open the **📦 Generate / Export** tab → "
@@ -207,7 +207,7 @@ def _show_se_upload_section():
             ),
             icon="✅",
         )
-        _show_se_results(st.session_state.se_results, st.session_state.se_image_cache)
+        _show_se_results(st.session_state[SK.SE_RESULTS], st.session_state[SK.SE_IMAGE_CACHE])
 
 
 # ---------------------------------------------------------------------------

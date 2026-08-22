@@ -10,6 +10,7 @@ session-state addressable — same rationale as Production Tracking's sub-nav.
 from __future__ import annotations
 
 import streamlit as st
+from ui.session_keys import SK
 
 from ui.i18n import t
 from ui.stores import get_sky_east_store
@@ -51,19 +52,19 @@ def _show_se_reports_tab(pin_mode: str | None = None) -> None:
 
     # One-time migration: carry over a selection made under the old per-section
     # keys so users mid-task don't lose it after the flatten.
-    if "se_gen_pcs" not in st.session_state:
+    if SK.SE_GEN_PCS not in st.session_state:
         for _legacy in ("se_bp_sel", "se_dl_pcs", "se_wl_pcs"):
             _old = st.session_state.get(_legacy)
             if isinstance(_old, list) and _old:
-                st.session_state["se_gen_pcs"] = [v for v in _old if v in _pc_set]
+                st.session_state[SK.SE_GEN_PCS] = [v for v in _old if v in _pc_set]
                 break
     # Stale-value guard: drop PC Nos no longer valid (e.g. after a delete in
     # Contract History) BEFORE the widget renders, or st.multiselect raises
     # StreamlitAPIException. se_wl_styles holds style names, not PC Nos — it
     # must NOT be filtered against _pc_set.
-    _cur = st.session_state.get("se_gen_pcs", [])
+    _cur = st.session_state.get(SK.SE_GEN_PCS, [])
     if isinstance(_cur, list) and any(v not in _pc_set for v in _cur):
-        st.session_state["se_gen_pcs"] = [v for v in _cur if v in _pc_set]
+        st.session_state[SK.SE_GEN_PCS] = [v for v in _cur if v in _pc_set]
 
     # ── Output type ───────────────────────────────────────────────────────────
     if pin_mode == PIN_BUYPLAN:
@@ -82,7 +83,7 @@ def _show_se_reports_tab(pin_mode: str | None = None) -> None:
         sel_pcs = st.multiselect(
             t("PC No.(s) to include:"),
             pc_options,
-            key="se_gen_pcs",
+            key=SK.SE_GEN_PCS,
             placeholder=t("Select one or more PC Nos..."),
         )
     with all_col:

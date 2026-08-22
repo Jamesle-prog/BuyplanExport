@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.i18n import t
-from ui.shared import fragment_rerun
+from ui.shared import fragment_rerun, show_flash, delete_button
 
 from auth.users import is_admin
 from ui.fabric_db._shared import FABRIC_DB_LIST_RENAME
@@ -37,11 +37,9 @@ def _fabric_db_show_flash() -> None:
     run -- so success/info banners written just before it only flashed for a
     moment. Stash them in session state instead and render on the NEXT run.
     """
-    flash = st.session_state.pop(SK.FABRIC_DB_FLASH, None)
+    flash = show_flash(SK.FABRIC_DB_FLASH)
     if not flash:
         return
-    kind = flash.get("kind", "info")
-    (st.success if kind == "success" else st.info)(flash["text"])
     col_map = flash.get("col_map") or {}
     if col_map:
         with st.expander(t("🗂 Detected column layout"), expanded=False):
@@ -322,7 +320,7 @@ def _fabric_db_upload_section(store, count: int) -> None:
 
 def _fabric_db_delete_section(store) -> None:
     """Expander: search and delete individual fabric records by 公司面料编号."""
-    with st.expander(t("🗑 Delete Selected Records"), expanded=False):
+    with st.expander(f"🗑️ {t('Delete Selected Records')}", expanded=False):
         st.caption(
             t("Search for fabrics to delete.  Select one or more rows, then confirm deletion.")
         )
@@ -351,7 +349,7 @@ def _fabric_db_delete_section(store) -> None:
         selected = st.multiselect(
             t("Select record(s) to delete ({n} found):").format(n=len(all_qnos)),
             options=all_qnos,
-            key="fabric_db_del_sel",
+            key=SK.FABRIC_DB_DEL_SEL,
         )
 
         # Show the full table for reference
@@ -375,7 +373,7 @@ def _fabric_db_delete_section(store) -> None:
                    + ", ".join(f"`{q}`" for q in selected[:10])
                    + (" …" if len(selected) > 10 else ""))
 
-        if st.button(t("🗑️ Delete {n} record(s)").format(n=len(selected)), type="primary",
+        if delete_button(t("Delete {n} record(s)").format(n=len(selected)),
                      key="fabric_db_del_confirm"):
             deleted = store.delete_by_quality_nos(selected)
             st.session_state[SK.FABRIC_DB_FLASH] = {
@@ -384,5 +382,5 @@ def _fabric_db_delete_section(store) -> None:
                          f"recorded in the version history below."),
             }
             # Clear selection and rerun
-            st.session_state.pop("fabric_db_del_sel", None)
+            st.session_state.pop(SK.FABRIC_DB_DEL_SEL, None)
             fragment_rerun()

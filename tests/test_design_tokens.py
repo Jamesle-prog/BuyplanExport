@@ -124,3 +124,65 @@ def test_no_deprecated_use_container_width():
             if "use_container_width" in line:
                 offenders.append(f"{p.relative_to(REPO).as_posix()}:{i}")
     assert not offenders, "use width=\"stretch\" / \"content\":\n  " + "\n  ".join(offenders)
+
+
+# ── Session-state keys go through SK ────────────────────────────────────────
+
+def _literal_session_keys(path: Path) -> list[tuple[int, str]]:
+    """(lineno, key) for every session_state access that spells its key as a
+    string literal or attribute instead of an SK constant."""
+    import ast
+    tree = ast.parse(io.open(path, encoding="utf-8-sig").read())
+    out: list[tuple[int, str]] = []
+    methods = ("get", "pop", "setdefault")
+    for n in ast.walk(tree):
+        if (isinstance(n, ast.Subscript) and isinstance(n.value, ast.Attribute)
+                and n.value.attr == "session_state"
+                and isinstance(n.slice, ast.Constant) and isinstance(n.slice.value, str)):
+            out.append((n.lineno, n.slice.value))
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr in methods
+                and isinstance(n.func.value, ast.Attribute)
+                and n.func.value.attr == "session_state"
+                and n.args and isinstance(n.args[0], ast.Constant)
+                and isinstance(n.args[0].value, str)):
+            out.append((n.lineno, n.args[0].value))
+        if (isinstance(n, ast.Attribute) and isinstance(n.value, ast.Attribute)
+                and n.value.attr == "session_state"
+                and n.attr not in methods + ("update", "keys", "items", "values", "clear", "to_dict")):
+            out.append((n.lineno, n.attr))
+        if (isinstance(n, ast.Compare) and isinstance(n.left, ast.Constant)
+                and isinstance(n.left.value, str) and len(n.comparators) == 1
+                and isinstance(n.comparators[0], ast.Attribute)
+                and n.comparators[0].attr == "session_state"):
+            out.append((n.lineno, n.left.value))
+    return out
+
+
+@pytest.mark.parametrize("path", [p for p in UI_FILES if p.name != "session_keys.py"] + [REPO / "app.py"],
+                         ids=lambda p: p.relative_to(REPO).as_posix())
+def test_session_state_keys_are_sk_constants(path: Path):
+    """CLAUDE.md: session state uses SK constants, never raw literals.  The
+    sweep that introduced this found 152 literal accesses across 24 files."""
+    bad = _literal_session_keys(path)
+    assert not bad, (
+        "add a constant to ui/session_keys.py and use SK.<NAME>:\n  "
+        + "\n  ".join(f"line {ln}: {key!r}" for ln, key in bad[:10])
+    )
+
+
+def test_session_key_detector_catches_every_form(tmp_path):
+    f = tmp_path / "v.py"
+    f.write_text(
+        "import streamlit as st\n"
+        "st.session_state['a'] = 1\n"          # subscript
+        "st.session_state.get('b')\n"          # get
+        "st.session_state.pop('c', None)\n"    # pop
+        "x = st.session_state.d\n"             # attribute
+        "if 'e' in st.session_state: pass\n"   # membership
+        "st.session_state[SK.F] = 1\n"         # fine
+        "st.session_state.get(SK.G)\n"         # fine
+        "st.session_state.update({})\n",       # method, fine
+        encoding="utf-8",
+    )
+    assert [k for _, k in _literal_session_keys(f)] == ["a", "b", "c", "d", "e"]

@@ -53,7 +53,7 @@ import streamlit as st
 
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import lazy_sections, fragment_rerun, guard_multiselect_state, XLSX_MIME
+from ui.shared import lazy_sections, fragment_rerun, guard_multiselect_state, XLSX_MIME, show_flash, delete_button
 from ui.stores import get_production_tracking_store, get_store
 
 # ── Schema constants — imported once at module load, not on every render ──────
@@ -757,7 +757,7 @@ def show_production_tracking_tab(
     index = labels.index(_stored_label) if _stored_label in labels else 0
     active_label = st.radio(
         t("Sub-section"), labels, horizontal=True, index=index,
-        key="pt_tab_radio", format_func=t, label_visibility="collapsed",
+        key=SK.PT_TAB_RADIO, format_func=t, label_visibility="collapsed",
     )
     st.session_state[SK.PT_ACTIVE_TAB] = _TAB_LABELS.index(active_label)
     which = dict(tab_defs)[active_label]
@@ -881,7 +881,7 @@ def _jump_to_advanced(rid: int) -> None:
     (Streamlit ignores `index=` once the key holds a value)."""
     st.session_state[SK.PT_SELECTED_EDIT] = rid
     st.session_state[SK.PT_ACTIVE_TAB]    = TAB_GRID
-    st.session_state.pop("pt_tab_radio", None)
+    st.session_state.pop(SK.PT_TAB_RADIO, None)
     fragment_rerun()
 
 
@@ -1599,9 +1599,7 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
 
     # One-shot success message from the previous run's delete (the message
     # can't be shown in the delete handler itself — st.rerun() fires first).
-    flash = st.session_state.pop(SK.PT_DELETE_FLASH, None)
-    if flash:
-        st.success(flash)
+    show_flash(SK.PT_DELETE_FLASH)
 
     # Build selectbox options — display as "PO# — Style" keyed by integer id
     id_to_record = {r["id"]: r for r in records}
@@ -1709,7 +1707,7 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
             fragment_rerun()
 
     with col_del:
-        if st.button(t("🗑️ Delete"), width="stretch"):
+        if delete_button(t("Delete"), key="pt_delete_record", width="stretch"):
             st.session_state[SK.PT_DELETE_CONFIRM] = True
 
     if st.session_state.get(SK.PT_DELETE_CONFIRM):
@@ -1854,7 +1852,7 @@ def _render_remove_section(store, records: list[dict]) -> None:
         guard_multiselect_state("pt_remove_sel", list(by_label))
         chosen = st.multiselect(
             t("Records to stop tracking"), options=list(by_label),
-            key="pt_remove_sel",
+            key=SK.PT_REMOVE_SEL,
         )
         st.caption(t(
             "Removes the tracking record and its milestone dates. The PO and "
@@ -1864,7 +1862,7 @@ def _render_remove_section(store, records: list[dict]) -> None:
             f"🗑 {t('Stop tracking')} ({len(chosen)})", key="pt_remove_go",
         ):
             store.delete([by_label[c] for c in chosen])
-            st.session_state.pop("pt_remove_sel", None)
+            st.session_state.pop(SK.PT_REMOVE_SEL, None)
             st.success(f"✅ {len(chosen)} {t('record(s) removed.')}")
             fragment_rerun()
 
@@ -1975,7 +1973,7 @@ def _render_add_tab(
         # Delete the radio's own widget key so the next render falls back to
         # index=PT_ACTIVE_TAB.  Writing it directly after instantiation raises
         # StreamlitAPIException ("cannot be modified after widget instantiated").
-        st.session_state.pop("pt_tab_radio", None)
+        st.session_state.pop(SK.PT_TAB_RADIO, None)
         fragment_rerun()
 
     # ── Bulk add — everything currently listed (after the client filter) ────
@@ -1987,7 +1985,7 @@ def _render_add_tab(
         n = _bulk_track(store, untracked, username)
         st.success(f"✅ {n} {t('record(s) now tracked.')}")
         st.session_state[SK.PT_ACTIVE_TAB] = TAB_GRID
-        st.session_state.pop("pt_tab_radio", None)
+        st.session_state.pop(SK.PT_TAB_RADIO, None)
         fragment_rerun()
 
     _render_remove_section(store, records or [])
@@ -2413,11 +2411,11 @@ def _render_factory_updates_tab(records, username, admin_mode,
                         lambda row: f"#{i} · {row['PO Number']} {row['Style']} "
                                     f"{row['Stage']} {row['Units']} ({row['Date']})"
                     )(rec_df[rec_df["id"] == i].iloc[0]),
-                    key="pt_fu_del_sel",
+                    key=SK.PT_FU_DEL_SEL,
                 )
                 if del_ids and st.button(
                     f"🗑 {t('Delete')} {len(del_ids)}", key="pt_fu_del_go",
                 ):
                     fp_store.delete_reports(del_ids)
-                    st.session_state.pop("pt_fu_del_sel", None)
+                    st.session_state.pop(SK.PT_FU_DEL_SEL, None)
                     fragment_rerun()

@@ -15,9 +15,10 @@ from datetime import date
 
 import pandas as pd
 import streamlit as st
+from ui.session_keys import SK
 
 from ui.i18n import t
-from ui.shared import fragment_rerun, XLSX_MIME
+from ui.shared import fragment_rerun, XLSX_MIME, delete_button
 from ui.stores import (
     get_cmpt_contract_store,
     get_factory_progress_store,
@@ -170,12 +171,12 @@ def _new_contract_section(store, username: str) -> None:
         # Auto-suggest the next number in the CMPT-YYYY-NNN series (seeded
         # once per form; re-seeded after each successful create). The field
         # stays editable for houses with their own numbering.
-        if "cmpt_new_no" not in st.session_state:
-            st.session_state["cmpt_new_no"] = store.next_contract_no()
+        if SK.CMPT_NEW_NO not in st.session_state:
+            st.session_state[SK.CMPT_NEW_NO] = store.next_contract_no()
         c1, c2, c3 = st.columns(3)
         with c1:
             contract_no = st.text_input(
-                t("Contract No."), key="cmpt_new_no",
+                t("Contract No."), key=SK.CMPT_NEW_NO,
                 help=t("Auto-generated — edit if you use your own numbering."),
             )
         with c2:
@@ -214,16 +215,16 @@ def _new_contract_section(store, username: str) -> None:
                 pairs = [(pt_records[i]["po_number"], pt_records[i].get("style") or "")
                          for i in sel]
                 qty_map = get_factory_progress_store().order_qty_for_pairs(pairs)
-                st.session_state["cmpt_new_lines_df"] = pd.DataFrame([{
+                st.session_state[SK.CMPT_NEW_LINES_DF] = pd.DataFrame([{
                     "po_number": po, "style": sty, "color": "", "description": "",
                     "qty": qty_map.get((po, sty), 0), "unit_price": 0.0,
                 } for po, sty in pairs])
             else:
-                st.session_state["cmpt_new_lines_df"] = _blank_lines_df()
+                st.session_state[SK.CMPT_NEW_LINES_DF] = _blank_lines_df()
 
-        if "cmpt_new_lines_df" in st.session_state:
+        if SK.CMPT_NEW_LINES_DF in st.session_state:
             edited = _lines_editor("cmpt_new_lines_editor",
-                                   st.session_state["cmpt_new_lines_df"])
+                                   st.session_state[SK.CMPT_NEW_LINES_DF])
             lines = _editor_lines(edited)
             agreed = sum(ln["qty"] * ln["unit_price"] for ln in lines)
             st.caption(f"{t('Agreed value')}: {agreed:,.2f}")
@@ -240,8 +241,8 @@ def _new_contract_section(store, username: str) -> None:
                 except ValueError as exc:
                     st.error(str(exc))
                 else:
-                    st.session_state.pop("cmpt_new_lines_df", None)
-                    st.session_state.pop("cmpt_new_no", None)   # re-seed next number
+                    st.session_state.pop(SK.CMPT_NEW_LINES_DF, None)
+                    st.session_state.pop(SK.CMPT_NEW_NO, None)   # re-seed next number
                     st.success(f"✅ {t('Contract created.')}")
                     fragment_rerun()
 
@@ -262,7 +263,7 @@ def _contract_detail_section(store, username: str, admin_mode: bool) -> None:
                 f"{by_id[i]['contract_no']} · {by_id[i]['factory']} · "
                 f"{CONTRACT_STATUS_LABELS.get(by_id[i]['status'], by_id[i]['status'])}"
             ),
-            key="cmpt_detail_sel",
+            key=SK.CMPT_DETAIL_SEL,
         )
         contract = store.get_contract(cid)
         if contract is None:
@@ -353,8 +354,8 @@ def _contract_detail_section(store, username: str, admin_mode: bool) -> None:
                     for p in contract["payments"] if p["id"] == i),
                 key=f"cmpt_pay_del_{cid}",
             )
-            if del_ids and st.button(f"🗑 {t('Delete')} {len(del_ids)}",
-                                     key=f"cmpt_pay_del_go_{cid}"):
+            if del_ids and delete_button(f"{t('Delete')} {len(del_ids)}",
+                                         key=f"cmpt_pay_del_go_{cid}"):
                 store.delete_payments(del_ids)
                 st.session_state.pop(f"cmpt_pay_del_{cid}", None)
                 fragment_rerun()
@@ -385,10 +386,10 @@ def _contract_detail_section(store, username: str, admin_mode: bool) -> None:
                 )
 
         if admin_mode:
-            if st.button(f"🗑 {t('Delete this contract (with lines and payments)')}",
-                         key=f"cmpt_detail_del_{cid}"):
+            if delete_button(t("Delete this contract (with lines and payments)"),
+                             key=f"cmpt_detail_del_{cid}"):
                 store.delete_contract(cid)
-                st.session_state.pop("cmpt_detail_sel", None)
+                st.session_state.pop(SK.CMPT_DETAIL_SEL, None)
                 fragment_rerun()
 
 

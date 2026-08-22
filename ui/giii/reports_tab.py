@@ -72,8 +72,8 @@ def _resolve_po_requirements(selected: list[str], filt_df: pd.DataFrame,
 
     df = filt_df[filt_df["po_number"].isin(selected)]
     reqs, warns, preview = resolve_reqs(get_cprs_client(), df, manual, translate)
-    st.session_state["rpt_cprs_warns"] = warns
-    st.session_state["rpt_cprs_preview"] = preview
+    st.session_state[SK.RPT_CPRS_WARNS] = warns
+    st.session_state[SK.RPT_CPRS_PREVIEW] = preview
     return reqs
 
 
@@ -117,15 +117,15 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
     # default= is the CLAUDE.md-banned desync pattern: the default is ignored
     # once widget state exists, and stale POs silently blank the selection.
     po_opts = filt_df["po_number"].tolist()
-    if "rpt_po_select" not in st.session_state:
-        st.session_state["rpt_po_select"] = po_opts
+    if SK.RPT_PO_SELECT not in st.session_state:
+        st.session_state[SK.RPT_PO_SELECT] = po_opts
     else:
         guard_multiselect_state("rpt_po_select", po_opts)
     selected = st.multiselect(
         f"{t('Select POs')} ({len(po_opts)} {t('available after filters')}):",
         options=po_opts,
         placeholder=t("Select one or more PO numbers…"),
-        key="rpt_po_select",
+        key=SK.RPT_PO_SELECT,
     )
     if not po_opts:
         st.warning(t("No POs match the current filters."))
@@ -142,24 +142,24 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         ))
         mc1, mc2 = st.columns(2)
         with mc1:
-            st.text_input(t("Red sticker DIM code (pre-pack)"), key="rpt_dim_code",
+            st.text_input(t("Red sticker DIM code (pre-pack)"), key=SK.RPT_DIM_CODE,
                           placeholder="e.g. MY",
                           help=t("Default for every PO; override per PO below."))
         with mc2:
-            st.text_input(t("PCs per box (factory pack-out)"), key="rpt_pcs_box",
+            st.text_input(t("PCs per box (factory pack-out)"), key=SK.RPT_PCS_BOX,
                           placeholder="e.g. 36")
         # Per-PO DIM overrides — POs in one generation can carry different
         # pre-pack codes. Seed from the current selection, keep prior edits.
-        prev = {r["PO"]: r["DIM"] for r in st.session_state.get("rpt_dim_rows", [])}
+        prev = {r["PO"]: r["DIM"] for r in st.session_state.get(SK.RPT_DIM_ROWS, [])}
         dim_df = st.data_editor(
             pd.DataFrame({"PO": selected,
                           "DIM": [prev.get(po, "") for po in selected]}),
             hide_index=True, width="stretch", key="rpt_dim_editor",
             column_config={"PO": st.column_config.TextColumn(disabled=True)},
         )
-        st.session_state["rpt_dim_rows"] = dim_df.to_dict("records")
+        st.session_state[SK.RPT_DIM_ROWS] = dim_df.to_dict("records")
         st.checkbox(t("Translate CPRS requirement text to Chinese (DeepSeek)"),
-                    key="rpt_cprs_translate", value=False)
+                    key=SK.RPT_CPRS_TRANSLATE, value=False)
 
     st.divider()
 
@@ -174,7 +174,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             width="stretch",
             key="rpt_gen_all_btn",
         ):
-            st.session_state.pop("rpt_all_results", None)
+            st.session_state.pop(SK.RPT_ALL_RESULTS, None)
             _run_from_history(selected, result_key="rpt_all_results")
 
     with c2:
@@ -184,11 +184,11 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             width="stretch",
             key="rpt_gen_cp_btn",
         ):
-            st.session_state.pop("rpt_cp_bytes", None)
+            st.session_state.pop(SK.RPT_CP_BYTES, None)
             with st.spinner(t("Building color plan…")):
                 cp_bytes = _generate_color_plan_excel(selected, store)
             if cp_bytes:
-                st.session_state["rpt_cp_bytes"] = cp_bytes
+                st.session_state[SK.RPT_CP_BYTES] = cp_bytes
             else:
                 st.warning(t("No size data found for selected POs."))
 
@@ -199,12 +199,12 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             width="stretch",
             key="rpt_gen_ps_btn",
         ):
-            st.session_state.pop("rpt_ps_bytes", None)
+            st.session_state.pop(SK.RPT_PS_BYTES, None)
             ps_df = filt_df[filt_df["po_number"].isin(selected)]
             with st.spinner(t("Building PO summary…")):
                 df_sizes = store.load_size_rows(selected)
                 ps_bytes = _generate_po_summary_excel(ps_df, df_sizes=df_sizes)
-            st.session_state["rpt_ps_bytes"] = ps_bytes
+            st.session_state[SK.RPT_PS_BYTES] = ps_bytes
 
     with c4:
         if st.button(
@@ -214,7 +214,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             key="rpt_gen_kl_btn",
             help=t("Two-sheet Excel: PO Detail + Summary (KL-reference format)"),
         ):
-            st.session_state.pop("rpt_kl_bytes", None)
+            st.session_state.pop(SK.RPT_KL_BYTES, None)
             kl_df = filt_df[filt_df["po_number"].isin(selected)]
             with st.spinner(t("Building KL-format summary…")):
                 df_sizes = store.load_size_rows(selected)
@@ -228,7 +228,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
                           "the file may have missing rows:") + "\n\n"
                         + "\n".join(f"- {i}" for i in issues)
                     )
-                st.session_state["rpt_kl_bytes"] = kl_bytes
+                st.session_state[SK.RPT_KL_BYTES] = kl_bytes
             else:
                 st.warning(t("No size data found for selected POs."))
 
@@ -236,14 +236,14 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
     c5, c6, _c7, _c8 = st.columns(4)
 
     def _cprs_manual_inputs() -> dict:
-        return {"dim_code": st.session_state.get("rpt_dim_code", ""),
-                "pcs_box": st.session_state.get("rpt_pcs_box", ""),
+        return {"dim_code": st.session_state.get(SK.RPT_DIM_CODE, ""),
+                "pcs_box": st.session_state.get(SK.RPT_PCS_BOX, ""),
                 "dim_codes": {r["PO"]: r["DIM"]
-                              for r in st.session_state.get("rpt_dim_rows", [])
+                              for r in st.session_state.get(SK.RPT_DIM_ROWS, [])
                               if str(r.get("DIM", "")).strip()}}
 
     def _cprs_translator():
-        if st.session_state.get("rpt_cprs_translate"):
+        if st.session_state.get(SK.RPT_CPRS_TRANSLATE):
             from ui.giii._shared import make_en_to_cn_translator
             return make_en_to_cn_translator()
         return None
@@ -261,7 +261,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
                 "Without CPRS configured those cells fall back to blank/无."
             ),
         ):
-            st.session_state.pop("rpt_bp_bytes", None)
+            st.session_state.pop(SK.RPT_BP_BYTES, None)
             with st.spinner(t("Building buy plan (resolving CPRS requirements)…")):
                 try:
                     from ui.giii._buyplan import build_giii_production_plan
@@ -269,10 +269,10 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
                     bp_bytes, warns, preview = build_giii_production_plan(
                         selected, store, cprs=get_cprs_client(),
                         manual=_cprs_manual_inputs(), translate=_cprs_translator())
-                    st.session_state["rpt_cprs_warns"] = warns
-                    st.session_state["rpt_cprs_preview"] = preview
+                    st.session_state[SK.RPT_CPRS_WARNS] = warns
+                    st.session_state[SK.RPT_CPRS_PREVIEW] = preview
                     if bp_bytes:
-                        st.session_state["rpt_bp_bytes"] = bp_bytes
+                        st.session_state[SK.RPT_BP_BYTES] = bp_bytes
                     else:
                         st.warning(t("No size data found for the selected POs."))
                 except Exception as exc:
@@ -300,7 +300,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
     # traffic) whenever the selection changes.
     if selected:
         _sig = tuple(sorted(selected))
-        _cache = st.session_state.get("rpt_api_reqs_cache")
+        _cache = st.session_state.get(SK.RPT_API_REQS_CACHE)
         if not _cache or _cache[0] != _sig:
             try:
                 from po_extractor.ui_helpers.giii_requirements import (
@@ -312,7 +312,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             except Exception as _exc:
                 _reqs, _warns = [], [f"API document unavailable: {_exc}"]
             _cache = (_sig, _reqs, _warns)
-            st.session_state["rpt_api_reqs_cache"] = _cache
+            st.session_state[SK.RPT_API_REQS_CACHE] = _cache
         from ui.giii.results import _show_requirements_api_section
         _show_requirements_api_section(
             {"requirements_api_reqs": _cache[1],
@@ -326,54 +326,54 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
                 st.warning(f"🧭 {_w}")
 
     # ── Download area ─────────────────────────────────────────────────────────
-    if st.session_state.get("rpt_all_results"):
-        _show_downloads(st.session_state["rpt_all_results"], key_prefix="rpt")
+    if st.session_state.get(SK.RPT_ALL_RESULTS):
+        _show_downloads(st.session_state[SK.RPT_ALL_RESULTS], key_prefix="rpt")
 
-    if st.session_state.get("rpt_cp_bytes"):
+    if st.session_state.get(SK.RPT_CP_BYTES):
         st.download_button(
             "⬇️ " + t("Download Color Plan (.xlsx)"),
-            data=st.session_state["rpt_cp_bytes"],
+            data=st.session_state[SK.RPT_CP_BYTES],
             file_name="Color_Plan.xlsx",
             mime=_XLSX_MIME,
             key="rpt_cp_dl",
         )
 
-    if st.session_state.get("rpt_ps_bytes"):
+    if st.session_state.get(SK.RPT_PS_BYTES):
         st.download_button(
             "⬇️ " + t("Download PO Summary (.xlsx)"),
-            data=st.session_state["rpt_ps_bytes"],
+            data=st.session_state[SK.RPT_PS_BYTES],
             file_name="PO_Summary.xlsx",
             mime=_XLSX_MIME,
             key="rpt_ps_dl",
         )
 
-    if st.session_state.get("rpt_kl_bytes"):
+    if st.session_state.get(SK.RPT_KL_BYTES):
         st.download_button(
             "⬇️ " + t("Download KL Format Summary (.xlsx)"),
-            data=st.session_state["rpt_kl_bytes"],
+            data=st.session_state[SK.RPT_KL_BYTES],
             file_name="PO_Summary_KL.xlsx",
             mime=_XLSX_MIME,
             key="rpt_kl_dl",
         )
 
-    if st.session_state.get("rpt_bp_bytes"):
+    if st.session_state.get(SK.RPT_BP_BYTES):
         st.download_button(
             "⬇️ " + t("Download Buy Plan — 生产计划单 (.xlsx)"),
-            data=st.session_state["rpt_bp_bytes"],
+            data=st.session_state[SK.RPT_BP_BYTES],
             file_name="GIII_Production_Plan.xlsx",
             mime=_XLSX_MIME,
             key="rpt_bp_dl",
         )
 
     # Preview + warnings render for BOTH flows: check-only and generate.
-    if st.session_state.get("rpt_cprs_preview") is not None:
-        for w in st.session_state.get("rpt_cprs_warns", []):
+    if st.session_state.get(SK.RPT_CPRS_PREVIEW) is not None:
+        for w in st.session_state.get(SK.RPT_CPRS_WARNS, []):
             st.warning(f"🧭 {w}")
-        preview = st.session_state.get("rpt_cprs_preview")
+        preview = st.session_state.get(SK.RPT_CPRS_PREVIEW)
         if preview:
             with st.expander("🧭 " + t("CPRS requirement resolution (verify before sending)"),
-                             expanded=not st.session_state.get("rpt_bp_bytes")
-                                      or bool(st.session_state.get("rpt_cprs_warns"))):
+                             expanded=not st.session_state.get(SK.RPT_BP_BYTES)
+                                      or bool(st.session_state.get(SK.RPT_CPRS_WARNS))):
                 st.dataframe(pd.DataFrame(preview), width="stretch",
                              hide_index=True)
 
@@ -417,15 +417,15 @@ def _show_tracker_section(df: pd.DataFrame, user_cos: list, admin: bool) -> None
     # Seed once + guard instead of key= AND default= (banned desync pattern).
     avail   = [k for k in _TRACKER_COLS if k in view.columns]
     default = [k for k in _DEFAULT_COLS  if k in avail]
-    if "trk_cols" not in st.session_state:
-        st.session_state["trk_cols"] = default
+    if SK.TRK_COLS not in st.session_state:
+        st.session_state[SK.TRK_COLS] = default
     else:
         guard_multiselect_state("trk_cols", avail)
     picked  = st.multiselect(
         t("Columns"),
         options=avail,
         format_func=lambda k: _TRACKER_COLS.get(k, k),
-        key="trk_cols",
+        key=SK.TRK_COLS,
     )
     show_cols  = picked or default
     display_df = view[show_cols].rename(columns=_TRACKER_COLS)

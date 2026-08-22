@@ -65,9 +65,9 @@ def show_standard_section() -> None:
         }
         ids = list(labels)
         guard_multiselect_state("cp_std_plans", ids)
-        st.session_state.setdefault("cp_std_plans", ids)
+        st.session_state.setdefault(SK.CP_STD_PLANS, ids)
         plan_ids = st.multiselect(
-            t("Cut plan(s) to include"), ids, key="cp_std_plans",
+            t("Cut plan(s) to include"), ids, key=SK.CP_STD_PLANS,
             format_func=lambda i: labels.get(int(i), str(i)),
             help=t("Each plan contributes its own material blocks. Clear the "
                    "selection to produce a blank standard template."))

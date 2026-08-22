@@ -16,7 +16,7 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
 
 import streamlit as st
 
-APP_VERSION = "2.133.1"
+APP_VERSION = "2.134.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -621,10 +621,10 @@ def show_login():
             elif verify_password(username, password):
                 _login_succeeded(uname_key)
                 _record_login(username, "success")
-                st.session_state.logged_in = True
+                st.session_state[SK.LOGGED_IN] = True
                 st.session_state[SK.USERNAME] = username
-                st.session_state.results = None
-                st.session_state.parse_log = []
+                st.session_state[SK.RESULTS] = None
+                st.session_state[SK.PARSE_LOG] = []
                 st.rerun()
             else:
                 _login_failed(uname_key, _LOGIN_FAIL_THRESHOLD,
@@ -1056,7 +1056,7 @@ def _show_changelog_tab() -> None:
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
-if st.session_state.logged_in:
+if st.session_state[SK.LOGGED_IN]:
     show_main()
 else:
     show_login()

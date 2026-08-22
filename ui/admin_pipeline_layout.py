@@ -51,7 +51,7 @@ def show_pipeline_layout_admin() -> None:
             sz = len(tpl_bytes)
             cdl, cup = st.columns(2)
             cdl.download_button(
-                f"⬇ {t('Download')} {pipe.template_file}  ({sz:,} B)",
+                f"⬇️ {t('Download')} {pipe.template_file}  ({sz:,} B)",
                 data=tpl_bytes,
                 file_name=pipe.template_file or "template.xlsx",
                 mime=_XLSX_MIME,

@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.i18n import t
-from ui.shared import fragment_rerun
+from ui.shared import fragment_rerun, delete_button
 
 from ui.fabric_db._shared import XLSX_MIME
 
@@ -50,7 +50,7 @@ def _fabric_db_fiber_manager() -> None:
         dl_col, up_col = st.columns(2)
         with dl_col:
             st.download_button(
-                t("⬇ Export fiber list (.xlsx)"),
+                t("⬇️ Export fiber list (.xlsx)"),
                 data=_fiber_excel_template(custom, KNOWN_FIBERS),
                 file_name="fiber_names.xlsx",
                 mime=XLSX_MIME,
@@ -143,7 +143,7 @@ def _fabric_db_fiber_manager() -> None:
                          "to see updated results.").format(n=len(new_custom)))
             fragment_rerun()
 
-        if reset_col.button(t("🗑 Clear all custom"), key="fiber_manager_clear",
+        if delete_button(t("Clear all custom"), key="fiber_manager_clear", container=reset_col,
                             width="stretch"):
             save_custom_fibers({})
             st.success(t("Custom fibers cleared."))
