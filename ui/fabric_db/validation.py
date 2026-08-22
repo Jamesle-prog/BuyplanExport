@@ -41,7 +41,7 @@ def _fabric_db_validation_section(store) -> None:
         dl1.download_button(
             f"⬇ {t('Download issues (.csv)')}", data=csv_bytes,
             file_name=f"{stem}.csv", mime=CSV_MIME,
-            key=f"{stem}_csv", use_container_width=True,
+            key=f"{stem}_csv", width="stretch",
         )
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as xw:
@@ -49,7 +49,7 @@ def _fabric_db_validation_section(store) -> None:
         dl2.download_button(
             f"⬇ {t('Download issues (.xlsx)')}", data=buf.getvalue(),
             file_name=f"{stem}.xlsx", mime=XLSX_MIME,
-            key=f"{stem}_xlsx", use_container_width=True,
+            key=f"{stem}_xlsx", width="stretch",
         )
 
     # Expander 1: Composition
@@ -186,7 +186,7 @@ def _fabric_db_cross_system_section(fabric_store) -> None:
             st.download_button(
                 t("⬇ Download HHN orphans (.csv)"), data=csv_hhn,
                 file_name="hhn_orphans.csv", mime=CSV_MIME,
-                key="xsys_hhn_csv", use_container_width=False,
+                key="xsys_hhn_csv", width="content",
             )
             st.divider()
 
@@ -204,7 +204,7 @@ def _fabric_db_cross_system_section(fabric_store) -> None:
             st.download_button(
                 t("⬇ Download coverage gaps (.csv)"), data=csv_cov,
                 file_name="style_coverage_gaps.csv", mime=CSV_MIME,
-                key="xsys_cov_csv", use_container_width=False,
+                key="xsys_cov_csv", width="content",
             )
             st.divider()
 

@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.133.1",
+        "date": "2026-08-22",
+        "entries": [
+            {"type": "refactor", "text": "**One width API.** Streamlit replaced `use_container_width=True/False` with `width=\"stretch\"` / `\"content\"`; the codebase had 177 of the old form beside 60 of the new, one deprecation away from half the buttons breaking. All 183 are migrated — 71 buttons, 52 download buttons, 50 tables, 5 editors, 5 form buttons, 1 image — and `persisted_download()` takes `width=` instead of its own boolean. A test keeps the old keyword out. No visual change."},
+        ],
+    },
+    {
         "version": "2.133.0",
         "date": "2026-08-22",
         "entries": [

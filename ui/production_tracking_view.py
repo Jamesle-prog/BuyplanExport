@@ -1704,12 +1704,12 @@ def _render_edit_tab(records, readiness_map, store, username, today) -> None:
     col_save, col_del = st.columns(2)
 
     with col_save:
-        if st.button(t("💾 Save"), type="primary", use_container_width=True):
+        if st.button(t("💾 Save"), type="primary", width="stretch"):
             _do_save(record, store, username, rid)
             fragment_rerun()
 
     with col_del:
-        if st.button(t("🗑️ Delete"), use_container_width=True):
+        if st.button(t("🗑️ Delete"), width="stretch"):
             st.session_state[SK.PT_DELETE_CONFIRM] = True
 
     if st.session_state.get(SK.PT_DELETE_CONFIRM):
@@ -1835,7 +1835,7 @@ def _render_untracked_banner(store, po_store, username, user_cos,
     with c2:
         if st.button(f"➕ {t('Track all')} {len(untracked)} {t('new')}",
                      key="pt_grid_track_all", type="primary",
-                     use_container_width=True):
+                     width="stretch"):
             n = _bulk_track(store, untracked, username)
             st.success(f"✅ {n} {t('record(s) now tracked.')}")
             fragment_rerun()
@@ -1950,7 +1950,7 @@ def _render_add_tab(
 
     st.divider()
 
-    if st.button(t("➕ Start Tracking"), type="primary", use_container_width=True):
+    if st.button(t("➕ Start Tracking"), type="primary", width="stretch"):
         stage_fields, dep_fields, qc_fields = _default_tracking_payload()
         new_id = store.upsert(
             po_number=chosen["po_number"],
@@ -1982,7 +1982,7 @@ def _render_add_tab(
     st.divider()
     if st.button(
         f"➕ {t('Track all')} {len(untracked)} {t('shown')}",
-        use_container_width=True, key="pt_add_all",
+        width="stretch", key="pt_add_all",
     ):
         n = _bulk_track(store, untracked, username)
         st.success(f"✅ {n} {t('record(s) now tracked.')}")

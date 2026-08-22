@@ -45,7 +45,7 @@ def show_standard_section() -> None:
 
     df = demand_frame(groups, colors, qty)
     st.markdown(f"**{t('Order demands (from the PO)')}**")
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width="stretch", hide_index=True)
 
     store = get_cutting_plan_store()
     linked = store.plans_for_pos(pc_nos=pc_nos, po_nos=po_nos, styles=styles)
@@ -87,7 +87,7 @@ def show_standard_section() -> None:
     folder = output_folder_input("cp_std_dir")
 
     if st.button(f"📄 {t('Build standard cut plan')}", type="primary",
-                 use_container_width=True, key="cp_std_build"):
+                 width="stretch", key="cp_std_build"):
         _build(store, plan_ids, pc_nos, po_nos, styles, items,
                groups, colors, qty, clean=True, folder=folder,
                keep_fabrics=keep_names)
@@ -100,7 +100,7 @@ def show_standard_section() -> None:
             f"⬇️ {st.session_state.get(SK.CP_STD_FNAME)}",
             data=st.session_state[SK.CP_STD_BYTES],
             file_name=st.session_state[SK.CP_STD_FNAME],
-            mime=XLSX_MIME, use_container_width=True, key="cp_std_dl")
+            mime=XLSX_MIME, width="stretch", key="cp_std_dl")
         pdf_export_block(
             st.session_state[SK.CP_STD_BYTES],
             str(st.session_state[SK.CP_STD_FNAME]).removesuffix(".xlsx"),

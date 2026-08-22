@@ -277,7 +277,7 @@ def persisted_download(
     default_mime: str = "application/octet-stream",
     fixed_mime: str | None = None,
     label: str | None = None,
-    use_container_width: bool = False,
+    width: str = "content",
     key_suffix: str = "btn",
 ) -> None:
     """Render a st.download_button for bytes persisted in session_state.
@@ -297,7 +297,7 @@ def persisted_download(
         data=data,
         file_name=fname,
         mime=mime,
-        use_container_width=use_container_width,
+        width=width,
         key=f"{state_key}_{key_suffix}",
     )
 

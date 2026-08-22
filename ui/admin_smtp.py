@@ -136,7 +136,7 @@ def show_smtp_admin() -> None:
             if st.button(
                 f"{p['icon']} {p['label']}",
                 key=f"smtp_preset_{i}",
-                use_container_width=True,
+                width="stretch",
             ):
                 st.session_state[_SK_PRESET] = i
                 st.rerun()
@@ -264,7 +264,7 @@ def show_smtp_admin() -> None:
         use_tls = st.checkbox(t("Use STARTTLS (recommended)"), value=_tls_default())
 
         saved = st.form_submit_button(f"💾 {t('Save')}", type="primary",
-                                      use_container_width=True)
+                                      width="stretch")
 
     if saved:
         smtp_settings.save({
@@ -322,7 +322,7 @@ def show_smtp_admin() -> None:
                            key="smtp_test_to", placeholder="you@example.com")
     with tcol2:
         st.write("")
-        clicked = st.button(f"▶ {t('Send test')}", use_container_width=True,
+        clicked = st.button(f"▶ {t('Send test')}", width="stretch",
                             disabled=not to.strip(), key="smtp_test_btn")
 
     if clicked:

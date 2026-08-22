@@ -91,7 +91,7 @@ def show_login_log_admin() -> None:
             "⬇️ " + t("Download (.csv)"),
             data=df.to_csv(index=False).encode("utf-8-sig"),
             file_name="login_log.csv", mime=CSV_MIME,
-            key="ll_csv", use_container_width=True,
+            key="ll_csv", width="stretch",
         )
 
     # ── Maintenance ──────────────────────────────────────────────────────────

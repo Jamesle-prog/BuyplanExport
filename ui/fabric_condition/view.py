@@ -90,7 +90,7 @@ def _render_import() -> None:
                 f"⚠️ {t('This replaces the')} **{held}** "
                 f"{t('record(s) currently held.')}")
         if st.button(f"📥 {t('Import into the system')}", type="primary",
-                     key="fc_do_import", use_container_width=True):
+                     key="fc_do_import", width="stretch"):
             res = store.import_parsed(
                 parsed, source_file=parsed.get("source_file", ""),
                 file_bytes=parsed.get("file_bytes"),
@@ -113,7 +113,7 @@ def _render_import() -> None:
                          "n_records"]].rename(columns=_tr({
                              "imported_at": "When", "imported_by": "By",
                              "source_file": "File", "n_records": "Records"})),
-                use_container_width=True, hide_index=True)
+                width="stretch", hide_index=True)
 
 
 def _parse(upload) -> dict:
@@ -155,6 +155,6 @@ def _render_browse() -> None:
     show = df[_DISPLAY_COLS]
     st.dataframe(
         show.rename(columns=_tr(_COLUMN_RENAME)),
-        use_container_width=True, hide_index=True)
+        width="stretch", hide_index=True)
     st.caption(f"{len(show)} {t('record(s)')} · "
               f"{df['style'].replace('', pd.NA).nunique()} {t('style(s)')}")

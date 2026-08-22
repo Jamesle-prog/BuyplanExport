@@ -37,7 +37,7 @@ def show_size_order_admin() -> None:
     ))
 
     c1, c2 = st.columns([1, 3])
-    if c1.button(f"💾 {t('Save size order')}", key="admin_size_save", use_container_width=True):
+    if c1.button(f"💾 {t('Save size order')}", key="admin_size_save", width="stretch"):
         # pd.notna first: a blank new row arrives as None/NaN, and
         # str(None)=="None"/str(nan)=="nan" would otherwise survive the strip
         # check and get saved as bogus size codes "NONE"/"NAN".
@@ -54,7 +54,7 @@ def show_size_order_admin() -> None:
             st.rerun()
 
     if c2.button(f"↩️ {t('Reset to defaults')}", key="admin_size_reset",
-                 use_container_width=False):
+                 width="content"):
         from po_extractor.config import SIZE_ORDER as _DEFAULT_SIZE_ORDER
         save_size_order(list(_DEFAULT_SIZE_ORDER))
         st.success(t("Reset to built-in defaults."))

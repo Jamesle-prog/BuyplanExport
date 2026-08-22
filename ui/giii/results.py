@@ -156,7 +156,7 @@ def _show_downloads(outputs: dict, key_prefix: str = "dl"):
             data=outputs["buyplan_bytes"],
             file_name=outputs["buyplan_name"],
             mime=_XLSX_MIME,
-            use_container_width=True,
+            width="stretch",
             type="primary",
             key=f"{key_prefix}_buyplan",
         )
@@ -168,7 +168,7 @@ def _show_downloads(outputs: dict, key_prefix: str = "dl"):
             data=outputs["color_plan_bytes"],
             file_name=outputs["color_plan_name"],
             mime=_XLSX_MIME,
-            use_container_width=True,
+            width="stretch",
             key=f"{key_prefix}_colorplan",
         )
         st.caption(t("Color × Size totals per style (one tab per style)"))
@@ -179,7 +179,7 @@ def _show_downloads(outputs: dict, key_prefix: str = "dl"):
             data=outputs["po_summary_bytes"],
             file_name=outputs["po_summary_name"],
             mime=_XLSX_MIME,
-            use_container_width=True,
+            width="stretch",
             key=f"{key_prefix}_posummary",
         )
         st.caption(t("One row per Style+PO with sizes, Total, COO, X-Factory Date"))
@@ -191,7 +191,7 @@ def _show_downloads(outputs: dict, key_prefix: str = "dl"):
             data=outputs["cross_check_bytes"],
             file_name=outputs["cross_check_name"],
             mime=_XLSX_MIME,
-            use_container_width=True,
+            width="stretch",
             key=f"{key_prefix}_crosscheck",
         )
         st.caption(t("Verifies unit totals match across all three outputs"))
@@ -202,7 +202,7 @@ def _show_downloads(outputs: dict, key_prefix: str = "dl"):
             data=outputs["csvs_zip"],
             file_name="extracted_data.zip",
             mime=ZIP_MIME,
-            use_container_width=True,
+            width="stretch",
             key=f"{key_prefix}_csvzip",
         )
         st.caption(t("3 CSVs: by size/color, style-color totals, metadata"))
@@ -214,7 +214,7 @@ def _show_downloads(outputs: dict, key_prefix: str = "dl"):
                 data=outputs["masked_zip"],
                 file_name="masked_pdfs.zip",
                 mime=ZIP_MIME,
-                use_container_width=True,
+                width="stretch",
                 key=f"{key_prefix}_masked",
             )
             st.caption(t("Price-redacted copies of all uploaded PDFs"))
@@ -237,7 +237,7 @@ def _show_requirements_download(outputs: dict, key_prefix: str) -> None:
         data=outputs["requirements_bytes"],
         file_name="PO_Requirements.xlsx",
         mime=_XLSX_MIME,
-        use_container_width=True,
+        width="stretch",
         key=f"{key_prefix}_reqdoc",
     )
     st.caption(t("Client requirements per PO from the CPRS knowledge base — "
@@ -422,7 +422,7 @@ def _show_requirements_api_section(outputs: dict, key_prefix: str) -> None:
                 fname, data, _meta, mime = files[0]
                 st.download_button(
                     "⬇️ " + fname, data=data, file_name=fname,
-                    mime=mime, use_container_width=True,
+                    mime=mime, width="stretch",
                     key=f"{key_prefix}_api_dl",
                 )
             else:
@@ -437,7 +437,7 @@ def _show_requirements_api_section(outputs: dict, key_prefix: str) -> None:
                     + f" — {len(files)} {t('file(s)')}",
                     data=buf.getvalue(),
                     file_name="CPRS_Documents.zip",
-                    mime=ZIP_MIME, use_container_width=True,
+                    mime=ZIP_MIME, width="stretch",
                     key=f"{key_prefix}_api_dl",
                 )
 
@@ -453,7 +453,7 @@ def _show_excel_downloads(outputs: dict):
             data=outputs["buyplan_bytes"],
             file_name=outputs["buyplan_name"],
             mime=_XLSX_MIME,
-            use_container_width=True,
+            width="stretch",
             type="primary",
             key="excel_dl_buyplan",
         )
@@ -466,7 +466,7 @@ def _show_excel_downloads(outputs: dict):
                 data=outputs["template_p_zip"],
                 file_name="Zalando_面料_by_Fabric.zip",
                 mime=ZIP_MIME,
-                use_container_width=True,
+                width="stretch",
                 key="excel_dl_templatep",
             )
             st.caption(t("Color × Size pivot grouped by Fabric1_Code"))
@@ -478,7 +478,7 @@ def _show_excel_downloads(outputs: dict):
                 data=outputs["repeat_csv"],
                 file_name="repeat_orders.csv",
                 mime=CSV_MIME,
-                use_container_width=True,
+                width="stretch",
                 key="excel_dl_repeats",
             )
             st.caption(t("Styles with same color appearing in multiple POs"))
@@ -489,7 +489,7 @@ def _show_excel_downloads(outputs: dict):
             data=outputs["masked_zip"],
             file_name="zalando_masked.zip",
             mime=ZIP_MIME,
-            use_container_width=True,
+            width="stretch",
             key="excel_dl_masked",
         )
 
@@ -527,7 +527,7 @@ def _show_smart_downloads(outputs: dict):
                         data=grp[f"{key}_bytes"],
                         file_name=grp[f"{key}_name"],
                         mime=_XLSX_MIME,
-                        use_container_width=True,
+                        width="stretch",
                         key=f"dl_{company}_{key}",
                     )
                     st.caption(cap)
@@ -536,20 +536,20 @@ def _show_smart_downloads(outputs: dict):
                 st.download_button(
                     t("✅ Cross Check (.xlsx)"), grp["cross_check_bytes"],
                     file_name=grp["cross_check_name"], mime=_XLSX_MIME,
-                    use_container_width=True, key=f"dl_{company}_cc",
+                    width="stretch", key=f"dl_{company}_cc",
                 )
             with cols2[1]:
                 st.download_button(
                     t("📁 Extracted Data (.zip)"), grp["csvs_zip"],
                     file_name=f"{company}_data.zip", mime=ZIP_MIME,
-                    use_container_width=True, key=f"dl_{company}_csv",
+                    width="stretch", key=f"dl_{company}_csv",
                 )
             if "masked_zip" in grp:
                 with cols2[2]:
                     st.download_button(
                         t("🔒 Masked PDFs (.zip)"), grp["masked_zip"],
                         file_name=f"{company}_masked.zip", mime=ZIP_MIME,
-                        use_container_width=True, key=f"dl_{company}_mask",
+                        width="stretch", key=f"dl_{company}_mask",
                     )
             elif grp.get("mask_failed"):
                 st.error(
@@ -564,7 +564,7 @@ def _show_smart_downloads(outputs: dict):
                 st.download_button(
                     t("📊 Buy Plan (.xlsx)"), grp["buyplan_bytes"],
                     file_name=grp["buyplan_name"], mime=_XLSX_MIME,
-                    use_container_width=True, type="primary",
+                    width="stretch", type="primary",
                     key=f"dl_{company}_bp",
                 )
                 st.caption(t("Fabric, photos, PO rows, size grid per style"))
@@ -573,7 +573,7 @@ def _show_smart_downloads(outputs: dict):
                     t("🎨 Template_P — {n} workbook(s) (.zip)").format(n=grp['template_p_count']),
                     grp["template_p_zip"],
                     file_name=f"{company}_面料_workbooks.zip", mime=ZIP_MIME,
-                    use_container_width=True,
+                    width="stretch",
                     key=f"dl_{company}_tp",
                 )
                 st.caption(t("Color × Size pivot grouped by Fabric code"))
@@ -590,7 +590,7 @@ def _show_smart_downloads(outputs: dict):
                         t("↩ Repeat Orders ({n} group(s))").format(n=len(repeats)),
                         rbuf.getvalue().encode(),
                         file_name=f"{company}_repeat_orders.csv",
-                        mime=CSV_MIME, use_container_width=True,
+                        mime=CSV_MIME, width="stretch",
                         key=f"dl_{company}_rep",
                     )
                     st.caption(t("Styles appearing in multiple POs"))
@@ -598,7 +598,7 @@ def _show_smart_downloads(outputs: dict):
                 st.download_button(
                     t("🔒 Masked Files (.zip)"), grp["masked_zip"],
                     file_name=f"{company}_masked.zip", mime=ZIP_MIME,
-                    use_container_width=True,
+                    width="stretch",
                     key=f"dl_{company}_mask",
                 )
             if grp.get("conflicts"):

@@ -85,7 +85,7 @@ def show_schema_editor(
             ),
         },
         num_rows="dynamic",
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         key="schema_editor_tbl",
     )

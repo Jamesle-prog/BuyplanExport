@@ -92,7 +92,7 @@ def _show_browse_tab(store) -> None:
     edited = st.data_editor(
         df,
         column_config=_EDIT_COLS,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         key="i18n_editor",
         num_rows="fixed",
@@ -101,7 +101,7 @@ def _show_browse_tab(store) -> None:
     sv1, sv2 = st.columns([1, 4])
     with sv1:
         if st.button("💾 " + t("Save changes"), type="primary",
-                     use_container_width=True, key="i18n_save"):
+                     width="stretch", key="i18n_save"):
             saved = 0
             for _, row in edited.iterrows():
                 key     = str(row.get("key",      "") or "").strip()
@@ -159,7 +159,7 @@ def _show_add_tab(store) -> None:
                                      "admin", "summary", ""],
                                     key="i18n_add_mod")
         submitted = st.form_submit_button(t("Add"), type="primary",
-                                          use_container_width=True)
+                                          width="stretch")
 
     if submitted:
         key = key.strip()
@@ -180,14 +180,14 @@ def _show_import_export_tab(store) -> None:
         st.markdown(f"**{t('Export')}**")
         st.caption(t("Download all translations as a CSV file."))
         if st.button(t("Generate CSV"), key="i18n_export_btn",
-                     use_container_width=True):
+                     width="stretch"):
             csv_bytes = store.to_csv().encode("utf-8-sig")
             st.download_button(
                 "📥 " + t("Download translations.csv"),
                 data=csv_bytes,
                 file_name="ui_translations.csv",
                 mime=CSV_MIME,
-                use_container_width=True,
+                width="stretch",
                 key="i18n_dl_btn",
             )
 
@@ -207,7 +207,7 @@ def _show_import_export_tab(store) -> None:
         skip = st.checkbox(t("Skip existing keys"), value=False,
                            key="i18n_skip_existing")
         if uploaded and st.button(t("Import"), type="primary",
-                                  use_container_width=True, key="i18n_import_btn"):
+                                  width="stretch", key="i18n_import_btn"):
             try:
                 csv_text = uploaded.getvalue().decode("utf-8-sig")
                 result   = store.import_csv(csv_text, skip_existing=skip)
@@ -240,7 +240,7 @@ def _show_seed_tab(store) -> None:
     st.metric(t("Missing Chinese (zh)"),   missing)
 
     if st.button("🌱 " + t("Seed missing defaults"), type="primary",
-                 use_container_width=True, key="i18n_seed_btn"):
+                 width="stretch", key="i18n_seed_btn"):
         result = store.seed_defaults(skip_existing=True)
         clear_cache("zh")
         st.success(
@@ -273,6 +273,6 @@ def _show_seed_tab(store) -> None:
     st.divider()
     st.markdown(f"**{t('Clear translation cache')}**")
     st.caption(t("Forces the next page load to re-read all translations from the DB."))
-    if st.button("🔄 " + t("Clear cache"), use_container_width=False, key="i18n_clear_cache"):
+    if st.button("🔄 " + t("Clear cache"), width="content", key="i18n_clear_cache"):
         clear_cache()
         st.success(t("Translation cache cleared."))

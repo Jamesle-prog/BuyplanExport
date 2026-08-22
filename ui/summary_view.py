@@ -204,7 +204,7 @@ def _show_po_tracker(df: pd.DataFrame) -> None:
     # Translate headers only for on-screen display; the Excel export keeps the
     # English headers (its width_map and cache key stay language-independent).
     st.dataframe(display_df.rename(columns={c: _th(c) for c in display_df.columns}),
-                 use_container_width=True, hide_index=True)
+                 width="stretch", hide_index=True)
 
     # ── Download ──────────────────────────────────────────────────────────────
     xlsx = _build_tracker_excel(display_df)
@@ -332,7 +332,7 @@ def _show_all_orders(df: pd.DataFrame) -> None:
     display = df[show].rename(columns={k: _th(STANDARD_LABELS[k]) for k in show})
     st.caption(f"{len(display):,} {t('row(s)')} · "
                f"{int(df['units'].sum()):,} {t('units')}")
-    st.dataframe(display, use_container_width=True, hide_index=True)
+    st.dataframe(display, width="stretch", hide_index=True)
 
     # ── Download (English standard headers, language-independent) ───────────
     xlsx = _build_all_orders_excel(df[show].rename(columns=STANDARD_LABELS))
@@ -412,7 +412,7 @@ def _show_overview(user_cos: list[str], admin_mode: bool,
                                            "Factory", "COO", "Latest Ex-Fty"])
         _sum_rename = {c: _th(c) for c in summary_df.columns}
         st.dataframe(summary_df.rename(columns=_sum_rename),
-                     use_container_width=True, hide_index=True)
+                     width="stretch", hide_index=True)
     else:
         st.info(t("No order data available for your permitted companies."))
 
@@ -466,7 +466,7 @@ def _show_overview(user_cos: list[str], admin_mode: bool,
             show_cols = picked or giii_default
             labels = _tr({k: giii_field_labels[k] for k in show_cols})
             st.dataframe(giii_df[show_cols].rename(columns=labels),
-                         use_container_width=True, hide_index=True)
+                         width="stretch", hide_index=True)
 
     if can_see_zalando and not se_df.empty:
         with st.expander("🔍 " + t("Sky East — full item list")):
@@ -507,7 +507,7 @@ def _show_overview(user_cos: list[str], admin_mode: bool,
             se_show = se_picked or se_default
             se_labels = _tr({k: se_field_labels[k] for k in se_show})
             st.dataframe(se_df[se_show].rename(columns=se_labels),
-                         use_container_width=True, hide_index=True)
+                         width="stretch", hide_index=True)
 
     # Download
     if summary_rows:

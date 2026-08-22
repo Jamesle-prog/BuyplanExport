@@ -107,3 +107,18 @@ def test_brand_colour_is_written_once_in_app_css():
     brand = re.search(r"--tl-brand:\s*(#[0-9a-fA-F]{6})", css).group(1)
     assert css.lower().count(brand.lower()) == 1
     assert "#ff4b4b" not in css.lower(), "Streamlit's default red must not be hard-coded"
+
+
+# ── One width API ───────────────────────────────────────────────────────────
+
+def test_no_deprecated_use_container_width():
+    """Streamlit replaced ``use_container_width=`` with ``width="stretch"`` /
+    ``"content"``; the codebase had 177 of the old form next to 60 of the new.
+    One API, or the next Streamlit release breaks half the buttons."""
+    offenders = []
+    for p in UI_FILES + [REPO / "app.py"]:
+        src = io.open(p, encoding="utf-8-sig").read()
+        for i, line in enumerate(src.splitlines(), 1):
+            if "use_container_width" in line:
+                offenders.append(f"{p.relative_to(REPO).as_posix()}:{i}")
+    assert not offenders, "use width=\"stretch\" / \"content\":\n  " + "\n  ".join(offenders)

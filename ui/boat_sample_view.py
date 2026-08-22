@@ -163,7 +163,7 @@ def render_boat_sample_editor(companies: list[str], *, key_prefix: str) -> None:
             key=text_key,
         )
         submitted = st.form_submit_button(f"💾 {t('Save')}", type="primary",
-                                          use_container_width=True)
+                                          width="stretch")
 
     if submitted:
         company_v = (selected_company or "").strip()

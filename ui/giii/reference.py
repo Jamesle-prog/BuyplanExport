@@ -159,10 +159,10 @@ def _show_giii_reference_section():
         col_imp, col_dry = st.columns(2)
         with col_imp:
             if st.button(t("▶ Import Mapping"), type="primary",
-                         use_container_width=True, key="giii_import_btn"):
+                         width="stretch", key="giii_import_btn"):
                 _run_giii_mapping_import(mapping_file)
         with col_dry:
-            if st.button(t("🔍 Preview (dry run)"), use_container_width=True,
+            if st.button(t("🔍 Preview (dry run)"), width="stretch",
                          key="giii_preview_btn"):
                 _run_giii_mapping_import(mapping_file, dry_run=True)
 
@@ -213,7 +213,7 @@ def _show_giii_reference_section():
                     "weight_gsm": "Weight (g/m²)", "width_cm": "Width (cm)",
                     "updated_at": "Updated",
                 }).drop(columns=["id", "source"], errors="ignore"),
-                use_container_width=True, hide_index=True,
+                width="stretch", hide_index=True,
             )
             if st.button(t("🗑 Clear GIII fabric parts"), key="giii_clear_parts"):
                 store.delete_fabric_parts("giii")
@@ -246,7 +246,7 @@ def _show_giii_consumption_section(store):
             "⬇️ " + t("Download template / current data (.xlsx)"),
             data=consumption_template_bytes(existing or None),
             file_name="fabric_consumption_template.xlsx",
-            mime=_XLSX_MIME, use_container_width=True, key="cons_tpl_dl",
+            mime=_XLSX_MIME, width="stretch", key="cons_tpl_dl",
         )
     with col_up:
         cons_file = st.file_uploader(
@@ -255,7 +255,7 @@ def _show_giii_consumption_section(store):
         )
 
     if cons_file and st.button("▶ " + t("Import 单耗/排版"), type="primary",
-                               use_container_width=True, key="cons_import_btn"):
+                               width="stretch", key="cons_import_btn"):
         try:
             records, warns = parse_consumption_upload(cons_file.getvalue())
             for w in warns:
@@ -286,7 +286,7 @@ def _show_giii_consumption_section(store):
         view = df_cons[df_cons["款号"].astype(str).str.contains(q, case=False, na=False)]
 
     st.caption(f"**{len(view)}** / {len(df_cons)} {t('styles')}")
-    st.dataframe(view, use_container_width=True, hide_index=True)
+    st.dataframe(view, width="stretch", hide_index=True)
 
     st.download_button(
         "⬇️ " + t("Download shown rows (.xlsx)"),

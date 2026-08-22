@@ -160,7 +160,7 @@ def _show_se_upload_section():
                              "replace mode."))
 
     if st.button(t("Process Sky East Files"), type="primary",
-                 use_container_width=True, key="se_run",
+                 width="stretch", key="se_run",
                  disabled=needs_confirm):
         st.session_state.se_results = None
         st.session_state.se_log = []
@@ -193,7 +193,7 @@ def _show_se_upload_section():
             data=st.session_state.se_masked_zip,
             file_name="sky_east_masked.zip",
             mime=ZIP_MIME,
-            use_container_width=True,
+            width="stretch",
             key="se_masked_dl",
         )
 

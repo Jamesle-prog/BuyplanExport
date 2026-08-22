@@ -522,7 +522,7 @@ def show_kl_upload_section(files=None) -> None:
     if SK.GIII_KL_RESULTS not in st.session_state:
         st.session_state[SK.GIII_KL_RESULTS] = None
 
-    if st.button(t("▶  Extract KL POs"), type="primary", use_container_width=True, key="run_kl"):
+    if st.button(t("▶  Extract KL POs"), type="primary", width="stretch", key="run_kl"):
         st.session_state[SK.GIII_KL_RESULTS] = None
         with st.spinner(t("Parsing KL PO PDFs…")):
             results = _parse_kl_pdfs(uploaded_pdfs)
@@ -571,7 +571,7 @@ def show_kl_upload_section(files=None) -> None:
 
     import pandas as pd
     df = pd.DataFrame(rows)
-    st.dataframe(df, hide_index=True, use_container_width=True)
+    st.dataframe(df, hide_index=True, width="stretch")
 
     grand_total = sum(r[total_col] for r in rows)
     st.caption(
@@ -599,7 +599,7 @@ def show_kl_upload_section(files=None) -> None:
             _th('Factory'):       po['factory'],
             _th('Vendor'):        po['vendor'],
         } for po in results]
-        st.dataframe(pd.DataFrame(meta_rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(meta_rows), hide_index=True, width="stretch")
 
     # ── Download ─────────────────────────────────────────────────────────────
     with st.spinner(t("Building Excel…")):
@@ -615,6 +615,6 @@ def show_kl_upload_section(files=None) -> None:
         file_name=fname,
         mime=_XLSX_MIME,
         type="primary",
-        use_container_width=True,
+        width="stretch",
         key="kl_dl_xlsx",
     )

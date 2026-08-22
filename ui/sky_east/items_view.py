@@ -48,7 +48,7 @@ def _show_se_results(results: list, image_cache: dict):
                 rows = [{"Style": s, "Color": c, "Zalando PO": po}
                         for s, c, po in new_items]
                 st.dataframe(pd.DataFrame(rows), hide_index=True,
-                             use_container_width=True)
+                             width="stretch")
 
             if upd_items:
                 st.markdown(f"**{len(upd_items)} {t('Amended Item(s)')}**")
@@ -147,7 +147,7 @@ def _show_se_results(results: list, image_cache: dict):
                                         lbl = t("Front") if j == 0 else t("Back")
                                         img_cols[j].image(img_bytes,
                                                           caption=lbl,
-                                                          use_container_width=True)
+                                                          width="stretch")
 
 
 def _show_return_label_conflicts(pending: list[dict]) -> None:
@@ -177,13 +177,13 @@ def _show_return_label_conflicts(pending: list[dict]) -> None:
             col_new: p["new_return_label"], col_rep: False,
         } for p in pending])
         edited = st.data_editor(
-            df, hide_index=True, use_container_width=True, num_rows="fixed",
+            df, hide_index=True, width="stretch", num_rows="fixed",
             disabled=[col_pc, col_style, col_color, col_po, col_cur, col_new],
             key="se_rl_pending_editor",
         )
 
         col1, col2, col3 = st.columns(3)
-        if col1.button(t("Apply selected"), type="primary", use_container_width=True,
+        if col1.button(t("Apply selected"), type="primary", width="stretch",
                        key="se_rl_pending_apply"):
             store = get_sky_east_store()
             n_replaced = n_kept = 0
@@ -201,7 +201,7 @@ def _show_return_label_conflicts(pending: list[dict]) -> None:
         # One-click accept: replace EVERY conflicting item with the file's
         # new value, ignoring the checkboxes -- for the common case where
         # the client's newest PO is simply right.
-        if col2.button(t("Apply all new"), use_container_width=True,
+        if col2.button(t("Apply all new"), width="stretch",
                        key="se_rl_pending_apply_all"):
             store = get_sky_east_store()
             for p in pending:
@@ -211,7 +211,7 @@ def _show_return_label_conflicts(pending: list[dict]) -> None:
                 f"✅ {len(pending)} {t('replaced')}, 0 {t('kept as recorded')}."
             )
             st.rerun()
-        if col3.button(t("Keep all as recorded (dismiss)"), use_container_width=True,
+        if col3.button(t("Keep all as recorded (dismiss)"), width="stretch",
                        key="se_rl_pending_dismiss"):
             st.session_state[SK.SE_RL_PENDING] = []
             fragment_rerun()
@@ -232,12 +232,12 @@ def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
         col_brand, col_req = _th("Brand"), _th("Shipping Sample Requirement")
         df = pd.DataFrame([{col_brand: b, col_req: ""} for b in pending_brands])
         edited = st.data_editor(
-            df, hide_index=True, use_container_width=True, num_rows="fixed",
+            df, hide_index=True, width="stretch", num_rows="fixed",
             disabled=[col_brand],
             key="se_new_brand_editor",
         )
         col1, col2 = st.columns(2)
-        if col1.button(t("Save"), type="primary", use_container_width=True,
+        if col1.button(t("Save"), type="primary", width="stretch",
                        key="se_new_brand_save"):
             store = get_boat_sample_store()
             for _, row in edited.iterrows():
@@ -251,7 +251,7 @@ def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
         # Escape hatch: nothing is written or registered -- the same brands
         # will be prompted again on the next upload (unlike Save-with-blank,
         # which registers the brand as "known, no requirement").
-        if col2.button(t("Remind me later (don't save)"), use_container_width=True,
+        if col2.button(t("Remind me later (don't save)"), width="stretch",
                        key="se_new_brand_later"):
             st.session_state[SK.SE_NEW_BRAND_PENDING] = []
             fragment_rerun()

@@ -199,7 +199,7 @@ def _show_fabric_mapping_section() -> None:
             file_name="FabricMapping_Template.xlsx",
             mime=XLSX_MIME,
             key="fm_tab_tpl_dl",
-            use_container_width=True,
+            width="stretch",
         )
 
     # ── Company selector ──────────────────────────────────────────────────────

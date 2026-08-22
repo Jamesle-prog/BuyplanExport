@@ -148,7 +148,7 @@ def show_color_translation_tab() -> None:
                       + t("items for distinct "
                           "color names and adds any not already in this table. "
                           "Existing Chinese translations are preserved."),
-                 use_container_width=True,
+                 width="stretch",
                  key="ct_load_from_db"):
         with st.spinner(f"{t('Scanning PO database for color names…')}"):
             result = store.load_from_po_data(skip_existing=True)
@@ -188,7 +188,7 @@ def show_color_translation_tab() -> None:
             help=t("Which company should the imported rows be filed under?"),
         )
         if prog_file and st.button(f"▶ {t('Import progress tracker')}",
-                                    key="ct_progress_run", use_container_width=True):
+                                    key="ct_progress_run", width="stretch"):
             tmp = tempfile.mktemp(suffix=".xlsx")
             try:
                 with open(tmp, "wb") as fh:
@@ -221,7 +221,7 @@ def show_color_translation_tab() -> None:
             data=_ct_excel_template(),
             file_name="color_translation_template.xlsx",
             mime=XLSX_MIME,
-            use_container_width=True,
+            width="stretch",
             key="ct_tpl_dl",
         )
 
@@ -232,7 +232,7 @@ def show_color_translation_tab() -> None:
                 data=_ct_export_bytes(count, st.session_state.get("_ct_data_nonce", 0)),
                 file_name="color_translations.xlsx",
                 mime=XLSX_MIME,
-                use_container_width=True,
+                width="stretch",
                 key="ct_exp_dl",
             )
 
@@ -328,7 +328,7 @@ def show_color_translation_tab() -> None:
 
     save_c, del_sel_c, del_filt_c, _ = st.columns([1, 1.2, 1.2, 3])
 
-    if save_c.button(f"💾 {t('Save changes')}", key="ct_save", use_container_width=True):
+    if save_c.button(f"💾 {t('Save changes')}", key="ct_save", width="stretch"):
         if active_client:
             edited["Client"] = edited["Client"].replace("", active_client).fillna(active_client)
         if active_brand and "Brand" in edited.columns:
@@ -358,7 +358,7 @@ def show_color_translation_tab() -> None:
     if del_sel_c.button(
         f"🗑 {t('Delete selected')} ({len(selected_ids)})",
         key="ct_del_selected",
-        use_container_width=True,
+        width="stretch",
         disabled=(len(selected_ids) == 0),
         help=t("Delete the rows whose 🗑 checkbox is ticked."),
     ):
@@ -373,7 +373,7 @@ def show_color_translation_tab() -> None:
     if del_filt_c.button(
         f"🗑 {t('Delete filtered')}",
         key="ct_del_client",
-        use_container_width=True,
+        width="stretch",
         disabled=(not del_ctx),
         help=del_help,
     ):

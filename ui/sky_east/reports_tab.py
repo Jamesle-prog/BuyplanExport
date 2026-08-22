@@ -90,7 +90,7 @@ def _show_se_reports_tab(pin_mode: str | None = None) -> None:
         st.button(
             t("Select all"), key="se_gen_all",
             on_click=lambda: st.session_state.update({"se_gen_pcs": list(pc_options)}),
-            use_container_width=True,
+            width="stretch",
         )
 
     st.divider()

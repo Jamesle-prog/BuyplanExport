@@ -66,7 +66,7 @@ def _fabric_db_list_table(df: pd.DataFrame) -> None:
     show_cols = [c for c in FABRIC_DB_LIST_RENAME if c in df.columns]
     st.dataframe(
         df[show_cols].rename(columns=FABRIC_DB_LIST_RENAME),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "综合标识 Key": st.column_config.TextColumn(

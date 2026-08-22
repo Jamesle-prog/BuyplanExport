@@ -416,7 +416,7 @@ def show_tk_eu_upload_section(files=None) -> None:
         st.session_state[SK.GIII_TKEU_RESULTS] = None
 
     if st.button(f"▶  {t('Extract TK EU POs')}", type="primary",
-                 use_container_width=True, key="run_tk_eu"):
+                 width="stretch", key="run_tk_eu"):
         st.session_state[SK.GIII_TKEU_RESULTS] = None
         with st.spinner(t("Extracting PDFs and parsing POs…")):
             if any(uf.name.lower().endswith(".msg") for uf in uploaded_msgs):
@@ -468,7 +468,7 @@ def show_tk_eu_upload_section(files=None) -> None:
             rows.append(row)
 
     import pandas as pd
-    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
     st.caption(f"**{len(results)} {t('PO(s)')}** · **{grand_total:,} {t('total units')}**")
 
@@ -487,7 +487,7 @@ def show_tk_eu_upload_section(files=None) -> None:
             _th('Factory'):       po['factory'],
             _th('Vendor'):        po['vendor'],
         } for po in results]
-        st.dataframe(pd.DataFrame(meta_rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(meta_rows), hide_index=True, width="stretch")
 
     with st.spinner(t("Building Excel…")):
         xlsx_bytes = _build_tk_eu_excel(results)
@@ -500,5 +500,5 @@ def show_tk_eu_upload_section(files=None) -> None:
         label=f"⬇ {t('Download Excel')}",
         data=xlsx_bytes, file_name=fname,
         mime=_XLSX_MIME, type="primary",
-        use_container_width=True, key="tk_eu_dl",
+        width="stretch", key="tk_eu_dl",
     )

@@ -89,11 +89,11 @@ def _render_import() -> None:
         st.dataframe(sheets.rename(columns=_tr({
             "sheet": "Sheet", "kind": "Kind", "rows": "Rows",
             "client": "Client", "year": "Year", "currency": "Ccy"})),
-            use_container_width=True, hide_index=True)
+            width="stretch", hide_index=True)
         if parsed.get("skipped"):
             st.caption(t("Not imported") + ": " + "; ".join(parsed["skipped"]))
         if st.button(f"📥 {t('Import into the system')}", type="primary",
-                     key="st_do_import", use_container_width=True):
+                     key="st_do_import", width="stretch"):
             res = store.import_parsed(
                 parsed, source_file=parsed.get("source_file", ""),
                 file_bytes=parsed.get("file_bytes"),
@@ -110,7 +110,7 @@ def _render_import() -> None:
         st.dataframe(
             pd.DataFrame([{_th("Sheet"): k, _th("Rows"): v}
                           for k, v in sorted(held.items())]),
-            use_container_width=True, hide_index=True)
+            width="stretch", hide_index=True)
     imports = store.list_imports()
     if not imports.empty:
         with st.expander(f"🕘 {t('Import history')}"):
@@ -120,7 +120,7 @@ def _render_import() -> None:
                     columns=_tr({"imported_at": "When", "imported_by": "By",
                                  "source_file": "File", "sheets": "Sheets",
                                  "n_rows": "Rows", "n_samples": "Samples"})),
-                use_container_width=True, hide_index=True)
+                width="stretch", hide_index=True)
 
 
 def _parse(upload) -> dict:
@@ -186,7 +186,7 @@ def _render_lines() -> None:
         {"sent": "📤 " + t("Sent"), "signed": "✅ " + t("Signed")}).fillna("")
     st.dataframe(
         show.rename(columns=_tr(_LIST_RENAME)),
-        use_container_width=True, hide_index=True,
+        width="stretch", hide_index=True,
         column_config={
             _th("Over / short"): st.column_config.NumberColumn(format="%+.2f %%"),
             **{_th(_LIST_RENAME[c]): st.column_config.NumberColumn(format="%.2f")
@@ -245,7 +245,7 @@ def _render_receivables() -> None:
             "currency": "Ccy", "client": "Client", "year": "Year",
             "lines": "Lines", "invoiced": "Invoiced", "received": "Received",
             "outstanding": "Outstanding"})),
-        use_container_width=True, hide_index=True)
+        width="stretch", hide_index=True)
 
     st.markdown(f"##### {t('Oldest first')}")
     st.caption(t("By ex-factory date — the line that shipped longest ago is "
@@ -262,7 +262,7 @@ def _render_receivables() -> None:
               .sort_values("_when", na_position="last")
               .drop(columns="_when"))
     st.dataframe(oldest.rename(columns=_tr(_LIST_RENAME)),
-                 use_container_width=True, hide_index=True)
+                 width="stretch", hide_index=True)
 
 
 # ── Risk & gaps ─────────────────────────────────────────────────────────────
@@ -289,7 +289,7 @@ def _render_risk() -> None:
         st.dataframe(
             risk[[c for c in cols if c in risk.columns]].rename(
                 columns=_tr(_LIST_RENAME)),
-            use_container_width=True, hide_index=True)
+            width="stretch", hide_index=True)
         for ccy, part in risk.groupby(risk["currency"].fillna("—")):
             st.metric(f"{t('At risk')} · {ccy}",
                       f"{part['invoice_amount'].fillna(part['contract_amount']).sum():,.2f}")
@@ -317,7 +317,7 @@ def _render_risk() -> None:
         st.dataframe(
             unmatched[[c for c in cols if c in unmatched.columns]].rename(
                 columns=_tr(_LIST_RENAME)),
-            use_container_width=True, hide_index=True)
+            width="stretch", hide_index=True)
 
     st.divider()
     st.markdown(f"#### {t('Quantity disagreements')}")
@@ -339,7 +339,7 @@ def _render_risk() -> None:
               "se_ex_fty"]].rename(columns=_tr({
                   **_LIST_RENAME, "se_qty": "Order qty", "diff": "Difference",
                   "se_pc_no": "PC No.", "se_ex_fty": "Order X-factory"})),
-        use_container_width=True, hide_index=True)
+        width="stretch", hide_index=True)
 
 
 # ── Samples ─────────────────────────────────────────────────────────────────
@@ -357,6 +357,6 @@ def _render_samples() -> None:
             "client": "Client", "style": "Style", "factory": "Factory",
             "fabric": "Fabric", "lining": "Lining", "rib": "Rib",
             "trim": "Trim", "total": "Total"})),
-        use_container_width=True, hide_index=True)
+        width="stretch", hide_index=True)
     st.metric(t("Total sample cost"),
               f"{pd.to_numeric(df['total'], errors='coerce').sum():,.2f}")

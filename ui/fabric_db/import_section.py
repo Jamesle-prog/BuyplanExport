@@ -50,7 +50,7 @@ def _fabric_db_show_flash() -> None:
                 for f, c in sorted(col_map.items(), key=lambda x: x[1])
             ]
             st.dataframe(pd.DataFrame(rows), hide_index=True,
-                         use_container_width=False)
+                         width="content")
             unmatched = flash.get("unmatched") or []
             if unmatched:
                 st.caption(
@@ -201,7 +201,7 @@ def _fabric_db_pending_review_section(store) -> None:
                 )
             col_a, col_r, col_c = st.columns(3)
             if col_a.button(t("✅ Approve & apply"), type="primary",
-                            use_container_width=True, disabled=not ack_ok,
+                            width="stretch", disabled=not ack_ok,
                             key="fabric_db_review_approve"):
                 try:
                     outcome = store.approve_pending(pending["id"], reviewed_by=user,
@@ -220,7 +220,7 @@ def _fabric_db_pending_review_section(store) -> None:
                     fragment_rerun()
                 except ValueError as exc:
                     st.error(str(exc))
-            if col_r.button(t("❌ Reject"), use_container_width=True,
+            if col_r.button(t("❌ Reject"), width="stretch",
                             key="fabric_db_review_reject"):
                 try:
                     store.reject_pending(pending["id"], reviewed_by=user,
@@ -233,7 +233,7 @@ def _fabric_db_pending_review_section(store) -> None:
                 except ValueError as exc:
                     st.error(str(exc))
             if (user == pending["proposed_by"] or admin) and \
-                    col_c.button(t("↩ Withdraw proposal"), use_container_width=True,
+                    col_c.button(t("↩ Withdraw proposal"), width="stretch",
                                  key="fabric_db_review_cancel"):
                 store.cancel_pending(pending["id"], by=user)
                 st.session_state[SK.FABRIC_DB_FLASH] = {

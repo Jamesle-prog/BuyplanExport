@@ -152,12 +152,12 @@ def _mode_lookup(store, user_cos):
             st.success(f"✅ `{last['upc']}` — {len(last['rows'])} " + t("match(es)"))
             df = pd.DataFrame(last["rows"])
             df = df[[c for c in _COLS if c in df.columns]].rename(columns=_COLS)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width="stretch", hide_index=True)
 
     hist = st.session_state.get("upc_lk_hist")
     if hist:
         with st.expander(f"🕑 {t('Scan history')} ({len(hist)})"):
-            st.dataframe(pd.DataFrame(hist), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(hist), width="stretch", hide_index=True)
 
 
 # ── 2) Verify against a selected PO ───────────────────────────────────────────
@@ -222,12 +222,12 @@ def _mode_verify(store, user_cos):
         remaining = expected[scannable & ~upc_str.isin(matched_upcs)]
         if not remaining.empty:
             with st.expander(f"⏳ {t('Not yet scanned')} ({len(remaining)})", expanded=False):
-                st.dataframe(remaining, use_container_width=True, hide_index=True)
+                st.dataframe(remaining, width="stretch", hide_index=True)
     if results:
         with st.expander(f"🕑 {t('Scan results')} ({len(results)})", expanded=True):
             st.dataframe(pd.DataFrame([{k: v for k, v in r.items() if k != "ok"}
                                        for r in results]),
-                         use_container_width=True, hide_index=True)
+                         width="stretch", hide_index=True)
 
 
 # ── 3) Stocktake (盘点) ───────────────────────────────────────────────────────
@@ -269,12 +269,12 @@ def _mode_count(store, user_cos):
             "color": "Color", "size": "Size", "updated_at": "Updated"})
         st.caption(f"**{len(df)}** {t('UPCs counted')}  ·  "
                    f"{t('total units')} **{int(df['Count'].sum())}**")
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width="stretch", hide_index=True)
         c1, c2 = st.columns(2)
         c1.download_button("⬇️ " + t("Download stocktake (.xlsx)"),
                            data=_xlsx(df, "盘点"), file_name="stocktake.xlsx",
-                           mime=_XLSX_MIME, use_container_width=True, key="upc_ct_dl")
-        if c2.button("🗑 " + t("Clear stocktake"), use_container_width=True,
+                           mime=_XLSX_MIME, width="stretch", key="upc_ct_dl")
+        if c2.button("🗑 " + t("Clear stocktake"), width="stretch",
                      key="upc_ct_clear"):
             store.clear_stocktake()
             st.session_state.pop("upc_ct_last", None)

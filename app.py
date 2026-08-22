@@ -16,7 +16,7 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
 
 import streamlit as st
 
-APP_VERSION = "2.133.0"
+APP_VERSION = "2.133.1"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -607,7 +607,7 @@ def show_login():
             password = st.text_input(t("Password"), type="password",
                                      placeholder="••••••••")
             submitted = st.form_submit_button(t("Sign In"), type="primary",
-                                              use_container_width=True)
+                                              width="stretch")
 
         if submitted:
             uname_key = (username or "").strip().lower()
@@ -649,7 +649,7 @@ def _show_change_password_sidebar():
         old  = st.text_input(t("Current password"), type="password")
         new1 = st.text_input(t("New password"), type="password")
         new2 = st.text_input(t("Confirm new password"), type="password")
-        submitted = st.form_submit_button(t("Save"), type="primary", use_container_width=True)
+        submitted = st.form_submit_button(t("Save"), type="primary", width="stretch")
     if submitted:
         if not new1:
             st.error(t("New password cannot be empty."))
@@ -678,7 +678,7 @@ def show_main():
         with st.expander(f"🔑 {t('Change Password')}"):
             _show_change_password_sidebar()
         st.divider()
-        if st.button(t("Sign Out"), use_container_width=True):
+        if st.button(t("Sign Out"), width="stretch"):
             for k, v in [
                 (SK.LOGGED_IN,        False),
                 (SK.USERNAME,         None),
@@ -741,7 +741,7 @@ def show_main():
         # ── Language toggle ───────────────────────────────────────────────
         _lang_now = st.session_state.get(SK.UI_LANG, "en")
         _lang_label = "🌐 切换中文" if _lang_now == "en" else "🌐 Switch to EN"
-        if st.button(_lang_label, use_container_width=True, key="lang_toggle"):
+        if st.button(_lang_label, width="stretch", key="lang_toggle"):
             _new_lang = "zh" if _lang_now == "en" else "en"
             st.session_state[SK.UI_LANG] = _new_lang
             # Invalidate the i18n cache for the new language so it is

@@ -72,7 +72,7 @@ def _se_missing_show_autofill_controls(df_a, orig_a, af_mask, fl, pl) -> None:
             "pc_no": "PC No.", "style": "Style", "color_name": "Color",
             "fabric_item_no": "Fabric No. -> (new)",
             "contract_no": "HHN Contract No. -> (new)",
-        })), use_container_width=True, hide_index=True)
+        })), width="stretch", hide_index=True)
 
     if st.button(t("Auto-fill & Save"), type="primary", key="se_missing_autofill"):
         store = get_sky_east_store()

@@ -154,7 +154,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         dim_df = st.data_editor(
             pd.DataFrame({"PO": selected,
                           "DIM": [prev.get(po, "") for po in selected]}),
-            hide_index=True, use_container_width=True, key="rpt_dim_editor",
+            hide_index=True, width="stretch", key="rpt_dim_editor",
             column_config={"PO": st.column_config.TextColumn(disabled=True)},
         )
         st.session_state["rpt_dim_rows"] = dim_df.to_dict("records")
@@ -171,7 +171,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             "📊 " + t("Generate All Outputs"),
             type="primary",
             disabled=not selected,
-            use_container_width=True,
+            width="stretch",
             key="rpt_gen_all_btn",
         ):
             st.session_state.pop("rpt_all_results", None)
@@ -181,7 +181,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         if st.button(
             "🎨 " + t("Color Plan Only"),
             disabled=not selected,
-            use_container_width=True,
+            width="stretch",
             key="rpt_gen_cp_btn",
         ):
             st.session_state.pop("rpt_cp_bytes", None)
@@ -196,7 +196,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         if st.button(
             "📋 " + t("PO Summary Only"),
             disabled=not selected,
-            use_container_width=True,
+            width="stretch",
             key="rpt_gen_ps_btn",
         ):
             st.session_state.pop("rpt_ps_bytes", None)
@@ -210,7 +210,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         if st.button(
             "📐 " + t("KL Format Summary"),
             disabled=not selected,
-            use_container_width=True,
+            width="stretch",
             key="rpt_gen_kl_btn",
             help=t("Two-sheet Excel: PO Detail + Summary (KL-reference format)"),
         ):
@@ -251,7 +251,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         if st.button(
             "📋 " + t("Create Buy Plan (生产计划单)"),
             disabled=not selected,
-            use_container_width=True,
+            width="stretch",
             key="rpt_gen_bp_btn",
             help=t(
                 "Generate the GIII production plan (生产计划单) — one sheet per "
@@ -282,7 +282,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
         if st.button(
             "🔍 " + t("Check requirements only"),
             disabled=not selected,
-            use_container_width=True,
+            width="stretch",
             key="rpt_check_cprs_btn",
             help=t("Resolve CPRS requirements for the selected POs and show "
                    "the preview below — without generating a workbook."),
@@ -374,7 +374,7 @@ def _show_generate_section(df: pd.DataFrame, store) -> None:
             with st.expander("🧭 " + t("CPRS requirement resolution (verify before sending)"),
                              expanded=not st.session_state.get("rpt_bp_bytes")
                                       or bool(st.session_state.get("rpt_cprs_warns"))):
-                st.dataframe(pd.DataFrame(preview), use_container_width=True,
+                st.dataframe(pd.DataFrame(preview), width="stretch",
                              hide_index=True)
 
 
@@ -431,7 +431,7 @@ def _show_tracker_section(df: pd.DataFrame, user_cos: list, admin: bool) -> None
     display_df = view[show_cols].rename(columns=_TRACKER_COLS)
 
     st.caption(f"**{len(display_df):,}** {t('PO(s)')}")
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.dataframe(display_df, width="stretch", hide_index=True)
 
     # ── Download ──────────────────────────────────────────────────────────────
     xlsx = _build_tracker_excel(display_df)

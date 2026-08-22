@@ -54,7 +54,7 @@ def _fabric_db_fiber_manager() -> None:
                 data=_fiber_excel_template(custom, KNOWN_FIBERS),
                 file_name="fiber_names.xlsx",
                 mime=XLSX_MIME,
-                use_container_width=True,
+                width="stretch",
                 key="fiber_dl_xlsx",
                 help=t("Downloads 'Custom Fibers' sheet (editable) + 'All Fibers' reference sheet"),
             )
@@ -131,7 +131,7 @@ def _fabric_db_fiber_manager() -> None:
 
         save_col, reset_col, _ = st.columns([1, 1, 4])
         if save_col.button(t("💾 Save custom fibers"), key="fiber_manager_save",
-                           use_container_width=True):
+                           width="stretch"):
             new_custom: dict[str, str] = {}
             for _, row in edited_df.iterrows():
                 k = str(row.get("Key (lowercase)") or "").lower().strip()
@@ -144,7 +144,7 @@ def _fabric_db_fiber_manager() -> None:
             fragment_rerun()
 
         if reset_col.button(t("🗑 Clear all custom"), key="fiber_manager_clear",
-                            use_container_width=True):
+                            width="stretch"):
             save_custom_fibers({})
             st.success(t("Custom fibers cleared."))
             fragment_rerun()

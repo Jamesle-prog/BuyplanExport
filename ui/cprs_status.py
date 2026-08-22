@@ -108,7 +108,7 @@ def render_sidebar_cprs_status() -> None:
         st.caption(f"{host} — {msg}" if host else msg)
 
     if st.button(f"🔄 {t('Refresh')}", key="cprs_status_refresh",
-                 use_container_width=True):
+                 width="stretch"):
         _probe.clear()
         st.session_state.pop(_DOWN_KEY, None)
         st.rerun()

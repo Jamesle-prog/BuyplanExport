@@ -86,7 +86,7 @@ def show_upload_section() -> None:
             if not df.empty:
                 with st.expander(t("PO quantities for the selection"),
                                  expanded=False):
-                    st.dataframe(df, use_container_width=True, hide_index=True)
+                    st.dataframe(df, width="stretch", hide_index=True)
                 _show_coverage(ok, groups, colors, qty)
 
         links = link_rows(selection)
@@ -103,7 +103,7 @@ def show_upload_section() -> None:
         st.info(t("Select at least one PC No. to link the plan to, or tick "
                   "'Save without linking to a PO'."))
     if st.button(t("Save cut plan(s)"), type="primary",
-                 use_container_width=True, key="cp_save",
+                 width="stretch", key="cp_save",
                  disabled=disabled):
         _save(ok, links, notes)
 
@@ -182,7 +182,7 @@ def _show_parsed_plan(entry: dict, idx: int = 0) -> None:
                           if m.get("total_cost") else None),
         } for m in plan.get("materials", [])])
         if not mats.empty:
-            st.dataframe(mats, use_container_width=True, hide_index=True)
+            st.dataframe(mats, width="stretch", hide_index=True)
 
         # Which fabrics to SAVE — shell and lining go to different cutting
         # tables, so one fabric's blocks are often all that's wanted on

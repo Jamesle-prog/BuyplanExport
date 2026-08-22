@@ -486,7 +486,7 @@ def show_infornexus_upload_section(files=None) -> None:
         st.session_state[SK.GIII_IN_KL_RESULTS] = None
 
     if st.button(f"▶  {t('Extract & Compare')}", type="primary",
-                 use_container_width=True, key="run_in"):
+                 width="stretch", key="run_in"):
         st.session_state[SK.GIII_IN_RESULTS]    = None
         st.session_state[SK.GIII_IN_KL_RESULTS] = None
 
@@ -555,7 +555,7 @@ def show_infornexus_upload_section(files=None) -> None:
         total_units += total
 
     import pandas as pd
-    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
     st.caption(f"**{len(in_results)} {t('PO(s)')}** · **{total_units:,} {t('total units')}**")
 
     # ── Download ─────────────────────────────────────────────────────────────
@@ -570,5 +570,5 @@ def show_infornexus_upload_section(files=None) -> None:
 
     st.download_button(
         label=label, data=xlsx, file_name=fname,
-        mime=_XLSX_MIME, type="primary", use_container_width=True, key="in_dl",
+        mime=_XLSX_MIME, type="primary", width="stretch", key="in_dl",
     )

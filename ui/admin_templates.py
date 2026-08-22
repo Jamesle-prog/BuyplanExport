@@ -128,7 +128,7 @@ def _sky_east_section() -> None:
                 if up is not None:
                     if st.button(f"💾 {t('Save replacement')}",
                                  key=f"se_tpl_save_{kind}", type="primary",
-                                 use_container_width=True):
+                                 width="stretch"):
                         try:
                             path = replace_sky_east_template(kind, up.read())
                             st.success(f"✅ {t('Saved to')} `{path.name}`. {t('Next export will use the new template.')}")
@@ -138,7 +138,7 @@ def _sky_east_section() -> None:
                 else:
                     st.button(f"💾 {t('Save replacement')}",
                               key=f"se_tpl_save_disabled_{kind}",
-                              disabled=True, use_container_width=True,
+                              disabled=True, width="stretch",
                               help=t("Pick a file above first."))
 
             with col_r:
@@ -150,7 +150,7 @@ def _sky_east_section() -> None:
                             file_name=r["file"],
                             mime=_XLSX_MIME,
                             key=f"se_tpl_dl_{kind}",
-                            use_container_width=True,
+                            width="stretch",
                         )
                     except Exception as exc:
                         st.warning(f"{t('Cannot read template:')} {exc}")
@@ -287,11 +287,11 @@ def _giii_section() -> None:
                 data=tpl_bytes,
                 file_name=selected_tpl["file"],
                 mime=_XLSX_MIME,
-                use_container_width=True,
+                width="stretch",
                 key="admin_tpl_dl_existing",
             )
             if dc2.button(f"🗑 {t('Delete this template')}", key="admin_tpl_delete",
-                          use_container_width=True):
+                          width="stretch"):
                 delete_client_template(del_client)
                 st.success(f"{t('Deleted template for')} '{del_client}'.")
                 st.rerun()
@@ -322,7 +322,7 @@ def _blank_templates_section() -> None:
             file_name="GIII_BuyPlan_Template_Sample.xlsx",
             mime=_XLSX_MIME,
             key="blank_tpl_dl_giii_buyplan",
-            use_container_width=True,
+            width="stretch",
         )
 
     # ── 1.1.PO_Client mapping template ────────────────────────────────────────
@@ -356,7 +356,7 @@ def _blank_templates_section() -> None:
                 file_name=f"PO_Client_Mapping_Template{suffix}.xlsx",
                 mime=_XLSX_MIME,
                 key="blank_tpl_dl_client",
-                use_container_width=True,
+                width="stretch",
             )
 
     # ── Style-Fabric mapping template ─────────────────────────────────────────
@@ -371,7 +371,7 @@ def _blank_templates_section() -> None:
             file_name="Style_Fabric_Mapping_Template.xlsx",
             mime=_XLSX_MIME,
             key="blank_tpl_dl_fabric",
-            use_container_width=True,
+            width="stretch",
         )
 
 

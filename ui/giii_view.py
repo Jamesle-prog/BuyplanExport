@@ -146,7 +146,7 @@ def _show_excel_tab():
         help=t("Replace FOB / cost / price columns with *** before download."),
     )
 
-    if st.button("▶  " + t("Process Excel Files"), type="primary", use_container_width=True, key="run_excel"):
+    if st.button("▶  " + t("Process Excel Files"), type="primary", width="stretch", key="run_excel"):
         st.session_state.excel_results = None
         st.session_state.excel_log = []
         _run_excel_extraction(
@@ -324,7 +324,7 @@ def _show_giii_upload_section():
         st.divider()
 
         if st.button("▶  " + t("Process all files"), type="primary",
-                     use_container_width=True, key="smart_run"):
+                     width="stretch", key="smart_run"):
             st.session_state.smart_results = None
             st.session_state.smart_log = []
             # No key → force regex regardless of the configured method, so a

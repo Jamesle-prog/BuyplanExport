@@ -55,7 +55,7 @@ def show_pipeline_layout_admin() -> None:
                 data=tpl_bytes,
                 file_name=pipe.template_file or "template.xlsx",
                 mime=_XLSX_MIME,
-                use_container_width=True,
+                width="stretch",
                 key=f"admin_pipe_dl_{pipe.pipeline_id}",
             )
             with cup:
@@ -68,7 +68,7 @@ def show_pipeline_layout_admin() -> None:
                         f"💾 {t('Replace template')}",
                         key=f"admin_pipe_save_tpl_{pipe.pipeline_id}",
                         type="primary",
-                        use_container_width=True):
+                        width="stretch"):
                     try:
                         tc.write_template_bytes(pipe.pipeline_id, up.read())
                         st.success(t("Template replaced."))
@@ -204,7 +204,7 @@ def show_pipeline_layout_admin() -> None:
     )
 
     sc1, sc2 = st.columns([1, 3])
-    if sc1.button(f"💾 {t('Save layout')}", type="primary", use_container_width=True,
+    if sc1.button(f"💾 {t('Save layout')}", type="primary", width="stretch",
                   key=f"admin_pipe_save_{pipe.pipeline_id}"):
         new_col_map = {
             str(r["Field"]).strip(): str(r["Column (A,B,C…)"]).strip()
@@ -254,7 +254,7 @@ def show_pipeline_layout_admin() -> None:
         except Exception as exc:
             st.error(f"{t('Save failed:')} {exc}")
 
-    if sc2.button(f"↩️ {t('Reload from disk')}", use_container_width=False,
+    if sc2.button(f"↩️ {t('Reload from disk')}", width="content",
                   key=f"admin_pipe_reload_{pipe.pipeline_id}"):
         st.rerun()
 

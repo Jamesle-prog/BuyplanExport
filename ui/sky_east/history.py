@@ -592,7 +592,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
             file_name="WashLabel_CompositionErrors.xlsx",
             mime=XLSX_MIME,
             key="se_wl_err_dl",
-            use_container_width=True,
+            width="stretch",
         )
 
     # ── Issue-type legend ─────────────────────────────────────────────────────
@@ -662,7 +662,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
 
     with c_apply:
         if st.button(t("✅ Apply corrections & Generate"), type="primary",
-                     key="se_wl_val_apply", use_container_width=True):
+                     key="se_wl_val_apply", width="stretch"):
             # Re-validate every edited row with the full validator
             all_fibers = _get_fibers()
             still_bad: list[str] = []
@@ -712,7 +712,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
 
     with c_skip:
         if st.button(t("⚠️ Generate anyway (keep errors)"), key="se_wl_val_skip",
-                     use_container_width=True):
+                     width="stretch"):
             fabric_parts: dict = pending["fabric_parts"]
             wl_bytes = _write_wash_label_excel(
                 pending["df_enriched"],
@@ -726,7 +726,7 @@ def _show_wl_validation_ui(pending: dict) -> None:
             fragment_rerun()
 
     with c_cancel:
-        if st.button(t("❌ Cancel"), key="se_wl_val_cancel", use_container_width=True):
+        if st.button(t("❌ Cancel"), key="se_wl_val_cancel", width="stretch"):
             st.session_state[SK.SE_WL_PENDING] = None
             fragment_rerun()
 
@@ -919,7 +919,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
             st.button(
                 t("Select all"), key="se_bp_all",
                 on_click=lambda: st.session_state.update({"se_bp_sel": list(pc_options)}),
-                use_container_width=True,
+                width="stretch",
             )
 
     if not _effective_sel:
@@ -1477,7 +1477,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                     file_name=st.session_state.get(SK.SE_BP_NAME, "Sky_East_BuyPlan.xlsx"),
                     mime=XLSX_MIME,
                     key="se_bp_dl",
-                    use_container_width=True,
+                    width="stretch",
                     type="primary",
                 )
                 if _miss_n:
@@ -1501,7 +1501,7 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                     file_name=_nk_name,
                     mime=ZIP_MIME,
                     key="se_nk_dl",
-                    use_container_width=True,
+                    width="stretch",
                 )
                 st.caption(t("One workbook per fabric -- Color x Size per style"))
             elif st.session_state.get(SK.SE_BP_BYTES):
@@ -1731,7 +1731,7 @@ def _se_hist_email_section() -> None:
     with c_send:
         st.write("")  # vertical alignment with text_input
         send_clicked = st.button(
-            t("Send"), type="primary", use_container_width=True,
+            t("Send"), type="primary", width="stretch",
             key="se_email_send", disabled=not recipient.strip(),
         )
 

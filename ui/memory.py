@@ -160,7 +160,7 @@ def render_sidebar_memory() -> None:
             "from disk automatically."
         ))
         if st.button(t("Free memory now"), key="mem_free_btn",
-                     use_container_width=True):
+                     width="stretch"):
             freed_mb = free_session_memory() / (1024 * 1024)
             st.success(f"{t('Freed')} ~{freed_mb:.0f} MB.")
             st.rerun()

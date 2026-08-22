@@ -234,7 +234,7 @@ def render_color_conflicts(conflicts: list[dict], bytes_key: str,
             _th("On the PO"): c["po_cn"],
             _th("First seen"): f"{c['sheet']}!{c['cell']}",
         } for c in conflicts]),
-        use_container_width=True, hide_index=True)
+        width="stretch", hide_index=True)
     if st.button(f"✅ {t('Use the PO colour names instead')}",
                  key=f"{key_prefix}_apply_cn",
                  help=t("Rewrites only these colour cells in the downloadable "
@@ -313,7 +313,7 @@ def select_pos(key_prefix: str, *,
         st.button(t("Select all"), key=f"{key_prefix}_all",
                   on_click=lambda: st.session_state.update(
                       {pc_key: list(pc_options)}),
-                  use_container_width=True)
+                  width="stretch")
 
     if not pc_nos:
         return POSelection([], [], [], pd.DataFrame())
@@ -523,7 +523,7 @@ def pdf_export_block(xlsx_bytes: bytes | None, base_name: str, key: str, *,
         folder = output_folder_input(f"{key}_pdf_dir")
 
         if st.button(f"📕 {t('Build PDF')}", key=f"{key}_pdf_build",
-                     use_container_width=True):
+                     width="stretch"):
             try:
                 src = (_cleaned_copy(xlsx_bytes, client, keep_fabrics)
                        if clean else xlsx_bytes)
@@ -545,7 +545,7 @@ def pdf_export_block(xlsx_bytes: bytes | None, base_name: str, key: str, *,
                 data=data,
                 file_name=st.session_state.get(f"{key}_pdf_name",
                                                "cut_plan.pdf"),
-                mime=PDF_MIME, use_container_width=True,
+                mime=PDF_MIME, width="stretch",
                 key=f"{key}_pdf_dl")
 
 

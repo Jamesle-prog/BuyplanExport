@@ -72,7 +72,7 @@ def show_plans_section() -> None:
             show[col] = pd.to_numeric(show[col], errors="coerce").round(2)
     st.dataframe(
         show.rename(columns=_tr(_LIST_RENAME)),
-        use_container_width=True, hide_index=True,
+        width="stretch", hide_index=True,
         column_config={
             _th("Cut vs PO %"): st.column_config.NumberColumn(
                 format="%+.1f %%",
@@ -155,7 +155,7 @@ def _show_fabric_totals(view: pd.DataFrame) -> None:
                          "material": "Fabric", "plans": "Plans",
                          "units": "Units", "pieces": "Pieces",
                          "metres": "Fabric (m)", "m_per_unit": "m/unit"})),
-            use_container_width=True, hide_index=True)
+            width="stretch", hide_index=True)
 
 
 def _warn_on_qty_mismatch(view: pd.DataFrame) -> None:
@@ -313,7 +313,7 @@ def _show_fabric_summary(store, plan_id: int) -> None:
             show[col] = pd.to_numeric(show[col], errors="coerce").round(2)
     st.dataframe(
         show.rename(columns=_tr(_FABRIC_RENAME)),
-        use_container_width=True, hide_index=True,
+        width="stretch", hide_index=True,
         column_config={
             _th("m/unit"): st.column_config.NumberColumn(
                 format="%.4f", help=t("Metres of this fabric per garment.")),
@@ -397,7 +397,7 @@ def _render_se_breakdown(se, pc_no: str) -> None:
         **{c: c.upper().replace("XXL", "2XL") for c in size_cols},
     })
     st.caption(f"{t('PC No.')} {pc_no} · {len(se)} {t('line(s)')}")
-    st.dataframe(view, use_container_width=True, hide_index=True)
+    st.dataframe(view, width="stretch", hide_index=True)
 
 
 def _render_giii_breakdown(rows, po_number: str) -> None:
@@ -415,7 +415,7 @@ def _render_giii_breakdown(rows, po_number: str) -> None:
         c_size, c_units = lower["size"], lower["units"]
     except KeyError:
         st.caption(f"{t('PO Number')} {po_number}")
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.dataframe(rows, width="stretch", hide_index=True)
         return
     grid = (rows.pivot_table(index=[c_style, c_color], columns=c_size,
                              values=c_units, aggfunc="sum", fill_value=0)
@@ -424,7 +424,7 @@ def _render_giii_breakdown(rows, po_number: str) -> None:
     grid = grid.rename(columns={c_style: _th("Style"), c_color: _th("Color")})
     grid.columns.name = None
     st.caption(f"{t('PO Number')} {po_number} · {len(grid)} {t('line(s)')}")
-    st.dataframe(grid, use_container_width=True, hide_index=True)
+    st.dataframe(grid, width="stretch", hide_index=True)
 
 
 def _show_links(store, plan: dict) -> None:
@@ -438,7 +438,7 @@ def _show_links(store, plan: dict) -> None:
                 _th("Linked"): l.get("linked_at", ""),
                 _th("By"): l.get("linked_by", ""),
             } for l in links]),
-            use_container_width=True, hide_index=True)
+            width="stretch", hide_index=True)
         styles = sorted({l.get("style", "") for l in links if l.get("style")})
         if styles:
             st.caption(f"{t('Styles covered')}: {', '.join(styles)}")
@@ -469,7 +469,7 @@ def _show_links(store, plan: dict) -> None:
     col_save, col_cancel = st.columns(2)
     with col_save:
         if st.button(t("Save links"), type="primary", disabled=not rows,
-                     use_container_width=True, key=f"cp_savelinks_{plan_id}"):
+                     width="stretch", key=f"cp_savelinks_{plan_id}"):
             store.set_links(plan_id, rows,
                             st.session_state.get(SK.USERNAME, ""))
             st.session_state[SK.CP_EDIT_ID] = None
@@ -477,7 +477,7 @@ def _show_links(store, plan: dict) -> None:
                 "success", t("Linked POs updated."))
             fragment_rerun()
     with col_cancel:
-        if st.button(t("Cancel"), use_container_width=True,
+        if st.button(t("Cancel"), width="stretch",
                      key=f"cp_cancel_{plan_id}"):
             st.session_state[SK.CP_EDIT_ID] = None
             fragment_rerun()
@@ -495,7 +495,7 @@ def _show_quantities(store, plan_id: int) -> None:
             "style": "Style", "color": "Color", "size": "Size",
             "qty": "Ordered", "cut_qty": "Cut", "diff": "Cut − Ordered",
         })),
-        use_container_width=True, hide_index=True)
+        width="stretch", hide_index=True)
     over = int(df.loc[df["diff"] > 0, "diff"].sum())
     under = int(-df.loc[df["diff"] < 0, "diff"].sum())
     if over or under:
@@ -537,7 +537,7 @@ def _show_materials(plan: dict) -> None:
                         _th("Efficiency %"): _round(line.get("efficiency_pct")),
                     })
             if rows:
-                st.dataframe(pd.DataFrame(rows), use_container_width=True,
+                st.dataframe(pd.DataFrame(rows), width="stretch",
                              hide_index=True)
             st.caption(
                 f"{t('File names')}: " + ", ".join(
@@ -557,7 +557,7 @@ def _show_files(store, plan: dict) -> None:
         st.download_button(
             f"⬇️ {t('Download original file')} ({fname})",
             data=data, file_name=fname, mime=XLSX_MIME,
-            key=f"cp_dl_orig_{plan_id}", use_container_width=True)
+            key=f"cp_dl_orig_{plan_id}", width="stretch")
         # The original workbook is the one the cutting room actually reads, so
         # the cleanup is offered here, on its PDF.
         pdf_export_block(data, safe_filename(fname.removesuffix(".xlsx")),
@@ -580,7 +580,7 @@ def _show_files(store, plan: dict) -> None:
                           key=f"cp_std_fab_{plan_id}")
     _folder = output_folder_input(f"cp_std_dir_{plan_id}")
     if st.button(f"📄 {t('Build standard cut plan')}",
-                 key=f"cp_std_{plan_id}", use_container_width=True):
+                 key=f"cp_std_{plan_id}", width="stretch"):
         _build_standard_for_plan(store, plan, clean=True, folder=_folder,
                                  materials=_mats)
 
@@ -593,7 +593,7 @@ def _show_files(store, plan: dict) -> None:
             f"⬇️ {st.session_state[f'cp_std_{plan_id}_fname']}",
             data=st.session_state[f"cp_std_{plan_id}_bytes"],
             file_name=st.session_state[f"cp_std_{plan_id}_fname"],
-            mime=XLSX_MIME, use_container_width=True,
+            mime=XLSX_MIME, width="stretch",
             key=f"cp_std_dl_{plan_id}")
         pdf_export_block(
             st.session_state[f"cp_std_{plan_id}_bytes"],
