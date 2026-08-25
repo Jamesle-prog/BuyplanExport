@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.135.1",
+        "date": "2026-08-25",
+        "entries": [
+            {"type": "fix", "text": "**A 船样要求 typed for a new brand is now actually saved.** The box asking for it when Sky East meets a new brand only registered what you typed once you clicked away from it — so typing the requirement and pressing Save straight afterwards stored a blank. Worse, the blank still marked the brand as known, so you were never asked again and the buy plan printed an empty 船样要求 column with nothing to explain it. Each brand now has its own box and the whole panel is saved together, so what is on screen is what gets stored; the confirmation says how many were saved with text."},
+            {"type": "fix", "text": "**A brand name with a stray space no longer blanks the column.** The buy plan matched the brand exactly, so a trailing space anywhere in the data produced an empty 船样要求 even when the requirement was correctly on file."},
+            {"type": "docs", "text": "**Brands already saved blank need filling in once.** Anything stored before this fix stayed empty and cannot be recovered automatically. They are listed under 📐 Reference Data → 🚢 船样要求 as still needing a requirement."},
+        ],
+    },
+    {
         "version": "2.135.0",
         "date": "2026-08-22",
         "entries": [

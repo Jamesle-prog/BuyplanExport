@@ -229,30 +229,45 @@ def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
           "sample requirement below (leave blank if none applies):")
     )
     with st.expander(t("Shipping sample requirement — new brands"), expanded=True):
-        col_brand, col_req = _th("Brand"), _th("Shipping Sample Requirement")
-        df = pd.DataFrame([{col_brand: b, col_req: ""} for b in pending_brands])
-        edited = st.data_editor(
-            df, hide_index=True, width="stretch", num_rows="fixed",
-            disabled=[col_brand],
-            key="se_new_brand_editor",
-        )
-        col1, col2 = st.columns(2)
-        if col1.button(t("Save"), type="primary", width="stretch",
-                       key="se_new_brand_save"):
+        # One text box per brand inside a form, NOT st.data_editor. A
+        # data_editor cell is only committed when it loses focus, so typing a
+        # requirement and clicking Save straight afterwards submitted the click
+        # before the edit registered -- and the blank was stored silently,
+        # leaving the brand registered with no requirement. The buy plan then
+        # printed an empty 船样要求 column and nothing said why. Three brands in
+        # the live database were saved that way. A form flushes every widget it
+        # contains on submit, so what is on screen is what is written.
+        with st.form("se_new_brand_form"):
+            typed: dict[str, str] = {}
+            for i, b in enumerate(pending_brands):
+                typed[b] = st.text_input(
+                    f"**{b}** — {_th('Shipping Sample Requirement')}",
+                    key=f"se_new_brand_req_{i}",
+                    placeholder=t("e.g. M码齐色2套，S码齐色1套 "
+                                  "(leave blank if none applies)"),
+                )
+            col1, col2 = st.columns(2)
+            saved = col1.form_submit_button(t("Save"), type="primary",
+                                            width="stretch")
+            later = col2.form_submit_button(
+                t("Remind me later (don't save)"), width="stretch")
+
+        if saved:
             store = get_boat_sample_store()
-            for _, row in edited.iterrows():
-                store.upsert(COMPANY_SKY_EAST, row[col_brand], row[col_req] or "")
+            for brand, req in typed.items():
+                store.upsert(COMPANY_SKY_EAST, brand, (req or "").strip())
             st.session_state[SK.SE_NEW_BRAND_PENDING] = []
+            _filled = sum(1 for r in typed.values() if (r or "").strip())
             st.success(
                 f"✅ {t('Saved shipping sample requirement for')} "
-                f"{len(pending_brands)} {t('brand(s)')}."
+                f"{len(pending_brands)} {t('brand(s)')} "
+                f"({_filled} {t('with text')})."
             )
             fragment_rerun()
         # Escape hatch: nothing is written or registered -- the same brands
         # will be prompted again on the next upload (unlike Save-with-blank,
         # which registers the brand as "known, no requirement").
-        if col2.button(t("Remind me later (don't save)"), width="stretch",
-                       key="se_new_brand_later"):
+        if later:
             st.session_state[SK.SE_NEW_BRAND_PENDING] = []
             fragment_rerun()
 

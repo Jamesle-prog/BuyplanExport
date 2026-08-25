@@ -1038,8 +1038,13 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
     _style_data(ws.cell(out_row, col["l"]),   l)
     _style_data(ws.cell(out_row, col["xl"]),  xl)
     _style_data(ws.cell(out_row, col["xxl"]), xxl)
-    # col P = 船样要求 — inject from BoatSampleStore if available
-    _boat_req = ctx.bsr_cache.get(brand, "")
+    # col P = 船样要求 — inject from BoatSampleStore if available.
+    # .strip() because _prefetch_boat_sample_cache keys the cache on stripped
+    # brand names while this value comes straight off the item: a brand stored
+    # with a trailing space would build the cache under "Even&Odd" and look it
+    # up as "Even&Odd ", printing a blank column with everything configured
+    # correctly.
+    _boat_req = ctx.bsr_cache.get(brand.strip(), "")
     if _boat_req:
         _style_data(ws.cell(out_row, ctx.boat_sample_col), _boat_req)
     _style_data(ws.cell(out_row, col["total"]),  row_total)
