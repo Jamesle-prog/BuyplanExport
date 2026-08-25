@@ -10,8 +10,24 @@ from ui.shared import guard_multiselect_state, delete_button
 from auth.users import (
     ALL_MODULES, MODULE_LABELS, ROLE_ADMIN, create_user, delete_user,
     get_user, list_users, set_user_companies, set_user_email,
-    set_user_factories, set_user_modules, set_user_role,
+    set_user_brands, set_user_factories, set_user_modules, set_user_role,
 )
+
+
+
+def _known_brands() -> list[str]:
+    """Brands a user can be made responsible for — every brand any company has
+    on file, so the list covers brands auto-registered by a Sky East upload as
+    well as those with a requirement already written."""
+    try:
+        from auth.companies import list_company_names
+        from ui.stores import list_all_brands
+        seen: set[str] = set()
+        for co in (list_company_names(active_only=True) or []):
+            seen.update(b for b in (list_all_brands(co) or []) if b)
+        return sorted(seen)
+    except Exception:
+        return []
 
 
 def _known_factories() -> list[str]:
@@ -37,6 +53,7 @@ def show_user_admin() -> None:
     st.subheader(f"⚙️ {t('User Management')}")
     all_companies = list_company_names()
     all_factories = _known_factories()
+    all_brands = _known_brands()
     users = list_users()
 
     for uname in users:
@@ -135,6 +152,31 @@ def show_user_admin() -> None:
             if st.button(t("Set factory scope"), key=f"setfac_{uname}"):
                 set_user_factories(uname, new_facs)
                 st.success(t("Factory scope updated."))
+                st.rerun()
+
+            # ── Brand scope (船样要求) ──────────────────────────────────────
+            # Empty means every brand of the user's companies — the behaviour
+            # before this field existed. Setting brands narrows within that;
+            # it never grants a company the user doesn't already have.
+            _brands_key = f"brands_{uname}"
+            _user_brands = info.get("brands", []) or []
+            if _brands_key not in st.session_state:
+                st.session_state[_brands_key] = [b for b in _user_brands
+                                                 if b in all_brands]
+            else:
+                guard_multiselect_state(_brands_key, all_brands)
+            new_brands = st.multiselect(
+                t("Brand scope — 船样要求 (empty = all brands of their companies)"),
+                all_brands,
+                key=_brands_key,
+                help=t("Who looks after which brand. A user with brands set "
+                       "sees and edits ONLY those brands' 船样要求 under "
+                       "📐 Reference Data. Leave empty and they can edit every "
+                       "brand of the companies they are assigned to."),
+            )
+            if st.button(t("Set brand scope"), key=f"setbrand_{uname}"):
+                set_user_brands(uname, new_brands)
+                st.success(t("Brand scope updated."))
                 st.rerun()
 
             new_email = st.text_input(

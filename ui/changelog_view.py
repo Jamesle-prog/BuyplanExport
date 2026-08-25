@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.136.0",
+        "date": "2026-08-25",
+        "entries": [
+            {"type": "feat", "text": "**The person who looks after a brand can now maintain its 船样要求 themselves.** Admin → Users has a new **Brand scope — 船样要求** setting. Assign someone the brands they handle and, under 📐 Reference Data → 🚢 船样要求, they see and edit only those — with a line telling them which brands are theirs. No admin needed to change a requirement, and no reaching into someone else's brand."},
+            {"type": "feat", "text": "**Leaving the brand list empty changes nothing.** An account with no brands assigned keeps exactly what it has today: every brand of the companies it belongs to. So this can be switched on gradually, brand by brand, without anyone losing access on the day it ships. Administrators are never brand-restricted."},
+        ],
+    },
+    {
         "version": "2.135.1",
         "date": "2026-08-25",
         "entries": [

@@ -23,7 +23,7 @@ import pandas as pd
 import streamlit as st
 
 from auth.companies import list_company_names
-from auth.users import get_user_companies, is_admin
+from auth.users import get_user_brands, get_user_companies, is_admin
 from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import _th, delete_button
@@ -67,15 +67,36 @@ def show_boat_sample_section() -> None:
         ))
         return
 
+    # Brand scope narrows within the companies above. Empty = every brand of
+    # those companies, which is what an account with no brands assigned has
+    # always had — adding the field takes nothing away from anyone.
+    my_brands = get_user_brands(user)
     if not is_admin(user):
-        st.caption("🔒 " + t("You can edit the companies your account is "
-                             "assigned to. Administrators can edit all of them "
-                             "under Admin → 船样要求."))
-    render_boat_sample_editor(companies, key_prefix="bsr_ref")
+        if my_brands:
+            st.caption("🔒 " + t("You look after") + ": **"
+                       + "**, **".join(my_brands) + "**. "
+                       + t("Ask an administrator to change which brands are "
+                           "yours."))
+        else:
+            st.caption("🔒 " + t("You can edit the companies your account is "
+                                 "assigned to. Administrators can edit all of "
+                                 "them under Admin → 船样要求."))
+    render_boat_sample_editor(companies, key_prefix="bsr_ref",
+                              brands_allowed=my_brands)
 
 
-def render_boat_sample_editor(companies: list[str], *, key_prefix: str) -> None:
-    """The editor itself, restricted to *companies*.
+def render_boat_sample_editor(companies: list[str], *, key_prefix: str,
+                              brands_allowed: list[str] | None = None) -> None:
+    """The editor itself, restricted to *companies* and optionally to
+    *brands_allowed*.
+
+    *brands_allowed* is the brand scope from the signed-in user's account.
+    ``None`` or empty means no brand restriction — every brand of *companies*,
+    which is how this behaved before brand scope existed and what every
+    unassigned account still gets. That is safe because company access has
+    already been decided by the caller; brands only narrow within it. (Do not
+    make an empty list mean "nothing" here by analogy with the company list —
+    the two answer different questions. See auth.users.get_user_brands.)
 
     *key_prefix* keeps the two mount points' widgets independent — an admin who
     has used both in one session should not find the Reference Data selection
@@ -83,8 +104,11 @@ def render_boat_sample_editor(companies: list[str], *, key_prefix: str) -> None:
     """
     store = get_boat_sample_store()
     allowed = set(companies)
+    brand_scope = {b for b in (brands_allowed or []) if b}
     # Every read is scoped here, so nothing downstream has to remember to.
     rows = [r for r in store.list_all() if r.get("company") in allowed]
+    if brand_scope:
+        rows = [r for r in rows if r.get("brand") in brand_scope]
 
     st.markdown(f"##### {t('Existing requirements')}")
     if rows:
@@ -115,6 +139,8 @@ def render_boat_sample_editor(companies: list[str], *, key_prefix: str) -> None:
         )
 
     brands: list[str] = list_all_brands(selected_company) if selected_company else []
+    if brand_scope:
+        brands = [b for b in brands if b in brand_scope]
 
     pending = [r for r in rows
                if r.get("company") == selected_company
@@ -173,6 +199,10 @@ def render_boat_sample_editor(companies: list[str], *, key_prefix: str) -> None:
         # drawn — see the module docstring.
         if company_v not in allowed:
             st.error(t("You don't have access to that company."))
+        elif brand_scope and brand_v not in brand_scope:
+            # Re-checked at the point of writing, not just when the options
+            # were drawn — a widget key outlives the list that filled it.
+            st.error(t("You don't have access to that brand."))
         elif not brand_v:
             st.error(t("No brand selected."))
         else:
@@ -201,6 +231,8 @@ def render_boat_sample_editor(companies: list[str], *, key_prefix: str) -> None:
             target = rows[del_idx]
             if target["company"] not in allowed:      # same guard as the save
                 st.error(t("You don't have access to that company."))
+            elif brand_scope and target["brand"] not in brand_scope:
+                st.error(t("You don't have access to that brand."))
             elif store.delete(target["company"], target["brand"]):
                 st.success(f"{t('Deleted')}: {options[del_idx]}")
                 st.rerun()

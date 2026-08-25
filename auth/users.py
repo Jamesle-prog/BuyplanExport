@@ -134,7 +134,8 @@ def create_user(username: str, password: str,
                 companies: list[str] | None = None,
                 email: str | None = None,
                 modules: list[str] | None = None,
-                factories: list[str] | None = None) -> None:
+                factories: list[str] | None = None,
+                brands: list[str] | None = None) -> None:
     if not username or not password:
         raise ValueError("Username and password are required")
     users = _load()
@@ -150,6 +151,11 @@ def create_user(username: str, password: str,
         # Factory scope (production tracking): empty = not factory-restricted.
         # Preserved across edits that don't touch it (e.g. password change).
         "factories": factories if factories is not None else existing.get("factories", []),
+        # Brand scope (船样要求): empty = not brand-restricted. Preserved the
+        # same way as factories -- create_user is also the password-change
+        # path, and a scope silently emptied there is a permission change
+        # nobody asked for.
+        "brands": brands if brands is not None else existing.get("brands", []),
     }
     _save(users)
 
@@ -181,7 +187,8 @@ def change_password(username: str, old_password: str, new_password: str) -> bool
                 role=rec.get("role", ROLE_USER),
                 companies=rec.get("companies", []),
                 modules=rec.get("modules", []),
-                factories=rec.get("factories", []))
+                factories=rec.get("factories", []),
+                brands=rec.get("brands", []))
     return True
 
 
@@ -194,7 +201,13 @@ def list_users() -> list[str]:
 
 
 def get_user(username: str) -> dict | None:
-    """Return {role, companies, email, modules, factories} or None."""
+    """Return {role, companies, email, modules, factories, brands} or None.
+
+    This dict is built field by field rather than passed through, so a new
+    field added to the stored record is invisible here until it is listed —
+    which is exactly how brands read as empty for every user when it was first
+    added. Add new scopes to BOTH places.
+    """
     rec = _load().get(username)
     if not rec:
         return None
@@ -202,7 +215,8 @@ def get_user(username: str) -> dict | None:
             "companies": rec.get("companies", []),
             "email": rec.get("email", "") or "",
             "modules": rec.get("modules", []) or [],
-            "factories": rec.get("factories", []) or []}
+            "factories": rec.get("factories", []) or [],
+            "brands": rec.get("brands", []) or []}
 
 
 def get_user_email(username: str) -> str:
@@ -301,6 +315,36 @@ def set_user_factories(username: str, factories: list[str]) -> bool:
     if username not in users:
         return False
     users[username]["factories"] = factories
+    _save(users)
+    return True
+
+
+def get_user_brands(username: str) -> list[str]:
+    """Brand scope for 船样要求. Empty = NOT brand-restricted.
+
+    Read this alongside :func:`get_user_companies`, not in place of it. Company
+    access is the gate and is enforced first; brands only narrow further within
+    the companies a user already has. So an empty list here safely means "every
+    brand of my companies" — unlike the company list, where empty means
+    unrestricted only for an admin and no access for anyone else. Do not
+    "correct" one to match the other; they answer different questions.
+
+    Every user starts unrestricted, which is what keeps this additive: turning
+    the feature on takes nothing away from anyone until a brand is assigned.
+    """
+    u = get_user(username)
+    if not u:
+        return []
+    if u["role"] == ROLE_ADMIN:
+        return []
+    return u.get("brands") or []
+
+
+def set_user_brands(username: str, brands: list[str]) -> bool:
+    users = _load()
+    if username not in users:
+        return False
+    users[username]["brands"] = brands
     _save(users)
     return True
 
