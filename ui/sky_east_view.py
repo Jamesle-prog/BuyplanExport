@@ -44,6 +44,34 @@ _SE_SAVE_MODE_HELP = {
 # Upload section
 # ---------------------------------------------------------------------------
 
+
+def _brands_awaiting_requirement() -> list[str]:
+    """Every Sky East brand on file with no 船样要求 text yet.
+
+    Union of what the last upload flagged and what the store says is still
+    blank: the upload list alone misses brands that were registered before the
+    requirement became compulsory, and the store alone would forget a brand
+    the current upload has only just introduced.
+    """
+    pending = list(st.session_state.get(SK.SE_NEW_BRAND_PENDING) or [])
+    try:
+        from auth.companies import COMPANY_SKY_EAST
+        from ui.stores import get_boat_sample_store, get_sky_east_store
+        items = get_sky_east_store().list_items()
+        brands = sorted({str(b).strip() for b in items.get("brand", [])
+                         if str(b or "").strip()}) if not items.empty else []
+        blank = get_boat_sample_store().brands_missing_requirement(
+            COMPANY_SKY_EAST, brands) if brands else []
+    except Exception:
+        blank = []          # never let a lookup failure hide the upload's own list
+    seen, out = set(), []
+    for b in list(pending) + list(blank):
+        if b and b not in seen:
+            seen.add(b)
+            out.append(b)
+    return out
+
+
 def _show_se_upload_section():
     st.markdown(f"**{t('Order Files')}** (Sky East Purchase Contract xlsx)")
     order_files = st.file_uploader(
@@ -183,9 +211,12 @@ def _show_se_upload_section():
     if _rl_pending:
         _show_return_label_conflicts(_rl_pending)
 
-    _new_brand_pending = st.session_state.get(SK.SE_NEW_BRAND_PENDING)
-    if _new_brand_pending:
-        _show_new_brand_shipping_sample_prompt(_new_brand_pending)
+    # Any brand with a blank 船样要求 is asked about, every time this screen is
+    # drawn -- not only the ones a fresh upload happened to introduce. The
+    # requirement is compulsory, so a brand that slipped through (or was
+    # deferred with "Remind me later") has to keep coming back rather than
+    # sitting blank until someone notices an empty column in a buy plan.
+    _show_new_brand_shipping_sample_prompt(_brands_awaiting_requirement())
 
     if st.session_state.get(SK.SE_MASKED_ZIP):
         st.download_button(

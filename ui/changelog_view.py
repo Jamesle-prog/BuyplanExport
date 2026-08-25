@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.137.0",
+        "date": "2026-08-25",
+        "entries": [
+            {"type": "feat", "text": "**船样要求 is now compulsory — a blank is never accepted.** The prompt refuses to save while any brand is empty, names the ones still missing, and writes nothing at all until every one has text, so you can no longer end up with a brand registered but blank."},
+            {"type": "feat", "text": "**It keeps asking until it's filled in.** The prompt now covers every brand with a blank requirement, not just those a fresh upload introduced — so brands left blank in the past come back instead of sitting unnoticed. *Remind me later* still defers it; it saves nothing and the prompt returns."},
+            {"type": "feat", "text": "**A buy plan won't generate while a brand has no 船样要求.** The brands are named on the Generate screen and the run is held until they're filled in — rather than producing a plan with a silently empty column."},
+        ],
+    },
+    {
         "version": "2.136.0",
         "date": "2026-08-25",
         "entries": [

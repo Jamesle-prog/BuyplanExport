@@ -92,3 +92,116 @@ def test_a_blank_requirement_registers_the_brand_but_prints_nothing(store):
     store.upsert(COMPANY_SKY_EAST, "NOREQ", "")
     assert "NOREQ" in store.list_known_brands(COMPANY_SKY_EAST)
     assert store.get_batch(COMPANY_SKY_EAST, ["NOREQ"]) == {}
+
+
+# ── 船样要求 is compulsory ───────────────────────────────────────────────────
+#
+# "Compulsory" needs two answers to be possible, not one: a requirement, or an
+# explicit "this brand has none". Blank alone means nobody has decided yet, and
+# that now holds the buy plan instead of printing an empty column silently.
+
+def test_blank_is_never_an_answer(store):
+    """There is no "this brand has none" escape: blank always counts as
+    outstanding, so the prompt keeps asking and the buy plan stays held."""
+    from auth.companies import COMPANY_SKY_EAST as CO
+    store.upsert(CO, "BLANK", "")
+    store.upsert(CO, "SPACES", "   ")
+    assert store.brands_missing_requirement(CO, ["BLANK", "SPACES"]) == [
+        "BLANK", "SPACES"]
+
+
+def test_a_bare_blank_is_not_an_answer(store):
+    from auth.companies import COMPANY_SKY_EAST as CO
+    store.upsert(CO, "UNANSWERED", "")
+    assert store.brands_missing_requirement(CO, ["UNANSWERED"]) == ["UNANSWERED"]
+
+
+def test_a_brand_never_seen_is_missing(store):
+    from auth.companies import COMPANY_SKY_EAST as CO
+    assert store.brands_missing_requirement(CO, ["NEVERSEEN"]) == ["NEVERSEEN"]
+
+
+def test_text_clears_the_outstanding_state(store):
+    from auth.companies import COMPANY_SKY_EAST as CO
+    store.upsert(CO, "B", "")
+    store.upsert(CO, "B", "3 pcs")
+    assert store.brands_missing_requirement(CO, ["B"]) == []
+    assert store.get_batch(CO, ["B"]) == {"B": "3 pcs"}
+
+
+def test_the_existing_blank_rows_are_reported_as_missing(store):
+    """The three brands saved blank before this shipped must surface, not sit
+    silently — that is the whole point of making it compulsory."""
+    from auth.companies import COMPANY_SKY_EAST as CO
+    for b in ("Anna Field by Zalando", "Brand", "YOURTURN"):
+        store.upsert(CO, b, "")
+    store.upsert(CO, "Even&Odd", "M码齐色2套")
+    missing = store.brands_missing_requirement(
+        CO, ["Even&Odd", "Anna Field by Zalando", "Brand", "YOURTURN"])
+    assert missing == ["Anna Field by Zalando", "Brand", "YOURTURN"]
+
+
+def test_the_prompt_refuses_a_brand_with_no_answer():
+    import inspect
+    import ui.sky_east.items_view as iv
+    src = inspect.getsource(iv._show_new_brand_shipping_sample_prompt)
+    assert "unanswered" in src
+    assert "This brand has no" not in src, "there is no blank escape any more"
+
+
+def test_generation_is_held_when_a_brand_has_no_answer():
+    import inspect
+    import ui.sky_east.history as h
+    src = inspect.getsource(h._show_se_buyplan_section) if hasattr(
+        h, "_show_se_buyplan_section") else inspect.getsource(h)
+    assert "_se_buyplan_boat_sample_preflight" in src
+    assert "Cannot generate: these brands have no 船样要求" in src
+
+
+def test_the_prompt_returns_for_a_brand_left_blank_long_ago(monkeypatch, store):
+    """"Always pop up" — the ask is driven by what is still blank in the
+    store, not only by what the last upload happened to introduce. Brands
+    registered before the requirement became compulsory must resurface."""
+    import pandas as pd
+    import ui.sky_east_view as v
+    from auth.companies import COMPANY_SKY_EAST as CO
+
+    store.upsert(CO, "Even&Odd", "M码齐色2套")     # answered
+    store.upsert(CO, "YOURTURN", "")               # blank from before
+
+    monkeypatch.setattr("ui.stores.get_boat_sample_store", lambda: store)
+    monkeypatch.setattr(
+        "ui.stores.get_sky_east_store",
+        lambda: type("S", (), {"list_items": lambda self, **k: pd.DataFrame(
+            [{"brand": "Even&Odd"}, {"brand": "YOURTURN"}])})())
+    monkeypatch.setattr(v.st, "session_state", {})
+
+    assert v._brands_awaiting_requirement() == ["YOURTURN"]
+
+
+def test_a_brand_from_the_current_upload_is_included_too(monkeypatch, store):
+    """The store alone would miss a brand the running upload just introduced
+    but has not registered yet."""
+    import pandas as pd
+    import ui.sky_east_view as v
+    from ui.session_keys import SK
+
+    monkeypatch.setattr("ui.stores.get_boat_sample_store", lambda: store)
+    monkeypatch.setattr(
+        "ui.stores.get_sky_east_store",
+        lambda: type("S", (), {"list_items": lambda self, **k: pd.DataFrame()})())
+    monkeypatch.setattr(v.st, "session_state", {SK.SE_NEW_BRAND_PENDING: ["FRESH"]})
+
+    assert v._brands_awaiting_requirement() == ["FRESH"]
+
+
+def test_nothing_outstanding_shows_nothing(monkeypatch):
+    """The prompt is now called unconditionally, so it must stay silent when
+    every brand is answered — otherwise it would announce '0 brand(s)'."""
+    import ui.sky_east.items_view as iv
+    calls = []
+    monkeypatch.setattr(iv.st, "info", lambda *a, **k: calls.append(a))
+    monkeypatch.setattr(iv.st, "expander", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("must not render the panel when nothing is outstanding")))
+    iv._show_new_brand_shipping_sample_prompt([])
+    assert calls == []

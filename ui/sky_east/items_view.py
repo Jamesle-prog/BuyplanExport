@@ -223,10 +223,12 @@ def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
     being silently left blank until someone notices at buy-plan generation
     time (BoatSampleStore.get_batch skips brands with no/empty req_text).
     """
+    if not pending_brands:
+        return                      # nothing outstanding — say nothing
     st.info(
         f"📦 {len(pending_brands)} " +
-        t("new brand(s) found in this upload. Enter each one's shipping "
-          "sample requirement below (leave blank if none applies):")
+        t("brand(s) still need a 船样要求. It is required, so this keeps "
+          "appearing until each one has been entered:")
     )
     with st.expander(t("Shipping sample requirement — new brands"), expanded=True):
         # One text box per brand inside a form, NOT st.data_editor. A
@@ -243,8 +245,7 @@ def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
                 typed[b] = st.text_input(
                     f"**{b}** — {_th('Shipping Sample Requirement')}",
                     key=f"se_new_brand_req_{i}",
-                    placeholder=t("e.g. M码齐色2套，S码齐色1套 "
-                                  "(leave blank if none applies)"),
+                    placeholder=t("e.g. M码齐色2套，S码齐色1套"),
                 )
             col1, col2 = st.columns(2)
             saved = col1.form_submit_button(t("Save"), type="primary",
@@ -253,17 +254,28 @@ def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
                 t("Remind me later (don't save)"), width="stretch")
 
         if saved:
-            store = get_boat_sample_store()
-            for brand, req in typed.items():
-                store.upsert(COMPANY_SKY_EAST, brand, (req or "").strip())
-            st.session_state[SK.SE_NEW_BRAND_PENDING] = []
-            _filled = sum(1 for r in typed.values() if (r or "").strip())
-            st.success(
-                f"✅ {t('Saved shipping sample requirement for')} "
-                f"{len(pending_brands)} {t('brand(s)')} "
-                f"({_filled} {t('with text')})."
-            )
-            fragment_rerun()
+            # Compulsory: blank is never accepted. Checked after submit
+            # rather than by disabling Save, because a form's widget values
+            # are not readable until it is submitted.
+            unanswered = [b for b in pending_brands
+                          if not (typed[b] or "").strip()]
+            if unanswered:
+                st.error(
+                    "⚠️ " + t("A 船样要求 is required for every brand. Still "
+                              "missing") + ": **" + "**, **".join(unanswered)
+                    + "**"
+                )
+            else:
+                store = get_boat_sample_store()
+                for brand in pending_brands:
+                    store.upsert(COMPANY_SKY_EAST, brand,
+                                 (typed[brand] or "").strip())
+                st.session_state[SK.SE_NEW_BRAND_PENDING] = []
+                st.success(
+                    f"✅ {t('Saved shipping sample requirement for')} "
+                    f"{len(pending_brands)} {t('brand(s)')}."
+                )
+                fragment_rerun()
         # Escape hatch: nothing is written or registered -- the same brands
         # will be prompted again on the next upload (unlike Save-with-blank,
         # which registers the brand as "known, no requirement").

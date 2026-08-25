@@ -55,6 +55,22 @@ _LANG_COL: dict[str, str] = {
 
 # fmt: off
 _SEED: list[tuple[str, str, str, str]] = [
+    ("brand(s) still need a 船样要求. It is required, so this keeps appearing until each one has been entered:",
+     "个品牌尚未填写船样要求。该项为必填，在全部填写完成前将持续提示：", "info", "admin"),
+    ("A 船样要求 is required for every brand. Still missing",
+     "每个品牌均须填写船样要求。仍缺少", "error", "admin"),
+    ("A 船样要求 is required — it cannot be left blank.",
+     "船样要求为必填项，不能留空。", "error", "admin"),
+    ("brand(s) have **no 船样要求** yet",
+     "个品牌尚未填写**船样要求**", "error", "admin"),
+    ("enter it in the prompt on the **Upload** screen, or in **📐 Reference Data → 🚢 船样要求**, before generating.",
+     "请先在「上传」页面的提示框中填写，或在「📐 参考数据 → 🚢 船样要求」中填写，然后再生成。", "error", "admin"),
+    ("Cannot generate: these brands have no 船样要求",
+     "无法生成：以下品牌尚未填写船样要求", "error", "admin"),
+    ("Enter it in 📐 Reference Data → 🚢 船样要求 first.",
+     "请先在「📐 参考数据 → 🚢 船样要求」中填写。", "error", "admin"),
+    ("e.g. M码齐色2套，S码齐色1套",
+     "例如：M码齐色2套，S码齐色1套", "label", "admin"),
     ("You look after",
      "您负责的品牌", "caption", "admin"),
     ("Ask an administrator to change which brands are yours.",

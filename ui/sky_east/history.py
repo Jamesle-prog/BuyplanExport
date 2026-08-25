@@ -839,6 +839,29 @@ def _se_hist_delete_section(store, pc_options: list[str]) -> None:
 
 
 @st.cache_data(ttl=30, show_spinner=False)
+def _se_buyplan_boat_sample_preflight(pc_nos: tuple[str, ...]) -> list[str]:
+    """Brands in this PC selection with no 船样要求 answer at all.
+
+    A brand explicitly marked as having none IS answered and is not listed —
+    otherwise a brand that genuinely has no requirement could never satisfy a
+    compulsory field. Cached on the same terms as the fabric preflight.
+    """
+    from auth.companies import COMPANY_SKY_EAST as _CO
+    from ui.stores import get_sky_east_store, get_boat_sample_store
+    items = get_sky_east_store().list_items(pc_nos=list(pc_nos))
+    if "brand" not in items.columns:
+        return []
+    brands = sorted({str(b).strip() for b in items["brand"].dropna()
+                     if str(b).strip()})
+    if not brands:
+        return []
+    try:
+        return get_boat_sample_store().brands_missing_requirement(_CO, brands)
+    except Exception:
+        return []          # never block generation on a lookup failure
+
+
+@st.cache_data(ttl=30, show_spinner=False)
 def _se_buyplan_fabric_preflight(pc_nos: tuple[str, ...]) -> tuple[int, list[str]]:
     """Distinct-style count + styles with no fabric code on file, for a PC
     selection. Cached (keyed by *pc_nos*) so touching an unrelated widget on
@@ -967,6 +990,24 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
                 icon="🧩",
             )
 
+        # 船样要求 is compulsory: a brand with no answer holds the buy plan
+        # rather than printing a blank column nobody notices. Marking a brand
+        # as having none counts as answered, so this only ever lists brands
+        # genuinely nobody has decided about.
+        _bsr_missing = _se_buyplan_boat_sample_preflight(
+            tuple(sorted(_effective_sel)))
+        if _bsr_missing:
+            st.error(
+                f"⛔ {len(_bsr_missing)} "
+                + t("brand(s) have **no 船样要求** yet")
+                + f": **{'**, **'.join(_bsr_missing[:8])}**"
+                + (f" … +{len(_bsr_missing) - 8}" if len(_bsr_missing) > 8 else "")
+                + " — " + t("enter it in the prompt on the **Upload** screen, "
+                            "or in **📐 Reference Data → 🚢 船样要求**, before "
+                            "generating."),
+                icon="⛔",
+            )
+
     # ── Color mapping source ──────────────────────────────────────────────────
     show_color_source_radio("se_bp_color_src_radio")
 
@@ -1032,6 +1073,17 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
     if st.button(t("Generate Buy Plan + 核料"), type="primary", key="se_bp_btn"):
         if not _effective_sel:
             st.error(t("Please select at least one PC No. above before generating."))
+        elif _se_buyplan_boat_sample_preflight(tuple(sorted(_effective_sel))):
+            # Re-checked here, not just shown above: the panel is a cached
+            # snapshot and the button is always enabled (see the note on
+            # disabled= below).
+            _missing = _se_buyplan_boat_sample_preflight(
+                tuple(sorted(_effective_sel)))
+            st.error(
+                "⛔ " + t("Cannot generate: these brands have no 船样要求")
+                + f" — **{'**, **'.join(_missing)}**. "
+                + t("Enter it in 📐 Reference Data → 🚢 船样要求 first.")
+            )
         else:
             # Per-step timing collector — summarised in a table at the end of
             # the status box so any slowness names its own step.

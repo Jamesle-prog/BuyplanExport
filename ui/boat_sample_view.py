@@ -205,13 +205,15 @@ def render_boat_sample_editor(companies: list[str], *, key_prefix: str,
             st.error(t("You don't have access to that brand."))
         elif not brand_v:
             st.error(t("No brand selected."))
+        elif not text_v:
+            # Blank is never accepted: the 船样要求 is compulsory, and a brand
+            # left blank is asked about again on every Sky East screen and
+            # holds its buy plan.
+            st.error("⚠️ " + t("A 船样要求 is required — it cannot be left "
+                               "blank."))
         else:
             store.upsert(company_v, brand_v, text_v)
-            if text_v:
-                st.success(f"{t('Saved requirement for')} **{company_v} / {brand_v}**.")
-            else:
-                st.success(f"{t('Cleared requirement for')} **{company_v} / {brand_v}** "
-                           + t("— the 船样要求 column will be blank for this brand."))
+            st.success(f"{t('Saved requirement for')} **{company_v} / {brand_v}**.")
             st.rerun()
 
     if not rows:

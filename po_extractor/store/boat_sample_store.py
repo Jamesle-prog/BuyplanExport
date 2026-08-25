@@ -143,8 +143,36 @@ class BoatSampleStore(BaseSQLiteStore):
                    ON CONFLICT(company, brand) DO UPDATE SET
                        req_text   = excluded.req_text,
                        updated_at = excluded.updated_at""",
-                (company.strip(), brand.strip(), req_text.strip(), now),
+                (company.strip(), brand.strip(), (req_text or "").strip(), now),
             )
+
+    def brands_missing_requirement(self, company: str,
+                                   brands: list[str]) -> list[str]:
+        """Of *brands*, those with no answer at all — no text and not marked as
+        having none. A brand absent from the table counts as missing.
+
+        This is what "compulsory" is measured against: a brand explicitly
+        marked as having no requirement is ANSWERED and never reported here.
+        """
+        clean = [str(b).strip() for b in brands if str(b or "").strip()]
+        if not clean:
+            return []
+        ph = ",".join("?" * len(clean))
+        with self._conn() as conn:
+            answered = {
+                r["brand"] for r in conn.execute(
+                    f"""SELECT brand FROM boat_sample_req
+                        WHERE company=? AND brand IN ({ph})
+                          AND TRIM(req_text) != ''""",
+                    [company.strip()] + clean,
+                ).fetchall()
+            }
+        seen, out = set(), []
+        for b in clean:
+            if b not in answered and b not in seen:
+                seen.add(b)
+                out.append(b)
+        return out
 
     def delete(self, company: str, brand: str) -> int:
         """Delete record for (company, brand). Returns the number of rows deleted."""
