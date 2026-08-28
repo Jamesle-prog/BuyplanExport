@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.137.1",
+        "date": "2026-08-27",
+        "entries": [
+            {"type": "fix", "text": "**Uploading a contract that introduces a brand-new brand no longer crashes.** A stray duplicate import inside one error handler was silently breaking the message Sky East shows when it spots a brand it's never seen before — the exact moment a brand-new scoped account hits on their very first upload. The message now shows correctly, and a new automated check stops this class of mistake from landing again anywhere in the app."},
+        ],
+    },
+    {
         "version": "2.137.0",
         "date": "2026-08-25",
         "entries": [

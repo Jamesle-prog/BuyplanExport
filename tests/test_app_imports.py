@@ -96,6 +96,58 @@ def test_no_module_calls_t_without_binding_it():
     assert not offenders, f"modules call t() without importing t: {offenders}"
 
 
+def test_no_function_shadows_the_module_level_t():
+    """Guard against the sibling of the check above: a function-local `from
+    ui.i18n import t` inside a file that ALREADY imports t at module level.
+
+    Assigning (or importing) a name ANYWHERE in a function body makes Python
+    treat it as local for the WHOLE function -- so a redundant local `t`
+    import doesn't just do nothing extra, it turns every t(...) call
+    elsewhere in that same function into a read of a not-yet-bound local.
+    That bit ui/sky_east/processing.py: t was already imported at the top of
+    the file, but one function ALSO re-imported it locally inside its except
+    block, and the very first real upload that hit a brand-new brand crashed
+    with "cannot access local variable 't'" the moment it tried to log that
+    finding -- a message that only that specific upload shape reaches, so
+    nothing before it had exercised the broken line.
+
+    Deliberately does not try to prove a specific local import is safe by
+    checking whether it comes before or after each t() call in that function
+    -- control flow (if/else, try/except) makes that unreliable to determine
+    statically. If a name is already available at module scope, re-importing
+    it locally is never needed and is banned outright here, which is also
+    simply the fix: delete the redundant import.
+
+    A file with NO module-level t import is unaffected (see ui/memory.py,
+    which has no top-level import and legitimately imports t once, first
+    thing, inside the one function that uses it).
+    """
+    import glob
+    offenders = []
+    for path in (glob.glob(os.path.join(_ROOT, "ui", "**", "*.py"), recursive=True)
+                 + glob.glob(os.path.join(_ROOT, "po_extractor", "**", "*.py"), recursive=True)):
+        with open(path, encoding="utf-8-sig") as fh:
+            tree = ast.parse(fh.read())
+        module_level_t = any(
+            isinstance(n, ast.ImportFrom)
+            and any((a.asname or a.name) == "t" for a in n.names)
+            for n in tree.body                      # top level only
+        )
+        if not module_level_t:
+            continue
+        top_level_imports = {id(n) for n in tree.body}
+        local_bare_t_import = any(
+            isinstance(n, ast.ImportFrom) and id(n) not in top_level_imports
+            and any(a.name == "t" and a.asname is None for a in n.names)
+            for n in ast.walk(tree)
+        )
+        if local_bare_t_import:
+            offenders.append(os.path.relpath(path, _ROOT))
+    assert not offenders, (
+        f"modules re-import t() locally despite already having it at module "
+        f"scope -- delete the redundant local import: {offenders}")
+
+
 # ── Cold-import guard for circular imports ──────────────────────────────────
 
 def _tab_entry_modules():

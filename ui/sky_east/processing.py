@@ -520,7 +520,16 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
         # failure in the post-loop steps (validation, save, image write) so the
         # user sees a clean message instead of a raw Streamlit traceback. Clear
         # any half-built results so the UI never renders a partial batch.
-        from ui.i18n import t
+        #
+        # `t` is already imported at module level (line 11) -- a redundant
+        # local `from ui.i18n import t` used to sit here. Python treats any
+        # name imported/assigned ANYWHERE in a function as local to the WHOLE
+        # function, so that one line silently turned every earlier t(...) call
+        # in this function (e.g. the new-brand-detected message) into a read
+        # of a not-yet-bound local, raising UnboundLocalError the moment a
+        # brand-new brand showed up in an upload -- exactly what a first-time
+        # user hit. Never locally re-import a name this file already has at
+        # module scope; see test_no_function_shadows_the_module_level_t.
         log.append(f"❌ {html.escape(str(exc))}")
         # Mirror the success path's exact keys (se_log / se_results) so the
         # results view reads this failure state, not a stale prior batch.
