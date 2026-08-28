@@ -24,6 +24,59 @@ _OUTCOME_BADGE = {
 _ALL = "__all__"
 
 
+def _fmt_duration(minutes) -> str:
+    """Minutes as a short human span. None -> em dash, never "0m" -- an
+    unknown duration must not read as an instant one."""
+    if minutes is None:
+        return "—"
+    try:
+        m = int(minutes)
+    except Exception:
+        return "—"
+    if m < 60:
+        return f"{m}m"
+    return f"{m // 60}h {m % 60:02d}m"
+
+
+def _show_sessions_view(store) -> None:
+    """Sign-ins as sessions: who, from where, and for how long."""
+    st.caption(t(
+        "Each successful sign-in, with how long the person stayed. Duration "
+        "runs from sign-in to the last activity seen (refreshed about once a "
+        "minute), or to sign-out where they signed out. A session still open "
+        "is either in use now or a browser closed without signing out."
+    ))
+    s1, s2 = st.columns([2, 1])
+    with s1:
+        uname_like = st.text_input(t("Filter by username"), key="ll_sess_uname",
+                                   placeholder=t("type to filter…"))
+    with s2:
+        limit = st.selectbox(t("Show"), [100, 250, 500], index=0,
+                             key="ll_sess_limit")
+
+    rows = store.sessions(limit=int(limit), username_like=uname_like or None)
+    if not rows:
+        st.info(t("No sessions recorded yet."))
+        return
+
+    df = pd.DataFrame([{
+        "Signed in": r["ts"],
+        "Username":  r["username"] or "—",
+        "IP":        r["ip"] or "",
+        "Duration":  _fmt_duration(r["duration_min"]),
+        "Ended":     (t("still open") if r["open"]
+                      else (r["ended_ts"] or "")),
+        "How":       (t("signed out") if r["end_kind"] == "signout"
+                      else ("" if r["open"] else r["end_kind"])),
+    } for r in rows])
+    st.dataframe(df, width="stretch", hide_index=True,
+                 height=min(60 + 35 * len(df), 560))
+    st.download_button(
+        "⬇️ " + t("Download (.csv)"),
+        data=df.to_csv(index=False).encode("utf-8-sig"),
+        file_name="login_sessions.csv", mime=CSV_MIME, key="ll_sess_csv")
+
+
 def show_login_log_admin() -> None:
     st.subheader(f"🔐 {t('Login Log')}")
     st.caption(t("Every sign-in attempt — successful logins plus wrong "
@@ -36,6 +89,15 @@ def show_login_log_admin() -> None:
     m2.metric(t("Distinct users"),    f"{c['users']:,}")
     m3.metric(t("Failed"),            f"{c['failed']:,}")
     m4.metric(t("Locked out"),        f"{c['locked']:,}")
+
+    _view = st.radio(
+        t("View"), ["attempts", "sessions"],
+        format_func=lambda v: {"attempts": t("🔑 Sign-in attempts"),
+                               "sessions": t("⏱ Sessions & duration")}[v],
+        horizontal=True, label_visibility="collapsed", key="ll_view")
+    if _view == "sessions":
+        _show_sessions_view(store)
+        return
 
     # ── Filters ──────────────────────────────────────────────────────────────
     f1, f2, f3 = st.columns([2, 2, 1])

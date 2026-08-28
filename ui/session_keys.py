@@ -11,6 +11,8 @@ class SK:
     # ── Auth ─────────────────────────────────────────────────────────────────
     LOGGED_IN        = "logged_in"
     USERNAME         = "username"
+    SESSION_ID = "session_id"   # audit: id of THIS sign-in, for duration tracking
+    LAST_TOUCH = "last_touch"   # audit: monotonic stamp of the last heartbeat write
     SHOW_CHANGE_PW   = "show_change_pw"
     SHOW_ADMIN       = "show_admin"
     UI_LANG          = "ui_lang"

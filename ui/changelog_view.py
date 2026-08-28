@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.138.0",
+        "date": "2026-08-28",
+        "entries": [
+            {"type": "feat", "text": "**A new Change Log under Admin shows who changed what, and when.** Every edit to a 船样要求 or a user account is now written down as one line per field — the person, the time, the record, and the value before and after. It is added to and never rewritten, so the trail cannot be quietly tidied up. Filter by person, by kind of record, or by the record itself, and download the result as a spreadsheet. Old entries can be trimmed from the same screen; nothing else removes them."},
+            {"type": "feat", "text": "**The sign-in log now shows how long each person was signed in.** Alongside the existing record of who signed in when and from which address, there is a second view listing each visit with its length and how it ended — signed out, or simply gone quiet. The clock keeps ticking while someone is using the app and stops when they sign out, so a session left open overnight no longer reads as a full night of work."},
+        ],
+    },
+    {
         "version": "2.137.2",
         "date": "2026-08-28",
         "entries": [

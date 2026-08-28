@@ -129,6 +129,25 @@ def _save(users: dict) -> None:
 # Auth                                                                 #
 # ------------------------------------------------------------------ #
 
+
+def _audit_user_change(username: str, field: str, old, new,
+                       action: str = "update") -> None:
+    """Record an account change (role, scopes, password, creation).
+
+    Account changes are the ones an auditor asks about first -- who granted
+    admin, who widened someone's company scope -- so they are logged even
+    though users.json itself keeps no history. Never raises: an audit failure
+    must not stop an admin fixing access.
+    """
+    try:
+        from po_extractor.store import get_change_log_store
+        from po_extractor.store.change_log_store import ENTITY_USER
+        get_change_log_store().record(
+            ENTITY_USER, username, action, field=field, old=old, new=new)
+    except Exception:
+        pass
+
+
 def create_user(username: str, password: str,
                 role: str | None = None,
                 companies: list[str] | None = None,
@@ -158,6 +177,12 @@ def create_user(username: str, password: str,
         "brands": brands if brands is not None else existing.get("brands", []),
     }
     _save(users)
+    # "created" vs "password changed" -- never the password itself, only that
+    # it was set. create_user is also the password-reset path.
+    _audit_user_change(
+        username, "account" if not existing else "password",
+        "", "created" if not existing else "changed",
+        action="create" if not existing else "update")
 
 
 def verify_password(username: str, password: str) -> bool:
@@ -273,8 +298,11 @@ def set_user_companies(username: str, companies: list[str]) -> bool:
     users = _load()
     if username not in users:
         return False
+    _before = users[username].get("companies")
     users[username]["companies"] = companies
     _save(users)
+    if _before != companies:
+        _audit_user_change(username, "companies", _before, companies)
     return True
 
 
@@ -293,8 +321,11 @@ def set_user_modules(username: str, modules: list[str]) -> bool:
     users = _load()
     if username not in users:
         return False
+    _before = users[username].get("modules")
     users[username]["modules"] = modules
     _save(users)
+    if _before != modules:
+        _audit_user_change(username, "modules", _before, modules)
     return True
 
 
@@ -314,8 +345,11 @@ def set_user_factories(username: str, factories: list[str]) -> bool:
     users = _load()
     if username not in users:
         return False
+    _before = users[username].get("factories")
     users[username]["factories"] = factories
     _save(users)
+    if _before != factories:
+        _audit_user_change(username, "factories", _before, factories)
     return True
 
 
@@ -344,8 +378,11 @@ def set_user_brands(username: str, brands: list[str]) -> bool:
     users = _load()
     if username not in users:
         return False
+    _before = users[username].get("brands")
     users[username]["brands"] = brands
     _save(users)
+    if _before != brands:
+        _audit_user_change(username, "brands", _before, brands)
     return True
 
 
@@ -353,8 +390,12 @@ def set_user_role(username: str, role: str) -> bool:
     users = _load()
     if username not in users:
         return False
+    _before = users[username].get("role")
     users[username]["role"] = role
     _save(users)
+    if _before != role:
+        # The highest-stakes account change there is -- who granted admin.
+        _audit_user_change(username, "role", _before, role)
     return True
 
 
@@ -362,8 +403,15 @@ def delete_user(username: str) -> bool:
     users = _load()
     if username not in users:
         return False
+    _before = users[username]
     del users[username]
     _save(users)
+    # Records the account's role and scopes at deletion -- users.json keeps no
+    # history, so without this the fact that the account ever existed is gone.
+    _audit_user_change(
+        username, "account",
+        f"role={_before.get('role')} companies={_before.get('companies')}",
+        "", action="delete")
     return True
 
 

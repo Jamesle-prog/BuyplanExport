@@ -134,7 +134,16 @@ class BoatSampleStore(BaseSQLiteStore):
     # ── Writes ────────────────────────────────────────────────────────────────
 
     def upsert(self, company: str, brand: str, req_text: str) -> None:
-        """Insert or update the requirement text for (company, brand)."""
+        """Insert or update the requirement text for (company, brand).
+
+        The prior value is read first so the change log can record old -> new;
+        this is the field that decides what a factory is asked to send, so
+        "who changed it and from what" is worth one extra SELECT.
+        """
+        company, brand = company.strip(), brand.strip()
+        text = (req_text or "").strip()
+        previous = self.get(company, brand)
+        existed = brand in self.list_known_brands(company)
         now = datetime.utcnow().isoformat()
         with self._conn() as conn:
             conn.execute(
@@ -143,8 +152,26 @@ class BoatSampleStore(BaseSQLiteStore):
                    ON CONFLICT(company, brand) DO UPDATE SET
                        req_text   = excluded.req_text,
                        updated_at = excluded.updated_at""",
-                (company.strip(), brand.strip(), (req_text or "").strip(), now),
+                (company, brand, text, now),
             )
+        if previous != text:
+            self._audit(company, brand, previous, text, existed)
+
+    @staticmethod
+    def _audit(company: str, brand: str, old: str, new: str,
+               existed: bool) -> None:
+        """Record a 船样要求 change. Never raises -- see ChangeLogStore."""
+        try:
+            from . import get_change_log_store
+            from .change_log_store import (
+                ACTION_CREATE, ACTION_UPDATE, ENTITY_BOAT_SAMPLE,
+            )
+            get_change_log_store().record(
+                ENTITY_BOAT_SAMPLE, f"{company} / {brand}",
+                ACTION_UPDATE if existed else ACTION_CREATE,
+                field="req_text", old=old, new=new)
+        except Exception:
+            pass
 
     def brands_missing_requirement(self, company: str,
                                    brands: list[str]) -> list[str]:
@@ -176,9 +203,20 @@ class BoatSampleStore(BaseSQLiteStore):
 
     def delete(self, company: str, brand: str) -> int:
         """Delete record for (company, brand). Returns the number of rows deleted."""
+        company, brand = company.strip(), brand.strip()
+        previous = self.get(company, brand)
         with self._conn() as conn:
             cur = conn.execute(
                 "DELETE FROM boat_sample_req WHERE company=? AND brand=?",
-                (company.strip(), brand.strip()),
+                (company, brand),
             )
+        if cur.rowcount:
+            try:
+                from . import get_change_log_store
+                from .change_log_store import ACTION_DELETE, ENTITY_BOAT_SAMPLE
+                get_change_log_store().record(
+                    ENTITY_BOAT_SAMPLE, f"{company} / {brand}", ACTION_DELETE,
+                    field="req_text", old=previous, new="")
+            except Exception:
+                pass
         return cur.rowcount

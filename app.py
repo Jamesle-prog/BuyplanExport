@@ -16,7 +16,7 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
 
 import streamlit as st
 
-APP_VERSION = "2.137.2"
+APP_VERSION = "2.138.0"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -567,13 +567,56 @@ def _client_ip() -> str:
         return ""
 
 
-def _record_login(username: str, outcome: str, detail: str = "") -> None:
+def _record_login(username: str, outcome: str, detail: str = "",
+                  session_id: str = "") -> None:
     """Append a sign-in event to the audit log. Lazy-imported and fully
     guarded so it never delays the login page or blocks a real sign-in."""
     try:
         from po_extractor.store import get_login_log_store
         get_login_log_store().record(
-            username, outcome, detail=detail, ip=_client_ip())
+            username, outcome, detail=detail, ip=_client_ip(),
+            session_id=session_id)
+    except Exception:
+        pass
+
+
+# How often a session's last_seen is refreshed. Every rerun would be one
+# UPDATE per widget interaction on a WAL database shared with the app's real
+# work; a minute is far finer than the question ("how long was someone in?")
+# needs, and bounds the error on an abandoned browser to ~1 minute.
+_TOUCH_INTERVAL_S = 60
+
+
+def _touch_session() -> None:
+    """Refresh this session's last_seen, at most once per _TOUCH_INTERVAL_S.
+
+    Most people never click Sign Out, so this heartbeat -- not the sign-out
+    handler -- is what makes session duration answerable at all.
+    """
+    try:
+        import time as _time
+        sid = st.session_state.get(SK.SESSION_ID)
+        if not sid:
+            return
+        now = _time.monotonic()
+        last = st.session_state.get(SK.LAST_TOUCH) or 0
+        if now - last < _TOUCH_INTERVAL_S:
+            return
+        st.session_state[SK.LAST_TOUCH] = now
+        from po_extractor.store import get_login_log_store
+        get_login_log_store().touch(sid)
+    except Exception:
+        pass
+
+
+def _end_session(kind: str = "signout") -> None:
+    """Close this session in the audit log. Never raises."""
+    try:
+        sid = st.session_state.get(SK.SESSION_ID)
+        if not sid:
+            return
+        from po_extractor.store import get_login_log_store
+        get_login_log_store().end_session(sid, kind)
     except Exception:
         pass
 
@@ -620,7 +663,10 @@ def show_login():
                 st.error(f"{t('Too many failed attempts. Try again in')} {wait} s.")
             elif verify_password(username, password):
                 _login_succeeded(uname_key)
-                _record_login(username, "success")
+                import uuid as _uuid
+                _sid = _uuid.uuid4().hex
+                _record_login(username, "success", session_id=_sid)
+                st.session_state[SK.SESSION_ID] = _sid
                 st.session_state[SK.LOGGED_IN] = True
                 st.session_state[SK.USERNAME] = username
                 st.session_state[SK.RESULTS] = None
@@ -679,6 +725,9 @@ def show_main():
             _show_change_password_sidebar()
         st.divider()
         if st.button(t("Sign Out"), width="stretch"):
+            # Close the audit session first -- the loop below clears
+            # SK.SESSION_ID, and after that the session can never be closed.
+            _end_session("signout")
             for k, v in [
                 (SK.LOGGED_IN,        False),
                 (SK.USERNAME,         None),
@@ -904,6 +953,10 @@ def _show_admin_panel():
         from ui.admin_login_log import show_login_log_admin
         show_login_log_admin()
 
+    def _admin_change_log():
+        from ui.admin_change_log import show_change_log_admin
+        show_change_log_admin()
+
     # Same story as the main nav: st.tabs ran all twelve of these panels on
     # every admin render — including the translations editor (1,500+ rows) and
     # the fabric/user tables. Only the chosen panel runs now.
@@ -919,6 +972,7 @@ def _show_admin_panel():
         (f"📧 {t('Email')}",           _admin_smtp),
         (f"🌐 {t('Translations')}",    _admin_i18n),
         (f"🔐 {t('Login Log')}",       _admin_login_log),
+        (f"📝 {t('Change Log')}",      _admin_change_log),
         (f"⚙️ {t('Settings')}",        _admin_settings),
     ]
     _labels = [lbl for lbl, _ in _panels]
@@ -1057,6 +1111,16 @@ def _show_changelog_tab() -> None:
 # Router
 # ---------------------------------------------------------------------------
 if st.session_state[SK.LOGGED_IN]:
+    # Tell the stores who is acting, once per run, BEFORE any tab can write.
+    # Thread-local (see po_extractor.store.audit_context) and re-stamped every
+    # run, so a thread reused for another session can never carry a stale user
+    # into someone else's change-log rows.
+    try:
+        from po_extractor.store.audit_context import set_current_user
+        set_current_user(st.session_state.get(SK.USERNAME))
+    except Exception:
+        pass
+    _touch_session()
     show_main()
 else:
     show_login()

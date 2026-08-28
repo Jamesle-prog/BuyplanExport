@@ -45,6 +45,7 @@ from po_extractor.store import (
     get_fabric_master_store as _get_fabric_master_store,
     get_color_translation_store as _get_color_translation_store,
     get_boat_sample_store as _get_boat_sample_store,
+    get_change_log_store as _get_change_log_store,
     get_ui_translation_store as _get_ui_translation_store,
     get_app_settings_store as _get_app_settings_store,
     get_production_tracking_store as _get_production_tracking_store,
@@ -110,6 +111,11 @@ def get_color_translation_store() -> ColorTranslationStore:
     reloads, leaving its ``__class__`` pointing at the pre-reload class).
     """
     return _get_color_translation_store()
+
+
+def get_change_log_store():
+    """Return a ChangeLogStore (not cached — append-only, cheap to build)."""
+    return _get_change_log_store()
 
 
 def get_boat_sample_store() -> BoatSampleStore:
