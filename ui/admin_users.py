@@ -20,7 +20,6 @@ def _known_brands() -> list[str]:
     on file, so the list covers brands auto-registered by a Sky East upload as
     well as those with a requirement already written."""
     try:
-        from auth.companies import list_company_names
         from ui.stores import list_all_brands
         seen: set[str] = set()
         for co in (list_company_names(active_only=True) or []):

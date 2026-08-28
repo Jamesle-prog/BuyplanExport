@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.137.2",
+        "date": "2026-08-28",
+        "entries": [
+            {"type": "refactor", "text": "**The fault behind yesterday's upload crash is now impossible to repeat anywhere in the app.** The automated check added with that fix only watched the one name that happened to break; it now catches the same mistake for any name. Seventeen dormant copies of the pattern were found sitting in the code — none causing trouble yet, each one edit away from the same failure — and all seventeen have been removed."},
+            {"type": "refactor", "text": "**The Sky East upload now runs end to end in the test suite.** Nothing had ever executed it: the tests covered the pieces on either side and never the wiring between them, which is exactly where the crash lived and why 1,672 passing tests missed it. Parsing, validation, saving, new-brand detection and the corrupt-file path are now exercised for real, so a break there fails a test instead of an upload."},
+        ],
+    },
+    {
         "version": "2.137.1",
         "date": "2026-08-27",
         "entries": [

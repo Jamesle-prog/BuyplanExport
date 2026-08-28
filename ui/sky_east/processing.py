@@ -406,7 +406,9 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             st.write(t("Saving to database..."))
             store   = get_sky_east_store()
             results = store.save_many_contracts_checked(contracts, mode=save_mode)
-            from ui.sky_east._missing_compute import _compute_se_missing_df
+            # _compute_se_missing_df comes from the module-level import
+            # (line 21). history stays local: at module scope it would
+            # make a processing <-> history import cycle.
             from ui.sky_east.history import _se_buyplan_fabric_preflight
             _compute_se_missing_df.clear()
             _se_buyplan_fabric_preflight.clear()
@@ -529,7 +531,7 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
         # of a not-yet-bound local, raising UnboundLocalError the moment a
         # brand-new brand showed up in an upload -- exactly what a first-time
         # user hit. Never locally re-import a name this file already has at
-        # module scope; see test_no_function_shadows_the_module_level_t.
+        # module scope; see test_no_function_import_shadows_a_module_level_import.
         log.append(f"❌ {html.escape(str(exc))}")
         # Mirror the success path's exact keys (se_log / se_results) so the
         # results view reads this failure state, not a stale prior batch.

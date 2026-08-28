@@ -1113,7 +1113,6 @@ def _exfty_anchor_map() -> dict:
         pass
 
     try:                                    # GIII — factory ship / export date
-        from ui.stores import get_store
         import sqlite3 as _sq
         conn = _sq.connect(get_store().db_path)
         conn.row_factory = _sq.Row
@@ -2008,7 +2007,6 @@ def _render_buyplan_tracking_import(bp: dict, records, username,
     only) and gated by ``scope`` for everyone else.
     """
     from ui.stores import get_sky_east_store
-    from po_extractor.store._factory_progress_schema import MILESTONE_LABELS
 
     if scope.factory_mode:
         st.info(t("Returned buy plans set planned dates, which factory logins "
@@ -2096,7 +2094,6 @@ def _render_factory_updates_tab(records, username, admin_mode,
     from ui.stores import get_factory_progress_store
     from po_extractor.store._factory_progress_schema import (
         REPORT_STAGES, REPORT_STAGE_LABELS,
-        MILESTONE_STAGES, MILESTONE_LABELS,
     )
     from po_extractor.exporters.factory_progress_form import (
         build_progress_request_xlsx, parse_progress_report_xlsx,

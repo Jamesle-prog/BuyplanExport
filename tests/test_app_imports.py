@@ -96,56 +96,98 @@ def test_no_module_calls_t_without_binding_it():
     assert not offenders, f"modules call t() without importing t: {offenders}"
 
 
-def test_no_function_shadows_the_module_level_t():
-    """Guard against the sibling of the check above: a function-local `from
-    ui.i18n import t` inside a file that ALREADY imports t at module level.
+def _import_bound_names(node) -> set:
+    """The names one import statement binds in its scope.
+
+    ``import a.b`` binds "a"; ``import a.b as c`` binds "c";
+    ``from m import x`` binds "x"; ``from m import x as y`` binds "y".
+    ``from __future__ import ...`` and ``from m import *`` bind nothing we
+    track.
+    """
+    out: set = set()
+    if isinstance(node, ast.Import):
+        for a in node.names:
+            out.add(a.asname or a.name.split(".")[0])
+    elif isinstance(node, ast.ImportFrom) and node.module != "__future__":
+        for a in node.names:
+            if a.name != "*":
+                out.add(a.asname or a.name)
+    return out
+
+
+def test_no_function_import_shadows_a_module_level_import():
+    """A function-local import must never re-bind a name the file already
+    imports at module level -- for ANY name, not just one.
 
     Assigning (or importing) a name ANYWHERE in a function body makes Python
-    treat it as local for the WHOLE function -- so a redundant local `t`
-    import doesn't just do nothing extra, it turns every t(...) call
-    elsewhere in that same function into a read of a not-yet-bound local.
-    That bit ui/sky_east/processing.py: t was already imported at the top of
-    the file, but one function ALSO re-imported it locally inside its except
-    block, and the very first real upload that hit a brand-new brand crashed
-    with "cannot access local variable 't'" the moment it tried to log that
-    finding -- a message that only that specific upload shape reaches, so
-    nothing before it had exercised the broken line.
+    treat it as local for the WHOLE function, so a redundant local import
+    doesn't just do nothing extra: it turns every earlier read of that name
+    in the same function into a read of a not-yet-bound local, raising
+    UnboundLocalError at runtime on whatever path reaches it first.
 
-    Deliberately does not try to prove a specific local import is safe by
-    checking whether it comes before or after each t() call in that function
-    -- control flow (if/else, try/except) makes that unreliable to determine
-    statically. If a name is already available at module scope, re-importing
-    it locally is never needed and is banned outright here, which is also
-    simply the fix: delete the redundant import.
+    This is exactly how v2.132.0..v2.137.0 shipped with every Sky East
+    upload broken: ui/sky_east/processing.py's outer except block carried a
+    local `from ui.i18n import t` that was CORRECT when written (the file
+    had no module-level t then, v2.103.0) -- until the v2.132.0 i18n sweep
+    added the module-level import and t(...) calls to the same function,
+    leaving the old local import behind. The first t() read then crashed
+    every run. The guard that existed at the time checked only "is t bound
+    anywhere in the file", which the buggy local import satisfied; the first
+    replacement guard was hardcoded to the name `t` and missed 17 more
+    latent sites with the identical shape. Hence this general form.
 
-    A file with NO module-level t import is unaffected (see ui/memory.py,
-    which has no top-level import and legitimately imports t once, first
-    thing, inside the one function that uses it).
+    Deliberately does not try to prove a specific local import safe by
+    checking whether it comes textually before or after each read --
+    control flow (if/else, try/except: exactly the shape that hid the bug)
+    makes that unreliable to determine statically. The rule is outright:
+
+    - same source module as the module-level import -> DELETE the local
+      import (the module-level binding is the identical object);
+    - different source -> RENAME it (``from x import y as _y``) so no
+      collision exists.
+
+    Scope details, each load-bearing:
+    - the module-level set is built from imports DIRECTLY in tree.body, so
+      module-scope try/except import fallbacks (po_extractor/utils/
+      image_extractor.py's defusedxml dance) and `if TYPE_CHECKING:` blocks
+      are not counted as module bindings -- a runtime-absent TYPE_CHECKING
+      name may legitimately be imported locally;
+    - offenders are imports at ANY depth inside a function, including its
+      own try/except/if -- again, the shape that hid the original bug;
+    - matching is asname-or-name on BOTH sides, so `from m import x as y`
+      colliding with a module-level `y` is caught too;
+    - a file with no module-level import of the name is unaffected (see
+      ui/memory.py: no top-level t import, so its local one is the
+      legitimate sole source).
     """
     import glob
     offenders = []
     for path in (glob.glob(os.path.join(_ROOT, "ui", "**", "*.py"), recursive=True)
                  + glob.glob(os.path.join(_ROOT, "po_extractor", "**", "*.py"), recursive=True)):
-        with open(path, encoding="utf-8-sig") as fh:
+        with open(path, encoding="utf-8-sig") as fh:   # 13 files carry a BOM
             tree = ast.parse(fh.read())
-        module_level_t = any(
-            isinstance(n, ast.ImportFrom)
-            and any((a.asname or a.name) == "t" for a in n.names)
-            for n in tree.body                      # top level only
-        )
-        if not module_level_t:
+        module_names: set = set()
+        for n in tree.body:                     # DIRECT top-level statements only
+            module_names |= _import_bound_names(n)
+        if not module_names:
             continue
-        top_level_imports = {id(n) for n in tree.body}
-        local_bare_t_import = any(
-            isinstance(n, ast.ImportFrom) and id(n) not in top_level_imports
-            and any(a.name == "t" and a.asname is None for a in n.names)
-            for n in ast.walk(tree)
-        )
-        if local_bare_t_import:
-            offenders.append(os.path.relpath(path, _ROOT))
+        rel = os.path.relpath(path, _ROOT)
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for n in ast.walk(fn):
+                if isinstance(n, (ast.Import, ast.ImportFrom)):
+                    clash = _import_bound_names(n) & module_names
+                    if clash:
+                        offenders.append(f"{rel}:{n.lineno} re-binds {sorted(clash)}")
     assert not offenders, (
-        f"modules re-import t() locally despite already having it at module "
-        f"scope -- delete the redundant local import: {offenders}")
+        "function-local imports shadow a module-level import -- importing a "
+        "name ANYWHERE in a function makes it local to the WHOLE function, "
+        "so every earlier read of it in that function raises "
+        "UnboundLocalError.\n"
+        "Same source as the module-level import: DELETE the local import.\n"
+        "Different source: RENAME it (from x import y as _y):\n  "
+        + "\n  ".join(sorted(set(offenders))))
 
 
 # ── Cold-import guard for circular imports ──────────────────────────────────

@@ -317,7 +317,6 @@ def _apply_compact_layout(ws, *, last_row: int) -> None:
       • column widths: A–I and P–R = 20, J–O = 6
       • row heights for rows 1..last_row+1 = 20 pt
     """
-    from openpyxl.styles import Font
 
     # Font size = 10 on every cell with a value or an explicit style.
     # Reuse shared Font instances keyed by attributes — same pattern as

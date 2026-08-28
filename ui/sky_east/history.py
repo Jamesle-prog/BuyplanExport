@@ -1,4 +1,4 @@
-﻿"""Sky East history section — contract browser, downloads, buy plan generation."""
+"""Sky East history section — contract browser, downloads, buy plan generation."""
 from __future__ import annotations
 import io
 import os
@@ -847,7 +847,7 @@ def _se_buyplan_boat_sample_preflight(pc_nos: tuple[str, ...]) -> list[str]:
     compulsory field. Cached on the same terms as the fabric preflight.
     """
     from auth.companies import COMPANY_SKY_EAST as _CO
-    from ui.stores import get_sky_east_store, get_boat_sample_store
+    from ui.stores import get_boat_sample_store
     items = get_sky_east_store().list_items(pc_nos=list(pc_nos))
     if "brand" not in items.columns:
         return []
@@ -872,7 +872,7 @@ def _se_buyplan_fabric_preflight(pc_nos: tuple[str, ...]) -> tuple[int, list[str
     informational banner, not an editable form), so a brief staleness window
     is an acceptable trade for not re-querying on every unrelated interaction.
     """
-    from ui.stores import get_sky_east_store, get_store as _get_po_store
+    from ui.stores import get_store as _get_po_store
     sel_items = get_sky_east_store().list_items(pc_nos=list(pc_nos))
     if "style" not in sel_items.columns:
         return 0, []
@@ -1636,7 +1636,6 @@ def _se_photo_issue_log_section() -> None:
     The table is REPLACED on every generation, so fixing a photo makes its
     row disappear on the next run — no manual clearing needed (the Clear
     button just empties it early)."""
-    from ui.stores import get_sky_east_store
 
     store = get_sky_east_store()
     issues = store.list_photo_issues()
@@ -1691,7 +1690,6 @@ def _se_color_miss_log_section(misses_df=None) -> None:
     ``misses_df`` — already-deduped log from the caller (avoids re-querying
     the store on the same rerun); ``None`` fetches it here.
     """
-    from ui.stores import get_sky_east_store
 
     store = get_sky_east_store()
     if misses_df is None:

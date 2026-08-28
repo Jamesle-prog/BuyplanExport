@@ -62,7 +62,6 @@ def _s(val) -> str:
     if val is None:
         return ""
     if isinstance(val, float):
-        import math
         if math.isnan(val):
             return ""
     return str(val).strip()

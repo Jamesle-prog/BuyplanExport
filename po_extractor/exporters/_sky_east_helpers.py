@@ -781,7 +781,6 @@ def _create_index_sheet(wb, df_items, total_anchor: str = "Q5",
                        per fabric part).
     """
     import io as _io
-    from openpyxl.styles import Alignment, Font, PatternFill
 
     idx_ws = wb.create_sheet("Index", 0)
 

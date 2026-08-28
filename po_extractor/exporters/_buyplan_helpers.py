@@ -407,7 +407,6 @@ def _set_col_widths(
     * Existing column widths from a copied template are used as a *floor*
       so the template designer's intent is always respected.
     """
-    from openpyxl.utils import get_column_letter
 
     def _vis_len(text: str) -> int:
         """Visual width in Excel character units.

@@ -763,7 +763,6 @@ def _run_smart_processing_body(detections, saved_paths: dict[str, str],
                                fabric_version_id: int | None = None) -> None:
     from ui.shared import (
         load_photo_map_from_dir as _load_photo_map_from_dir,
-        images_dir as _get_images_dir,
     )
     log: list[str] = []
 
