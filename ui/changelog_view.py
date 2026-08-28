@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.140.0",
+        "date": "2026-08-28",
+        "entries": [
+            {"type": "chore", "text": "**Every one of the app's software libraries is now on its latest version.** Forty-one were updated, including the framework the whole interface is built on and the components that read PDFs and write spreadsheets. Two others are held one version back by the framework itself and will follow when it allows them. Nothing about how the app works has changed — this is the plumbing underneath."},
+            {"type": "chore", "text": "**The AI library made a major jump and everything still fits.** The connection to the AI service moved up a whole major version, which usually means changes to how it is called. Every call the app makes was checked against the new version before and after the update; all of them still work unchanged, and the full test suite passes."},
+            {"type": "fix", "text": "**The server log no longer fills with a harmless accessibility warning.** The new framework version asks every section switcher to carry a name for screen readers. One shared switcher had none, and it is used several times on every screen, so the warning repeated constantly and buried anything worth reading. It now has a name."},
+        ],
+    },
+    {
         "version": "2.139.0",
         "date": "2026-08-28",
         "entries": [

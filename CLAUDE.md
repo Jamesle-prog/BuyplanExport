@@ -39,7 +39,7 @@
   (the default `python` on PATH is 3.14 and does **not** have the app's deps — always use the 3.13 path above).
 - **Start server:** `streamlit run app.py --server.headless true > streamlit_run.log 2>&1` (background)
 - **Server health check:** `curl http://localhost:8501/_stcore/health`
-- **Rollback snapshot:** `requirements.lock` (78 packages, exact versions as of 2026-06-18).
+- **Rollback snapshot:** `requirements.lock` (93 packages, exact versions as of 2026-08-28).
   Roll back with `python -m pip install -r requirements.lock`.
 - **Deep architecture reference:** `IMPLEMENTATION_GUIDE.md` (data models, PDF/Excel pipelines, exporters, column mapping). Read it before large changes; don't duplicate it here.
 - **Building a distributable install pack** (to set the app up on a different PC): `installer/Build-DistPackage.bat` (dev machine only) — exports the tracked tree via `git archive`, flattens `installer/*` up to the pack root (`Install.ps1`/`Update.ps1`/`Uninstall.ps1` all assume they're siblings of `app.py`/`requirements.lock`, not nested a folder down), and zips the result into `dist/` (gitignored). The target PC just needs internet access to run the resulting `Install.bat`.

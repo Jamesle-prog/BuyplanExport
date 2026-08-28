@@ -243,13 +243,18 @@ def lazy_sections(sections: list[tuple], key: str) -> None:
     Labels are translated and the language toggle changes them, so a stored
     value that is no longer an option is dropped rather than allowed to raise.
     """
+    from ui.i18n import t as _t
+
     labels = [lbl for lbl, _ in sections]
     if not labels:
         return
     if st.session_state.get(key) not in labels:
         st.session_state[key] = labels[0]
+    # A real label even though it is collapsed: Streamlit 1.62 warns on an
+    # empty one (it is what a screen reader announces), and this helper is
+    # called several times per render, so the log filled up with the warning.
     active = st.segmented_control(
-        "", labels, key=key, label_visibility="collapsed")
+        _t("Section"), labels, key=key, label_visibility="collapsed")
     if active not in labels:            # deselected — keep showing something
         active = st.session_state[key]
     sections[labels.index(active)][1]()
