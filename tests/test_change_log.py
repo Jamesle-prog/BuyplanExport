@@ -230,3 +230,24 @@ def test_an_account_role_change_is_recorded(tmp_path, monkeypatch):
     assert row["record_key"] == "bob"          # to whom
     assert row["field"] == "role"
     assert row["old_value"] == "user" and row["new_value"] == "admin"
+
+
+def test_the_suite_can_never_write_to_the_live_change_log():
+    """Pins the conftest firewall.
+
+    The audit hooks record from inside ordinary store methods, so any test
+    that exercises a canonical store also exercises them. Twice now that has
+    filed real rows into data/po_history.db — 53, then 7 more. Nothing in the
+    suite may resolve the live change log; conftest redirects the canonical
+    path to a scratch DB, and this fails if that goes away.
+    """
+    import po_extractor.store as store_pkg
+    from po_extractor.config import DB_PATH
+    from po_extractor.store.change_log_store import ChangeLogStore
+
+    assert store_pkg.get_change_log_store().db_path != DB_PATH, (
+        "the change-log firewall in tests/conftest.py is not in effect — "
+        "running the suite would write audit rows into the live database"
+    )
+    # ...and constructing one on the live path directly is redirected too.
+    assert ChangeLogStore(DB_PATH).db_path != DB_PATH

@@ -23,6 +23,7 @@ _ALL = "__all__"
 _ENTITY_LABELS = {
     "boat_sample_req": "🚢 船样要求",
     "sky_east_item":   "🛍 Sky East item",
+    "sky_east_contract": "📄 Sky East contract",
     "user":            "👤 User account",
 }
 

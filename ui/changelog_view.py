@@ -10,6 +10,16 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.139.0",
+        "date": "2026-08-28",
+        "entries": [
+            {"type": "feat", "text": "**The Change Log now covers Sky East contracts.** Every upload is recorded with the person who ran it and what it did — how many lines were written, updated, left alone, removed, or held for confirmation. Where an upload overwrote something, the log names the field and shows the value before and after, so a quantity that changed between revisions can be traced to a file and a person."},
+            {"type": "feat", "text": "**整份合同替换 now names every line it removed.** A replace is the one upload that can take work away, and each removed line gets its own entry saying who ran it — the items are still in the archive, and now there is a record pointing at them. Deleting a contract outright, which also clears its archive, is recorded per contract number."},
+            {"type": "feat", "text": "**Hand edits and Return Label confirmations are recorded too.** Patching a fabric item number or a contract number logs only the field that actually moved, with its old value; confirming a Return Label change records who confirmed it and what it replaced. That decision was already deliberately held back for a person to make — now it is clear which person made it."},
+            {"type": "fix", "text": "**Test runs no longer leave entries in the real Change Log.** The automated suite was filing its own sample edits into the live record — sixty of them — because the audit followed the app's main database rather than the temporary one each test was given. Records now follow the database they belong to, the suite is walled off from the live one, and a check fails if that wall is ever removed. The stray entries have been cleared, so the log starts clean."},
+        ],
+    },
+    {
         "version": "2.138.0",
         "date": "2026-08-28",
         "entries": [

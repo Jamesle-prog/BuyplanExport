@@ -40,6 +40,19 @@ def colour_key(value: str | None) -> str:
     return " ".join(_COLOUR_NOISE.sub(" ", (value or "").casefold()).split())
 
 
+def _item_key(pc_no, style, color_name, zalando_po) -> str:
+    """One item's identity as a single readable string, for the change log.
+
+    The change log stores one text key per record rather than a foreign key:
+    it outlives the row it describes (an item removed by a replace still has
+    to be findable), and an admin filtering the log types a style or a PC No.,
+    not an id.
+    """
+    return " · ".join(
+        str(part or "").strip()
+        for part in (pc_no, style, color_name, zalando_po))
+
+
 class SkyEastStore(BaseSQLiteStore):
     # Class-level set of db_paths that have already been schema-checked in
     # this process (same pattern as ProductionTrackingStore._checked_paths).
@@ -435,6 +448,91 @@ class SkyEastStore(BaseSQLiteStore):
         except Exception:
             return None
 
+
+    # ── Change log ──────────────────────────────────────────────────────────
+    # Hooks live in the store, not the UI: every caller is covered by
+    # construction, and a new call site cannot forget to log. The acting user
+    # comes from po_extractor.store.audit_context, so nothing has to be
+    # threaded through. Every hook swallows its own errors -- an audit hiccup
+    # must never fail the save it describes.
+
+    def _log(self, rows: list) -> None:
+        """Append change-log rows to *this store's* DB. Never raises.
+
+        Its own database, not the canonical one: in the app they are the same
+        file, but a store pointed at a scratch path must not write its audit
+        trail into the live one.
+        """
+        if not rows:
+            return
+        try:
+            from .change_log_store import ChangeLogStore
+            ChangeLogStore(self.db_path).record_many(rows)
+        except Exception:
+            pass
+
+    def _audit_save(self, result: dict) -> None:
+        """Record one contract upload.
+
+        One summary row for the contract, then one row per *changed field* of
+        an item the upload overwrote, and one per item a replace removed.
+
+        Deliberately NOT one row per added item. A first upload carries every
+        line of the contract, and a log that restates the contract is a log
+        nobody reads -- the contract itself already says what it contains.
+        What it cannot say is what was overwritten and what was taken away,
+        and those are exactly the rows kept here.
+        """
+        try:
+            from .change_log_store import (
+                ACTION_DELETE, ACTION_UPDATE, ENTITY_SKY_EAST_CONTRACT,
+                ENTITY_SKY_EAST_ITEM,
+            )
+            pc_no = result.get("pc_no", "")
+            mode = result.get("mode", "merge")
+            added = result.get("new_items") or []
+            updated = result.get("updated_items") or []
+            duplicate = result.get("duplicate_items") or []
+            removed = result.get("removed_items") or []
+            pending = result.get("pending_return_label") or []
+
+            rows = [{
+                "entity": ENTITY_SKY_EAST_CONTRACT,
+                "record_key": pc_no,
+                "action": ACTION_UPDATE,
+                "field": mode,
+                "detail": (f"{len(added)} written, {len(updated)} updated, "
+                           f"{len(duplicate)} unchanged, {len(removed)} removed, "
+                           f"{len(pending)} awaiting confirmation"),
+            }]
+
+            # updated_items entries are
+            # (style, colour, po, old_sizes, new_sizes, changed) -- `changed`
+            # maps field -> (old, new), which is already the log's shape.
+            for entry in updated:
+                style, colour, po = entry[0], entry[1], entry[2]
+                changed = entry[5] if len(entry) > 5 else {}
+                key = _item_key(pc_no, style, colour, po)
+                for field, pair in (changed or {}).items():
+                    old, new = pair if (isinstance(pair, tuple)
+                                        and len(pair) == 2) else ("", pair)
+                    rows.append({
+                        "entity": ENTITY_SKY_EAST_ITEM, "record_key": key,
+                        "action": ACTION_UPDATE, "field": field,
+                        "old": old, "new": new,
+                    })
+
+            for style, colour, po in removed:
+                rows.append({
+                    "entity": ENTITY_SKY_EAST_ITEM,
+                    "record_key": _item_key(pc_no, style, colour, po),
+                    "action": ACTION_DELETE,
+                    "detail": "removed by 整份合同替换 — archived, recoverable",
+                })
+            self._log(rows)
+        except Exception:
+            pass
+
     def replace_contract(self, contract: SkyEastContract) -> dict:
         """Make the DB match *contract* exactly: every item currently on file
         for this PC No. that the contract no longer lists is archived and
@@ -508,6 +606,7 @@ class SkyEastStore(BaseSQLiteStore):
                 for k, group in keep.items()
                 for r in (group if k not in written else group[:-1])
             ]
+        self._audit_save(result)
         return result
 
     def save_contract_checked(self, contract: SkyEastContract) -> dict:
@@ -667,6 +766,7 @@ class SkyEastStore(BaseSQLiteStore):
                         "SELECT * FROM sky_east_items WHERE id=?", (existing["id"],),
                     ).fetchone())
 
+        self._audit_save(result)
         return result
 
     def apply_pending_item(self, item: SkyEastItem) -> str:
@@ -691,13 +791,29 @@ class SkyEastStore(BaseSQLiteStore):
                 (item.pc_no, item.style, colour_key(item.color_name),
                  item.zalando_po),
             ).fetchone()
+            key = _item_key(item.pc_no, item.style, item.color_name,
+                            item.zalando_po)
             if existing is None:
                 self._insert_item(conn, item, revision_reason=None)
-                return "inserted"
-            self._archive_item(conn, dict(existing))
-            self._update_item(conn, item, revision_reason="updated (return label confirmed)",
-                              row_id=existing["id"])
-            return "updated"
+                outcome = "inserted"
+                old_label = ""
+            else:
+                old_label = dict(existing).get("return_label") or ""
+                self._archive_item(conn, dict(existing))
+                self._update_item(conn, item, revision_reason="updated (return label confirmed)",
+                                  row_id=existing["id"])
+                outcome = "updated"
+        # A Return Label change is a business decision someone made on purpose
+        # -- save_contract_checked refuses to apply one on its own. Who
+        # confirmed it, and what it was before, is the whole point of asking.
+        self._log([{
+            "entity": "sky_east_item", "record_key": key,
+            "action": "create" if outcome == "inserted" else "update",
+            "field": "return_label", "old": old_label,
+            "new": item.return_label,
+            "detail": "return label change confirmed by user",
+        }])
+        return outcome
 
     def save_many_contracts_checked(self, contracts: list,
                                     mode: str = "merge") -> list:
@@ -832,15 +948,36 @@ class SkyEastStore(BaseSQLiteStore):
     def update_item_fields(self, pc_no: str, style: str, color_name: str,
                            zalando_po: str, fabric_item_no: str, contract_no: str) -> bool:
         """Update fabric_item_no and contract_no for one item. Returns True if row was found."""
+        fabric_item_no, contract_no = fabric_item_no.strip(), contract_no.strip()
+        ident = (pc_no, style, color_name, zalando_po)
         with self._conn() as conn:
+            # Read first so the log can say what it was. One indexed seek on a
+            # hand-edit path, against losing the only record of the old value.
+            prior = conn.execute(
+                "SELECT fabric_item_no, contract_no FROM sky_east_items "
+                "WHERE pc_no=? AND style=? AND color_name=? AND zalando_po=?",
+                ident).fetchone()
             cur = conn.execute(
                 """UPDATE sky_east_items
                    SET fabric_item_no = ?, contract_no = ?
                    WHERE pc_no=? AND style=? AND color_name=? AND zalando_po=?""",
-                (fabric_item_no.strip(), contract_no.strip(),
-                 pc_no, style, color_name, zalando_po),
+                (fabric_item_no, contract_no, *ident),
             )
+        if cur.rowcount:
+            self._audit_fields(ident, dict(prior) if prior else {},
+                               {"fabric_item_no": fabric_item_no,
+                                "contract_no": contract_no})
         return cur.rowcount > 0
+
+    def _audit_fields(self, ident: tuple, prior: dict, new: dict) -> None:
+        """Log the fields that actually changed on a hand edit. Never raises."""
+        self._log([
+            {"entity": "sky_east_item", "record_key": _item_key(*ident),
+             "action": "update", "field": field,
+             "old": prior.get(field) or "", "new": value}
+            for field, value in new.items()
+            if (prior.get(field) or "") != (value or "")
+        ])
 
     def update_contract_no(self, pc_no: str, style: str, color_name: str,
                            zalando_po: str, contract_no: str) -> bool:
@@ -850,13 +987,22 @@ class SkyEastStore(BaseSQLiteStore):
         with an empty fabric_item_no, which clobbered any value already in the
         DB.  This dedicated method only touches the contract_no column.
         """
+        contract_no = contract_no.strip()
+        ident = (pc_no, style, color_name, zalando_po)
         with self._conn() as conn:
+            prior = conn.execute(
+                "SELECT contract_no FROM sky_east_items "
+                "WHERE pc_no=? AND style=? AND color_name=? AND zalando_po=?",
+                ident).fetchone()
             cur = conn.execute(
                 """UPDATE sky_east_items
                    SET contract_no = ?
                    WHERE pc_no=? AND style=? AND color_name=? AND zalando_po=?""",
-                (contract_no.strip(), pc_no, style, color_name, zalando_po),
+                (contract_no, *ident),
             )
+        if cur.rowcount:
+            self._audit_fields(ident, dict(prior) if prior else {},
+                               {"contract_no": contract_no})
         return cur.rowcount > 0
 
     def list_item_history(self, pc_no: str, style: str | None = None) -> pd.DataFrame:
@@ -891,6 +1037,13 @@ class SkyEastStore(BaseSQLiteStore):
             conn.execute(
                 f"DELETE FROM sky_east_item_history WHERE pc_no IN ({ph})", pc_nos
             )
+        # The one write in this store nothing can undo: the archive goes too.
+        # One row per PC No., named, so a contract that vanished can at least
+        # be traced to a person and a time.
+        self._log([{"entity": "sky_east_contract", "record_key": pc,
+                    "action": "delete",
+                    "detail": "contract, items and archive deleted"}
+                   for pc in pc_nos])
         return n
 
     def contract_count(self) -> int:

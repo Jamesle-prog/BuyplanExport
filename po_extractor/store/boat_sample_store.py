@@ -155,20 +155,27 @@ class BoatSampleStore(BaseSQLiteStore):
                 (company, brand, text, now),
             )
         if previous != text:
-            self._audit(company, brand, previous, text, existed)
+            from .change_log_store import ACTION_CREATE, ACTION_UPDATE
+            self._audit(company, brand, previous, text,
+                        ACTION_UPDATE if existed else ACTION_CREATE)
 
-    @staticmethod
-    def _audit(company: str, brand: str, old: str, new: str,
-               existed: bool) -> None:
-        """Record a 船样要求 change. Never raises -- see ChangeLogStore."""
+    def _audit(self, company: str, brand: str, old: str, new: str,
+               action: str | None = None) -> None:
+        """Record a 船样要求 change. Never raises -- see ChangeLogStore.
+
+        Writes to *this store's* database rather than the canonical one. In
+        the app they are the same file, but a store pointed somewhere else --
+        a test on a scratch path, a second deployment -- must not have its
+        audit trail land in a database it was told not to touch. (It did: a
+        test run wrote 53 rows into the live po_history.db before this.)
+        """
         try:
-            from . import get_change_log_store
             from .change_log_store import (
-                ACTION_CREATE, ACTION_UPDATE, ENTITY_BOAT_SAMPLE,
+                ACTION_UPDATE, ChangeLogStore, ENTITY_BOAT_SAMPLE,
             )
-            get_change_log_store().record(
+            ChangeLogStore(self.db_path).record(
                 ENTITY_BOAT_SAMPLE, f"{company} / {brand}",
-                ACTION_UPDATE if existed else ACTION_CREATE,
+                action or ACTION_UPDATE,
                 field="req_text", old=old, new=new)
         except Exception:
             pass
@@ -211,12 +218,6 @@ class BoatSampleStore(BaseSQLiteStore):
                 (company, brand),
             )
         if cur.rowcount:
-            try:
-                from . import get_change_log_store
-                from .change_log_store import ACTION_DELETE, ENTITY_BOAT_SAMPLE
-                get_change_log_store().record(
-                    ENTITY_BOAT_SAMPLE, f"{company} / {brand}", ACTION_DELETE,
-                    field="req_text", old=previous, new="")
-            except Exception:
-                pass
+            from .change_log_store import ACTION_DELETE
+            self._audit(company, brand, previous, "", ACTION_DELETE)
         return cur.rowcount
