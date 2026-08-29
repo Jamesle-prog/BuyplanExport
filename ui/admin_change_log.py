@@ -14,7 +14,7 @@ from __future__ import annotations
 import streamlit as st
 
 from ui.i18n import t
-from ui.shared import fragment_rerun, CSV_MIME, _th
+from ui.shared import fragment_rerun, CSV_MIME, csv_safe, _th
 from ui.stores import get_change_log_store
 
 _ALL = "__all__"
@@ -105,7 +105,7 @@ def show_change_log_admin() -> None:
 
     st.download_button(
         "⬇️ " + t("Download (.csv)"),
-        data=show.to_csv(index=False).encode("utf-8-sig"),
+        data=csv_safe(show).to_csv(index=False).encode("utf-8-sig"),
         file_name="change_log.csv", mime=CSV_MIME, key="cl_csv")
 
     # ── Maintenance ─────────────────────────────────────────────────────────

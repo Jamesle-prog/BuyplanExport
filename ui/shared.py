@@ -30,6 +30,24 @@ EXTRACTED_IMAGES_DIR = os.path.join(os.path.dirname(IMAGES_DIR_DEFAULT), "extrac
 # so the many `from ui.shared import XLSX_MIME` call sites keep working.
 from po_extractor.config import XLSX_MIME, ZIP_MIME, CSV_MIME, HTML_MIME  # noqa: F401
 
+
+# ---------------------------------------------------------------------------
+# CSV export hygiene
+# ---------------------------------------------------------------------------
+def csv_safe(df):
+    """Return a copy of *df* safe to write with ``.to_csv(...)`` for download.
+
+    Defuses spreadsheet-formula injection: a cell whose text starts with
+    ``= + - @`` (or tab/CR) is evaluated when Excel/LibreOffice opens the CSV,
+    so a payload carried in the data would run on whoever opens the file. This
+    is the CSV counterpart to the xlsx exporters' ``neutralise_foreign_formulas``.
+
+    Thin wrapper over the canonical backend helper so there is one implementation;
+    imported lazily to keep this module import-light and cycle-free.
+    """
+    from po_extractor.exporters._excel_helpers import neutralise_csv_frame
+    return neutralise_csv_frame(df)
+
 # File-type lists for st.file_uploader — single source of truth so changes
 # (e.g. allowing .xlsm in legacy uploaders) only need one edit.
 EXCEL_FILE_TYPES            = ["xlsx", "xls"]

@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.i18n import t
-from ui.shared import fragment_rerun, CSV_MIME
+from ui.shared import fragment_rerun, CSV_MIME, csv_safe
 from ui.stores import get_login_log_store
 from po_extractor.store.login_log_store import (
     OUTCOME_SUCCESS, OUTCOME_FAILED, OUTCOME_LOCKED,
@@ -73,7 +73,7 @@ def _show_sessions_view(store) -> None:
                  height=min(60 + 35 * len(df), 560))
     st.download_button(
         "⬇️ " + t("Download (.csv)"),
-        data=df.to_csv(index=False).encode("utf-8-sig"),
+        data=csv_safe(df).to_csv(index=False).encode("utf-8-sig"),
         file_name="login_sessions.csv", mime=CSV_MIME, key="ll_sess_csv")
 
 
@@ -151,7 +151,7 @@ def show_login_log_admin() -> None:
     with d1:
         st.download_button(
             "⬇️ " + t("Download (.csv)"),
-            data=df.to_csv(index=False).encode("utf-8-sig"),
+            data=csv_safe(df).to_csv(index=False).encode("utf-8-sig"),
             file_name="login_log.csv", mime=CSV_MIME,
             key="ll_csv", width="stretch",
         )

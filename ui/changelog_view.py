@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.140.1",
+        "date": "2026-08-28",
+        "entries": [
+            {"type": "security", "text": "**A downloaded spreadsheet can no longer carry a hidden command from whoever typed the data.** A value that begins with certain symbols is treated by Excel as a live formula the moment the file is opened — so a name entered on the sign-in screen, a 船样要求 note, or a field inside an uploaded contract could have run something on the computer of whoever opened the exported CSV. Every CSV the app offers for download — the sign-in log, the change log, Sky East items, the fabric checks, and the GIII data export — now marks such a value as plain text, so it shows exactly as typed and does nothing. The spreadsheet files (.xlsx) were already protected; this closes the same gap on the CSV side, and an automated check now fails if any future export is added without it."},
+        ],
+    },
+    {
         "version": "2.140.0",
         "date": "2026-08-28",
         "entries": [

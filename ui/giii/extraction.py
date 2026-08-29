@@ -77,7 +77,7 @@ from po_extractor.utils.price_mask import mask_prices_batch
 from ui.i18n import t
 from ui.log_markup import badge
 from ui.session_keys import SK
-from ui.shared import ProgressTracker, images_dir as _get_images_dir
+from ui.shared import ProgressTracker, csv_safe, images_dir as _get_images_dir
 from ui.stores import get_store
 from ui.giii._shared import (
     _enrich_cn_color, _XLSX_MIME, _CSV_MIME, _ZIP_MIME,
@@ -166,7 +166,7 @@ def _run_extraction_body(uploaded_files, mask_prices: bool, company: str,
         result = export_csvs(pos, out_dir)
         # Enrich size rows with Chinese color names and overwrite the by-size CSV
         result["df_size"] = _enrich_cn_color(result["df_size"], result["df_meta"])
-        result["df_size"].to_csv(result["by_size_color"], index=False, encoding="utf-8-sig")
+        csv_safe(result["df_size"]).to_csv(result["by_size_color"], index=False, encoding="utf-8-sig")
 
         tracker.step("Generating buy plan")
         st.write(t("Generating buy plan Excel…"))
@@ -382,11 +382,11 @@ def _run_from_history(po_numbers: list[str], result_key: str = "history_results"
     csv_buf = io.BytesIO()
     with zipfile.ZipFile(csv_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("size_color_rows.csv",
-                    df_size.to_csv(index=False, encoding="utf-8-sig"))
+                    csv_safe(df_size).to_csv(index=False, encoding="utf-8-sig"))
         zf.writestr("style_color_summary.csv",
-                    df_summary.to_csv(index=False, encoding="utf-8-sig"))
+                    csv_safe(df_summary).to_csv(index=False, encoding="utf-8-sig"))
         zf.writestr("metadata.csv",
-                    df_meta.to_csv(index=False, encoding="utf-8-sig"))
+                    csv_safe(df_meta).to_csv(index=False, encoding="utf-8-sig"))
     outputs["csvs_zip"] = csv_buf.getvalue()
     st.session_state[result_key] = outputs
     _shutil2.rmtree(out_dir, ignore_errors=True)
@@ -643,7 +643,7 @@ def _process_pdf_group(company: str, paths: list[str], out_dir: str,
     _phase(0.32, t("Building buy plan & summaries…"))
     result  = export_csvs(pos, out_dir)
     result["df_size"] = _enrich_cn_color(result["df_size"], result["df_meta"])
-    result["df_size"].to_csv(result["by_size_color"], index=False, encoding="utf-8-sig")
+    csv_safe(result["df_size"]).to_csv(result["by_size_color"], index=False, encoding="utf-8-sig")
     # Legacy grid buy plan — kept ONLY as the cross-check totals source; the
     # user-facing Buy Plan download is the 生产计划单 built below.
     bp      = export_buyplan(result["df_size"], result["df_meta"], out_dir,

@@ -8,7 +8,7 @@ import streamlit as st
 
 from ui.fabric_db._shared import CSV_MIME, XLSX_MIME
 from ui.i18n import t
-from ui.shared import _th
+from ui.shared import _th, csv_safe
 from ui.stores import get_store
 
 
@@ -37,7 +37,7 @@ def _fabric_db_validation_section(store) -> None:
     # Helper: download buttons
     def _dl_buttons(df: pd.DataFrame, stem: str) -> None:
         dl1, dl2 = st.columns(2)
-        csv_bytes = df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+        csv_bytes = csv_safe(df).to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
         dl1.download_button(
             f"⬇️ {t('Download issues (.csv)')}", data=csv_bytes,
             file_name=f"{stem}.csv", mime=CSV_MIME,
@@ -182,7 +182,7 @@ def _fabric_db_cross_system_section(fabric_store) -> None:
             )
             df_hhn = pd.DataFrame({"HHN No. (公司面料编号)": orphan_hhn})
             st.dataframe(df_hhn, width="stretch", hide_index=True)
-            csv_hhn = df_hhn.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+            csv_hhn = csv_safe(df_hhn).to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
             st.download_button(
                 t("⬇️ Download HHN orphans (.csv)"), data=csv_hhn,
                 file_name="hhn_orphans.csv", mime=CSV_MIME,
@@ -200,7 +200,7 @@ def _fabric_db_cross_system_section(fabric_store) -> None:
             )
             df_cov = pd.DataFrame({"Style No. (款号)": uncovered_styles})
             st.dataframe(df_cov, width="stretch", hide_index=True)
-            csv_cov = df_cov.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+            csv_cov = csv_safe(df_cov).to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
             st.download_button(
                 t("⬇️ Download coverage gaps (.csv)"), data=csv_cov,
                 file_name="style_coverage_gaps.csv", mime=CSV_MIME,
