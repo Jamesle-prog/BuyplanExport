@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.141.2",
+        "date": "2026-08-31",
+        "entries": [
+            {"type": "feat", "text": "**The PDA scanner now has its own web address: scan.aprimathread.com.** Until now the scanner only existed on the office network — a phone on mobile data, or anyone outside the building, had no way to reach it at all, which is why it kept \"not working\" no matter what the pages themselves did. It now travels through the same secure tunnel as Threadline, so it opens from anywhere, over HTTPS, on any phone or PDA browser."},
+            {"type": "fix", "text": "**One person's password typos can no longer lock everyone out of the scanner.** Coming through the tunnel, every visitor used to look like the same address to the login throttle, so eight wrong attempts by anyone would have locked the whole warehouse out for fifteen minutes. The throttle now sees each visitor's real address — and only believes that information when the request genuinely came through the tunnel, so a device on the local network cannot fake it to dodge the limit."},
+        ],
+    },
+    {
         "version": "2.141.1",
         "date": "2026-08-31",
         "entries": [

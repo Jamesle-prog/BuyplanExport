@@ -107,7 +107,24 @@ def _record_fail(ip: str) -> None:
 
 
 def _client_ip(request: Request) -> str:
-    return request.client.host if request.client else "?"
+    """The address the login throttle keys on.
+
+    Through the Cloudflare tunnel every visitor reaches this process from
+    loopback, which would collapse the per-IP throttle into one shared
+    bucket -- one person mistyping the password _MAX_FAILS times would lock
+    the whole warehouse out, and an attacker's failures would land in
+    everyone's bucket. Cloudflare stamps the real visitor address in
+    CF-Connecting-IP, so use that instead -- but ONLY when the request
+    really did arrive via the local tunnel (peer is loopback). A LAN device
+    hitting :8502 directly could otherwise spoof the header and rotate
+    throttle buckets at will.
+    """
+    peer = request.client.host if request.client else "?"
+    if peer in ("127.0.0.1", "::1"):
+        cf = request.headers.get("CF-Connecting-IP", "").strip()
+        if cf:
+            return cf
+    return peer
 
 
 # ── core logic (pure — takes a store, returns plain dicts) ─────────────────────

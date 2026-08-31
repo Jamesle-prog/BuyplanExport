@@ -324,3 +324,37 @@ def test_api_count_attributes_the_adjustment_to_the_logged_in_operator(client):
     row = [r for r in client.get("/api/stocktake").json()["rows"]
           if r["upc"] == "700948471565"][0]
     assert row["updated_by"] == "Angel"
+
+
+# ── throttle identity behind the Cloudflare tunnel ──────────────────────────
+
+class _FakeClient:
+    def __init__(self, host):
+        self.host = host
+
+
+class _FakeRequest:
+    def __init__(self, peer, headers=None):
+        self.client = _FakeClient(peer)
+        self.headers = headers or {}
+
+
+def test_throttle_uses_the_real_visitor_ip_behind_the_tunnel():
+    """Via the tunnel every request's peer is loopback; without this, the
+    per-IP throttle is one shared bucket and one person's typos lock the
+    whole warehouse out."""
+    r = _FakeRequest("127.0.0.1", {"CF-Connecting-IP": "203.0.113.9"})
+    assert webapp._client_ip(r) == "203.0.113.9"
+
+
+def test_a_lan_device_cannot_spoof_the_throttle_key():
+    """CF-Connecting-IP is only believable when the request really came
+    through the local tunnel. A LAN peer sending it directly must keep its
+    own address, or it could rotate throttle buckets at will."""
+    r = _FakeRequest("192.168.0.77", {"CF-Connecting-IP": "203.0.113.9"})
+    assert webapp._client_ip(r) == "192.168.0.77"
+
+
+def test_a_plain_lan_request_keys_on_its_own_address():
+    assert webapp._client_ip(_FakeRequest("192.168.0.77")) == "192.168.0.77"
+    assert webapp._client_ip(_FakeRequest("127.0.0.1")) == "127.0.0.1"
