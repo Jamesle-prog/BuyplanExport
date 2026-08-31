@@ -92,3 +92,69 @@ def test_upsert_with_blank_text_still_registers_brand(tmp_path):
 
     assert "No Req Brand" in store.list_known_brands(COMPANY_SKY_EAST)
     assert store.get(COMPANY_SKY_EAST, "No Req Brand") == ""
+
+
+# ── most_common_requirement: what the new-brand prompt pre-fills with ───────
+
+def test_most_common_requirement_picks_the_majority_answer(tmp_path):
+    from po_extractor.store.boat_sample_store import BoatSampleStore
+
+    store = BoatSampleStore(str(tmp_path / "bs.db"))
+    store.upsert(COMPANY_SKY_EAST, "A", "M码齐色2套，S码齐色1套")
+    store.upsert(COMPANY_SKY_EAST, "B", "M码齐色2套，S码齐色1套")
+    store.upsert(COMPANY_SKY_EAST, "C", "Something rare")
+
+    assert store.most_common_requirement(COMPANY_SKY_EAST) == "M码齐色2套，S码齐色1套"
+
+
+def test_most_common_requirement_is_empty_with_no_history(tmp_path):
+    from po_extractor.store.boat_sample_store import BoatSampleStore
+
+    store = BoatSampleStore(str(tmp_path / "bs.db"))
+    assert store.most_common_requirement(COMPANY_SKY_EAST) == ""
+
+
+def test_most_common_requirement_ignores_blank_answers(tmp_path):
+    """A brand explicitly marked as having no requirement (blank, but
+    registered) must not make '' win as the 'most common' answer."""
+    from po_extractor.store.boat_sample_store import BoatSampleStore
+
+    store = BoatSampleStore(str(tmp_path / "bs.db"))
+    store.upsert(COMPANY_SKY_EAST, "No Req 1", "")
+    store.upsert(COMPANY_SKY_EAST, "No Req 2", "")
+    store.upsert(COMPANY_SKY_EAST, "No Req 3", "")
+    store.upsert(COMPANY_SKY_EAST, "Real Answer", "Confirm before shipping")
+
+    assert store.most_common_requirement(COMPANY_SKY_EAST) == "Confirm before shipping"
+
+
+def test_most_common_requirement_breaks_ties_by_most_recent(tmp_path):
+    """Two answers tied on frequency -- the one saved more recently wins."""
+    from po_extractor.store.boat_sample_store import BoatSampleStore
+
+    store = BoatSampleStore(str(tmp_path / "bs.db"))
+    store.upsert(COMPANY_SKY_EAST, "Old", "Answer A")
+    store.upsert(COMPANY_SKY_EAST, "New", "Answer B")
+    # Backdate "Old" directly -- upsert() always stamps "now", so this is the
+    # only way to give the two rows distinct, controlled timestamps.
+    with store._conn() as conn:
+        conn.execute(
+            "UPDATE boat_sample_req SET updated_at=? WHERE brand='Old'",
+            ("2020-01-01T00:00:00",),
+        )
+
+    assert store.most_common_requirement(COMPANY_SKY_EAST) == "Answer B"
+
+
+def test_most_common_requirement_is_scoped_to_its_own_company(tmp_path):
+    """A different company's convention must never leak in as the default."""
+    from po_extractor.store.boat_sample_store import BoatSampleStore
+
+    store = BoatSampleStore(str(tmp_path / "bs.db"))
+    store.upsert(COMPANY_SKY_EAST, "Brand A", "Sky East's usual answer")
+    store.upsert("Some Other Company", "Brand X", "A totally different answer")
+    store.upsert("Some Other Company", "Brand Y", "A totally different answer")
+
+    assert store.most_common_requirement(COMPANY_SKY_EAST) == "Sky East's usual answer"
+    assert (store.most_common_requirement("Some Other Company")
+            == "A totally different answer")

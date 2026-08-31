@@ -230,6 +230,11 @@ def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
         t("brand(s) still need a 船样要求. It is required, so this keeps "
           "appearing until each one has been entered:")
     )
+    # This company's own most common answer, computed once for the whole
+    # render -- not per brand, so editing one box doesn't change what the
+    # others started with. '' (no history yet) falls back to an empty box;
+    # the placeholder below still shows the expected format.
+    default_req = get_boat_sample_store().most_common_requirement(COMPANY_SKY_EAST)
     with st.expander(t("Shipping sample requirement — new brands"), expanded=True):
         # One text box per brand inside a form, NOT st.data_editor. A
         # data_editor cell is only committed when it loses focus, so typing a
@@ -245,15 +250,16 @@ def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
                 # Real, editable starting text -- not just a grey placeholder.
                 # A placeholder is never part of the value, so pressing Enter
                 # on an untouched box used to submit blank and hit the
-                # compulsory-field error. This is the common shape, so it
-                # starts typed in: press Enter/Save to accept it as-is for a
-                # typical brand, or edit/clear it first for one that needs
-                # something else. `value=` only seeds the box the first time
-                # this key is created -- a later rerun keeps whatever the user
-                # left in it, same as every other keyed widget in this file.
+                # compulsory-field error. default_req is real data, not fixed
+                # UI copy, so it is used as-is -- never run through t(), which
+                # is for translating source strings, not for echoing back
+                # whatever a person previously typed. `value=` only seeds the
+                # box the first time this key is created -- a later rerun
+                # keeps whatever the user left in it, same as every other
+                # keyed widget in this file.
                 typed[b] = st.text_input(
                     f"**{b}** — {_th('Shipping Sample Requirement')}",
-                    value=t("M码齐色2套，S码齐色1套"),
+                    value=default_req,
                     key=f"se_new_brand_req_{i}",
                     placeholder=t("e.g. M码齐色2套，S码齐色1套"),
                 )

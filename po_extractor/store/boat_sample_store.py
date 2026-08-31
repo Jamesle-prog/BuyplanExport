@@ -89,6 +89,34 @@ class BoatSampleStore(BaseSQLiteStore):
             ).fetchall()
         return {r["brand"]: r["req_text"] for r in rows}
 
+    def most_common_requirement(self, company: str) -> str:
+        """The requirement text most of *company*'s other brands already use,
+        or '' if *company* has no answered brand yet.
+
+        Feeds the new-brand prompt's starting text: most brands under one
+        company share one convention (a factory usually asks for the same
+        sample breakdown regardless of which of the client's brands it is),
+        so re-typing it per brand was pure repetition. This computes the
+        answer from *company*'s own real history instead of a fixed example
+        string, so a company whose brands actually differ, or one with no
+        history yet, is not steered toward Sky East's specific wording.
+
+        Ties (more than one text used equally often) break toward whichever
+        was saved most recently -- a plausible current convention beats a
+        stale one of the same frequency.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT req_text
+                   FROM boat_sample_req
+                   WHERE company=? AND req_text != ''
+                   GROUP BY req_text
+                   ORDER BY COUNT(*) DESC, MAX(updated_at) DESC
+                   LIMIT 1""",
+                (company.strip(),),
+            ).fetchone()
+        return row["req_text"] if row else ""
+
     def list_known_brands(self, company: str) -> set[str]:
         """Return the set of brands already registered under *company*
         (regardless of whether their req_text is empty)."""

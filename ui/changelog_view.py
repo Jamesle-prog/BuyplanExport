@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.140.3",
+        "date": "2026-08-31",
+        "entries": [
+            {"type": "feat", "text": "**The pre-filled 船样要求 now follows what this company actually answers most often, not a fixed example.** Yesterday's pre-fill always started with the same text regardless of which company it was for. It now looks at that company's own brands and starts the box with whichever answer they use most — so a company with a different convention sees its own, and a brand-new company with no history yet still gets a blank box with the format hint."},
+        ],
+    },
+    {
         "version": "2.140.2",
         "date": "2026-08-31",
         "entries": [

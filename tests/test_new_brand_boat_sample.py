@@ -44,17 +44,97 @@ def test_every_pending_brand_gets_its_own_input():
     assert "se_new_brand_req_{i}" in src or 'se_new_brand_req_' in src
 
 
-def test_the_box_starts_pre_filled_with_the_common_answer():
+def test_the_box_starts_pre_filled_from_the_company_s_own_history():
     """A placeholder is only ever shown text, never submitted text -- pressing
     Enter on an untouched box used to submit blank and trip the compulsory
-    check. The common answer is real, editable starting text instead, so
-    Enter/Save accepts it without retyping for the typical brand."""
+    check. The box now starts with this company's most common answer instead,
+    computed from real data (not a fixed example), so Enter/Save accepts it
+    without retyping for the typical brand."""
     import inspect
     import ui.sky_east.items_view as iv
     src = inspect.getsource(iv._show_new_brand_shipping_sample_prompt)
-    assert 'value=t("M码齐色2套，S码齐色1套")' in src
+    assert "most_common_requirement(COMPANY_SKY_EAST)" in src
+    assert "value=default_req" in src
+    # Real data, never round-tripped through the translation table.
+    assert "value=t(default_req)" not in src
     # Still real text_input, not a different widget with its own semantics.
     assert "st.text_input(" in src
+
+
+class _FormCtx:
+    """Stand-in for `with st.form(...):` / `with st.expander(...):`."""
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _Col:
+    """Stand-in for one column of `st.columns(...)` -- only what this
+    function calls on it."""
+    def form_submit_button(self, *a, **k):
+        return False
+
+
+def _render_prompt_bare(monkeypatch, store, pending_brands):
+    """Render `_show_new_brand_shipping_sample_prompt` without a real
+    Streamlit script run, same as this file's other bare-call tests
+    (test_nothing_outstanding_shows_nothing below).
+
+    st.form() specifically is faked rather than exercised for real: Streamlit
+    tracks "currently inside a form" in state that a real script boundary
+    resets, but nothing resets it between two bare calls -- so a DIFFERENT
+    test elsewhere that also calls a form-containing function bare can leave
+    it looking like a form is still open, and this one then fails with
+    "Forms cannot be nested in other forms" depending on unrelated test
+    order. Faking every widget this function touches sidesteps that
+    entirely, matching the house style (no AppTest in this suite).
+
+    Returns {key: value kwarg} for every st.text_input call, in call order.
+    """
+    import ui.sky_east.items_view as iv
+    monkeypatch.setattr(iv, "get_boat_sample_store", lambda: store)
+    monkeypatch.setattr(iv.st, "info", lambda *a, **k: None)
+    monkeypatch.setattr(iv.st, "expander", lambda *a, **k: _FormCtx())
+    monkeypatch.setattr(iv.st, "form", lambda *a, **k: _FormCtx())
+    monkeypatch.setattr(iv.st, "columns", lambda n: tuple(_Col() for _ in range(n)))
+    seen: dict[str, str] = {}
+
+    def _fake_text_input(label, *, value="", key=None, placeholder=None):
+        seen[key] = value
+        return value
+
+    monkeypatch.setattr(iv.st, "text_input", _fake_text_input)
+    iv._show_new_brand_shipping_sample_prompt(pending_brands)
+    return seen
+
+
+def test_the_pre_fill_actually_follows_this_company_s_data(monkeypatch, tmp_path):
+    """End to end: the box a real user sees is whatever this company's brands
+    most often answer with today -- not a string fixed in the source."""
+    from auth.companies import COMPANY_SKY_EAST
+    from po_extractor.store.boat_sample_store import BoatSampleStore
+
+    store = BoatSampleStore(str(tmp_path / "bs.db"))
+    # Three brands say one thing, one says another -- the majority must win.
+    store.upsert(COMPANY_SKY_EAST, "Brand A", "M码齐色2套，S码齐色1套")
+    store.upsert(COMPANY_SKY_EAST, "Brand B", "M码齐色2套，S码齐色1套")
+    store.upsert(COMPANY_SKY_EAST, "Brand C", "M码齐色2套，S码齐色1套")
+    store.upsert(COMPANY_SKY_EAST, "Brand D", "Something else entirely")
+
+    seen = _render_prompt_bare(monkeypatch, store, ["New Brand"])
+    assert seen["se_new_brand_req_0"] == "M码齐色2套，S码齐色1套"
+
+
+def test_a_company_with_no_history_gets_an_empty_box(monkeypatch, tmp_path):
+    """No prior answers for this company -- must not fall back to some other
+    company's convention, and must not crash."""
+    from po_extractor.store.boat_sample_store import BoatSampleStore
+
+    store = BoatSampleStore(str(tmp_path / "bs.db"))   # empty
+    seen = _render_prompt_bare(monkeypatch, store, ["First Ever Brand"])
+    assert seen["se_new_brand_req_0"] == ""
 
 
 # ── What is saved is what the buy plan reads ────────────────────────────────
