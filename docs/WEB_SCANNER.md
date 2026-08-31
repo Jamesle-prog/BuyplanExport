@@ -18,7 +18,7 @@ C:/Users/Administrator/AppData/Local/Programs/Python/Python313/python.exe -m web
 ```
 
 On start it prints the LAN URL, e.g. `http://192.168.0.153:8502`. Open that on
-the PDA browser, enter the shared password once, and scan.
+the PDA browser, enter your name and the shared password once, and scan.
 
 ### Environment variables
 
@@ -41,6 +41,16 @@ restarting the server invalidates all sessions. Login is throttled per IP
 (8 failures / 15 min → HTTP 429) so the shared password can't be brute-forced
 on the LAN. A failed scan (server/network error) shows a red error state, so an
 operator always knows whether a scan was recorded.
+
+Login also asks for a name — attribution, not a second credential; the
+password is still the one shared secret that gates access. A blank name is
+refused (no way to reach a session without one), it is shown in the scan
+page's header, and it is stamped onto every stocktake adjustment
+(`upc_stocktake.updated_by`, "who touched this count last", overwritten each
+scan) and onto a stocktake **clear** (one row in the app-wide change log,
+`entity=upc_stocktake` — the one action here that is global and hard to
+undo, so it gets a durable record; a routine +1/-1 scan does not, for the
+same reason a Sky East upload logs one summary row and not one per item).
 
 ## API (all POST JSON unless noted; all require the session cookie)
 

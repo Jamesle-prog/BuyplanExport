@@ -25,6 +25,7 @@ _ENTITY_LABELS = {
     "sky_east_item":   "🛍 Sky East item",
     "sky_east_contract": "📄 Sky East contract",
     "user":            "👤 User account",
+    "upc_stocktake":   "📷 PDA stocktake",
 }
 
 _ACTION_BADGE = {"create": "🟢 ", "update": "🔵 ", "delete": "🔴 "}

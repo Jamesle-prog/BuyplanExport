@@ -69,6 +69,27 @@ def test_count_increments_and_context(store):
     assert count(store, "ZZZ", 9)["delta"] == 1
 
 
+def test_count_attributes_the_adjustment_to_the_operator(store):
+    """updated_by answers 'who touched this count last' -- overwritten each
+    scan, not a history, same contract as any other 'last edited by' column."""
+    count(store, "700948471565", 1, operator="Angel")
+    row = [r for r in store.load_stocktake() if r["upc"] == "700948471565"][0]
+    assert row["updated_by"] == "Angel"
+
+    count(store, "700948471565", 1, operator="Bob")
+    row = [r for r in store.load_stocktake() if r["upc"] == "700948471565"][0]
+    assert row["updated_by"] == "Bob"          # overwritten, not appended
+
+
+def test_count_with_no_operator_leaves_the_column_blank(store):
+    """The Streamlit UPC Check tab shares this same store/table but has no
+    operator concept -- must not crash or coerce a missing name into text
+    like 'None'."""
+    count(store, "700948471565", 1)
+    row = [r for r in store.load_stocktake() if r["upc"] == "700948471565"][0]
+    assert row["updated_by"] == ""
+
+
 # ── HTTP layer ────────────────────────────────────────────────────────────────
 
 @pytest.fixture()
@@ -80,8 +101,9 @@ def client(store, monkeypatch):
     return TestClient(webapp.app)
 
 
-def _login(client):
-    r = client.post("/login", data={"password": "secret"}, follow_redirects=False)
+def _login(client, name="Tester"):
+    r = client.post("/login", data={"password": "secret", "name": name},
+                    follow_redirects=False)
     assert r.status_code == 302
     return r
 
@@ -98,10 +120,78 @@ def test_unauthenticated_api_is_401_and_page_redirects(client):
 
 
 def test_wrong_password_rejected(client):
-    r = client.post("/login", data={"password": "nope"}, follow_redirects=False)
+    r = client.post("/login", data={"password": "nope", "name": "Tester"},
+                    follow_redirects=False)
     assert r.status_code == 401
     # no session cookie issued
     assert "po_scan_session" not in r.cookies
+    assert "po_scan_name" not in r.cookies
+
+
+# ── operator name: attribution, not a second credential ─────────────────────
+
+def test_login_requires_a_name(client):
+    """Correct password, blank name -- refused. There is no way to reach a
+    session without one; a stocktake adjustment must always be attributable."""
+    r = client.post("/login", data={"password": "secret", "name": "  "},
+                    follow_redirects=False)
+    assert r.status_code == 400
+    assert "po_scan_session" not in r.cookies
+    assert "po_scan_name" not in r.cookies
+    assert "姓名" in r.text or "name" in r.text.lower()
+
+
+def test_a_blank_name_does_not_count_toward_the_login_throttle(client):
+    """Forgetting your name is a UX slip, not a password guess -- it must not
+    burn one of the attempts that guards against brute-forcing the shared
+    password."""
+    webapp._LOGIN_FAILS.clear()
+    for _ in range(webapp._MAX_FAILS):
+        client.post("/login", data={"password": "secret", "name": ""},
+                    follow_redirects=False)
+    # every one of those was password-correct-name-blank; the throttle must
+    # still be untouched, so a real login now succeeds rather than 429s
+    r = _login(client)
+    assert r.status_code == 302
+    webapp._LOGIN_FAILS.clear()
+
+
+def test_successful_login_sets_both_cookies(client):
+    r = _login(client, name="Angel")
+    assert r.cookies.get("po_scan_session")
+    assert r.cookies.get("po_scan_name")
+
+
+def test_scan_page_shows_the_operator_name(client):
+    _login(client, name="Angel Chen")
+    page = client.get("/", follow_redirects=False)
+    assert page.status_code == 200
+    assert "Angel Chen" in page.text
+
+
+def test_scan_page_escapes_a_malicious_name(client):
+    """The name is free text a person typed, not a fixed server string --
+    unlike the login page's error slot, it must be escaped before it lands in
+    the page every subsequent visitor of THIS session sees."""
+    _login(client, name="<script>alert(1)</script>")
+    page = client.get("/", follow_redirects=False)
+    assert "<script>alert(1)</script>" not in page.text
+    assert "&lt;script&gt;" in page.text
+
+
+def test_wrong_password_retry_round_trips_the_name(client):
+    """A typo'd password shouldn't also cost the operator their typed name."""
+    r = client.post("/login", data={"password": "nope", "name": "Angel"},
+                    follow_redirects=False)
+    assert r.status_code == 401
+    assert "Angel" in r.text
+
+
+def test_wrong_password_retry_escapes_the_name_too(client):
+    r = client.post("/login",
+                    data={"password": "nope", "name": '"><script>x</script>'},
+                    follow_redirects=False)
+    assert "<script>x</script>" not in r.text
 
 
 def test_login_then_lookup_verify_count(client):
@@ -152,6 +242,55 @@ def test_login_is_rate_limited(client):
 
 def test_successful_login_clears_fail_counter(client):
     webapp._LOGIN_FAILS.clear()
-    client.post("/login", data={"password": "wrong"}, follow_redirects=False)
-    client.post("/login", data={"password": "secret"}, follow_redirects=False)  # success
+    client.post("/login", data={"password": "wrong", "name": "Tester"},
+               follow_redirects=False)
+    _login(client)                                   # success (name + password)
     assert webapp._LOGIN_FAILS == {}
+
+
+def test_a_correct_password_with_no_name_does_not_clear_the_fail_counter(client):
+    """Getting the password right but forgetting your name is not a real
+    login -- it must not quietly forgive a prior failed password guess."""
+    webapp._LOGIN_FAILS.clear()
+    client.post("/login", data={"password": "wrong", "name": "Tester"},
+               follow_redirects=False)
+    r = client.post("/login", data={"password": "secret"}, follow_redirects=False)
+    assert r.status_code == 400
+    assert webapp._LOGIN_FAILS != {}
+    webapp._LOGIN_FAILS.clear()
+
+
+# ── stocktake clear: the one write here worth an audit-trail entry ──────────
+
+def test_clearing_stocktake_logs_who_cleared_it(client):
+    from po_extractor.store import get_change_log_store
+
+    _login(client, name="Angel")
+    client.post("/api/count", json={"upc": "700948471565", "dir": "add"})
+    cleared = client.post("/api/stocktake/clear", json={}).json()["cleared"]
+    assert cleared >= 1
+
+    df = get_change_log_store().list_recent()
+    row = df[df["entity"] == "upc_stocktake"].iloc[0]
+    assert row["username"] == "Angel"
+    assert row["action"] == "delete"
+    assert str(cleared) in row["detail"]
+
+
+def test_clearing_an_already_empty_stocktake_logs_nothing(client):
+    """Nothing removed, nothing to say -- same rule as every other audit hook
+    in this app (see ChangeLogStore / SkyEastStore's own tests)."""
+    from po_extractor.store import get_change_log_store
+
+    _login(client, name="Angel")
+    cleared = client.post("/api/stocktake/clear", json={}).json()["cleared"]
+    assert cleared == 0
+    assert get_change_log_store().list_recent().empty
+
+
+def test_api_count_attributes_the_adjustment_to_the_logged_in_operator(client):
+    _login(client, name="Angel")
+    client.post("/api/count", json={"upc": "700948471565", "dir": "add"})
+    row = [r for r in client.get("/api/stocktake").json()["rows"]
+          if r["upc"] == "700948471565"][0]
+    assert row["updated_by"] == "Angel"

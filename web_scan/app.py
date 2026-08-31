@@ -11,7 +11,14 @@ tab:
 Auth: one shared password (``PO_SCAN_PASSWORD``) gates the page; a correct login
 sets a session cookie tied to a per-process token. Trusted-LAN posture, matching
 the rest of the app. Company scope is fixed by ``PO_SCAN_COMPANIES`` (there is no
-per-user login here), default = all companies.
+per-user LOGIN here), default = all companies.
+
+Login also asks for a name -- not a second credential, just who is holding the
+scanner. It rides in its own cookie, is shown on the scan page, and is stamped
+onto stocktake adjustments (``upc_stocktake.updated_by``) and stocktake clears
+(the shared ``change_log`` table) so a count that looks wrong can be traced to
+a person. Blank names are refused at login; there is no way to skip it and get
+an unattributed session.
 
 The core logic (:func:`lookup` / :func:`verify` / :func:`count`) is pure and
 store-injectable so it is unit-tested without HTTP.
@@ -19,6 +26,7 @@ store-injectable so it is unit-tested without HTTP.
 from __future__ import annotations
 
 import hmac
+import html
 import os
 import secrets
 import time
@@ -35,6 +43,7 @@ from po_extractor.store import get_po_store
 
 _TEMPLATES = Path(__file__).parent / "templates"
 _COOKIE = "po_scan_session"
+_NAME_COOKIE = "po_scan_name"
 
 # Session token minted once per process start; the shared password unlocks it.
 # Restarting the server invalidates every outstanding cookie — acceptable for a
@@ -59,6 +68,13 @@ def _companies() -> list[str] | None:
 
 def _authed(request: Request) -> bool:
     return hmac.compare_digest(request.cookies.get(_COOKIE, ""), _SESSION_TOKEN)
+
+
+def _operator_name(request: Request) -> str:
+    """The name typed at login, for attribution -- not an identity check.
+    '' if somehow absent (there is no way to reach an authed session without
+    one, but a caller must never crash over a cookie the browser dropped)."""
+    return request.cookies.get(_NAME_COOKIE, "").strip()[:60]
 
 
 # ── login throttle (per-IP, in-memory) ────────────────────────────────────────
@@ -128,13 +144,13 @@ def verify(store, po: str, upc: str, companies=None) -> dict:
     }
 
 
-def count(store, upc: str, delta: int, companies=None) -> dict:
+def count(store, upc: str, delta: int, companies=None, operator: str = "") -> dict:
     upc = str(upc or "").strip()
     d = int(delta)
     # One physical unit per scan; an explicit 0 is a no-op (returns the current
     # count) rather than being coerced to +1.
     delta = 0 if d == 0 else (1 if d > 0 else -1)
-    qty = store.adjust_stocktake(upc, delta) if upc else 0
+    qty = store.adjust_stocktake(upc, delta, operator) if upc else 0
     ctx = store.find_by_upc(upc, companies=companies) if upc else []
     return {"upc": upc, "qty": qty, "delta": delta,
             "known": bool(ctx), "context": _row(ctx[0]) if ctx else None}
@@ -159,38 +175,59 @@ async def _json(request: Request) -> dict:
 async def page(request: Request) -> Response:
     if not _authed(request):
         return RedirectResponse("/login", status_code=302)
-    return HTMLResponse(_SCAN_HTML)
+    # The name is free text someone typed at login, not a fixed server string
+    # like the login page's <!--ERR-->, so it MUST be escaped before landing
+    # in raw HTML -- unlike ERR, this is a genuine injection point.
+    name = html.escape(_operator_name(request))
+    return HTMLResponse(_SCAN_HTML.replace("<!--OPERATOR-->", name))
+
+
+def _login_html(err: str = "", name: str = "") -> str:
+    """Render the login page. *name* round-trips a wrong-password retry so
+    the operator doesn't have to retype it -- it is free text someone typed,
+    so (like the scan page's operator display) it MUST be escaped; <!--ERR-->
+    only ever holds a fixed string from this module, never user input."""
+    return (_LOGIN_HTML.replace("<!--ERR-->", err)
+                       .replace("<!--NAME-->", html.escape(name)))
 
 
 async def login_page(request: Request) -> Response:
     if _authed(request):
         return RedirectResponse("/", status_code=302)
-    return HTMLResponse(_LOGIN_HTML.replace("<!--ERR-->", ""))
+    return HTMLResponse(_login_html())
 
 
 async def login_submit(request: Request) -> Response:
     ip = _client_ip(request)
     if _recent_fails(ip) >= _MAX_FAILS:
         return HTMLResponse(
-            _LOGIN_HTML.replace("<!--ERR-->",
-                                "尝试过多，请稍后再试 / Too many attempts — wait a few minutes"),
+            _login_html("尝试过多，请稍后再试 / Too many attempts — wait a few minutes"),
             status_code=429)
     form = await request.form()
-    if hmac.compare_digest(str(form.get("password", "")), _password()):
-        _LOGIN_FAILS.pop(ip, None)
-        resp = RedirectResponse("/", status_code=302)
-        resp.set_cookie(_COOKIE, _SESSION_TOKEN, httponly=True,
-                        samesite="lax", max_age=12 * 3600)
-        return resp
-    _record_fail(ip)
-    return HTMLResponse(
-        _LOGIN_HTML.replace("<!--ERR-->", "密码错误 / Wrong password"),
-        status_code=401)
+    name = str(form.get("name", "")).strip()[:60]
+    if not hmac.compare_digest(str(form.get("password", "")), _password()):
+        _record_fail(ip)
+        return HTMLResponse(
+            _login_html("密码错误 / Wrong password", name), status_code=401)
+    if not name:
+        # Not a password guess -- this doesn't count toward the throttle.
+        # Attribution is compulsory: there is no way to reach a session
+        # without a name, matching how 船样要求 refuses a blank answer.
+        return HTMLResponse(
+            _login_html("请输入姓名 / Enter your name"), status_code=400)
+    _LOGIN_FAILS.pop(ip, None)
+    resp = RedirectResponse("/", status_code=302)
+    resp.set_cookie(_COOKIE, _SESSION_TOKEN, httponly=True,
+                    samesite="lax", max_age=12 * 3600)
+    resp.set_cookie(_NAME_COOKIE, name, httponly=True,
+                    samesite="lax", max_age=12 * 3600)
+    return resp
 
 
 async def logout(request: Request) -> Response:
     resp = RedirectResponse("/login", status_code=302)
     resp.delete_cookie(_COOKIE)
+    resp.delete_cookie(_NAME_COOKIE)
     return resp
 
 
@@ -229,7 +266,9 @@ async def api_count(request: Request) -> Response:
         delta = int(body.get("delta") or 0)
     else:
         delta = 1 if str(body.get("dir", "add")) == "add" else -1
-    res = await run_in_threadpool(lambda: count(get_po_store(), upc, delta, _companies()))
+    operator = _operator_name(request)
+    res = await run_in_threadpool(
+        lambda: count(get_po_store(), upc, delta, _companies(), operator))
     return JSONResponse(res)
 
 
@@ -254,10 +293,34 @@ async def api_stocktake(request: Request) -> Response:
     return JSONResponse({"rows": rows, "total": total})
 
 
+def _log_stocktake_clear(operator: str, removed: int) -> None:
+    """Record who wiped the shared stocktake. Never raises -- an audit
+    hiccup must not undermine the clear it describes (see ChangeLogStore).
+
+    The one write this module makes worth a log row: unlike a single scan
+    (routine, instantly reversible the other direction), a clear wipes every
+    UPC's count at once and cannot be undone from the PDA. A single ordinary
+    scan is not logged here for the same reason a Sky East upload logs one
+    summary row, not one per item -- see change_log_store's own docstring.
+    """
+    if not removed:
+        return
+    try:
+        from po_extractor.store import get_change_log_store
+        from po_extractor.store.change_log_store import ACTION_DELETE, ENTITY_STOCKTAKE
+        get_change_log_store().record(
+            ENTITY_STOCKTAKE, "upc_stocktake", ACTION_DELETE,
+            detail=f"{removed} stocktake count(s) cleared", username=operator)
+    except Exception:
+        pass
+
+
 async def api_stocktake_clear(request: Request) -> Response:
     if (deny := _deny(request)):
         return deny
+    operator = _operator_name(request)
     removed = await run_in_threadpool(lambda: get_po_store().clear_stocktake())
+    _log_stocktake_clear(operator, removed)
     return JSONResponse({"cleared": removed})
 
 

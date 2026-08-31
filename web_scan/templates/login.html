@@ -19,7 +19,8 @@
   h1 { font-size: 20px; margin: 0 0 4px; }
   p.sub { margin: 0 0 20px; color: #94a3b8; font-size: 13px; }
   label { display: block; font-size: 13px; margin-bottom: 6px; color: #cbd5e1; }
-  input[type=password] {
+  .field { margin-bottom: 16px; }
+  input[type=text], input[type=password] {
     width: 100%; font-size: 18px; padding: 14px; border-radius: 10px;
     border: 1px solid #334155; background: #0f172a; color: #f1f5f9;
   }
@@ -36,8 +37,15 @@
   <form class="card" method="post" action="/login">
     <h1>📷 UPC 扫描 / Scanner</h1>
     <p class="sub">仓库 PDA 扫描 · Warehouse PDA scan</p>
-    <label for="pw">密码 / Password</label>
-    <input id="pw" name="password" type="password" autocomplete="current-password" autofocus>
+    <div class="field">
+      <label for="nm">姓名 / Your name</label>
+      <input id="nm" name="name" type="text" autocomplete="name"
+             autocapitalize="words" autofocus value="<!--NAME-->">
+    </div>
+    <div class="field">
+      <label for="pw">密码 / Password</label>
+      <input id="pw" name="password" type="password" autocomplete="current-password">
+    </div>
     <button type="submit">登录 / Sign in</button>
     <div class="err"><!--ERR--></div>
   </form>

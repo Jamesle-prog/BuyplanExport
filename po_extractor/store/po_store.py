@@ -120,3 +120,9 @@ class POStore(_WritesMixin, _ReadsMixin, _ExceptionsMixin, _FabricMixin,
                 conn.execute(
                     "DELETE FROM style_fabric_parts WHERE source='zalando'"
                 )
+            # Migrate: attribute stocktake counts to whoever last adjusted
+            # them (the operator name typed at web_scan login).
+            _uts_cols = {r[1] for r in conn.execute("PRAGMA table_info(upc_stocktake)")}
+            if "updated_by" not in _uts_cols:
+                self._add_column_if_missing(
+                    conn, "upc_stocktake", "updated_by", "TEXT DEFAULT ''")

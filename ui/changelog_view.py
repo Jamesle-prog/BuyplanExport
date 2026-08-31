@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.141.0",
+        "date": "2026-08-31",
+        "entries": [
+            {"type": "feat", "text": "**The warehouse PDA scanner now asks who's holding it.** Signing in to the scan tool (web_scan, the separate handheld/PDA app) now asks for a name alongside the shared password — it shows on the scan screen, and a stocktake count that looks wrong can now be traced to the person who last touched it. A blank name is refused, the same way a blank 船样要求 is refused, so a session can never be un-attributed."},
+            {"type": "feat", "text": "**Clearing all stocktake counts is now recorded in the app-wide Change Log.** It is the one action on the PDA scanner that wipes everything at once and can't be undone from the device, so it now gets the same durable record as any other destructive action in the app — who cleared it, when, and how many counts were removed. An ordinary scan is not logged individually; it's routine and instantly reversible by scanning the other direction."},
+        ],
+    },
+    {
         "version": "2.140.3",
         "date": "2026-08-31",
         "entries": [

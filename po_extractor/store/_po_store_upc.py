@@ -51,21 +51,30 @@ class _UpcMixin:
 
     # ── stocktake (盘点) ──────────────────────────────────────────────────────
 
-    def adjust_stocktake(self, upc: str, delta: int) -> int:
+    def adjust_stocktake(self, upc: str, delta: int, operator: str = "") -> int:
         """Add *delta* (+1 / -1) to a UPC's stocktake count; return the new
         total. Counts may go negative (an over-scan on the decrease pass is a
-        real signal, not something to silently clamp)."""
+        real signal, not something to silently clamp).
+
+        *operator* (optional) overwrites ``updated_by`` with whoever made
+        THIS adjustment — the PDA scan module's login name. Not logged to
+        change_log: a scan happens routinely, often, and is trivially
+        reversible by scanning the other direction, unlike a stocktake
+        CLEAR (see ``clear_stocktake``). Overwrite, not append, because this
+        column answers "who touched this count last", not a full history.
+        """
         upc = str(upc or "").strip()
         if not upc:
             return 0
+        who = str(operator or "").strip()[:60]
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with self._conn() as conn:
             conn.execute(
-                """INSERT INTO upc_stocktake (upc, qty, updated_at)
-                   VALUES (?, ?, ?)
+                """INSERT INTO upc_stocktake (upc, qty, updated_at, updated_by)
+                   VALUES (?, ?, ?, ?)
                    ON CONFLICT(upc) DO UPDATE SET
-                     qty = qty + ?, updated_at = ?""",
-                (upc, delta, now, delta, now),
+                     qty = qty + ?, updated_at = ?, updated_by = ?""",
+                (upc, delta, now, who, delta, now, who),
             )
             row = conn.execute(
                 "SELECT qty FROM upc_stocktake WHERE upc = ?", (upc,)).fetchone()
@@ -74,8 +83,8 @@ class _UpcMixin:
     def load_stocktake(self, include_zero: bool = False) -> list[dict]:
         """Return stocktake counts joined to PO/style/color/size context.
 
-        One row per (upc): {upc, qty, updated_at, po_number, style, color,
-        size}. Non-zero only unless *include_zero*."""
+        One row per (upc): {upc, qty, updated_at, updated_by, po_number,
+        style, color, size}. Non-zero only unless *include_zero*."""
         having = "" if include_zero else "WHERE t.qty != 0"
         with self._conn() as conn:
             # Take po/style/color/size from ONE size row per UPC (the lowest
@@ -83,7 +92,7 @@ class _UpcMixin:
             # MIN() could mix a style from one PO with a colour from another
             # when a UPC appears on several POs.
             rows = conn.execute(f"""
-                SELECT t.upc, t.qty, t.updated_at,
+                SELECT t.upc, t.qty, t.updated_at, t.updated_by,
                        s.po_number, s.style, s.color, s.size
                 FROM upc_stocktake t
                 LEFT JOIN (

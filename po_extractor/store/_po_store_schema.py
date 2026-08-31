@@ -122,11 +122,14 @@ CREATE INDEX IF NOT EXISTS idx_sfp_style ON style_fabric_parts(style);
 -- HHN fabric number → composition/weight/width cache (populated from 洗标 file)
 -- Used by all pipelines to enrich fabric codes without re-uploading the composition file.
 -- UPC stocktake (盘点) — running physical count per UPC, adjusted by the PDA
--- scan module. Separate from the ordered units in po_size_rows.
+-- scan module. Separate from the ordered units in po_size_rows. updated_by is
+-- the operator name typed at PDA login (web_scan has one shared password, no
+-- per-user login -- this is attribution, not authentication).
 CREATE TABLE IF NOT EXISTS upc_stocktake (
     upc         TEXT PRIMARY KEY,
     qty         INTEGER DEFAULT 0,
-    updated_at  TEXT
+    updated_at  TEXT,
+    updated_by  TEXT DEFAULT ''
 );
 
 -- Fabric consumption / marker (单耗 / 排版) per style — operator-uploaded,

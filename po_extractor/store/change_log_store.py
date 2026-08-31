@@ -47,6 +47,7 @@ ENTITY_BOAT_SAMPLE = "boat_sample_req"      # 船样要求
 ENTITY_SKY_EAST_ITEM = "sky_east_item"      # contract line amendments
 ENTITY_SKY_EAST_CONTRACT = "sky_east_contract"   # one upload, summarised
 ENTITY_USER = "user"                        # accounts, roles, scopes
+ENTITY_STOCKTAKE = "upc_stocktake"          # PDA scan module: 盘点 cleared
 
 _MAX_VALUE = 500
 
