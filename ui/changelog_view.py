@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.140.2",
+        "date": "2026-08-31",
+        "entries": [
+            {"type": "feat", "text": "**The shipping sample requirement box now starts filled in with the usual answer.** Most brands take the same requirement (M码齐色2套，S码齐色1套), so it used to have to be retyped for every new brand even though it rarely changes. It now appears already in the box — press Enter or Save to accept it as-is, or edit it first for a brand that needs something different. It is real, editable text now rather than a greyed-out example, so it is actually what gets saved rather than being lost the moment the box was left untouched."},
+        ],
+    },
+    {
         "version": "2.140.1",
         "date": "2026-08-28",
         "entries": [

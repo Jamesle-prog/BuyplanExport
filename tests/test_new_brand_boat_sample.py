@@ -44,6 +44,19 @@ def test_every_pending_brand_gets_its_own_input():
     assert "se_new_brand_req_{i}" in src or 'se_new_brand_req_' in src
 
 
+def test_the_box_starts_pre_filled_with_the_common_answer():
+    """A placeholder is only ever shown text, never submitted text -- pressing
+    Enter on an untouched box used to submit blank and trip the compulsory
+    check. The common answer is real, editable starting text instead, so
+    Enter/Save accepts it without retyping for the typical brand."""
+    import inspect
+    import ui.sky_east.items_view as iv
+    src = inspect.getsource(iv._show_new_brand_shipping_sample_prompt)
+    assert 'value=t("M码齐色2套，S码齐色1套")' in src
+    # Still real text_input, not a different widget with its own semantics.
+    assert "st.text_input(" in src
+
+
 # ── What is saved is what the buy plan reads ────────────────────────────────
 
 def test_a_typed_requirement_is_found_by_the_buy_plan(store, monkeypatch):

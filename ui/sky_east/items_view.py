@@ -242,8 +242,18 @@ def _show_new_brand_shipping_sample_prompt(pending_brands: list[str]) -> None:
         with st.form("se_new_brand_form"):
             typed: dict[str, str] = {}
             for i, b in enumerate(pending_brands):
+                # Real, editable starting text -- not just a grey placeholder.
+                # A placeholder is never part of the value, so pressing Enter
+                # on an untouched box used to submit blank and hit the
+                # compulsory-field error. This is the common shape, so it
+                # starts typed in: press Enter/Save to accept it as-is for a
+                # typical brand, or edit/clear it first for one that needs
+                # something else. `value=` only seeds the box the first time
+                # this key is created -- a later rerun keeps whatever the user
+                # left in it, same as every other keyed widget in this file.
                 typed[b] = st.text_input(
                     f"**{b}** — {_th('Shipping Sample Requirement')}",
+                    value=t("M码齐色2套，S码齐色1套"),
                     key=f"se_new_brand_req_{i}",
                     placeholder=t("e.g. M码齐色2套，S码齐色1套"),
                 )
