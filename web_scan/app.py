@@ -31,6 +31,7 @@ import os
 import secrets
 import time
 from pathlib import Path
+from urllib.parse import quote, unquote
 
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
@@ -73,8 +74,14 @@ def _authed(request: Request) -> bool:
 def _operator_name(request: Request) -> str:
     """The name typed at login, for attribution -- not an identity check.
     '' if somehow absent (there is no way to reach an authed session without
-    one, but a caller must never crash over a cookie the browser dropped)."""
-    return request.cookies.get(_NAME_COOKIE, "").strip()[:60]
+    one, but a caller must never crash over a cookie the browser dropped).
+
+    Percent-decoded: the cookie carries the name quote()-encoded, because
+    HTTP headers are latin-1 and the operators this page exists for type
+    姓名 in Chinese -- a raw CJK name in set_cookie raised UnicodeEncodeError
+    and 500'd the login. unquote() of a value that was never encoded is a
+    no-op for the names that worked before, so old cookies stay valid."""
+    return unquote(request.cookies.get(_NAME_COOKIE, "")).strip()[:60]
 
 
 # ── login throttle (per-IP, in-memory) ────────────────────────────────────────
@@ -158,6 +165,16 @@ def count(store, upc: str, delta: int, companies=None, operator: str = "") -> di
 
 # ── HTTP layer ────────────────────────────────────────────────────────────────
 
+def _page(body: str, status_code: int = 200) -> HTMLResponse:
+    """An HTML page that is never served from cache. Cheap PDA browsers cache
+    aggressively; after an update, a cached copy of the OLD login page (no
+    name field) kept showing until someone cleared the device -- 'still not
+    working' with the fix already deployed. These pages are tiny; re-fetching
+    them every time costs nothing."""
+    return HTMLResponse(body, status_code=status_code,
+                        headers={"Cache-Control": "no-store"})
+
+
 def _deny(request: Request):
     """Return a 401 JSONResponse when unauthenticated, else None."""
     return None if _authed(request) else JSONResponse(
@@ -179,7 +196,7 @@ async def page(request: Request) -> Response:
     # like the login page's <!--ERR-->, so it MUST be escaped before landing
     # in raw HTML -- unlike ERR, this is a genuine injection point.
     name = html.escape(_operator_name(request))
-    return HTMLResponse(_SCAN_HTML.replace("<!--OPERATOR-->", name))
+    return _page(_SCAN_HTML.replace("<!--OPERATOR-->", name))
 
 
 def _login_html(err: str = "", name: str = "") -> str:
@@ -194,32 +211,34 @@ def _login_html(err: str = "", name: str = "") -> str:
 async def login_page(request: Request) -> Response:
     if _authed(request):
         return RedirectResponse("/", status_code=302)
-    return HTMLResponse(_login_html())
+    return _page(_login_html())
 
 
 async def login_submit(request: Request) -> Response:
     ip = _client_ip(request)
     if _recent_fails(ip) >= _MAX_FAILS:
-        return HTMLResponse(
+        return _page(
             _login_html("尝试过多，请稍后再试 / Too many attempts — wait a few minutes"),
             status_code=429)
     form = await request.form()
     name = str(form.get("name", "")).strip()[:60]
     if not hmac.compare_digest(str(form.get("password", "")), _password()):
         _record_fail(ip)
-        return HTMLResponse(
+        return _page(
             _login_html("密码错误 / Wrong password", name), status_code=401)
     if not name:
         # Not a password guess -- this doesn't count toward the throttle.
         # Attribution is compulsory: there is no way to reach a session
         # without a name, matching how 船样要求 refuses a blank answer.
-        return HTMLResponse(
+        return _page(
             _login_html("请输入姓名 / Enter your name"), status_code=400)
     _LOGIN_FAILS.pop(ip, None)
     resp = RedirectResponse("/", status_code=302)
     resp.set_cookie(_COOKIE, _SESSION_TOKEN, httponly=True,
                     samesite="lax", max_age=12 * 3600)
-    resp.set_cookie(_NAME_COOKIE, name, httponly=True,
+    # quote(): see _operator_name -- a Chinese name raw in a cookie header
+    # is a UnicodeEncodeError, i.e. a 500 at login.
+    resp.set_cookie(_NAME_COOKIE, quote(name, safe=""), httponly=True,
                     samesite="lax", max_age=12 * 3600)
     return resp
 

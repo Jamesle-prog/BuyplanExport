@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.141.1",
+        "date": "2026-08-31",
+        "entries": [
+            {"type": "fix", "text": "**A Chinese name at the PDA scanner login now works.** Signing in with 姓名 typed in Chinese broke the login outright — the name travels in a browser cookie, and the web's cookie headers cannot carry Chinese characters directly, so exactly the people this screen was built for couldn't get in with their own name. (The check before release used an English name, which is why it slipped through.) The name is now packed into a web-safe form for the journey and unpacked on arrival, so 陈晓 signs in, shows in the header, and is stamped on stocktake counts, same as any English name."},
+            {"type": "fix", "text": "**The scanner's pages are no longer served from the device's cache.** Cheap PDA browsers hold onto old copies of pages aggressively, so after an update the device could keep showing the previous login screen and the fix would look like it never arrived. The login and scan pages now tell the browser to always fetch fresh."},
+        ],
+    },
+    {
         "version": "2.141.0",
         "date": "2026-08-31",
         "entries": [

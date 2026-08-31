@@ -194,6 +194,36 @@ def test_wrong_password_retry_escapes_the_name_too(client):
     assert "<script>x</script>" not in r.text
 
 
+def test_a_chinese_name_logs_in_and_shows_on_the_scan_page(client):
+    """The operators this page exists for type 姓名 in Chinese. The name rides
+    in a cookie, and HTTP headers are latin-1 -- raw CJK in set_cookie raised
+    UnicodeEncodeError, a 500 on the login of exactly the people meant to use
+    it. (Found in the field, of course: every check before shipping used an
+    ASCII name.) The cookie now carries the name percent-encoded."""
+    r = _login(client, name="陈晓")
+    assert r.status_code == 302
+    # the cookie itself must be pure ASCII or a real browser may drop it
+    assert r.headers["set-cookie"].encode("ascii")
+    page = client.get("/", follow_redirects=False)
+    assert page.status_code == 200
+    assert "陈晓" in page.text
+
+
+def test_a_chinese_name_attributes_the_stocktake_too(client):
+    _login(client, name="陈晓")
+    client.post("/api/count", json={"upc": "700948471565", "dir": "add"})
+    row = [r for r in client.get("/api/stocktake").json()["rows"]
+          if r["upc"] == "700948471565"][0]
+    assert row["updated_by"] == "陈晓"
+
+
+def test_a_chinese_name_survives_a_wrong_password_retry(client):
+    r = client.post("/login", data={"password": "nope", "name": "陈晓"},
+                    follow_redirects=False)
+    assert r.status_code == 401
+    assert "陈晓" in r.text
+
+
 def test_login_then_lookup_verify_count(client):
     _login(client)                                  # cookie now in the client jar
     r = client.post("/api/lookup", json={"upc": "700948471534"})
