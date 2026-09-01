@@ -220,14 +220,21 @@ def test_bare_style_png_is_never_taken_as_the_back_photo(tmp_path, monkeypatch):
 
 
 def test_explicit_front_wins_over_the_bare_name(tmp_path, monkeypatch):
-    """A style with both filings must use the one that says which side it is —
-    including when the explicit one is only in the extracted fallback."""
+    """A style with both filings must use the one that says which side it is.
+
+    Narrowed to WITHIN one folder on 2026-09-01. It used to assert this
+    across folders too — an explicit ``_front`` in the extracted fallback
+    beating a bare name in the configured library — and that is exactly the
+    rule the wrong-garment incident overturned: the fallback holds images
+    taken out of client contracts, so it may only fill a gap, never outrank
+    the user's own library. The cross-folder rule now lives in
+    tests/test_photo_never_overwritten.py.
+    """
     primary = tmp_path / "primary"; primary.mkdir()
-    extracted = tmp_path / "extracted"; extracted.mkdir()
-    monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(extracted))
+    monkeypatch.setattr(shared, "EXTRACTED_IMAGES_DIR", str(tmp_path / "none"))
     front = _png()
-    (extracted / "DR5110_front.png").write_bytes(front)
-    (primary / "DR5110.png").write_bytes(b"not a png")     # bare, primary
+    (primary / "DR5110_front.png").write_bytes(front)
+    (primary / "DR5110.png").write_bytes(b"not a png")     # bare, same folder
 
     assert shared.load_style_photo_pair("DR5110", str(primary))[0] == front
     assert shared.load_style_photo_map(["DR5110"], str(primary))["DR5110"][0] \

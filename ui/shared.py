@@ -747,10 +747,12 @@ def load_style_photo_pair(style: str, primary_dir: str | None = None) -> list:
     pair: list = []
     for pos in ("front", "back"):
         data = None
-        # Name outside folder: an explicit `_front` anywhere beats a bare name.
-        for cand in _photo_candidates(safe, pos):
+        # Folder outermost -- the configured library is fully searched before
+        # the extracted-images fallback is touched. Same rule and reasoning as
+        # load_style_photo_map above.
+        for folder in (primary, EXTRACTED_IMAGES_DIR):
             for exact in (True, False):
-                for folder in (primary, EXTRACTED_IMAGES_DIR):
+                for cand in _photo_candidates(safe, pos):
                     fname = cand if exact else _canon_lookup(folder, cand)
                     if not fname:
                         continue
@@ -930,20 +932,32 @@ def load_style_photo_map(styles, primary_dir: str | None = None) -> dict[str, li
             continue
         safe = _re.sub(r'[\\/:*?"<>|]', '_', s)
         for idx, pos in enumerate(("front", "back")):
-            # Name outside folder: an explicit `_front` anywhere beats a bare
-            # name, which is only a fallback for a style filed as one photo.
-            # Within one candidate name, an exact spelling beats a canonical
-            # (space/punctuation-insensitive) one.
-            hit = next(
-                ((folder, names[cand.lower()])
-                 for cand in _photo_candidates(safe, pos)
-                 for folder, names, _canon in listings if cand.lower() in names),
-                None) or next(
-                ((folder, canon[_canon_photo_name(cand)])
-                 for cand in _photo_candidates(safe, pos)
-                 for folder, _names, canon in listings
-                 if _canon_photo_name(cand) in canon),
-                None)
+            # FOLDER is the outermost loop: the user's configured library is
+            # searched to exhaustion -- every candidate name, exact spelling
+            # then canonical -- before the extracted-images fallback is looked
+            # at at all. The fallback holds images taken out of client
+            # contracts, so it may only ever fill a gap, never outrank a real
+            # photo. (It used to: candidate was the outer loop, so a stray
+            # "{style}_front.png" in the fallback beat the curated
+            # "{style}.png" in the library.)
+            #
+            # Within one folder the old order still holds: an explicit
+            # `_front` beats a bare name, and an exact spelling beats a
+            # canonical (space/punctuation-insensitive) one.
+            hit = None
+            for folder, names, canon in listings:
+                for cand in _photo_candidates(safe, pos):
+                    if cand.lower() in names:
+                        hit = (folder, names[cand.lower()])
+                        break
+                if hit is None:
+                    for cand in _photo_candidates(safe, pos):
+                        ckey = _canon_photo_name(cand)
+                        if ckey in canon:
+                            hit = (folder, canon[ckey])
+                            break
+                if hit is not None:
+                    break
             if hit:
                 wanted.append((s, idx, hit[0], hit[1]))
 
@@ -980,11 +994,20 @@ def load_style_photo_map(styles, primary_dir: str | None = None) -> dict[str, li
 def save_images_to_disk(image_dict: dict,
                         style_pid_map: dict[str, list[str]] | None = None,
                         img_dir: str | None = None) -> None:
-    """Persist images to the configured folder.
+    """Persist images extracted from a source file to *img_dir*.
 
     Saves two forms:
       {picture_id}.png          -- internal key used for DB lookups
       {style}_front.png / {style}_back.png -- human-readable front/back copies
+
+    **Point this at EXTRACTED_IMAGES_DIR, never at the user's configured photo
+    folder.** These bytes are whatever the client embedded in their contract,
+    which can be a different garment; that folder is a hand-curated library,
+    usually a shared drive. Writing there replaced real style photos under the
+    same filename -- invisible until a 核料 doc showed the wrong garment (see
+    tests/test_photo_never_overwritten.py). Reads fall back to
+    EXTRACTED_IMAGES_DIR anyway when the library has no photo for a style, so
+    nothing is lost by keeping our writes out of it.
 
     Best-effort: photo embedding is a secondary feature layered on top of
     the real PO/contract data (already saved to the DB by the time this

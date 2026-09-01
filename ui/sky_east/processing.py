@@ -498,13 +498,13 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
             if image_cache.get(img_id)
         }
         _style_pid_map = _se_build_style_pid_map(contracts)
-        # Save to the user's configured image folder (existing behaviour) …
-        save_images_to_disk(
-            st.session_state[SK.SE_IMAGE_CACHE],
-            _style_pid_map,
-        )
-        # … and ALWAYS to the persistent extracted-images fallback, so a later
-        # buy-plan run can still find them after a restart or a changed folder.
+        # Images pulled out of the client's contract go to OUR folder only --
+        # never to the user's configured photo library. That library is
+        # hand-curated (often a shared drive); writing into it replaced real
+        # style photos with whatever the client had embedded, under the same
+        # filename, so nothing looked wrong until a 核料 doc showed the wrong
+        # garment. Reads still fall back here when the library has no photo
+        # for a style (see load_style_photo_map / load_style_photo_pair).
         save_images_to_disk(
             st.session_state[SK.SE_IMAGE_CACHE],
             _style_pid_map,
