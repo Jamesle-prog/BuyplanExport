@@ -464,22 +464,32 @@ def output_folder_input(key: str, kind: str, *, placeholder: str = r"D:\Exports"
 def save_copy_to_folder(data: bytes, filename: str, folder: str, kind: str) -> None:
     """Write *data* to ``folder/filename`` and report the outcome inline.
 
-    Best-effort and loud: a bad path tells the user which path failed and why,
-    and never takes the download with it.  The filename is reduced to its
-    base name so a name carrying separators can't write outside *folder*.
+    **Never replaces a file that is already there.** *folder* is usually a
+    shared drive holding other people's work; a name collision took the
+    existing file with no warning and no way back. A taken name gets ``_v2``,
+    ``_v3`` … instead (the same rule the exporters use for their own output),
+    and the message names the file that was actually written, so a version
+    suffix is visible rather than silent.
+
+    Best-effort and loud otherwise: a bad path tells the user which path
+    failed and why, and never takes the download with it. The filename is
+    reduced to its base name so a name carrying separators can't write
+    outside *folder*.
 
     A folder is remembered under *kind* only once a file has actually landed
     in it, so the suggestions can't fill up with typos and dead paths.
     """
     if not folder:
         return
+    from po_extractor.utils.file_utils import versioned_path
     from ui.i18n import t as _t
     safe = os.path.basename(str(filename)) or "output"
+    stem, ext = os.path.splitext(safe)
     try:
         if not os.path.isdir(folder):
             st.warning(f"{_t('Folder not found — nothing saved:')} {folder}")
             return
-        path = os.path.join(folder, safe)
+        path = versioned_path(folder, stem, ext)
         with open(path, "wb") as fh:
             fh.write(data)
     except OSError as exc:

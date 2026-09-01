@@ -456,6 +456,32 @@ def test_save_copy_cannot_escape_the_folder(tmp_path):
     assert not (tmp_path.parent.parent / "escaped.xlsx").exists()
 
 
+def test_save_copy_never_replaces_a_file_already_there(tmp_path):
+    """The output folder is usually a shared drive holding other people's
+    work. A name collision used to take the existing file silently; the copy
+    is versioned instead, so nothing already on the drive is ever touched."""
+    from ui.cutting_plan._shared import save_copy_to_folder
+
+    (tmp_path / "plan.xlsx").write_bytes(b"someone else's file")
+    save_copy_to_folder(b"our export", "plan.xlsx", str(tmp_path))
+
+    assert (tmp_path / "plan.xlsx").read_bytes() == b"someone else's file"
+    assert (tmp_path / "plan_v2.xlsx").read_bytes() == b"our export"
+
+    # a third save steps to _v3 rather than clobbering _v2
+    save_copy_to_folder(b"newer export", "plan.xlsx", str(tmp_path))
+    assert (tmp_path / "plan_v2.xlsx").read_bytes() == b"our export"
+    assert (tmp_path / "plan_v3.xlsx").read_bytes() == b"newer export"
+
+
+def test_save_copy_versioning_keeps_the_extension(tmp_path):
+    """`plan_v2.xlsx`, never `plan.xlsx_v2` — Windows opens it by extension."""
+    from ui.cutting_plan._shared import save_copy_to_folder
+    (tmp_path / "报表.xlsx").write_bytes(b"existing")
+    save_copy_to_folder(b"new", "报表.xlsx", str(tmp_path))
+    assert (tmp_path / "报表_v2.xlsx").exists()
+
+
 def test_missing_folder_does_not_raise(tmp_path):
     from ui.cutting_plan._shared import save_copy_to_folder
     save_copy_to_folder(b"x", "p.xlsx", str(tmp_path / "nope"))   # warns only
