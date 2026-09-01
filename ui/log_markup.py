@@ -38,6 +38,23 @@ _KINDS: dict[str, tuple[str, str]] = {
 LOG_KINDS = tuple(_KINDS)
 
 
+def style_change_note(changes: list[tuple[str, str]]) -> str | None:
+    """One log line saying which style numbers were adjusted at intake, or
+    None when nothing changed.
+
+    *changes* is ``style_norm.end_collecting_changes()`` output:
+    [(as_in_file, as_stored), ...]. Values come from uploaded files, so each
+    is escaped here -- this helper owns the whole line, unlike badge().
+    """
+    if not changes:
+        return None
+    pairs = ", ".join(
+        f"{_html.escape(str(raw))} → {_html.escape(str(fixed))}"
+        for raw, fixed in changes)
+    return (f"🔤 {len(changes)} style number(s) adjusted for search "
+            f"(\"/\" is stored as \"_\"): {pairs}")
+
+
 def badge(kind: str, text: str, *, glyph: bool = True,
           escape: bool = False) -> str:
     """Wrap *text* in the status span for *kind* (``ok`` / ``warn`` / ``err``).

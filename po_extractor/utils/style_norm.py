@@ -18,6 +18,30 @@ filename-keyed lookup.
 """
 from __future__ import annotations
 
+import threading
+
+# Per-thread record of adjustments, so a processing run can TELL the user
+# what it changed ("TP3267-3/4SLV → TP3267-3_4SLV") instead of renaming
+# silently. Thread-local for the same reason as store/audit_context: Streamlit
+# runs each browser session in its own thread, and one user's upload must not
+# report another user's styles. Inactive unless a pipeline opts in, so the
+# hundreds of normalize calls on already-clean values cost one attribute read.
+_local = threading.local()
+
+
+def begin_collecting_changes() -> None:
+    """Start recording style adjustments for the current run. Call at the
+    top of a file-processing pipeline; pair with :func:`end_collecting_changes`."""
+    _local.changes = {}
+
+
+def end_collecting_changes() -> list[tuple[str, str]]:
+    """Stop recording and return [(as_in_file, as_stored), ...] in first-seen
+    order, deduplicated. Empty when nothing was adjusted."""
+    changes = getattr(_local, "changes", None) or {}
+    _local.changes = None
+    return list(changes.items())
+
 
 def normalize_style_no(style):
     """Return *style* with every ``/`` (and ``\\``) as ``_``, stripped.
@@ -28,4 +52,9 @@ def normalize_style_no(style):
     """
     if not isinstance(style, str):
         return style
-    return style.replace("/", "_").replace("\\", "_").strip()
+    fixed = style.replace("/", "_").replace("\\", "_").strip()
+    if fixed != style.strip():
+        changes = getattr(_local, "changes", None)
+        if changes is not None:
+            changes.setdefault(style.strip(), fixed)
+    return fixed

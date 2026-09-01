@@ -175,3 +175,56 @@ def test_migration_is_idempotent(tmp_path):
     assert conn.execute(
         "SELECT COUNT(*) FROM po_size_rows").fetchone()[0] == 1
     conn.close()
+
+
+# ── the processing log tells the user what was adjusted ─────────────────────
+
+def test_collector_records_changes_only_while_active():
+    from po_extractor.utils import style_norm as sn
+
+    # inactive by default: normalizing records nothing and never raises
+    sn.normalize_style_no("A/B")
+    sn.begin_collecting_changes()
+    sn.normalize_style_no("A/B")
+    sn.normalize_style_no("A/B")          # duplicate — reported once
+    sn.normalize_style_no("CLEAN")        # unchanged — not reported
+    sn.normalize_style_no("C/D")
+    assert sn.end_collecting_changes() == [("A/B", "A_B"), ("C/D", "C_D")]
+    # the window is closed: a later call records nothing
+    sn.normalize_style_no("E/F")
+    assert sn.end_collecting_changes() == []
+
+
+def test_collector_is_isolated_per_thread():
+    """Two Streamlit sessions process files concurrently — one user's upload
+    must never report another user's styles (same rule as audit_context)."""
+    import threading
+    from po_extractor.utils import style_norm as sn
+
+    sn.begin_collecting_changes()
+    seen_in_child: list = []
+
+    def child():
+        sn.normalize_style_no("X/Y")              # no window in THIS thread
+        sn.begin_collecting_changes()
+        sn.normalize_style_no("P/Q")
+        seen_in_child.extend(sn.end_collecting_changes())
+
+    th = threading.Thread(target=child)
+    th.start(); th.join(timeout=10)
+    assert not th.is_alive()
+    assert seen_in_child == [("P/Q", "P_Q")]
+    # the parent window saw none of the child's styles
+    assert sn.end_collecting_changes() == []
+
+
+def test_style_change_note_formats_and_escapes():
+    from ui.log_markup import style_change_note
+
+    assert style_change_note([]) is None
+    note = style_change_note([("TP3267-3/4SLV", "TP3267-3_4SLV")])
+    assert "TP3267-3/4SLV → TP3267-3_4SLV" in note
+    assert note.startswith("🔤 1 style number(s) adjusted")
+    # values come from uploaded files — markup in them must not survive
+    hostile = style_change_note([("<b>/x", "<b>_x")])
+    assert "<b>" not in hostile and "&lt;b&gt;" in hostile

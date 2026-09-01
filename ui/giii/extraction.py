@@ -89,12 +89,21 @@ _ProgressTracker = ProgressTracker
 
 def _run_extraction(uploaded_files, mask_prices: bool, company: str = ""):
     import shutil as _shutil
+    from po_extractor.utils.style_norm import (
+        begin_collecting_changes, end_collecting_changes)
+    from ui.log_markup import style_change_note
     tmpdir = tempfile.mkdtemp()
     out_dir = tempfile.mkdtemp()
     log = []
+    begin_collecting_changes()
     try:
         _run_extraction_body(uploaded_files, mask_prices, company, tmpdir, out_dir, log)
     finally:
+        # Every exit path stored THIS list object in session state, so an
+        # append here shows in the rendered log even after an early return.
+        note = style_change_note(end_collecting_changes())
+        if note:
+            log.append(note)
         _shutil.rmtree(tmpdir,  ignore_errors=True)
         _shutil.rmtree(out_dir, ignore_errors=True)
 
@@ -764,7 +773,9 @@ def _run_smart_processing_body(detections, saved_paths: dict[str, str],
     from ui.shared import (
         load_photo_map_from_dir as _load_photo_map_from_dir,
     )
+    from po_extractor.utils.style_norm import begin_collecting_changes
     log: list[str] = []
+    begin_collecting_changes()
 
     # Load photos from the configured image folder
     images_folder = _get_images_dir("giii_images_dir")
@@ -826,6 +837,11 @@ def _run_smart_processing_body(detections, saved_paths: dict[str, str],
         else:
             status.update(label="Done!", state="complete")
 
+    from po_extractor.utils.style_norm import end_collecting_changes
+    from ui.log_markup import style_change_note
+    _note = style_change_note(end_collecting_changes())
+    if _note:
+        log.append(_note)
     st.session_state[SK.SMART_RESULTS] = outputs
     st.session_state[SK.SMART_LOG] = log
 

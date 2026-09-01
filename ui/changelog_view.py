@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.142.1",
+        "date": "2026-08-31",
+        "entries": [
+            {"type": "feat", "text": "**The processing log now says when a style number was adjusted.** Yesterday's rule (\"/\" in a style is stored as \"_\") happened silently — the file said one thing, the system saved another, and nothing mentioned it. Now, when processing a client PO or Sky East contract changes any style, the run's log carries one line naming each one: 🔤 TP3267-3/4SLV → TP3267-3_4SLV. Files with no slashes show nothing extra."},
+        ],
+    },
+    {
         "version": "2.142.0",
         "date": "2026-08-31",
         "entries": [
