@@ -1013,8 +1013,25 @@ def save_images_to_disk(image_dict: dict,
                     img_bytes = image_dict.get(pid)
                     if img_bytes:
                         fname = os.path.join(folder, f"{safe_style}_{position}.png")
-                        with open(fname, "wb") as f:
-                            f.write(img_bytes)
+                        # NEVER overwrite an existing photo -- same guard the
+                        # {pid}.png write above already has.
+                        #
+                        # This folder is the user's own curated photo library
+                        # (often a shared network drive). These bytes are only
+                        # whatever the CLIENT embedded in their contract file,
+                        # which can be a different garment entirely. Without
+                        # this check every upload silently replaced the real
+                        # style photo with the client's, and the wrong picture
+                        # then went onto every 核料 doc and buy plan -- with
+                        # nothing to show it had happened, because the
+                        # filename never changed. (Found 2026-09-01:
+                        # TP3267-3_4SLV_front.png on the share was byte-for-byte
+                        # the contract's sleeveless top, stamped with that
+                        # upload's timestamp.) A style with no photo yet still
+                        # gets one; a curated photo is never touched again.
+                        if not os.path.exists(fname):
+                            with open(fname, "wb") as f:
+                                f.write(img_bytes)
     except OSError as exc:
         from ui.i18n import t as _t
         st.warning(_t(
