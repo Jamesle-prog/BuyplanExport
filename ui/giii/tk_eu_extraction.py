@@ -22,6 +22,7 @@ from ui.giii._shared import (
     _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature,
     FAX_SIZE_ORDER, XL_NAVY, XL_WHITE, XL_YELLOW, XL_GREY, XL_LTBLUE, XL_GREEN,
     drop_stale_results, iter_pdf_payloads, make_excel_style_kit,
+    persist_fax_pos,
 )
 from ui.i18n import t
 from ui.session_keys import SK
@@ -432,6 +433,7 @@ def show_tk_eu_upload_section(files=None) -> None:
             return
         st.session_state[SK.GIII_TKEU_RESULTS] = results
         st.session_state[SK.GIII_TKEU_SIG]     = sig
+        persist_fax_pos(results, "tk_eu")
 
     # Drop stale results when the uploaded file set changed since extraction.
     results = drop_stale_results(SK.GIII_TKEU_RESULTS, SK.GIII_TKEU_SIG, sig)

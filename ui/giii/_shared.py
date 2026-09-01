@@ -1,7 +1,7 @@
 """Shared constants and helpers for the GIII tab sub-modules."""
 from __future__ import annotations
 import re
-import streamlit as st
+import streamlit as st
 from ui.i18n import t
 from po_extractor.ui_helpers import (
     live_label_for,
@@ -260,6 +260,54 @@ def drop_stale_results(results_key: str, sig_key: str, sig: tuple):
         st.session_state[results_key] = None
         results = None
     return results
+
+
+def persist_fax_pos(results: list[dict], source_format: str,
+                    company: str = "GIII") -> None:
+    """Save a fax section's parsed POs to history and report what happened.
+
+    All four fax sections (KL, MSG/CSKHHA, TK EU, Infor Nexus) return the same
+    PO-dict shape, so one call covers them; the mapping lives in
+    ``po_extractor.ui_helpers.fax_po_adapter``.
+
+    Why this exists: these sections used to hand their results straight to an
+    Excel writer and never store them, so a fax PO was invisible to the Order
+    Summary and the PO Tracker — both read the database. Going through the
+    same ``save_many_checked`` every other PO uses means they now appear there
+    beside the main GIII flow and Sky East, with the same duplicate detection
+    and revision history rather than a second, parallel notion of "saved".
+
+    Never raises: the Excel download is what the operator came for, and a
+    storage problem must not take it away. A failure is shown, not swallowed
+    silently.
+    """
+    if not results:
+        return
+    from po_extractor.ui_helpers.fax_po_adapter import fax_pos_to_podata
+    from po_extractor.ui_helpers.save_log import format_save_results
+    from ui.session_keys import SK as _SK
+    from ui.stores import get_store
+
+    try:
+        pos = fax_pos_to_podata(
+            results, company=company, source_format=source_format,
+            processed_by=st.session_state.get(_SK.USERNAME, "") or "")
+        if not pos:
+            return
+        save_results = get_store().save_many_checked(pos)
+    except Exception as exc:                       # noqa: BLE001 - reported
+        st.warning(f"⚠️ {t('Could not save to history')} — {exc}")
+        return
+
+    log = format_save_results(save_results)
+    counts = log.counts
+    st.success(
+        f"💾 {t('Saved to history')} — "
+        f"{counts.get('new', 0)} {t('new')}, "
+        f"{counts.get('updated', 0)} {t('updated')}, "
+        f"{counts.get('duplicate', 0)} {t('duplicate')}. "
+        + t("These POs now appear in Order Summary and PO Tracker.")
+    )
 
 
 _SIZE_CODES = r'(?:XXS|XS|XXL|XL|[123]XL|[123]X|OSFM|OSM|OSF|OS|S|M|L)'

@@ -19,6 +19,7 @@ from ui.giii._shared import (
     _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature,
     FAX_SIZE_ORDER, XL_NAVY, XL_WHITE, XL_YELLOW, XL_GREY, XL_LTBLUE, XL_GREEN,
     drop_stale_results, iter_pdf_payloads, make_excel_style_kit,
+    persist_fax_pos,
 )
 from ui.i18n import t
 from ui.session_keys import SK
@@ -533,6 +534,7 @@ def show_kl_upload_section(files=None) -> None:
 
         st.session_state[SK.GIII_KL_RESULTS] = results
         st.session_state[SK.GIII_KL_SIG]     = sig
+        persist_fax_pos(results, "kl")
 
     results = drop_stale_results(SK.GIII_KL_RESULTS, SK.GIII_KL_SIG, sig)
     if not results:

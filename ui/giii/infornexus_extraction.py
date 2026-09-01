@@ -18,7 +18,7 @@ import re
 
 import streamlit as st
 
-from ui.giii._shared import _XLSX_MIME, files_signature
+from ui.giii._shared import _XLSX_MIME, files_signature, persist_fax_pos
 from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import _th
@@ -516,6 +516,10 @@ def show_infornexus_upload_section(files=None) -> None:
         st.session_state[SK.GIII_IN_KL_RESULTS] = kl_results
         st.session_state[SK.GIII_IN_SIG]        = in_sig
         st.session_state[SK.GIII_IN_KL_SIG]     = kl_sig
+        # Both sides of the comparison are real POs; save each under its own
+        # source_format so the Tracker shows where a row came from.
+        persist_fax_pos(in_results, "infor_nexus")
+        persist_fax_pos(kl_results, "kl")
 
     # Drop stale results when either uploaded file set changed since extraction.
     if (st.session_state.get(SK.GIII_IN_RESULTS) is not None
