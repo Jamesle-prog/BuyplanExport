@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from ..utils.style_norm import normalize_style_no
+from ..utils.style_norm import style_key
 
 
 class _FabricMixin:
@@ -39,7 +39,6 @@ class _FabricMixin:
         """
         if not parts or not style:
             return 0
-        style = normalize_style_no(style)
 
         from ..models.fabric_part import FabricPart
 
@@ -108,7 +107,6 @@ class _FabricMixin:
 
         with self._conn() as conn:
             for style, parts in style_parts_map.items():
-                style = normalize_style_no(style)
                 if not parts or not style:
                     continue
                 for p in parts:
@@ -188,25 +186,39 @@ class _FabricMixin:
         if not styles:
             return {}
 
-        ph = ",".join("?" * len(styles))
-        params: list = list(styles)
+        # Match on style_key, not the raw text: the PO may say "A/B" while
+        # the mapping was uploaded as "A_B" (or vice versa) -- one style, two
+        # hand-typed spellings. The stored spelling is never rewritten; each
+        # hit is returned under the spelling the CALLER asked with, so its
+        # own lookups land. See utils/style_norm.
+        requested_by_key: dict[str, str] = {}
+        for s in styles:
+            k = style_key(s)
+            if k:
+                requested_by_key.setdefault(k, str(s))
+        if not requested_by_key:
+            return {}
+
+        params: list = []
         source_clause = ""
         if source:
-            source_clause = " AND source = ?"
+            source_clause = " WHERE source = ?"
             params.append(source)
 
         with self._conn() as conn:
             rows = conn.execute(
                 f"""SELECT style, combo_idx, seq, body_part, hhn_no, composition,
                            weight_gsm, width_cm
-                    FROM style_fabric_parts
-                    WHERE style IN ({ph}){source_clause}
+                    FROM style_fabric_parts{source_clause}
                     ORDER BY style, combo_idx, seq""",
                 params,
             ).fetchall()
 
         result: dict[str, list] = {}
         for r in rows:
+            wanted = requested_by_key.get(style_key(r["style"]))
+            if wanted is None:
+                continue
             fp = FabricPart(
                 combo_idx=r["combo_idx"] or 0,
                 seq=r["seq"],
@@ -216,7 +228,7 @@ class _FabricMixin:
                 weight_gsm=r["weight_gsm"] or 0,
                 width_cm=r["width_cm"] or 0,
             )
-            result.setdefault(r["style"], []).append(fp)
+            result.setdefault(wanted, []).append(fp)
         return result
 
     def list_mapped_styles(self, source: str) -> set[str]:
@@ -242,7 +254,7 @@ class _FabricMixin:
         n = 0
         with self._conn() as conn:
             for rec in records:
-                style = normalize_style_no(str(rec.get("style") or ""))
+                style = str(rec.get("style") or "").strip()
                 if not style:
                     continue
                 vals = [rec.get(f) for f in self._CONS_FIELDS]
@@ -265,14 +277,23 @@ class _FabricMixin:
         for the given styles (missing styles simply absent)."""
         if not styles:
             return {}
-        ph = ",".join("?" * len(styles))
+        # style_key matching, requested spelling as the result key -- same
+        # reasoning as load_fabric_parts_for_styles above.
+        requested_by_key = {}
+        for s in styles:
+            k = style_key(s)
+            if k:
+                requested_by_key.setdefault(k, str(s))
         with self._conn() as conn:
             rows = conn.execute(
-                f"""SELECT style, cons_kg, cons_cm, util, marker_pcs, width_cm, gsm
-                    FROM fabric_consumption WHERE style IN ({ph})""",
-                list(styles),
-            ).fetchall()
-        return {r["style"]: {f: r[f] for f in self._CONS_FIELDS} for r in rows}
+                """SELECT style, cons_kg, cons_cm, util, marker_pcs, width_cm, gsm
+                    FROM fabric_consumption""").fetchall()
+        out: dict = {}
+        for r in rows:
+            wanted = requested_by_key.get(style_key(r["style"]))
+            if wanted is not None and wanted not in out:
+                out[wanted] = {f: r[f] for f in self._CONS_FIELDS}
+        return out
 
     def load_all_fabric_consumption(self) -> list[dict]:
         """Every consumption record, for the download-current-data export."""
@@ -432,7 +453,6 @@ class _FabricMixin:
             ).rowcount
 
             for style, parts in (style_parts_map or {}).items():
-                style = normalize_style_no(style)
                 if not parts or not style:
                     continue
                 for p in parts:

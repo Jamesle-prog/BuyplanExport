@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from .fabric_part import FabricPart
-from ..utils.style_norm import normalize_style_no
 
 
 @dataclass
@@ -25,12 +24,6 @@ class SkyEastItem:
     picture_id: str | None = None          # DISPIMG ID extracted from formula
     fabric_parts: list = field(default_factory=list)  # list[FabricPart] — structured fabric data
     return_label: str = "NA"               # "Yes" / "No" / "NA" — from the client PO's Return Label column
-
-    def __post_init__(self):
-        # "/" in a style is stored as "_" (TP3267-3/4SLV -> TP3267-3_4SLV) so
-        # mapping/photo/search lookups agree on one spelling. Only the style:
-        # config_sku, colours and fabric codes keep their slashes.
-        self.style = normalize_style_no(self.style)
 
 
 @dataclass

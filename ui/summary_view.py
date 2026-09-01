@@ -308,15 +308,14 @@ def _show_all_orders(df: pd.DataFrame) -> None:
         df = df[df["company"].isin(sel_cos)]
     if query:
         q = query.lower()
-        # Styles store "/" as "_" (utils/style_norm), so the style column also
-        # tries the slash-normalised needle. The other columns keep the raw
-        # needle only — a colour like "BLK/WHT" genuinely contains a slash.
+        # Styles keep their file spelling; the style column matches with "/"
+        # treated as "_" on BOTH sides. The other columns keep the raw needle
+        # — a colour like "BLK/WHT" genuinely contains a slash.
         mask = (
             df["po_number"].astype(str).str.lower().str.contains(q, na=False)
             | df["contract_no"].astype(str).str.lower().str.contains(q, na=False)
-            | df["style"].astype(str).str.lower().str.contains(q, na=False)
-            | df["style"].astype(str).str.lower().str.contains(
-                q.replace("/", "_"), na=False, regex=False)
+            | df["style"].astype(str).str.lower().str.replace("/", "_", regex=False)
+              .str.contains(q.replace("/", "_"), na=False, regex=False)
             | df["color"].astype(str).str.lower().str.contains(q, na=False)
         )
         df = df[mask]

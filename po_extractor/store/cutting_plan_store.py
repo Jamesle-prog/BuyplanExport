@@ -14,6 +14,8 @@ import sqlite3
 from datetime import datetime
 from typing import Any
 
+from ..utils.style_norm import style_key as _style_key
+
 import pandas as pd
 
 from .base_store import BaseSQLiteStore
@@ -601,17 +603,22 @@ class CuttingPlanStore(BaseSQLiteStore):
         if po_nos:
             clauses.append(f"l.po_no IN ({','.join('?' * len(po_nos))})")
             params += po_nos
+        # Style filters compare on style_key ("/" == "_"): the stored link
+        # keeps whatever spelling its cut-plan file used, the query keeps the
+        # caller's, and the two still meet. See utils/style_norm.
+        _norm_col = "REPLACE(REPLACE(l.style,'/','_'),'\\','_')"
+        style_keys = [_style_key(s) for s in styles]
         if styles and clauses:
             # Narrowing a PO match: a link made before styles were recorded
             # ('' = the whole PO) still covers the style being asked about.
             where = (f"({' OR '.join(clauses)}) AND (l.style = '' OR "
-                     f"l.style IN ({','.join('?' * len(styles))}))")
-            params += styles
+                     f"{_norm_col} IN ({','.join('?' * len(styles))}))")
+            params += style_keys
         elif styles:
             # Searching by style alone — only an explicit style match counts,
             # or every whole-PO link in the database would come back.
-            where = f"l.style IN ({','.join('?' * len(styles))})"
-            params += styles
+            where = f"{_norm_col} IN ({','.join('?' * len(styles))})"
+            params += style_keys
         else:
             where = f"({' OR '.join(clauses)})"
         with self._conn() as conn:

@@ -26,41 +26,6 @@ class POStore(_WritesMixin, _ReadsMixin, _ExceptionsMixin, _FabricMixin,
               _ProgressMixin, _UpcMixin, BaseSQLiteStore):
     """Persistent SQLite store for PO history with conflict detection."""
 
-    @staticmethod
-    def _normalize_stored_styles(conn) -> None:
-        """One-time sweep: rewrite ``/`` (and ``\\``) as ``_`` in every
-        ``style`` column of every table in this database.
-
-        Row-by-row rather than one UPDATE, because several tables carry a
-        UNIQUE constraint that includes style — if a normalised twin already
-        exists (the same style saved once each way), a bulk UPDATE would
-        abort the whole migration. A colliding row is left as it is: its twin
-        may carry different data in the other columns, and deleting either
-        would lose real work — search treats the two spellings as one anyway.
-        (No such twin exists in the live data; this is belt-and-braces for
-        other deployments.) Idempotent and cheap — the WHERE finds nothing
-        once the sweep has run.
-        """
-        import sqlite3 as _sq
-        tables = [r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'")]
-        for table in tables:
-            cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
-            if "style" not in cols:
-                continue
-            rows = conn.execute(
-                f"SELECT rowid, style FROM {table} "
-                "WHERE style LIKE '%/%' OR style LIKE '%\\%'"
-            ).fetchall()
-            for rowid, style in rows:
-                fixed = str(style).replace("/", "_").replace("\\", "_").strip()
-                try:
-                    conn.execute(
-                        f"UPDATE {table} SET style=? WHERE rowid=?",
-                        (fixed, rowid))
-                except _sq.IntegrityError:
-                    pass    # normalised twin exists — keep both, lose nothing
-
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -161,9 +126,3 @@ class POStore(_WritesMixin, _ReadsMixin, _ExceptionsMixin, _FabricMixin,
             if "updated_by" not in _uts_cols:
                 self._add_column_if_missing(
                     conn, "upc_stocktake", "updated_by", "TEXT DEFAULT ''")
-            # Migrate: "/" in a style number is stored as "_" (see
-            # utils/style_norm — one spelling so mapping/search/photo lookups
-            # agree). New writes are normalised at intake; this catches what
-            # was already on disk, in EVERY table with a style column, so a
-            # future style-bearing table is covered without another edit.
-            self._normalize_stored_styles(conn)

@@ -923,11 +923,12 @@ def _render_progress_filters(
             continue
         if sel_factories and (r.get("factory") or "") not in sel_factories:
             continue
-        # Styles store "/" as "_" (utils/style_norm): try the raw needle and
-        # the slash-normalised one, so either spelling typed finds the row.
-        if search and search not in (hay := (
-            f"{r.get('po_number', '')} {r.get('style') or ''}".lower()
-        )) and search.replace("/", "_") not in hay:
+        # Styles keep their file spelling; matching treats "/" as "_" on
+        # both sides, so either spelling typed finds either spelling stored.
+        if search and search.replace("/", "_") not in (
+            f"{r.get('po_number', '')} {r.get('style') or ''}"
+            .lower().replace("/", "_")
+        ):
             continue
         out.append(r)
     return out

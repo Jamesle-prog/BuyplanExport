@@ -1,8 +1,6 @@
 """Unified data model for PO extraction."""
 from dataclasses import dataclass, field, asdict
 
-from ..utils.style_norm import normalize_style_no
-
 
 @dataclass
 class SizeRow:
@@ -20,12 +18,6 @@ class SizeRow:
     units: int
     upc: str
     xfty_date: str = ""
-
-    def __post_init__(self):
-        # "/" in a style is stored as "_" -- one spelling everywhere. Done on
-        # the model, not per parser, so every pipeline (PDF, Nexus, KL, TK-EU,
-        # .msg, Excel) gets it by construction. See utils/style_norm.
-        self.style = normalize_style_no(self.style)
 
 
 @dataclass
@@ -87,11 +79,6 @@ class POMetadata:
     external_quote_id: str | None = None        # reserved for future quotation-module integration
     source_module: str | None = None            # reserved for future quotation-module integration
     integration_status: str | None = None       # reserved for future quotation-module integration
-
-    def __post_init__(self):
-        # Same rule as SizeRow: "/" in a style is stored as "_". None stays
-        # None -- metadata's style is optional.
-        self.style = normalize_style_no(self.style)
 
 
 @dataclass

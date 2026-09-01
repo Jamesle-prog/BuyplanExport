@@ -209,11 +209,10 @@ def test_parser_failure_is_logged_and_queued_not_raised(pipeline, monkeypatch):
     assert "Sky East parse failed" in exc_df.iloc[0]["reason"]
 
 
-def test_a_slash_style_is_reported_in_the_processing_log(pipeline, monkeypatch):
-    """v2.142.0 stores "/" in a style as "_"; the log must SAY so, not rename
-    silently. The contract is built inside the fake parse call -- that is
-    when a real upload constructs its items, inside the pipeline's
-    change-collection window."""
+def test_a_slash_style_is_stored_exactly_as_the_file_spelled_it(pipeline, monkeypatch):
+    """2026-09-01 rule: the display spelling is the file's spelling — "/" is
+    never rewritten at intake (matching handles "/" vs "_" separately, on
+    style_key). And no adjustment note appears, because nothing is adjusted."""
     session, _po, se_store, _bs = pipeline
 
     def _fake(path, processed_by=""):
@@ -225,20 +224,6 @@ def test_a_slash_style_is_reported_in_the_processing_log(pipeline, monkeypatch):
 
     log = "\n".join(session.get(SK.SE_LOG, []))
     assert session.get(SK.SE_RESULTS) is not None, log
-    assert "style number(s) adjusted" in log, log
-    assert "TP3267-3/4SLV → TP3267-3_4SLV" in log, log
-    # and what was stored is the underscore spelling
-    items = se_store.list_items(pc_nos=["PC1"])
-    assert list(items["style"]) == ["TP3267-3_4SLV"]
-
-
-def test_a_clean_upload_reports_no_adjustment_note(pipeline, monkeypatch):
-    """No "/" anywhere -- the note must not appear at all, not appear empty."""
-    session, _po, _se, _bs = pipeline
-    _patch_parse(monkeypatch, _make_contract([_make_item(brand="Anna Field")]))
-
-    proc._run_sky_east_processing([_FakeUpload("order.xlsx")], None, None)
-
-    log = "\n".join(session.get(SK.SE_LOG, []))
-    assert session.get(SK.SE_RESULTS) is not None, log
     assert "style number(s) adjusted" not in log, log
+    items = se_store.list_items(pc_nos=["PC1"])
+    assert list(items["style"]) == ["TP3267-3/4SLV"]

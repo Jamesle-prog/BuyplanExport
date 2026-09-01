@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from ..utils.style_norm import normalize_style_no as _norm_style
+from ..utils.style_norm import style_key as _style_key
 from typing import Any
 
 from .base_store import BaseSQLiteStore
@@ -112,7 +112,12 @@ class ProductionTrackingStore(BaseSQLiteStore):
         caused silent drops on every save.
         """
         po_number = (po_number or "").strip()
-        style = _norm_style(style or "")
+        style = (style or "").strip()
+        # One record per real style even when "/" was retyped as "_": if a
+        # row already exists whose style_key matches, adopt ITS stored
+        # spelling so the write lands on that row instead of forking a twin.
+        # The first-seen spelling is what stays on screen.
+        style = self._resolve_style_spelling(po_number, style)
         # Same local "YYYY-MM-DD HH:MM:SS" format update_stage_fields writes,
         # so the dashboard's ORDER BY updated_at sorts a single consistent
         # format (mixing this with an ISO "T" UTC string scrambled the order).
@@ -164,6 +169,22 @@ class ProductionTrackingStore(BaseSQLiteStore):
                 (po_number, style),
             ).fetchone()
         return int(row["id"]) if row else 0
+
+    def _resolve_style_spelling(self, po_number: str, style: str) -> str:
+        """The stored spelling of (po_number, style)'s row, matched on
+        style_key -- or *style* unchanged when no row matches. Keeps one
+        tracking record per real style across "/" vs "_" retypes without
+        ever rewriting what a person first typed."""
+        k = _style_key(style)
+        if not k:
+            return style
+        with self._conn() as conn:
+            for r in conn.execute(
+                    "SELECT style FROM production_tracking WHERE po_number=?",
+                    (po_number,)).fetchall():
+                if _style_key(r["style"]) == k:
+                    return r["style"]
+        return style
 
     def delete(self, ids: list[int]) -> int:
         """Delete tracking record(s) by id.  Returns deleted count.
@@ -291,7 +312,12 @@ class ProductionTrackingStore(BaseSQLiteStore):
         warning (factory import for an untracked PO) or an error.
         """
         po_number = (po_number or "").strip()
-        style = _norm_style(style or "")
+        style = (style or "").strip()
+        # One record per real style even when "/" was retyped as "_": if a
+        # row already exists whose style_key matches, adopt ITS stored
+        # spelling so the write lands on that row instead of forking a twin.
+        # The first-seen spelling is what stays on screen.
+        style = self._resolve_style_spelling(po_number, style)
         if not stage_fields:
             return True
         with self._conn() as conn:

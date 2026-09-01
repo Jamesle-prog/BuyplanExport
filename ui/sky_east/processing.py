@@ -304,12 +304,8 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
     from po_extractor.utils.image_extractor import ImageCache
 
     import shutil as _shutil
-    from po_extractor.utils.style_norm import (
-        begin_collecting_changes, end_collecting_changes)
-    from ui.log_markup import style_change_note
     tmpdir = tempfile.mkdtemp()
     log: list[str] = []
-    begin_collecting_changes()
     contracts = []
     image_cache = ImageCache()
     try:
@@ -543,10 +539,5 @@ def _run_sky_east_processing(order_files, ean_file, progress_file,
         st.session_state[SK.SE_RESULTS] = None
         st.error(f"{t('Sky East processing failed:')} {exc}")
     finally:
-        # Every exit path above stored THIS log list in session state, so the
-        # append is visible in the rendered log regardless of how we got here.
-        _note = style_change_note(end_collecting_changes())
-        if _note:
-            log.append(_note)
         # Clean up temp directory — all data is now in memory / DB / disk images
         _shutil.rmtree(tmpdir, ignore_errors=True)
