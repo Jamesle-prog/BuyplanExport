@@ -184,15 +184,19 @@ def _filter_plans(df: pd.DataFrame, search: str, store) -> pd.DataFrame:
     text_cols = ["plan_name", "styles", "colors", "materials", "material",
                  "source_file", "notes", "uploaded_by", "linked_styles"]
     mask = pd.Series(False, index=df.index)
+    # Styles store "/" as "_" (utils/style_norm) — try both spellings of the
+    # needle so a typed "3/4" finds the stored "3_4".
+    needles = {q, q.replace("/", "_")}
     for col in text_cols:
         if col in df.columns:
-            mask |= df[col].fillna("").astype(str).str.lower().str.contains(
-                q, regex=False)
+            hay = df[col].fillna("").astype(str).str.lower()
+            for n in needles:
+                mask |= hay.str.contains(n, regex=False)
     # Also match on a linked PC/PO number or PO style — that's how the cutting
     # room looks a plan up.
     term = search.strip()
     for hits in (store.plans_for_pos(pc_nos=[term], po_nos=[term]),
-                 store.plans_for_pos(styles=[term])):
+                 store.plans_for_pos(styles=[term.replace("/", "_")])):
         if not hits.empty:
             mask |= df["id"].isin(hits["plan_id"].tolist())
     return df[mask]

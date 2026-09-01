@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.142.0",
+        "date": "2026-08-31",
+        "entries": [
+            {"type": "feat", "text": "**A style number's \"/\" is now treated as \"_\" everywhere.** Client files carry the same style both ways — TP3267-3/4SLV in a contract, TP3267-3_4SLV wherever a filename was involved, because Windows filenames cannot contain \"/\". Stored as-is, the two spellings were two different styles: the fabric mapping missed the PO's style, search found one spelling and not the other, and a photo that existed was never matched. Now every style is saved with \"_\" the moment a file is read — client POs, Sky East contracts, fabric mapping, 单耗, production tracking and cutting plans alike — and styles already in the database were converted the same way on upgrade."},
+            {"type": "feat", "text": "**Search boxes accept either spelling.** Type 3/4 or 3_4 in the fabric mapping, 单耗, production tracking, summary or cutting-plan search — both find the style. Colour searches are untouched: a colour like BLK/WHT genuinely contains a slash and still matches as typed."},
+        ],
+    },
+    {
         "version": "2.141.2",
         "date": "2026-08-31",
         "entries": [

@@ -18,6 +18,8 @@ Schema and constants live in ``_production_tracking_schema.py``.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+
+from ..utils.style_norm import normalize_style_no as _norm_style
 from typing import Any
 
 from .base_store import BaseSQLiteStore
@@ -110,7 +112,7 @@ class ProductionTrackingStore(BaseSQLiteStore):
         caused silent drops on every save.
         """
         po_number = (po_number or "").strip()
-        style = (style or "").strip()
+        style = _norm_style(style or "")
         # Same local "YYYY-MM-DD HH:MM:SS" format update_stage_fields writes,
         # so the dashboard's ORDER BY updated_at sorts a single consistent
         # format (mixing this with an ISO "T" UTC string scrambled the order).
@@ -289,7 +291,7 @@ class ProductionTrackingStore(BaseSQLiteStore):
         warning (factory import for an untracked PO) or an error.
         """
         po_number = (po_number or "").strip()
-        style = (style or "").strip()
+        style = _norm_style(style or "")
         if not stage_fields:
             return True
         with self._conn() as conn:

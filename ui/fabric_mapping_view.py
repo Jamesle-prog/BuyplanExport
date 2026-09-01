@@ -54,8 +54,11 @@ def _render_full_fabric_table(source: str) -> None:
     )
     if search.strip():
         needle = search.strip().lower()
+        # Styles are stored with "/" as "_" (utils/style_norm), so a typed
+        # "3/4" must still find "3_4".
+        needle_st = needle.replace("/", "_")
         df = df[
-            df["style"].astype(str).str.lower().str.contains(needle, na=False)
+            df["style"].astype(str).str.lower().str.contains(needle_st, na=False, regex=False)
             | df["hhn_no"].astype(str).str.lower().str.contains(needle, na=False)
         ]
         if df.empty:

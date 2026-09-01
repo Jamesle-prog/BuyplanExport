@@ -287,7 +287,9 @@ def _show_giii_consumption_section(store):
                       placeholder=t("Type part of a style number…")).strip()
     view = df_cons
     if q:
-        view = df_cons[df_cons["款号"].astype(str).str.contains(q, case=False, na=False)]
+        # Styles store "/" as "_" (utils/style_norm) — a typed "/" matches both.
+        view = df_cons[df_cons["款号"].astype(str).str.contains(
+            q.replace("/", "_"), case=False, na=False, regex=False)]
 
     st.caption(f"**{len(view)}** / {len(df_cons)} {t('styles')}")
     st.dataframe(view, width="stretch", hide_index=True)

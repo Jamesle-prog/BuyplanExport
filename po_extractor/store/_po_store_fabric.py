@@ -5,6 +5,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from ..utils.style_norm import normalize_style_no
+
 
 class _FabricMixin:
     """Fabric parts and HHN cache operations for POStore.
@@ -37,6 +39,7 @@ class _FabricMixin:
         """
         if not parts or not style:
             return 0
+        style = normalize_style_no(style)
 
         from ..models.fabric_part import FabricPart
 
@@ -105,6 +108,7 @@ class _FabricMixin:
 
         with self._conn() as conn:
             for style, parts in style_parts_map.items():
+                style = normalize_style_no(style)
                 if not parts or not style:
                     continue
                 for p in parts:
@@ -238,7 +242,7 @@ class _FabricMixin:
         n = 0
         with self._conn() as conn:
             for rec in records:
-                style = str(rec.get("style") or "").strip()
+                style = normalize_style_no(str(rec.get("style") or ""))
                 if not style:
                     continue
                 vals = [rec.get(f) for f in self._CONS_FIELDS]
@@ -428,6 +432,7 @@ class _FabricMixin:
             ).rowcount
 
             for style, parts in (style_parts_map or {}).items():
+                style = normalize_style_no(style)
                 if not parts or not style:
                     continue
                 for p in parts:
