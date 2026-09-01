@@ -682,6 +682,26 @@ def load_image(picture_id: str,
     return None
 
 
+def _canon_photo_name(name: str) -> str:
+    """A .png filename reduced to what identifies it: lowercase, letters and
+    digits only.
+
+    The photo share is hand-maintained, and hand-typed names drift from the
+    style number in ways exact matching can't see — ``TP3267-3_4 SLV.png``
+    (space) for style ``TP3267-3_4SLV`` meant "no photo found", so the export
+    silently fell back to the image embedded in the client's contract file,
+    which put the WRONG garment on the 核料 doc. Dropping case, spaces and
+    punctuation makes those spellings one key. Exact names are always tried
+    first, so a canonical collision can only ever fill a gap, never override
+    a properly named file.
+    """
+    import re as _re
+    n = str(name).lower()
+    if n.endswith(".png"):
+        n = n[:-4]
+    return _re.sub(r"[^a-z0-9]", "", n) + ".png"
+
+
 def _photo_candidates(safe_style: str, pos: str) -> tuple[str, ...]:
     """Filenames accepted for a style's *pos* photo, best match first.
 
@@ -708,20 +728,42 @@ def load_style_photo_pair(style: str, primary_dir: str | None = None) -> list:
     import re as _re
     safe = _re.sub(r'[\\/:*?"<>|]', '_', str(style or ""))
     primary = primary_dir if primary_dir is not None else images_dir()
+    # Lazy per-folder listing for the canonical fallback — one listdir per
+    # folder at most, and only when an exact name missed.
+    _canon_idx: dict[str, dict[str, str]] = {}
+
+    def _canon_lookup(folder: str, cand: str) -> str | None:
+        if folder not in _canon_idx:
+            try:
+                idx: dict[str, str] = {}
+                for n in os.listdir(folder):
+                    if n.lower().endswith(".png"):
+                        idx.setdefault(_canon_photo_name(n), n)
+                _canon_idx[folder] = idx
+            except OSError:
+                _canon_idx[folder] = {}
+        return _canon_idx[folder].get(_canon_photo_name(cand))
+
     pair: list = []
     for pos in ("front", "back"):
         data = None
         # Name outside folder: an explicit `_front` anywhere beats a bare name.
         for cand in _photo_candidates(safe, pos):
-            for folder in (primary, EXTRACTED_IMAGES_DIR):
-                p = os.path.join(folder, cand)
-                if os.path.exists(p):
-                    try:
-                        with open(p, "rb") as fh:
-                            data = fh.read()
-                        break
-                    except OSError:
-                        pass
+            for exact in (True, False):
+                for folder in (primary, EXTRACTED_IMAGES_DIR):
+                    fname = cand if exact else _canon_lookup(folder, cand)
+                    if not fname:
+                        continue
+                    p = os.path.join(folder, fname)
+                    if os.path.exists(p):
+                        try:
+                            with open(p, "rb") as fh:
+                                data = fh.read()
+                            break
+                        except OSError:
+                            pass
+                if data is not None:
+                    break
             if data is not None:
                 break
         pair.append(data)
@@ -863,13 +905,22 @@ def load_style_photo_map(styles, primary_dir: str | None = None) -> dict[str, li
     primary = primary_dir if primary_dir is not None else images_dir()
     # Lowercased name → the name as it is actually spelled on disk. Windows and
     # the WebDAV mount are both case-insensitive, so a set membership test on
-    # the raw names would miss a file that differs only in case.
-    listings: list[tuple[str, dict[str, str]]] = []
+    # the raw names would miss a file that differs only in case. The second
+    # dict is the canonical index (see _canon_photo_name): hand-typed names on
+    # the share drift by spaces/punctuation, and an exact miss there used to
+    # mean "no photo" — and a silent fall-through to the contract-embedded
+    # image, i.e. possibly the wrong garment on the export.
+    listings: list[tuple[str, dict[str, str], dict[str, str]]] = []
     for folder in (primary, EXTRACTED_IMAGES_DIR):
         try:
-            listings.append((folder, {n.lower(): n for n in os.listdir(folder)}))
+            names = os.listdir(folder)
+            canon: dict[str, str] = {}
+            for n in names:
+                if n.lower().endswith(".png"):
+                    canon.setdefault(_canon_photo_name(n), n)
+            listings.append((folder, {n.lower(): n for n in names}, canon))
         except OSError:
-            listings.append((folder, {}))
+            listings.append((folder, {}, {}))
 
     # Resolve which (folder, filename) each style/position should read from.
     wanted: list[tuple[str, int, str, str]] = []
@@ -881,10 +932,17 @@ def load_style_photo_map(styles, primary_dir: str | None = None) -> dict[str, li
         for idx, pos in enumerate(("front", "back")):
             # Name outside folder: an explicit `_front` anywhere beats a bare
             # name, which is only a fallback for a style filed as one photo.
+            # Within one candidate name, an exact spelling beats a canonical
+            # (space/punctuation-insensitive) one.
             hit = next(
                 ((folder, names[cand.lower()])
                  for cand in _photo_candidates(safe, pos)
-                 for folder, names in listings if cand.lower() in names),
+                 for folder, names, _canon in listings if cand.lower() in names),
+                None) or next(
+                ((folder, canon[_canon_photo_name(cand)])
+                 for cand in _photo_candidates(safe, pos)
+                 for folder, _names, canon in listings
+                 if _canon_photo_name(cand) in canon),
                 None)
             if hit:
                 wanted.append((s, idx, hit[0], hit[1]))

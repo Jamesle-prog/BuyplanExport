@@ -178,26 +178,55 @@ def _safe_style(style: str) -> str:
     return out
 
 
+def _canon(s: str) -> str:
+    """Lowercased letters and digits only — how two hand-typed spellings of
+    one style are recognised as the same. The photo share is maintained by
+    hand: ``TP3267-3_4 SLV`` (space) for style ``TP3267-3_4SLV`` was a miss
+    under exact prefix matching, so the export fell back to the image
+    embedded in the client's contract — the wrong garment on the document."""
+    import re as _re
+    return _re.sub(r"[^a-z0-9]", "", s.lower())
+
+
 def _classify_filename(stem: str, safe_style_lc: str) -> str | None:
     """Return ``"front"``, ``"back"``, ``"single"``, or None if no match.
 
     *stem* is the filename without extension, lowercased.
     *safe_style_lc* is the sanitised style name, lowercased.
+
+    Two layers. The exact-prefix layer is the original behaviour, token
+    tuples and all. The canonical layer runs only when that missed, and
+    accepts only word suffixes (``front``/``back``) or nothing — never the
+    single-character tokens, because canonicalising eats separators and a
+    bare trailing ``1`` would claim a genuinely different style like
+    ``TP30251`` as TP3025's front photo.
     """
-    if not stem.startswith(safe_style_lc):
+    if stem.startswith(safe_style_lc):
+        suffix_lc = stem[len(safe_style_lc):]
+        for tok in _BACK_TOKENS:
+            if suffix_lc.startswith(tok):
+                return "back"
+        for tok in _FRONT_TOKENS:
+            if suffix_lc.startswith(tok):
+                return "front"
+        if suffix_lc == "":          # exact match → treat as single (front)
+            return "single"
+
+    stem_c, style_c = _canon(stem), _canon(safe_style_lc)
+    if not style_c:
+        return None
+    if not stem_c.startswith(style_c):
         # also allow safe_style appearing anywhere in stem (last-resort match)
-        if safe_style_lc not in stem:
-            return None
-    suffix = stem[len(safe_style_lc):] if stem.startswith(safe_style_lc) else ""
-    suffix_lc = suffix.lower()
-    for tok in _BACK_TOKENS:
-        if suffix_lc.startswith(tok):
-            return "back"
-    for tok in _FRONT_TOKENS:
-        if suffix_lc.startswith(tok):
-            return "front"
-    if suffix_lc == "":          # exact match → treat as single (front)
+        if style_c in stem_c:
+            return "single"
+        return None
+    suffix_c = stem_c[len(style_c):]
+    if suffix_c == "":
         return "single"
+    if suffix_c.startswith("back"):
+        return "back"
+    if suffix_c.startswith("front"):
+        return "front"
     return None
 
 

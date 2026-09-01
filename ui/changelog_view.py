@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.142.2",
+        "date": "2026-09-01",
+        "entries": [
+            {"type": "fix", "text": "**A photo whose filename doesn't exactly match the style number is now still found.** The photo share is maintained by hand, and TP3267-3_4SLV's picture was saved as \"TP3267-3_4 SLV.png\" — one stray space. To the old exact-name lookup that was \"no photo\", so the export quietly fell back to the image embedded inside the client's contract file and printed the wrong garment on the 核料 document. Photo matching now ignores case, spaces and punctuation when comparing a filename to a style — the exact spelling is always tried first, so a correctly named file can never be displaced — and this applies to the Sky East buy plan, the GIII exports and the style-photo previews alike."},
+        ],
+    },
+    {
         "version": "2.142.1",
         "date": "2026-08-31",
         "entries": [
