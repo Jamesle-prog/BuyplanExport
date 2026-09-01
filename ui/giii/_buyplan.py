@@ -111,13 +111,41 @@ def progress_maps(store, meta_df: pd.DataFrame):
     return by_po, by_style, color_lookup
 
 
+def _style_photos(meta_df) -> dict:
+    """``{style: [front, back]}`` for the styles in *meta_df*, from the GIII
+    image folder — the same loader the Sky East buy plan uses, so both read
+    the same curated library and fall back to the extracted-images folder the
+    same way.
+
+    Imported lazily: this module stays Streamlit-free at import time (see the
+    module docstring) and ``ui.shared`` pulls in Streamlit. Never raises — an
+    unset or unreachable folder just means no photos, which is exactly how the
+    buy plan behaved before it had any.
+    """
+    try:
+        from ui.shared import images_dir, load_style_photo_map
+        styles = sorted({
+            str(s).strip() for s in (meta_df.get("style") or [])
+            if str(s or "").strip()
+        })
+        return load_style_photo_map(styles, images_dir("giii_images_dir")) \
+            if styles else {}
+    except Exception:
+        return {}
+
+
 def build_giii_production_plan(selected: list[str], store, *, cprs=None,
-                               manual: dict | None = None, translate=None):
+                               manual: dict | None = None, translate=None,
+                               style_image_map: dict | None = None):
     """Build the GIII 生产计划单 for *selected* PO numbers.
 
     Returns ``(xlsx_bytes, warnings, preview)``. This is the one buy-plan code
     path shared by the upload auto-download and the Reports button. *cprs* is a
     CPRS client (or None → requirement columns blank).
+
+    *style_image_map* overrides the style photos; left as None they are loaded
+    from the GIII image folder, so every caller gets pictures without having
+    to ask for them.
     """
     if not selected:
         return b"", [], []
@@ -126,7 +154,10 @@ def build_giii_production_plan(selected: list[str], store, *, cprs=None,
                if df_all is not None and not df_all.empty else pd.DataFrame())
     reqs, warns, preview = resolve_reqs(cprs, meta_df, manual, translate)
     by_po, by_style, color_en = progress_maps(store, meta_df)
+    if style_image_map is None:
+        style_image_map = _style_photos(meta_df)
     data = generate_giii_production_plan(
         selected, store, color_lookup_en=color_en,
-        contract_by_po=by_po, contract_by_style=by_style, requirements=reqs)
+        contract_by_po=by_po, contract_by_style=by_style, requirements=reqs,
+        style_image_map=style_image_map)
     return data, warns, preview

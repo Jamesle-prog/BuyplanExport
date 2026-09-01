@@ -327,6 +327,25 @@ def _embed_img(ws, img_bytes, col: int, row_no: int,
         return False
 
 
+def _embed_style_photos(ws, front_bytes, back_bytes, col_start: int) -> None:
+    """Put the style's front / back photo into the blank header band (row 3).
+
+    Uses :func:`_embed_img`, which scales to fit while KEEPING the aspect
+    ratio. The Sky East sheet stretches its photos to fill a fixed merged box
+    (twoCellAnchor editAs="twoCell") because its template reserves a box of
+    the right shape; this layout's free header region is wide and short, so
+    the same stretch would squash a garment photo. _embed_img also grows row 3
+    to the image height, so the band only opens up when a photo exists.
+
+    Row 3 is the layout's blank spacer and the columns from the first size
+    column rightwards carry nothing until the two-row table header, so the
+    photos sit in genuinely free space -- they never cover the 面料 / 品名
+    labels on the left or the 日期 fields on the right.
+    """
+    _embed_img(ws, front_bytes, col_start,     3, max_h=180, max_w=150)
+    _embed_img(ws, back_bytes,  col_start + 4, 3, max_h=180, max_w=150)
+
+
 # ---------------------------------------------------------------------------
 # Main public API
 # ---------------------------------------------------------------------------
@@ -341,6 +360,7 @@ def generate_giii_production_plan(
     contract_by_style: dict | None = None,
     requirements: dict | None = None,
     consumption: dict | None = None,
+    style_image_map: dict | None = None,
 ) -> bytes:
     """Return an .xlsx workbook (bytes) with one sheet per style.
 
@@ -362,6 +382,10 @@ def generate_giii_production_plan(
         Optional ``{po_number: RowRequirements}`` from CPRS resolution —
         fills 红色箱贴纸 / 主箱唛 (text + artwork) and the 仓库代码 when
         the PO carries no destination code.
+    style_image_map:
+        Optional ``{style: [front_bytes|None, back_bytes|None]}`` — the same
+        shape ``ui.shared.load_style_photo_map`` returns and the Sky East buy
+        plan already consumes. A style with no entry simply gets no photo.
     """
     if not selected_pos:
         return b""
@@ -429,6 +453,7 @@ def generate_giii_production_plan(
             contract_by_po=contract_by_po, contract_by_style=contract_by_style,
             requirements=requirements,
             consumption=consumption.get(str(style)),
+            style_photos=(style_image_map or {}).get(style) or [],
         )
         if summary:
             summaries.append(summary)
@@ -466,6 +491,7 @@ def _write_style_sheet(
     contract_by_style: dict | None = None,
     requirements: dict | None = None,
     consumption: dict | None = None,
+    style_photos: list | None = None,
 ) -> dict | None:
     """Append one sheet for *style* to *wb*; return the sheet's summary record
     (one row of the workbook's Summary 汇总 table) or None when skipped."""
@@ -611,6 +637,13 @@ def _write_style_sheet(
     _merge_or_set(ws, R_DESC, C_PO, R_DESC, label_end, value=desc,
                   font=_FONT_NORMAL, align=_LEFT)
     _cell(ws, R_DESC, N_COLS - 2, "2ND更新日期：", font=_FONT_BOLD, align=_LEFT)
+
+    # ── Style photo(s) — same source as the Sky East buy plan ────────────────
+    _photos = list(style_photos or [])
+    _embed_style_photos(ws,
+                        _photos[0] if len(_photos) > 0 else None,
+                        _photos[1] if len(_photos) > 1 else None,
+                        C_SZ_START)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Two-row header
