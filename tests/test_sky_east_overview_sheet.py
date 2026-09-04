@@ -101,13 +101,15 @@ def test_overview_rows_include_english_and_chinese_color_plus_code(
     rows = [_row_dict(r) for r in (2, 3)]
     by_style = {r["Style"]: r for r in rows}
 
-    assert by_style["DR5124"]["Color (EN)"]   == "Dark Blue"
+    # Colour (EN) echoes the order file verbatim ("dark blue", not title-cased);
+    # the resolved CN/code prove the normalised form still drove the lookup.
+    assert by_style["DR5124"]["Color (EN)"]   == "dark blue"
     assert by_style["DR5124"]["Color (CN)"]   == "藏青"
     assert by_style["DR5124"]["Color Code"]   == "503"
     assert by_style["DR5124"]["Contract No."] == "26302-ZA7148"
     assert by_style["DR5124"]["Total Qty"]    == 30 + 82 + 119 + 102 + 67
 
-    assert by_style["DR4578"]["Color (EN)"] == "Green"
+    assert by_style["DR4578"]["Color (EN)"] == "green"
     assert by_style["DR4578"]["Color (CN)"] == "绿色"
     assert by_style["DR4578"]["Color Code"] == "602"
 
@@ -383,11 +385,14 @@ def test_strip_color_brackets_passthrough_when_no_brackets():
     assert _strip_color_brackets(None) is None
 
 
-def test_buyplan_color_en_has_no_brackets_in_display(tmp_path):
-    """Regression: a style whose stored colour is "(dark blue)" must show
-    as plain "Dark Blue" in the buy plan, both on its own sheet and in the
-    Overview sheet -- and must be usable as a lookup key (no leftover
-    parentheses breaking an exact match against 大货进度表 / colour DB data).
+def test_buyplan_shows_client_colour_verbatim_but_matches_on_the_stripped_form(tmp_path):
+    """The colour cell shows the client's PO string exactly as it arrived —
+    brackets, casing and all — because the buy plan is read side by side with
+    that PO and has to be greppable against it.
+
+    Stripping stays in force for MATCHING: "(dark blue)" still has to resolve
+    against 大货进度表 / the colour DB, which store plain "Dark Blue".  This
+    test pins both halves at once, since they pull in opposite directions.
     """
     df = pd.DataFrame([{
         "pc_no": "HHPPC048", "style": "DR5124", "brand": "Anna Field",
@@ -395,19 +400,31 @@ def test_buyplan_color_en_has_no_brackets_in_display(tmp_path):
         "zalando_po": "PO001", "config_sku": "C1", "color_name": "(dark blue)",
         "xs": 30, "s": 82, "m": 0, "l": 0, "xl": 0, "xxl": 0,
     }])
+    # The DB is keyed on the stripped, title-cased name — matching only
+    # succeeds if the bracketed value is still normalised before lookup.
+    cn_lookup = {("Sky East", "Anna Field", "Dark Blue"): "深蓝色"}
     path, _totals = export_sky_east_buyplan(
-        df, cn_lookup={}, output_dir=str(tmp_path), label_lookup={}, cn_code_lookup={},
+        df, cn_lookup=cn_lookup, output_dir=str(tmp_path), label_lookup={},
+        cn_code_lookup={},
     )
     wb = load_workbook(path)
     ov = wb["Overview"]
     headers = [c.value for c in ov[1]]
     color_col = headers.index("Color (EN)") + 1
-    assert ov.cell(2, color_col).value == "Dark Blue"
+    assert ov.cell(2, color_col).value == "(dark blue)"
 
-    style_sheet_name = next(s for s in wb.sheetnames if s.endswith("_DR5124"))
-    style_ws = wb[style_sheet_name]
-    col_g_values = [style_ws.cell(r, 7).value for r in range(5, 8)]
-    assert not any(v and "(" in str(v) for v in col_g_values)
+    # ...and the bracketed value still matched, so the Chinese name resolved.
+    cn_col = headers.index("Color (CN)") + 1
+    assert ov.cell(2, cn_col).value == "深蓝色"
+
+    # ...and the same on the style's own sheet.  Find the data row by its
+    # contract number rather than hardcoding one: an earlier version of this
+    # test scanned rows 5-7, which hold headers, so its assertion passed
+    # without ever looking at a colour.
+    style_ws = wb[next(s for s in wb.sheetnames if s.endswith("_DR5124"))]
+    data_row = next(r for r in range(1, style_ws.max_row + 1)
+                    if style_ws.cell(r, 1).value == "26302-ZA7148")
+    assert style_ws.cell(data_row, 7).value == "(dark blue)"
 
 
 # ---------------------------------------------------------------------------
@@ -688,7 +705,9 @@ def test_order_file_concatenated_bracket_colors_resolve_via_second_component(tmp
     ov = load_workbook(path)["Overview"]
     headers = [c.value for c in ov[1]]
     row = dict(zip(headers, [ov.cell(2, c + 1).value for c in range(len(headers))]))
-    assert row["Color (EN)"] == "Dark Blue / White"
+    # Shown verbatim as the client wrote it; the resolved CN/code below are
+    # what prove the stripped "Dark Blue / White" form still drove matching.
+    assert row["Color (EN)"] == "(dark blue)(white)"
     assert row["Color (CN)"] == "白色"
     assert row["Color Code"] == "003"
 
@@ -1065,7 +1084,7 @@ def test_order_file_two_tone_shows_combined_chinese_names_end_to_end(tmp_path):
     ov = load_workbook(path)["Overview"]
     headers = [c.value for c in ov[1]]
     row = dict(zip(headers, [ov.cell(2, c + 1).value for c in range(len(headers))]))
-    assert row["Color (EN)"] == "Dark Blue / White"
+    assert row["Color (EN)"] == "(dark blue)(white)"
     assert row["Color (CN)"] == "藏青 / 白色"
     assert row["Color Code"] == "52# / 3#"
 

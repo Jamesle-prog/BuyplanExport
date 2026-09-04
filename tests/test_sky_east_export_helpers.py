@@ -144,11 +144,11 @@ def test_fill_one_style_row_writes_cells_and_returns_overview():
     )
     assert total == 7                                   # xs 1+3=4, s 2+1=3
     assert ov["style"] == "DR1"
-    assert ov["color_en"] == "Dark Blue"                # bracket-strip + title
+    assert ov["color_en"] == "dark blue"   # shown as the client wrote it
     assert ov["total"] == 7
     assert ov["label_color"] == ""                      # no label on file → blank, not derived
     assert ws.cell(2, col["style"]).value == "DR1"
-    assert ws.cell(2, col["color_en"]).value == "Dark Blue"
+    assert ws.cell(2, col["color_en"]).value == "dark blue"
     assert ws.cell(2, col["total"]).value == 7
 
 

@@ -931,10 +931,21 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
     _row_sty_norm = ctx.sty_norm_cache.get(_row_style)
     if _row_sty_norm is None:
         _row_sty_norm = ctx.sty_norm_cache[_row_style] = _norm_key(_row_style)
-    # Strip decorative wrapping brackets some order files store the colour in,
-    # e.g. "(dark blue)" — both for a clean display and so the value can
-    # exact-match a 大货进度表 / internal DB colour key (which carry no brackets).
-    color_en = _strip_color_brackets(str(g.get("color_name", "") or "")).title()
+    # Two forms of the same colour, deliberately kept apart:
+    #
+    #   color_en           — brackets stripped and title-cased, e.g.
+    #                        "(dark blue)" → "Dark Blue".  This is the MATCH
+    #                        key: 大货进度表 and the internal colour DB store
+    #                        plain names, so a bracketed value never matches.
+    #                        Every lookup and derivation below uses this.
+    #   color_en_display   — the client's PO colour string exactly as it
+    #                        arrived, brackets and casing intact.  This is
+    #                        what the sheet SHOWS: the buy plan is read
+    #                        against the client's own PO, so the colour cell
+    #                        has to be greppable against that document.
+    _raw_client_color = str(g.get("color_name", "") or "")
+    color_en = _strip_color_brackets(_raw_client_color).title()
+    color_en_display = _raw_client_color or color_en
     # brand = the order file's own brand (GIII data) — the key every brand-keyed
     # lookup (colour DB, label DB, shipping-sample requirement) was built against.
     # NEVER swap this for the progress-table brand: 大货进度表's BRAND text is a
@@ -952,7 +963,6 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
         ctx.cn_lookup, ctx.cn_code_lookup, ctx.cn_by_pc_lookup,
         ai_enhance=ctx.ai_enhance, ai_api_key=ctx.ai_api_key, ai_model=ctx.ai_model,
     )
-    _raw_client_color = str(g.get("color_name", "") or "")
     _progress_colors = None
     if color_cn == _COLOR_NOT_FOUND:
         if ctx.cn_by_pc_lookup is not None:
@@ -990,7 +1000,7 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
     _style_data(ws.cell(out_row, col["article"]),   str(g.get("article_name", "") or ""))
     _style_data(ws.cell(out_row, col["po"]),        str(g.get("zalando_po",   "") or ""))
     _style_data(ws.cell(out_row, col["config"]),    str(g.get("config_sku",   "") or ""))
-    _style_data(ws.cell(out_row, col["color_en"]),  color_en)
+    _style_data(ws.cell(out_row, col["color_en"]),  color_en_display)
     _color_cn_cell = ws.cell(out_row, col["color_cn"])
     _style_data(_color_cn_cell, color_cn_display)
     if color_cn == _COLOR_NOT_FOUND:
@@ -1053,7 +1063,7 @@ def _fill_one_style_row(ws, out_row: int, g, grp_df, base_style: str,
         "pc_no":        str(g.get("pc_no", "") or ""),
         "style":        _row_style,
         "sheet_name":   sheet_title,
-        "color_en":     color_en,
+        "color_en":     color_en_display,
         "color_cn":     color_cn,
         "color_code":   cn_code if cn_code != "NA" else "",
         "client_po_color": _raw_client_color,
@@ -1795,10 +1805,16 @@ def export_sky_east_nukuryou(
             # Displays whose colour failed to resolve → (client_colour,
             # progress_colours) for the diagnostic comment attached at write time.
             _miss_info: dict[str, tuple[str, list | None]] = {}
+            # Group label → the text actually rendered, which quotes the
+            # client's raw PO colour.  Kept separate from the grouping key so
+            # rows still aggregate on the normalised colour: "(black)" and
+            # "BLACK" are one colour and must stay one row, whichever spelling
+            # the sheet ends up showing (first seen wins).
+            _group_render: dict[str, str] = {}
             for item in style_df.itertuples(index=False):
-                color_en = _strip_color_brackets(
-                    str(getattr(item, "color_name", "") or "")
-                ).title()
+                _raw_color = str(getattr(item, "color_name", "") or "")
+                color_en = _strip_color_brackets(_raw_color).title()
+                _render_en = _raw_color or color_en
                 brand    = str(getattr(item, "brand", "") or "")
                 key      = (color_en, brand)
                 if key not in _color_display_map:
@@ -1812,7 +1828,8 @@ def export_sky_east_nukuryou(
                         # embed 未找到 into the label), and record a diagnostic
                         # comment + colour-miss-log entry mirroring the buy plan.
                         display = color_en
-                        _raw_client_color = str(getattr(item, "color_name", "") or "")
+                        _render = _render_en
+                        _raw_client_color = _raw_color
                         _progress_colors = None
                         if cn_by_pc_lookup is not None:
                             _progress_colors = _available_progress_colors(
@@ -1840,7 +1857,12 @@ def export_sky_east_nukuryou(
                             _NUKURYOU_LABEL_FMT.format(en=color_en, cn=color_cn_display)
                             if color_cn_display else color_en
                         )
+                        _render = (
+                            _NUKURYOU_LABEL_FMT.format(en=_render_en, cn=color_cn_display)
+                            if color_cn_display else _render_en
+                        )
                     _color_display_map[key] = display
+                    _group_render.setdefault(display, _render)
                 display = _color_display_map[key]
                 if display not in color_totals:
                     color_totals[display] = {sz: 0 for sz in _SIZES_LC}
@@ -1851,7 +1873,7 @@ def export_sky_east_nukuryou(
             out_row = nuk_data_row
             for color_display, sizes in color_totals.items():
                 _color_cell = ws.cell(out_row, color_col)
-                _color_cell.value = color_display
+                _color_cell.value = _group_render.get(color_display, color_display)
                 if color_display in _miss_info:
                     from openpyxl.comments import Comment as _Comment
                     _cc, _pc = _miss_info[color_display]

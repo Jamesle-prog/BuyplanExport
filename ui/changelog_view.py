@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.124.1",
+        "date": "2026-09-04",
+        "entries": [
+            {"type": "fix", "text": "**Sky East buy plan now shows the client's PO colour exactly as they wrote it** — brackets, casing and all. A colour stored as `(dark blue)` prints as `(dark blue)`, not `Dark Blue`, on the style sheet, the Overview sheet and the 核料 sheet, so the buy plan reads straight against the client's own PO document. **Matching is unchanged**: the bracket-stripped, title-cased form is still what gets looked up against 大货进度表 and the colour DB, so `(dark blue)` continues to resolve to 藏青/503 exactly as before — the two forms are now kept as separate values rather than one doing both jobs. On the 核料 sheet the grouping key also stays the normalised colour, so `(black)` and `BLACK` still total into a single row (labelled with the first spelling seen) instead of splitting in two"},
+        ],
+    },
+    {
         "version": "2.124.0",
         "date": "2026-09-04",
         "entries": [
