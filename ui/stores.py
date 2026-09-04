@@ -40,6 +40,7 @@ from po_extractor.store import (
     CuttingPlanStore,
     SettlementStore,
     FabricConditionStore,
+    FabricPresentationStore,
     get_po_store as _get_po_store,
     get_sky_east_store as _get_sky_east_store,
     get_fabric_master_store as _get_fabric_master_store,
@@ -56,6 +57,7 @@ from po_extractor.store import (
     get_cutting_plan_store as _get_cutting_plan_store,
     get_settlement_store as _get_settlement_store,
     get_fabric_condition_store as _get_fabric_condition_store,
+    get_fabric_presentation_store as _get_fabric_presentation_store,
     list_all_brands as _list_all_brands,
 )
 from po_extractor.config import DATA_DIR, DB_PATH   # canonical path constants
@@ -213,6 +215,13 @@ def get_fabric_condition_store() -> FabricConditionStore:
     """Return the cached FabricConditionStore (same ``functools.cache``
     rationale as get_production_tracking_store above)."""
     return _get_fabric_condition_store()
+
+
+@functools.cache
+def get_fabric_presentation_store() -> FabricPresentationStore:
+    """Return the cached FabricPresentationStore (same ``functools.cache``
+    rationale as get_production_tracking_store above)."""
+    return _get_fabric_presentation_store()
 
 
 # ── Convenience helpers exported for UI code ────────────────────────────────

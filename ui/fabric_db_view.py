@@ -6,6 +6,7 @@ Implementation is split across the ui/fabric_db/ sub-package:
   browse.py         — paginated browser and detail card
   validation.py     — composition and field validation + cross-system checks
   fiber_manager.py  — known-fiber dictionary management
+  presentation.py   — customer fabric recommendation sheets + QR scan tracking
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ from ui.fabric_db.validation import (
     _fabric_db_cross_system_section,
 )
 from ui.fabric_db.fiber_manager import _fabric_db_fiber_manager
+from ui.fabric_db.presentation import _fabric_db_presentation_section
 from ui.stores import get_fabric_master_store
 
 
@@ -80,6 +82,8 @@ def show_fabric_db_tab() -> None:
         # Browse mode — paginated through all records
         _fabric_db_paginated_list(store, count)
 
+    st.divider()
+    _fabric_db_presentation_section(store)
     st.divider()
     _fabric_db_validation_section(store)
     st.divider()

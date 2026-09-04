@@ -19,6 +19,7 @@ store-injectable so it is unit-tested without HTTP.
 from __future__ import annotations
 
 import hmac
+import html
 import os
 import secrets
 import time
@@ -31,7 +32,7 @@ from starlette.responses import (HTMLResponse, JSONResponse, PlainTextResponse,
                                   RedirectResponse, Response)
 from starlette.routing import Route
 
-from po_extractor.store import get_po_store
+from po_extractor.store import get_fabric_presentation_store, get_po_store
 
 _TEMPLATES = Path(__file__).parent / "templates"
 _COOKIE = "po_scan_session"
@@ -261,12 +262,89 @@ async def api_stocktake_clear(request: Request) -> Response:
     return JSONResponse({"cleared": removed})
 
 
+# ── Fabric presentation sheets (面料推荐单) ─────────────────────────────────────
+# Each generated sheet carries a QR code pointing here.  Opening it records the
+# scan — that log is what makes a sheet's send date answerable later — and shows
+# which fabrics were on it.
+#
+# The internal RMB/M cost is deliberately NOT shown: this page is reached by
+# scanning a sheet that may be in a customer's hands, and the login gate is a
+# single shared LAN password, so it is the wrong place to expose cost.
+
+def _presentation_html(pres: dict, lines: list[dict], scans: list[dict]) -> str:
+    first = scans[-1]["scanned_at"] if scans else "—"
+    rows = "".join(
+        "<tr><td>{no}</td><td>{q}</td><td>{d}</td><td>{c}</td>"
+        "<td>{g}</td><td>{w}</td><td>{usd}</td></tr>".format(
+            no=html.escape(str(l.get("line_no") or "")),
+            q=html.escape(str(l.get("quality_no") or "")),
+            d=html.escape(str(l.get("description") or "")),
+            c=html.escape(str(l.get("content") or "")),
+            g=html.escape(str(l.get("weight_gsm") or "")),
+            w=html.escape(str(l.get("width_in") or "")),
+            usd=("%.2f" % l["price_usd_y"]) if l.get("price_usd_y") else "—",
+        ) for l in lines)
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html.escape(pres.get('title') or 'Presentation')}</title>
+<style>
+ body{{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:12px;
+      background:#f6f7f9;color:#111}}
+ h1{{font-size:1.1rem;margin:0 0 2px}}
+ .meta{{font-size:.85rem;color:#555;margin-bottom:10px}}
+ .meta b{{color:#111}}
+ table{{border-collapse:collapse;width:100%;background:#fff;font-size:.8rem}}
+ th,td{{border:1px solid #d5d8dc;padding:5px 6px;text-align:left}}
+ th{{background:#1f3864;color:#fff;position:sticky;top:0}}
+ .wrap{{overflow-x:auto}}
+</style></head><body>
+<h1>{html.escape(pres.get('title') or 'Fabric Presentation')}</h1>
+<div class="meta">
+ <b>Customer:</b> {html.escape(pres.get('customer') or '—')} &nbsp;·&nbsp;
+ <b>Submitted:</b> {html.escape(pres.get('submission_date') or '—')} &nbsp;·&nbsp;
+ <b>Type:</b> {html.escape(pres.get('fabric_type') or '—')}<br>
+ <b>Sheet ID:</b> {html.escape(pres.get('token') or '')} &nbsp;·&nbsp;
+ <b>First scanned:</b> {html.escape(first)} &nbsp;·&nbsp;
+ <b>Scans:</b> {len(scans)}
+</div>
+<div class="wrap"><table>
+<tr><th>NO.</th><th>HHN_Fabric#</th><th>Description</th><th>Content</th>
+    <th>gsm</th><th>Width</th><th>USD/Y</th></tr>
+{rows}
+</table></div>
+</body></html>"""
+
+
+async def presentation_page(request: Request) -> Response:
+    if not _authed(request):
+        return RedirectResponse("/login", status_code=302)
+    token = request.path_params.get("token", "")
+    ip, ua = _client_ip(request), request.headers.get("user-agent", "")
+
+    def _load():
+        store = get_fabric_presentation_store()
+        pres = store.log_scan(token, client_ip=ip, user_agent=ua)
+        if not pres:
+            return None, [], []
+        return pres, store.lines(pres["id"]), store.scans(pres["id"])
+
+    pres, lines, scans = await run_in_threadpool(_load)
+    if not pres:
+        return HTMLResponse(
+            "<!doctype html><meta charset='utf-8'>"
+            "<p style='font-family:system-ui;padding:20px'>"
+            "未找到该推荐单 / Presentation sheet not found.</p>",
+            status_code=404)
+    return HTMLResponse(_presentation_html(pres, lines, scans))
+
+
 routes = [
     Route("/", page),
     Route("/login", login_page, methods=["GET"]),
     Route("/login", login_submit, methods=["POST"]),
     Route("/logout", logout),
     Route("/healthz", lambda r: PlainTextResponse("ok")),
+    Route("/p/{token}", presentation_page),
     Route("/api/lookup", api_lookup, methods=["POST"]),
     Route("/api/verify", api_verify, methods=["POST"]),
     Route("/api/count", api_count, methods=["POST"]),

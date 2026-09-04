@@ -10,6 +10,16 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.124.0",
+        "date": "2026-09-04",
+        "entries": [
+            {"type": "feat", "text": "**Fabric presentation sheets (面料推荐单) — new section in 🧵 Fabric DB.** Pick fabrics out of the master database, build a customer recommendation sheet from them, and export it as the HHN Presentation layout (title block · one row per fabric · type legend). The quoted **USD/Y** is computed from the internal RMB/M cost with the workbook's own formula — `CEILING(RMB/M × markup ÷ FX × 0.9144, step)` — verified to reproduce all 18 prices in the GIII 5.13 sheet exactly. Markup (1.1), FX rate (6.7) and rounding step (0.05) are editable per sheet and **stored with it**, so an old quote stays reproducible after the rate moves"},
+            {"type": "feat", "text": "**Which price to print is chosen at export time.** USD/Y only (customer copy), RMB/M only, or both (internal review copy) — picking an internal-cost mode shows a warning that the file is not for sending out. Prices are **frozen onto the sheet when it is built**, not re-read at export: a quote you sent in May must not silently change when someone edits a cost in June"},
+            {"type": "feat", "text": "**Each sheet carries its own QR code, and scanning it is recorded.** The code points at the `web_scan` service's new `/p/<id>` page (same LAN login gate as the scanner); opening it logs the time, IP and device against that sheet, so when a sheet went out and which fabrics were on it is always answerable. The scan page deliberately shows USD/Y only — never the internal RMB cost — because the sheet it is printed on may be in a customer's hands. Set the scanner URL once in the new ⚙️ QR scanner URL box; sheets still export fine without it, just without a QR code"},
+            {"type": "chore", "text": "New optional dependency `segno` (pure Python, no dependencies) for QR generation — `pip install segno`. Without it the export still works and says so instead of failing"},
+        ],
+    },
+    {
         "version": "2.123.0",
         "date": "2026-07-30",
         "entries": [

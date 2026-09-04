@@ -27,6 +27,7 @@ from .login_log_store import LoginLogStore
 from .cutting_plan_store import CuttingPlanStore
 from .settlement_store import SettlementStore
 from .fabric_condition_store import FabricConditionStore
+from .fabric_presentation_store import FabricPresentationStore
 
 
 def _db_path() -> str:
@@ -225,6 +226,11 @@ def get_settlement_store() -> SettlementStore:
 def get_fabric_condition_store() -> FabricConditionStore:
     """Return a fresh FabricConditionStore wired to the canonical DB."""
     return FabricConditionStore(_db_path())
+
+
+def get_fabric_presentation_store() -> FabricPresentationStore:
+    """Return a fresh FabricPresentationStore wired to the canonical DB."""
+    return FabricPresentationStore(_db_path())
 
 
 def get_cutting_plan_store() -> CuttingPlanStore:
