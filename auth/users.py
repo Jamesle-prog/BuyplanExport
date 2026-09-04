@@ -38,6 +38,15 @@ def _timing_pad_hash() -> bytes:
         _dummy_hash = b.hashpw(b"__timing_pad__", b.gensalt())
     return _dummy_hash
 
+def warm_bcrypt() -> None:
+    """Load bcrypt and compute the timing-pad hash ahead of the first sign-in.
+
+    Both are lazy so the login *page* stays cheap; this lets a start-up
+    warm-up thread pay them instead of the first user's click (~0.3 s, more
+    under antivirus).  Idempotent."""
+    _timing_pad_hash()
+
+
 # Roles
 ROLE_ADMIN = "admin"
 ROLE_USER  = "user"

@@ -16,7 +16,7 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
 
 import streamlit as st
 
-APP_VERSION = "2.124.2"
+APP_VERSION = "2.124.3"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -35,6 +35,13 @@ from ui.i18n import t
 
 # Seed default companies on startup (idempotent)
 ensure_defaults_seeded()
+
+# Pre-load bcrypt / pandas / openpyxl / the stores on a background thread so
+# the FIRST sign-in after a server start doesn't pay ~1 s (several seconds
+# under Windows antivirus) of imports on the click.  No-op after the first
+# run in a process; see ui/warmup.py.
+from ui.warmup import warm_up as _warm_up
+_warm_up()
 
 _SCHEMA_PATH = _SCHEMA_PATH_CFG
 
@@ -184,51 +191,13 @@ if not user_exists():
 
 
 # ---------------------------------------------------------------------------
-# Login throttle — the app is reachable from the network, so failed sign-ins
-# must cost something.  Process-wide (module-level, shared by all sessions and
-# threads — a per-session counter would be trivially bypassed by dropping the
-# session).  After _LOGIN_FAIL_THRESHOLD failures a key locks out with
-# exponential backoff; a coarser global brake catches username spraying.
+# Login throttle — lives in auth.login_throttle, NOT here.  Streamlit execs
+# this file into a fresh namespace on every run, so a counter defined at this
+# level is recreated on every rerun and never reaches its threshold (that is
+# what the previous inline version did — it never locked anyone out).  An
+# imported module's state is genuinely process-wide.
 # ---------------------------------------------------------------------------
-import threading as _threading
-import time as _time
-
-_LOGIN_GUARD_LOCK = _threading.Lock()
-_LOGIN_FAILURES: dict[str, tuple[int, float]] = {}   # key → (fails, locked_until)
-_LOGIN_GLOBAL_KEY = "\x00global"
-
-# Sign-in lockout policy — values live in po_extractor.config so they're
-# tunable in one place alongside the other cross-cutting constants.
-from po_extractor.config import (
-    LOGIN_FAIL_THRESHOLD    as _LOGIN_FAIL_THRESHOLD,
-    LOGIN_BASE_LOCK_S       as _LOGIN_BASE_LOCK_S,
-    LOGIN_MAX_LOCK_S        as _LOGIN_MAX_LOCK_S,
-    LOGIN_GLOBAL_THRESHOLD  as _LOGIN_GLOBAL_THRESHOLD,
-    LOGIN_GLOBAL_LOCK_S     as _LOGIN_GLOBAL_LOCK_S,
-)
-
-
-def _login_lock_remaining(key: str) -> int:
-    """Seconds left on the lockout for *key* (0 = not locked)."""
-    with _LOGIN_GUARD_LOCK:
-        _count, until = _LOGIN_FAILURES.get(key, (0, 0.0))
-        remaining = until - _time.time()
-    return int(remaining) + 1 if remaining > 0 else 0
-
-
-def _login_failed(key: str, threshold: int, base_lock_s: float, max_lock_s: float) -> None:
-    with _LOGIN_GUARD_LOCK:
-        count, _until = _LOGIN_FAILURES.get(key, (0, 0.0))
-        count += 1
-        lock_s = 0.0
-        if count >= threshold:
-            lock_s = min(base_lock_s * (2 ** (count - threshold)), max_lock_s)
-        _LOGIN_FAILURES[key] = (count, _time.time() + lock_s)
-
-
-def _login_succeeded(key: str) -> None:
-    with _LOGIN_GUARD_LOCK:
-        _LOGIN_FAILURES.pop(key, None)
+from auth import login_throttle as _throttle
 
 
 # ---------------------------------------------------------------------------
@@ -583,15 +552,12 @@ def show_login():
 
         if submitted:
             uname_key = (username or "").strip().lower()
-            wait = max(
-                _login_lock_remaining(uname_key),
-                _login_lock_remaining(_LOGIN_GLOBAL_KEY),
-            )
+            wait = _throttle.wait_seconds(uname_key)
             if wait:
                 _record_login(username, "locked", f"locked {wait}s")
                 st.error(f"{t('Too many failed attempts. Try again in')} {wait} s.")
             elif verify_password(username, password):
-                _login_succeeded(uname_key)
+                _throttle.record_success(uname_key)
                 _record_login(username, "success")
                 st.session_state.logged_in = True
                 st.session_state.username = username
@@ -599,10 +565,8 @@ def show_login():
                 st.session_state.parse_log = []
                 st.rerun()
             else:
-                _login_failed(uname_key, _LOGIN_FAIL_THRESHOLD,
-                              _LOGIN_BASE_LOCK_S, _LOGIN_MAX_LOCK_S)
-                _login_failed(_LOGIN_GLOBAL_KEY, _LOGIN_GLOBAL_THRESHOLD,
-                              _LOGIN_GLOBAL_LOCK_S, _LOGIN_GLOBAL_LOCK_S)
+                _throttle.record_failure(uname_key)
+                _throttle.record_global_failure()
                 _record_login(username, "failed", "wrong username or password")
                 st.error(t("Incorrect username or password."))
 

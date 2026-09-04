@@ -73,7 +73,7 @@ def render_sidebar_cprs_status() -> None:
 
     The server host:port is hidden by default and shown only when an admin
     enables it (Admin → CPRS Knowledge Base → *Show server address*)."""
-    from po_extractor.store import get_app_settings_store
+    from ui.stores import get_app_settings_store   # cached; ui code goes via ui.stores
     from po_extractor.store.app_settings_store import (
         KEY_CPRS_BASE_URL, KEY_CPRS_API_KEY, KEY_CPRS_SHOW_ADDRESS,
     )

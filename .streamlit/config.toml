@@ -1,0 +1,11 @@
+# Streamlit server configuration — read from the working directory, which is
+# the repo root for both launchers (Start_PO_Extractor.bat does `cd /d %~dp0`;
+# the NSSM service sets AppDirectory).  Secrets never go here: they live in
+# .streamlit/secrets.toml, which is gitignored.
+
+[browser]
+# This is a private LAN tool.  With usage stats on, the server contacts
+# data.streamlit.io at start-up (a 2 s timeout when that host is unreachable,
+# which it is from a mainland-China network) and every browser session loads
+# Segment analytics from a host that is blocked there too.  Neither is wanted.
+gatherUsageStats = false

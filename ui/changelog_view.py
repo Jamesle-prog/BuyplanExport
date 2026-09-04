@@ -10,6 +10,15 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.124.3",
+        "date": "2026-09-04",
+        "entries": [
+            {"type": "security", "text": "**The sign-in lockout never actually engaged — fixed.** After 5 wrong passwords a username is meant to lock for 60 s (doubling each time, up to 15 min), with a global brake against username spraying. The counters lived at the top of `app.py`, and Streamlit re-executes that file in a fresh namespace on every run — so the count was reset on every attempt and never reached 5. Verified before the fix: 8 wrong passwords, no lockout. The throttle now lives in `auth/login_throttle.py`, whose state genuinely persists for the life of the process; verified after: locked on schedule. bcrypt's ~0.3 s per check was the only thing slowing a brute force down"},
+            {"type": "perf", "text": "**First sign-in after a server start is no longer the slow one.** The login page deliberately imports almost nothing, which pushed ~1 s of imports (bcrypt + its timing pad, pandas, numpy, openpyxl, the stores) onto the first click — and Windows antivirus scanning a venv's DLLs routinely turns that into several seconds. Those imports now run on a background thread as soon as the server starts, overlapping with the user reading the login page. Measured click→app: cold 1.47 s → 0.91 s, the same as a warm login. The login page itself was already ~1.4 s and unaffected by the Google Fonts `@import` (measured with the host blackholed: no difference)"},
+            {"type": "chore", "text": "Added `.streamlit/config.toml` with `gatherUsageStats = false`: this is a private LAN tool, and with stats on the server contacted `data.streamlit.io` at start-up (a 2 s timeout when unreachable, as it is from a mainland-China network) while every browser session tried to load Segment analytics from a host blocked there too. Also: the sidebar CPRS status now takes its settings store from `ui.stores` (cached) rather than constructing a fresh one on every rerun, per the project convention"},
+        ],
+    },
+    {
         "version": "2.124.2",
         "date": "2026-09-04",
         "entries": [
