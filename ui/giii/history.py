@@ -5,7 +5,7 @@ import streamlit as st
 
 from auth.users import get_user_companies, is_admin
 from ui.session_keys import SK
-from ui.shared import guard_multiselect_state
+from ui.shared import display_dates, guard_multiselect_state
 from ui.stores import get_store
 from ui.giii._shared import _XLSX_MIME, live_label
 from ui.giii.results import _show_master_po_table
@@ -70,7 +70,18 @@ def _show_history(exc_df=None, pos_df=None):
     }
     show_all = st.toggle("Show all columns", value=False, key="hist_show_all")
     active_cols = all_cols if show_all else essential_cols
-    show_df = df[[c for c in active_cols if c in df.columns]].rename(columns=rename_map)
+    show_df = df[[c for c in active_cols if c in df.columns]].copy()
+    # Dates arrive in whichever format the source parser produced — the Infor
+    # Nexus parser stores ISO, the legacy G-III parser stores US M/D/YYYY —
+    # so the column reads as a mix unless it is normalised for display.
+    show_df = display_dates(show_df, ("xport_date", "issue_date", "extracted_at"))
+    # A PO saved with no company detected holds NULL, which pandas renders as
+    # the literal string "None".  Show an em dash: an empty company is a gap
+    # in the data, not a company called "None".
+    if "company" in show_df.columns:
+        show_df["company"] = show_df["company"].map(
+            lambda v: v if v not in (None, "") and v == v else "—")
+    show_df = show_df.rename(columns=rename_map)
     st.dataframe(show_df, width="stretch", hide_index=True)
 
     # ── Version history ───────────────────────────────────────────────────────

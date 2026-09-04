@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.124.2",
+        "date": "2026-09-04",
+        "entries": [
+            {"type": "fix", "text": "**PO dates now read in one format everywhere.** Ex-factory / issue dates were shown exactly as each parser stored them — the Infor Nexus parser writes ISO (`2026-07-15`) while the legacy G-III parser writes the US form off the PDF (`7/30/2026`) — so a PO list mixed both. All date columns in PO History, Order Summary and the results table now display as `YYYY-MM-DD`. Slash dates are read **month-first**, matching the US PO documents the legacy parser reads; anything that isn't cleanly a date (e.g. an ex-factory revision like `2025/8/28->9/4`) is left exactly as stored rather than guessed at"},
+            {"type": "fix", "text": "**A PO with no company no longer shows as \"None\".** Company is set from format auto-detection at upload; when nothing is detected the field is stored NULL, which pandas rendered as the literal string `None` — reading as though there were a company by that name. The cell now shows `—`. Note this is a display fix only: the underlying rows still have no company, and the reason those POs have none is that their file's format didn't map to one at upload time"},
+        ],
+    },
+    {
         "version": "2.124.1",
         "date": "2026-09-04",
         "entries": [

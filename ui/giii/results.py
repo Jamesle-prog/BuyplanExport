@@ -10,7 +10,7 @@ from po_extractor.ui_helpers import (
     generate_kl_format_excel as _generate_kl_format_excel_impl,
 )
 from ui.i18n import t
-from ui.shared import build_thumbnail_data_urls as _build_thumbnail_data_urls
+from ui.shared import display_date, build_thumbnail_data_urls as _build_thumbnail_data_urls
 from ui.shared import persisted_download
 from ui.shared import ZIP_MIME, HTML_MIME, CSV_MIME
 from auth.companies import COMPANY_SKY_EAST
@@ -65,7 +65,7 @@ def _build_master_display_df() -> pd.DataFrame:
                 "Company":    str(r.get("company", "") or ""),
                 "Style":      str(r.get("style", "") or ""),
                 "COO":        str(r.get("country_of_origin", "") or ""),
-                "X-Fty Date": str(r.get("xport_date", "") or ""),
+                "X-Fty Date": display_date(r.get("xport_date")),
                 "Total Units": int(r.get("total_units", 0) or 0),
                 "_pid":       "",
             })

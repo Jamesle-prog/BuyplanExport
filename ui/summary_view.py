@@ -15,7 +15,7 @@ from po_extractor.ui_helpers.combined_summary import (
 )
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import lazy_sections, _th, _tr, guard_multiselect_state, XLSX_MIME
+from ui.shared import display_dates, lazy_sections, _th, _tr, guard_multiselect_state, XLSX_MIME
 from ui.stores import get_store, get_sky_east_store
 
 
@@ -465,7 +465,10 @@ def _show_overview(user_cos: list[str], admin_mode: bool,
             )
             show_cols = picked or giii_default
             labels = _tr({k: giii_field_labels[k] for k in show_cols})
-            st.dataframe(giii_df[show_cols].rename(columns=labels),
+            # Normalise mixed parser date formats (ISO vs US M/D/YYYY) so the
+            # column reads consistently — same treatment as the PO history tab.
+            _giii_show = display_dates(giii_df[show_cols], ("xport_date", "issue_date"))
+            st.dataframe(_giii_show.rename(columns=labels),
                          use_container_width=True, hide_index=True)
 
     if can_see_zalando and not se_df.empty:

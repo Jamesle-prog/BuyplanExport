@@ -10,7 +10,9 @@ import base64
 import io
 import json
 import os
+import re
 import time
+from datetime import date
 from pathlib import Path
 
 import streamlit as st
@@ -251,6 +253,73 @@ def lazy_sections(sections: list[tuple], key: str) -> None:
     if active not in labels:            # deselected — keep showing something
         active = st.session_state[key]
     sections[labels.index(active)][1]()
+
+
+_ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
+_SLASH_DATE_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})$")
+
+
+def display_date(v) -> str:
+    """Normalise a stored date to ``YYYY-MM-DD`` for display.
+
+    PO dates reach the DB in whatever shape their parser produced: the Infor
+    Nexus parser captures ISO (``2026-07-15``) while the legacy G-III parser
+    captures the US form off the PDF (``7/30/2026``).  Both are stored as
+    free text, so a PO list shows a mix of the two unless the display
+    normalises them.
+
+    ``M/D/YYYY`` is assumed for slash dates — the legacy parser reads US PO
+    documents, and its own regex is ``\\d{1,2}/\\d{2}/\\d{2,4}``.  Reading
+    them as D/M would silently swap month and day on every date before the
+    13th, so anything that does not parse cleanly is returned **unchanged**
+    rather than guessed at: an ex-factory value like ``2025/8/28->9/4``
+    (a revision, not a date) must survive intact.
+    """
+    if v is None:
+        return ""
+    # NaN / NaT are the only values not equal to themselves.  Catches both
+    # without importing pandas here — and NaT has a working .isoformat()
+    # that returns the string "NaT", so it must be caught before that branch.
+    try:
+        if v != v:
+            return ""
+    except (TypeError, ValueError):
+        pass
+    if hasattr(v, "isoformat") and not isinstance(v, str):
+        try:
+            return (v.date() if hasattr(v, "date") else v).isoformat()
+        except (TypeError, ValueError):
+            return str(v).strip()
+    s = str(v).strip()
+    if not s or s.lower() in ("nat", "nan", "none"):
+        return ""
+
+    if (m := _ISO_DATE_RE.match(s)):
+        y, mo, d = (int(g) for g in m.groups())
+    elif (m := _SLASH_DATE_RE.match(s)):
+        mo, d, y = (int(g) for g in m.groups())
+        if y < 100:                    # "8/01/26" → 2026
+            y += 2000
+    else:
+        return s                       # not a plain date — leave it alone
+
+    try:
+        return date(y, mo, d).isoformat()
+    except ValueError:
+        return s                       # e.g. 13/40/2026 — don't invent a date
+
+
+def display_dates(df, columns):
+    """Return *df* with each of *columns* normalised via :func:`display_date`.
+
+    Missing columns are skipped, so one call covers tables whose column set
+    varies with the user's "show all columns" toggle.
+    """
+    out = df.copy()
+    for col in columns:
+        if col in out.columns:
+            out[col] = out[col].map(display_date)
+    return out
 
 
 def guard_multiselect_state(key: str, options) -> None:
