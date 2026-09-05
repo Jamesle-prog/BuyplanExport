@@ -31,6 +31,20 @@ from ..models.fabric_part import FabricPart
 from ..utils.image_extractor import (
     extract_anchored_positions, extract_dispimg_positions,
 )
+from ..utils.normalize import cell_text, dispimg_id as _dispimg_id, to_float, to_int
+
+
+def _v(cell_value) -> str:
+    return cell_text(cell_value, dates=True)
+
+
+def _int(v) -> int:
+    # '1,225' / '$3.45' coerce instead of silently becoming 0; truncates.
+    return to_int(v, default=0, strip_currency=True, rounding="trunc")
+
+
+def _float(v) -> float:
+    return to_float(v, default=0.0, strip_currency=True)
 
 PARSER_VERSION = "1.3"
 
@@ -38,7 +52,6 @@ PARSER_VERSION = "1.3"
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-_DISPIMG_RE = re.compile(r'DISPIMG\("(ID_[0-9A-Fa-f]+)"', re.IGNORECASE)
 
 # ── Size recognition ──────────────────────────────────────────────────────────
 # Any header token whose stripped, upper-cased value is in this set is treated
@@ -84,34 +97,6 @@ def _is_size_header(text: str) -> bool:
     return text.strip().upper() in _KNOWN_SIZES
 
 
-def _v(cell_value) -> str:
-    if cell_value is None:
-        return ""
-    if isinstance(cell_value, datetime):
-        return cell_value.strftime("%Y-%m-%d")
-    return str(cell_value).strip()
-
-
-def _clean_num(v) -> str:
-    """Strip thousands separators and currency/space noise from a numeric
-    string so text-formatted cells ('1,225', '$3.45') coerce instead of
-    silently becoming 0 and dropping the line."""
-    return str(v).replace(",", "").replace("$", "").replace("\xa0", "").strip()
-
-
-def _int(v) -> int:
-    try:
-        return int(float(_clean_num(v))) if v not in (None, "") else 0
-    except (ValueError, TypeError):
-        return 0
-
-
-def _float(v) -> float:
-    try:
-        return float(_clean_num(v)) if v not in (None, "") else 0.0
-    except (ValueError, TypeError):
-        return 0.0
-
 
 _RETURN_LABEL_YES = {"yes", "y", "true", "1", "是", "需要"}
 _RETURN_LABEL_NO  = {"no", "n", "false", "0", "否", "不需要"}
@@ -126,12 +111,6 @@ def _normalize_return_label(v) -> str:
         return "No"
     return "NA"
 
-
-def _dispimg_id(val) -> str:
-    if not val:
-        return ""
-    m = _DISPIMG_RE.search(str(val))
-    return m.group(1) if m else ""
 
 
 # ---------------------------------------------------------------------------

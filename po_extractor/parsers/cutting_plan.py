@@ -29,6 +29,7 @@ styles in the plan.
 from __future__ import annotations
 
 from typing import Any
+from ..utils.normalize import cell_text as _txt, normalize_text as _norm, to_float as _num, to_int as _int
 
 # Header labels in the key/value block at the top of the sheet.
 _H_DATE      = "date"
@@ -67,39 +68,6 @@ class CuttingPlanParseError(ValueError):
 # ---------------------------------------------------------------------------
 # Small grid helpers
 # ---------------------------------------------------------------------------
-
-def _norm(v: Any) -> str:
-    """Normalised text of a cell — trimmed, lower-cased, whitespace collapsed."""
-    if v is None:
-        return ""
-    return " ".join(str(v).split()).strip().lower()
-
-
-def _txt(v: Any) -> str:
-    """Display text of a cell — trimmed, original case, '' for None."""
-    if v is None:
-        return ""
-    return str(v).strip()
-
-
-def _num(v: Any) -> float | None:
-    """Float value of a cell, or None when it isn't numeric."""
-    if v is None or isinstance(v, bool):
-        return None
-    if isinstance(v, (int, float)):
-        return float(v)
-    s = str(v).strip().replace(",", "")
-    if not s:
-        return None
-    try:
-        return float(s)
-    except ValueError:
-        return None
-
-
-def _int(v: Any) -> int | None:
-    f = _num(v)
-    return None if f is None else int(round(f))
 
 
 def _cell(grid: list[list[Any]], r: int, c: int) -> Any:

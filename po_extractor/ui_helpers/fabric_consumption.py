@@ -24,6 +24,12 @@ why.
 from __future__ import annotations
 
 import io
+from ..utils.normalize import to_float
+
+
+def _num(v):
+    """Numeric cell → float, or None when blank/non-numeric ('%' is dropped, not scaled)."""
+    return to_float(v, percent="strip", none_tokens=("nan", "none", "-"))
 
 # 毛门幅 (gross, billed width) = 排版有效门幅 (effective marker width) + selvage.
 GROSS_WIDTH_MARGIN_CM = 5.0
@@ -43,18 +49,6 @@ _CONS_KEYS = [k for _, k in CONSUMPTION_COLUMNS]
 
 _KG_TOL = 0.05   # 5% consistency tolerance between provided and derived kg
 
-
-def _num(v):
-    """Parse a numeric cell → float, or None when blank/non-numeric."""
-    if v is None:
-        return None
-    s = str(v).replace(",", "").replace("%", "").strip()
-    if not s or s.lower() in ("nan", "none", "-"):
-        return None
-    try:
-        return float(s)
-    except (ValueError, TypeError):
-        return None
 
 
 def _fmt(v, nd) -> str:

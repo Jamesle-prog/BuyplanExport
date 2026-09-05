@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass, field
+from ..utils.normalize import yes_no as _yn
 
 # Fixed left columns (before the dynamic size block).
 _LEFT = [
@@ -189,9 +190,6 @@ def _present_sizes(rows: list[BuyPlanRow]) -> list[str]:
     ordered = [s for s in order if s in seen]
     return ordered + [s for s in sorted(seen) if s not in order]
 
-
-def _yn(v) -> str:
-    return "" if v is None else ("Y" if v else "N")
 
 
 def export_giii_buyplan(header: BuyPlanHeader, rows: list[BuyPlanRow],

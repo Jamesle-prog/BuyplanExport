@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 from ..utils.normalize import normalize_header
+from ..utils.normalize import cell_text as _v, to_float  # noqa: F401 — _v re-exported to fabric_master_store
+
+
+def _num(val) -> float | None:
+    return to_float(val, commas=False, bools=True)
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -177,18 +182,6 @@ def _build_col_map(ws) -> tuple[dict[str, int], list[tuple[int, str]]]:
 
     return field_to_col, unmatched_headers
 
-
-def _v(val) -> str:
-    return "" if val is None else str(val).strip()
-
-
-def _num(val) -> float | None:
-    if val is None:
-        return None
-    try:
-        return float(val)
-    except (ValueError, TypeError):
-        return None
 
 
 def _make_display_key(quality_no: str, composition_en: str,

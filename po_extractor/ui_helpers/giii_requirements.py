@@ -25,6 +25,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
+from ..utils.normalize import yes_no as _yn
 
 # CPRS restarts mid-run more often than we'd like; a single transient miss
 # should not drop the whole PO. Retry a few times with a short backoff before
@@ -118,9 +119,6 @@ def _pending(rj: dict) -> str:
     w = (rj or {}).get("waiting_for", "")
     return f"待定:{w}" if w else "待定"
 
-
-def _yn(v) -> str:
-    return "" if v is None else ("Y" if v else "N")
 
 
 def _red_sticker_text(is_prepack, red_res, dim_code: str) -> str:

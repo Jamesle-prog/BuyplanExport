@@ -34,10 +34,27 @@ hardcoded, so a workbook that re-themes still comes out right.
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
 from typing import Any
 
 import openpyxl
+from ..utils.normalize import cell_text, norm_header_key, to_float
+
+
+_norm = norm_header_key
+
+
+def _txt(v) -> str:
+    return cell_text(v, dates=True, int_floats=True)
+
+
+# Ex-factory is sometimes a revision, not a date (``2025/8/28->9/4``): a
+# real date prints ISO, anything else is kept verbatim.
+_date = _txt
+
+
+def _num(v) -> float | None:
+    # amounts may carry a thousands separator or a currency mark; '3.25%' → 0.0325
+    return to_float(v, strip_currency=True, percent="ratio")
 
 # Sheets that are recomputed rather than imported: they are views of the bulk
 # sheets (overdue receivables, discount-risk lines), and importing them would
@@ -53,64 +70,6 @@ class SettlementParseError(ValueError):
 
 
 # ── cell helpers ────────────────────────────────────────────────────────────
-
-def _norm(v: Any) -> str:
-    """Heading text reduced to a comparable key.
-
-    Headings wrap onto two lines (``发票金额\\n(报关金额）``) and mix full-width
-    and ASCII brackets, so whitespace goes entirely and brackets are folded to
-    ASCII before matching.
-    """
-    if v is None:
-        return ""
-    s = str(v).strip().lower()
-    s = s.replace("（", "(").replace("）", ")")
-    return re.sub(r"\s+", "", s)
-
-
-def _txt(v: Any) -> str:
-    if v is None:
-        return ""
-    if isinstance(v, (datetime, date)):
-        return v.strftime("%Y-%m-%d")
-    if isinstance(v, float) and v.is_integer():
-        return str(int(v))
-    return str(v).strip()
-
-
-def _num(v: Any) -> float | None:
-    """Float value of a cell, or None when it isn't a number.
-
-    Percentages arrive as either 0.0325 or "3.25%", and amounts occasionally
-    carry a thousands separator or a stray currency mark.
-    """
-    if v is None or isinstance(v, bool):
-        return None
-    if isinstance(v, (int, float)):
-        return float(v)
-    s = str(v).strip().replace(",", "").replace("$", "").replace("£", "")
-    if not s:
-        return None
-    pct = s.endswith("%")
-    if pct:
-        s = s[:-1]
-    try:
-        f = float(s)
-    except ValueError:
-        return None
-    return f / 100 if pct else f
-
-
-def _date(v: Any) -> str:
-    """ISO date, or the raw text when it isn't one.
-
-    Ex-factory is sometimes a revision rather than a date — ``2025/8/28->9/4``
-    records that the ship date moved — and that is worth keeping verbatim
-    rather than discarding for not parsing.
-    """
-    if isinstance(v, (datetime, date)):
-        return v.strftime("%Y-%m-%d")
-    return _txt(v)
 
 
 # ── header mapping ──────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 """Schema DDL, migration SQL, column-alias sets, and helpers for ColorTranslationStore."""
 from __future__ import annotations
+from ..utils.normalize import cell_text as _v  # noqa: F401 — re-exported to color_translation_store
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS color_translations (
@@ -92,9 +93,6 @@ _COL_LABEL_CLR  = {"label_color", "label color", "main label color",
                    "主标颜色", "主标色"}
 _COL_NOTES      = {"notes", "备注", "remark"}
 
-
-def _v(val) -> str:
-    return "" if val is None else str(val).strip()
 
 
 def _match_col(header: str, aliases: set[str]) -> bool:

@@ -20,11 +20,17 @@ Lookup keys:
 from __future__ import annotations
 
 import re
-from datetime import datetime
 from typing import NamedTuple
-import openpyxl
 
 from ..utils.image_extractor import extract_anchored_positions
+# _norm_key / _dispimg_id are re-exported from here — other modules import them.
+from ..utils.normalize import normalize_key as _norm_key, dispimg_id as _dispimg_id, cell_text
+
+
+def _v(val) -> str:
+    # Dates → YYYY-MM-DD; cached '#N/A'-style errors blanked so callers fall
+    # back to their next-tier match instead of leaking '#N/A' into keys.
+    return cell_text(val, dates=True, drop_excel_errors=True)
 
 
 class PCColorMatch(NamedTuple):
@@ -38,39 +44,12 @@ class PCColorMatch(NamedTuple):
     label_color: str   # 主标颜色
 
 
-def _norm_key(s) -> str:
-    """Strip whitespace, remove non-alphanumeric chars, uppercase — for all key lookups."""
-    return re.sub(r'[^A-Za-z0-9]', '', str(s).strip()).upper()
-
-_DISPIMG_RE = re.compile(r'DISPIMG\("(ID_[0-9A-Fa-f]+)"', re.IGNORECASE)
 
 # A cached formula error in the source file (e.g. a 中文颜色代码 VLOOKUP that
 # couldn't extract a numeric code from a colour cell with no code suffix,
 # such as "BLACK 黑色" with nothing after it) is stored by openpyxl as the
 # literal text "#N/A" — not None. Treating that string as a real value would
 # leak "#N/A" straight into match keys and the generated buy plan cell.
-_EXCEL_ERROR_RE = re.compile(
-    r'^#(N/A|REF!|VALUE!|DIV/0!|NAME\?|NULL!|NUM!|SPILL!|CALC!)$', re.IGNORECASE,
-)
-
-
-def _v(val) -> str:
-    if val is None:
-        return ""
-    if isinstance(val, datetime):
-        return val.strftime("%Y-%m-%d")
-    s = str(val).strip()
-    if _EXCEL_ERROR_RE.match(s):
-        # Blank it out so callers fall back to their next-tier match — e.g.
-        # the colour name alone is enough; a code isn't required.
-        return ""
-    return s
-
-
-def _dispimg_id(val) -> str:
-    m = _DISPIMG_RE.search(_v(val))
-    return m.group(1) if m else ""
-
 
 def _normalise_color(color: str) -> str:
     """Canonical colour form used for matching (delegates to clean_color_for_lookup)."""

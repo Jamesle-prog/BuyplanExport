@@ -24,14 +24,10 @@ Lookup keys:
 from __future__ import annotations
 
 import re
-import openpyxl
+from ..utils.normalize import normalize_key as _norm_key, cell_text as _v, dispimg_id as _dispimg_id
 
 
-def _norm_key(s) -> str:
-    """Strip whitespace, remove non-alphanumeric chars, uppercase — for all key lookups."""
-    return re.sub(r'[^A-Za-z0-9]', '', str(s).strip()).upper()
 
-_DISPIMG_RE = re.compile(r'DISPIMG\("(ID_[0-9A-Fa-f]+)"', re.IGNORECASE)
 # HHN codes are ASCII: HHN-<letters/digits, hyphen-separated> (HHN-001,
 # HHN-JA-01715, HHN-2026-001, HHN-DB-YS240782). Restricting the class to
 # [A-Za-z0-9-] stops the match at the first CJK char / comma / paren so
@@ -39,9 +35,6 @@ _DISPIMG_RE = re.compile(r'DISPIMG\("(ID_[0-9A-Fa-f]+)"', re.IGNORECASE)
 # no longer get swallowed into the code — a bare \S+ captured all of it.
 _HHN_RE     = re.compile(r'HHN-[A-Za-z0-9-]+', re.IGNORECASE)
 
-
-def _v(val) -> str:
-    return "" if val is None else str(val).strip()
 
 
 def _int_or_zero(val) -> int:
@@ -55,10 +48,6 @@ def _int_or_zero(val) -> int:
     m = re.search(r"-?\d+(?:\.\d+)?", s)
     return int(float(m.group())) if m else 0
 
-
-def _dispimg_id(val) -> str:
-    m = _DISPIMG_RE.search(_v(val))
-    return m.group(1) if m else ""
 
 
 def _extract_hhn_numbers(cell_val) -> list[tuple[str, str]]:

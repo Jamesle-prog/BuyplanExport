@@ -20,16 +20,8 @@ Secondary key:      (zalando_po, style_no, size) → EAN  (for cross-check)
 """
 from __future__ import annotations
 
-import os
-import re
-from functools import lru_cache
+from ..utils.normalize import normalize_key as _norm_key
 
-import openpyxl
-
-
-def _norm_key(s) -> str:
-    """Strip whitespace, remove non-alphanumeric chars, uppercase — for all key lookups."""
-    return re.sub(r'[^A-Za-z0-9]', '', str(s).strip()).upper()
 
 
 class EANLookup:

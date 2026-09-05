@@ -10,6 +10,14 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.125.1",
+        "date": "2026-09-05",
+        "entries": [
+            {"type": "refactor", "text": "**Codebase refactor, phase 1 — dead code removed.** Seven stand-alone scripts at the repo root (`PO_V3.py`, `PO_Scan_Output_GIII_Combined.py`, `PO_Extract.py`, `CreateBuyPlan.py`, `Mask_PO_Price.py`, `_consistency_check.py`, `_show_violations.py`) were the pre-app prototypes; nothing imports them and every function they held has a maintained equivalent under `po_extractor/`. `fabric_master_client.py` stays — the admin settings page imports it"},
+            {"type": "refactor", "text": "**Phase 2 — one home for cell / text / number normalisation.** Nineteen near-identical private helpers (`_v`, `_txt`, `_num`, `_int`, `_norm`, `_norm_key`, `_to_int`, `_date`, `_yes_no`, `_dispimg_id` …) copy-pasted across 17 parser, lookup, store, exporter and UI-helper modules now come from `po_extractor/utils/normalize.py`: `cell_text`, `cell_date_text`, `to_float`, `to_int`, `normalize_text`, `norm_header_key`, `normalize_key`, `dispimg_id`, `yes_no`. The copies' real differences (blank Excel `#N/A`, integral floats as ints, truncate vs round, currency stripping, percent as ratio vs number) are keyword flags, and each caller pins the exact behaviour it had — verified by `tests/test_normalize.py` (15 tests) on top of the unchanged parser/exporter suites. Also breaks the store package's accidental import of openpyxl via the progress lookup"},
+        ],
+    },
+    {
         "version": "2.125.0",
         "date": "2026-09-05",
         "entries": [

@@ -31,6 +31,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from ..store._factory_progress_schema import MILESTONE_STAGES, MILESTONE_LABELS
+from ..utils.normalize import cell_date_text as _cell_date
 
 _SHEET_TITLE = "跟踪 Tracking"
 
@@ -119,15 +120,6 @@ def build_tracking_grid_xlsx(records: list[dict]) -> bytes:
     wb.save(buf)
     return buf.getvalue()
 
-
-def _cell_date(v) -> str:
-    """A cell value → ISO date string ('' when empty). Accepts real date cells
-    and text like '2026-08-01'."""
-    if v in (None, ""):
-        return ""
-    if hasattr(v, "isoformat"):
-        return v.date().isoformat() if hasattr(v, "date") else v.isoformat()
-    return str(v).strip()
 
 
 def parse_tracking_grid_xlsx(content: bytes) -> dict:

@@ -25,6 +25,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from ..store._factory_progress_schema import (
     REPORT_STAGES, MILESTONE_STAGES, MILESTONE_LABELS,
 )
+from ..utils.normalize import cell_date_text as _cell_date
 
 # Column layout of the request form (1-based). The 本次新增 columns are what
 # the factory fills in; everything else is context we pre-fill.
@@ -260,11 +261,6 @@ def parse_progress_report_xlsx(content: bytes, factory: str = "") -> dict:
             if ms_header is not None:
                 _known_stages = {k for k, _ in MILESTONE_STAGES}
 
-                def _cell_date(v) -> str:
-                    if hasattr(v, "isoformat"):
-                        return (v.date().isoformat() if hasattr(v, "date")
-                                else v.isoformat())
-                    return str(v or "").strip()
 
                 for r in range(ms_header + 1, ms.max_row + 1):
                     po = str(ms.cell(r, _MS_COL_PO).value or "").strip()
@@ -344,11 +340,6 @@ def parse_buyplan_index_tracking(content: bytes) -> dict:
             if h in headers
         }
 
-        def _cell_date(v) -> str:
-            if hasattr(v, "isoformat"):
-                return (v.date().isoformat() if hasattr(v, "date")
-                        else v.isoformat())
-            return str(v or "").strip()
 
         merged: dict[tuple[str, str], dict] = {}
         issues: list[str] = []

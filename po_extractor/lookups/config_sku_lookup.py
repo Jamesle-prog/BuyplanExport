@@ -12,15 +12,11 @@ to extract the "Config SKU" value for each row, then populates item.config_sku.
 """
 from __future__ import annotations
 
-import re
-def _norm_key(s) -> str:
-    """Strip whitespace, remove non-alphanumeric chars, uppercase — for all key lookups."""
-    return re.sub(r'[^A-Za-z0-9]', '', str(s).strip()).upper()
+from ..utils.normalize import normalize_key as _norm_key, cell_text
 
 
 def _v(val) -> str:
-    return "" if (val is None or str(val).strip().lower() in ("nan", "none")) else str(val).strip()
-
+    return cell_text(val, drop_nan=True)
 
 def _is_nontrivial(val: str) -> bool:
     return bool(val) and val.lower() not in ("none", "n/a", "-", "0")

@@ -15,6 +15,11 @@ import os
 import openpyxl
 
 from ..models import POData, POMetadata, SizeRow
+from ..utils.normalize import to_int
+
+
+def _to_int(val) -> int:
+    return to_int(val, default=0, rounding="trunc")
 
 # ---------------------------------------------------------------------------
 # Internal column schema (row 2 values in 1.1.PO_Client)
@@ -186,14 +191,6 @@ def _extract_fields(row: tuple, col_map: dict[str, int]) -> dict:
                 out[field_name] = str(val).strip()
     return out
 
-
-def _to_int(val) -> int:
-    if val is None:
-        return 0
-    try:
-        return int(float(str(val).replace(",", "")))
-    except (ValueError, TypeError):
-        return 0
 
 
 def parse_client_excel_to_df(path: str, sheet_name: str = "1.1.PO_Client") -> "pd.DataFrame":

@@ -33,11 +33,23 @@ identical text.
 """
 from __future__ import annotations
 
-import re
 from typing import Any
 
 import openpyxl
 from openpyxl.utils.datetime import from_excel
+from ..utils.normalize import cell_text, norm_header_key, to_int
+
+
+_norm = norm_header_key
+
+
+def _txt(v) -> str:
+    """Verbatim display text — the whole point of this parser."""
+    return cell_text(v, int_floats=True)
+
+
+def _int(v) -> int | None:
+    return to_int(v, strict=True)
 
 SHEET_NAME = "1.面料情况"
 
@@ -47,34 +59,6 @@ class FabricConditionParseError(ValueError):
 
 
 # ── cell helpers ────────────────────────────────────────────────────────────
-
-def _norm(v: Any) -> str:
-    """Heading text reduced to a comparable key: brackets folded, no whitespace."""
-    if v is None:
-        return ""
-    s = str(v).strip().lower()
-    s = s.replace("（", "(").replace("）", ")")
-    return re.sub(r"\s+", "", s)
-
-
-def _txt(v: Any) -> str:
-    """Verbatim display text — the whole point of this parser."""
-    if v is None:
-        return ""
-    if isinstance(v, float) and v.is_integer():
-        return str(int(v))
-    return str(v).strip()
-
-
-def _int(v: Any) -> int | None:
-    if v is None or isinstance(v, bool):
-        return None
-    if isinstance(v, int):
-        return v
-    if isinstance(v, float) and v.is_integer():
-        return int(v)
-    s = str(v).strip()
-    return int(s) if s.isdigit() else None
 
 
 def _date_text(v: Any) -> str:

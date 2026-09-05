@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from ..lookups.progress_lookup import _norm_key
+from ..utils.normalize import normalize_key as _norm_key
 
 # Columns written/read on progress_records, in a fixed order shared by the
 # batch-save and record-load paths so the two stay in sync. pc_no_norm is
