@@ -60,13 +60,22 @@ def test_keys_are_independent():
     assert th.lock_remaining("bob") == 0
 
 
-def test_global_brake_blocks_every_username():
-    """Spraying many usernames trips the global key, which wait_seconds
-    applies to everyone — including a name that has never failed."""
+def test_spraying_brake_is_per_source_address():
+    """Spraying many usernames from one address trips that address's brake —
+    even for a name that has never failed — but NOT other addresses: one
+    colleague hammering a wrong password must not lock the whole team out."""
     for i in range(30):
         th.record_failure(f"user{i}")
-        th.record_global_failure()
-    assert th.wait_seconds("never-seen-before") > 0
+        th.record_global_failure("10.0.0.5")
+    assert th.wait_seconds("never-seen-before", "10.0.0.5") > 0
+    assert th.wait_seconds("never-seen-before", "10.0.0.9") == 0
+
+
+def test_unknown_source_falls_back_to_a_global_brake():
+    for _ in range(30):
+        th.record_global_failure("")          # no client address available
+    assert th.wait_seconds("anyone", "") > 0
+    assert th.wait_seconds("anyone", "10.0.0.9") == 0
 
 
 def test_state_survives_a_fresh_script_namespace():
@@ -102,4 +111,6 @@ def test_app_py_keeps_no_throttle_state_at_module_level():
                 if "LOGIN" in name.upper() and "FAIL" in name.upper():
                     offenders.append(name)
     assert not offenders, f"throttle state defined in app.py: {offenders}"
-    assert "login_throttle" in src
+    # The throttle is used by the login page, which lives in ui/login_view.py.
+    view = open(os.path.join(root, "ui", "login_view.py"), encoding="utf-8").read()
+    assert "login_throttle" in view

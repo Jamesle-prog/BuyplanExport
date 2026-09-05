@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import os
 
+from po_extractor.config import BCRYPT_ROUNDS
+
 # NOTE: bcrypt is imported lazily (see _bcrypt()) — it's a compiled extension
 # that costs ~150 ms to import, and its hash routine another ~100 ms per call
 # by design. Nothing before login needs it, but this module is pulled in at
@@ -35,7 +37,7 @@ def _timing_pad_hash() -> bytes:
     global _dummy_hash
     if _dummy_hash is None:
         b = _bcrypt()
-        _dummy_hash = b.hashpw(b"__timing_pad__", b.gensalt())
+        _dummy_hash = b.hashpw(b"__timing_pad__", b.gensalt(rounds=BCRYPT_ROUNDS))
     return _dummy_hash
 
 def warm_bcrypt() -> None:
@@ -148,7 +150,7 @@ def create_user(username: str, password: str,
         raise ValueError("Username and password are required")
     users = _load()
     b = _bcrypt()
-    hashed = b.hashpw(password.encode(), b.gensalt()).decode()
+    hashed = b.hashpw(password.encode(), b.gensalt(rounds=BCRYPT_ROUNDS)).decode()
     existing = users.get(username, {})
     users[username] = {
         "password": hashed,
@@ -176,9 +178,26 @@ def verify_password(username: str, password: str) -> bool:
         return False
     try:
         h = rec["password"] if isinstance(rec, dict) else rec
-        return b.checkpw(password.encode(), h.encode())
+        ok = b.checkpw(password.encode(), h.encode())
     except Exception:
         return False
+    if ok and _hash_rounds(h) != BCRYPT_ROUNDS:
+        # Stored at a different work factor (e.g. the old default of 12):
+        # re-hash now, while we hold the plaintext.  Best-effort — a failed
+        # rewrite must not turn a correct password into a failed sign-in.
+        try:
+            create_user(username, password)   # keeps role/companies/modules
+        except Exception:
+            pass
+    return ok
+
+
+def _hash_rounds(h: str) -> int | None:
+    """Work factor embedded in a bcrypt hash ("$2b$12$…" → 12)."""
+    try:
+        return int(str(h).split("$")[2])
+    except (IndexError, ValueError):
+        return None
 
 
 def change_password(username: str, old_password: str, new_password: str) -> bool:

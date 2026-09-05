@@ -30,7 +30,13 @@ LOGIN_BASE_LOCK_S       = 60.0
 LOGIN_MAX_LOCK_S        = 900.0
 LOGIN_GLOBAL_THRESHOLD  = 30
 LOGIN_GLOBAL_LOCK_S     = 120.0
-LOGIN_LOG_RETENTION_DAYS = 365   # default for the admin "purge old events" tool
+LOGIN_LOG_RETENTION_DAYS = 365
+# bcrypt work factor for password hashes. 10 is the OWASP floor and ≈65 ms per
+# check; 12 (bcrypt's own default) is 4× that, which was the whole cost of a
+# warm sign-in. With the lockout actually working (v2.124.3) the extra rounds
+# buy little on a LAN tool. Existing hashes at another factor keep verifying
+# and are transparently re-hashed on the next successful sign-in.
+BCRYPT_ROUNDS = 10   # default for the admin "purge old events" tool
 
 SIZE_ORDER = [
     'PXS', 'PS', 'PM', 'PL', 'PXL', 'P1X', 'P2X', 'P3X', 'P2XL', 'P3XL',

@@ -10,6 +10,17 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.125.0",
+        "date": "2026-09-05",
+        "entries": [
+            {"type": "refactor", "text": "**The sign-in page moved out of `app.py` into `ui/login_view.py`** (CSS, hero panel, form, lockout handling, audit log, and the sidebar change-password form) — the same one-module-per-screen layout every other tab already uses. `app.py` shrank from 998 to 600 lines and now holds only start-up, session defaults and the router; the login view is imported lazily so a signed-in rerun never loads the login CSS"},
+            {"type": "perf", "text": "**Sign-in is ~3× faster: bcrypt work factor 12 → 10.** 12 is bcrypt's own default and cost ~270 ms per check — most of a warm sign-in; 10 is the OWASP floor at ~65 ms. Measured click→app: 880 ms → 300–370 ms warm. Existing hashes keep verifying and are **re-hashed transparently on the next successful sign-in** (role, companies, tabs and factories preserved; a wrong password never rewrites anything). The timing-pad hash uses the same factor so an unknown username still costs the same as a wrong password. Set `BCRYPT_ROUNDS` in `po_extractor/config.py` to raise it back"},
+            {"type": "security", "text": "**The username-spraying brake is now per client address.** It used to be a single process-wide counter: 30 failures across any names locked *every* user out for 120 s, so one colleague hammering a wrong password could sideline the whole team. Each address now has its own brake; only when no address is available does it fall back to the global one"},
+            {"type": "fix", "text": "**\"Also save a copy to this folder\" could write outside the chosen folder on a non-Windows server.** The filename was reduced to its base name with `os.path.basename`, which ignores `\\` on POSIX — so a name like `..\\..\\x.xlsx` came through whole. Both separator styles are now stripped and `.`/`..` refused. Two tests had been failing on this since they were written"},
+            {"type": "fix", "text": "Test suite fully green for the first time (1430 passed): a Tracking Grid test hard-coded a planned date that has since gone past and was correctly reporting 🔴 overdue — it now pins `today`; the three price-masking tests only needed `pymupdf` present"},
+        ],
+    },
+    {
         "version": "2.124.3",
         "date": "2026-09-04",
         "entries": [

@@ -4,6 +4,8 @@ from __future__ import annotations
 from typing import Any, NamedTuple
 
 import pandas as pd
+import re
+
 import streamlit as st
 
 from po_extractor.config import PDF_MIME, XLSX_MIME
@@ -151,7 +153,12 @@ def save_copy_to_folder(data: bytes, filename: str, folder: str) -> None:
     if not folder:
         return
     import os
-    safe = os.path.basename(str(filename)) or "output"
+    # Both separator styles, whatever the server OS: os.path.basename ignores
+    # "\" on POSIX, so r"..\..\x.xlsx" came through whole.  Strip to the
+    # final component and refuse the traversal names outright.
+    safe = re.split(r"[\\/]", str(filename))[-1].strip()
+    if safe in ("", ".", ".."):
+        safe = "output"
     try:
         if not os.path.isdir(folder):
             st.warning(f"{t('Folder not found — nothing saved:')} {folder}")

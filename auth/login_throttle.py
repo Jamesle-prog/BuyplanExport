@@ -3,7 +3,8 @@
 The app is reachable from the network, so a wrong password must not be free
 to retry forever.  After ``LOGIN_FAIL_THRESHOLD`` failures a key (the
 lower-cased username) locks out with exponential backoff, capped at
-``LOGIN_MAX_LOCK_S``; a coarser global key catches username spraying.
+``LOGIN_MAX_LOCK_S``; a coarser per-source-address key catches username
+spraying without locking everyone else out.
 
 Why this is its own module and not part of app.py
 --------------------------------------------------
@@ -35,6 +36,17 @@ from po_extractor.config import (
 )
 
 GLOBAL_KEY = "\x00global"
+_SOURCE_PREFIX = "\x00src:"
+
+
+def source_key(source: str) -> str:
+    """Brake key for a client address; the process-wide key when unknown.
+
+    Username spraying comes from one source, so the brake is per address:
+    one colleague hammering a wrong password no longer locks the whole team
+    out.  With no address (Streamlit build without request headers) it falls
+    back to a single global brake — safe, if blunt."""
+    return _SOURCE_PREFIX + source if source else GLOBAL_KEY
 
 _lock = threading.Lock()
 _failures: dict[str, tuple[int, float]] = {}   # key → (fails, locked_until)
@@ -65,9 +77,10 @@ def record_failure(key: str, *, threshold: int = LOGIN_FAIL_THRESHOLD,
         _failures[key] = (count, time.time() + lock_s)
 
 
-def record_global_failure() -> None:
-    """The username-spraying brake: many failures across *any* usernames."""
-    record_failure(GLOBAL_KEY, threshold=LOGIN_GLOBAL_THRESHOLD,
+def record_global_failure(source: str = "") -> None:
+    """The username-spraying brake: many failures across *any* usernames
+    from one *source* address."""
+    record_failure(source_key(source), threshold=LOGIN_GLOBAL_THRESHOLD,
                    base_lock_s=LOGIN_GLOBAL_LOCK_S, max_lock_s=LOGIN_GLOBAL_LOCK_S)
 
 
@@ -77,10 +90,10 @@ def record_success(key: str) -> None:
         _failures.pop(key, None)
 
 
-def wait_seconds(key: str) -> int:
-    """Seconds a sign-in for *key* must wait — the longer of its own lock and
-    the global brake.  0 means go ahead."""
-    return max(lock_remaining(key), lock_remaining(GLOBAL_KEY))
+def wait_seconds(key: str, source: str = "") -> int:
+    """Seconds a sign-in for *key* from *source* must wait — the longer of the
+    username's own lock and its source's spraying brake.  0 means go ahead."""
+    return max(lock_remaining(key), lock_remaining(source_key(source)))
 
 
 def reset() -> None:

@@ -8,6 +8,8 @@ testable — the Index feed depends on the diff writing ``{stage}_planned``.
 """
 from __future__ import annotations
 
+from datetime import date
+
 import pandas as pd
 import pytest
 
@@ -56,7 +58,7 @@ def test_done_count_counts_actual_dates_only():
 
 def test_status_strip_marks_done_planned_and_empty():
     rec = _record(cutting_actual="2026-08-05", sewing_planned="2026-08-09")
-    row = v._status_strip_df([rec]).iloc[0]
+    row = v._status_strip_df([rec], today=date(2026, 8, 1)).iloc[0]
     labels = dict(MILESTONE_STAGES)
     assert row[labels["cutting"]] == "✅"
     assert row[labels["sewing"]] == "📅"
