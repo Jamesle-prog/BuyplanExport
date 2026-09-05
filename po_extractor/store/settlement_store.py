@@ -19,7 +19,7 @@ from typing import Any
 
 import pandas as pd
 
-from .base_store import BaseSQLiteStore
+from .base_store import BaseSQLiteStore, rows_to_df
 from ._settlement_schema import _SETTLEMENT_SCHEMA
 
 # Columns written per settlement row, in insert order.
@@ -40,17 +40,11 @@ _SAMPLE_COLS = ("style", "client", "factory", "fabric", "lining", "rib",
 class SettlementStore(BaseSQLiteStore):
     """Read/write access to the settlement_* tables."""
 
-    _checked_paths: set[str] = set()
-
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        if db_path not in SettlementStore._checked_paths:
-            self._ensure_schema()
-            SettlementStore._checked_paths.add(db_path)
+        self._init_db(db_path)
 
-    def _ensure_schema(self) -> None:
-        with self._conn() as conn:
-            conn.executescript(_SETTLEMENT_SCHEMA)
+    def _setup_schema(self, conn) -> None:
+        conn.executescript(_SETTLEMENT_SCHEMA)
 
     # ── import ──────────────────────────────────────────────────────────────
 
@@ -140,21 +134,20 @@ class SettlementStore(BaseSQLiteStore):
             args.extend([like] * 5)
         sql.append("ORDER BY year DESC, client, invoice_no, row_no")
         with self._conn() as conn:
-            df = pd.DataFrame([dict(r) for r in
-                               conn.execute(" ".join(sql), args).fetchall()])
+            df = rows_to_df(conn.execute(" ".join(sql), args).fetchall())
         return _with_derived(df)
 
     def list_samples(self) -> pd.DataFrame:
         with self._conn() as conn:
-            return pd.DataFrame([dict(r) for r in conn.execute(
-                "SELECT * FROM settlement_samples ORDER BY client, style")])
+            return rows_to_df(conn.execute(
+                "SELECT * FROM settlement_samples ORDER BY client, style"))
 
     def list_imports(self, limit: int = 20) -> pd.DataFrame:
         with self._conn() as conn:
-            return pd.DataFrame([dict(r) for r in conn.execute(
+            return rows_to_df(conn.execute(
                 "SELECT * FROM settlement_imports "
                 "ORDER BY datetime(imported_at) DESC, id DESC LIMIT ?",
-                (limit,))])
+                (limit,)))
 
     def distinct(self, column: str) -> list[str]:
         """Sorted distinct values of one column, for the filter widgets."""
@@ -196,8 +189,7 @@ class SettlementStore(BaseSQLiteStore):
         """
         try:
             with self._conn() as conn:
-                return pd.DataFrame([dict(r) for r in
-                                     conn.execute(sql).fetchall()])
+                return rows_to_df(conn.execute(sql).fetchall())
         except sqlite3.OperationalError:
             return pd.DataFrame()
 

@@ -14,7 +14,7 @@ from typing import Any
 
 import pandas as pd
 
-from .base_store import BaseSQLiteStore
+from .base_store import BaseSQLiteStore, rows_to_df
 from ._fabric_condition_schema import _FABRIC_CONDITION_SCHEMA
 from ..parsers.fabric_condition import FIELD_ORDER
 
@@ -24,17 +24,11 @@ _RECORD_COLS = ("row_no",) + FIELD_ORDER
 class FabricConditionStore(BaseSQLiteStore):
     """Read/write access to the fabric_condition* tables."""
 
-    _checked_paths: set[str] = set()
-
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        if db_path not in FabricConditionStore._checked_paths:
-            self._ensure_schema()
-            FabricConditionStore._checked_paths.add(db_path)
+        self._init_db(db_path)
 
-    def _ensure_schema(self) -> None:
-        with self._conn() as conn:
-            conn.executescript(_FABRIC_CONDITION_SCHEMA)
+    def _setup_schema(self, conn) -> None:
+        conn.executescript(_FABRIC_CONDITION_SCHEMA)
 
     # ── import ──────────────────────────────────────────────────────────────
 
@@ -86,8 +80,7 @@ class FabricConditionStore(BaseSQLiteStore):
             args.extend([like] * 3)
         sql.append("ORDER BY row_no")
         with self._conn() as conn:
-            return pd.DataFrame([dict(r) for r in
-                                 conn.execute(" ".join(sql), args).fetchall()])
+            return rows_to_df(conn.execute(" ".join(sql), args).fetchall())
 
     def distinct(self, column: str) -> list[str]:
         if column not in ("style", "color", "fabric_no", "body_part"):
@@ -99,7 +92,7 @@ class FabricConditionStore(BaseSQLiteStore):
 
     def list_imports(self, limit: int = 20) -> pd.DataFrame:
         with self._conn() as conn:
-            return pd.DataFrame([dict(r) for r in conn.execute(
+            return rows_to_df(conn.execute(
                 "SELECT * FROM fabric_condition_imports "
                 "ORDER BY datetime(imported_at) DESC, id DESC LIMIT ?",
-                (limit,))])
+                (limit,)))

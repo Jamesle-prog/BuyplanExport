@@ -61,14 +61,11 @@ def factory_code(s: str) -> str:
 class FactoryRegistryStore(BaseSQLiteStore):
     """Canonical factories + aliases, with resolution and fuzzy suggestions."""
 
-    _checked_paths: set[str] = set()
-
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        if db_path not in FactoryRegistryStore._checked_paths:
-            with self._conn() as conn:
-                conn.executescript(_SCHEMA)
-            FactoryRegistryStore._checked_paths.add(db_path)
+        self._init_db(db_path)
+
+    def _setup_schema(self, conn) -> None:
+        conn.executescript(_SCHEMA)
 
     # ── Resolution ──────────────────────────────────────────────────────────
 

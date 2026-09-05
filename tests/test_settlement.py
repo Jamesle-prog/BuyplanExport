@@ -83,7 +83,7 @@ def _zalando2026(ws):
 
 @pytest.fixture
 def store(tmp_path):
-    SettlementStore._checked_paths.clear()
+    SettlementStore._forget_schema()
     return SettlementStore(str(tmp_path / "po_history.db"))
 
 

@@ -24,7 +24,7 @@ from pathlib import Path
 import openpyxl
 import pandas as pd
 
-from .base_store import BaseSQLiteStore
+from .base_store import BaseSQLiteStore, current_actor
 from ._color_translation_schema import (
     _SCHEMA, _MIGRATION_ADD_BRAND, _MIGRATION_ADD_LABEL_COLS, _AUDIT_SCHEMA,
     _COL_CLIENT, _COL_BRAND, _COL_EN_COLOR, _COL_CN_COLOR, _COL_COLOR_CODE,
@@ -39,14 +39,7 @@ _AUDIT_FIELDS = ("cn_color", "color_code", "light_or_dark",
                  "label_color", "notes")
 
 
-def _current_actor() -> str:
-    """Best-effort: return the logged-in Streamlit user, else ``'system'``."""
-    try:
-        import streamlit as st
-        from ui.session_keys import SK
-        return str(st.session_state.get(SK.USERNAME) or "system").strip() or "system"
-    except Exception:
-        return "system"
+_current_actor = current_actor
 
 
 def _audit_log(conn, action: str, row_id: int | None, client: str, brand: str,
@@ -127,31 +120,25 @@ def _derive_shade_and_label(en_color: str) -> tuple[str, str]:
 
 class ColorTranslationStore(BaseSQLiteStore):
     def __init__(self, db_path: str | Path):
-        self.db_path = str(db_path)
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
+        self._init_db(db_path, mkdir=True)
 
     # ── Internal ─────────────────────────────────────────────────────────────
 
-    def _ensure_schema(self) -> None:
-        with self._conn() as conn:
-            tbl = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='color_translations'"
-            ).fetchone()
-            if tbl:
-                cols = {r[1] for r in conn.execute("PRAGMA table_info(color_translations)")}
-                if "brand" not in cols:
-                    conn.executescript(_MIGRATION_ADD_BRAND)
-                    cols = {r[1] for r in conn.execute("PRAGMA table_info(color_translations)")}
-                # v1 → v2: add light_or_dark + label_color columns
-                if "light_or_dark" not in cols or "label_color" not in cols:
-                    conn.executescript(_MIGRATION_ADD_LABEL_COLS)
-                    self._backfill_light_dark_and_label(conn)
-            else:
-                conn.executescript(_SCHEMA)
-            # v2 → v3: ensure the audit-log table exists (idempotent — uses
-            # CREATE TABLE IF NOT EXISTS so safe to run on every startup).
-            conn.executescript(_AUDIT_SCHEMA)
+    def _setup_schema(self, conn) -> None:
+        cols = self._table_columns(conn, "color_translations")   # empty: no table
+        if cols:
+            if "brand" not in cols:
+                conn.executescript(_MIGRATION_ADD_BRAND)
+                cols = self._table_columns(conn, "color_translations")
+            # v1 → v2: add light_or_dark + label_color columns
+            if "light_or_dark" not in cols or "label_color" not in cols:
+                conn.executescript(_MIGRATION_ADD_LABEL_COLS)
+                self._backfill_light_dark_and_label(conn)
+        else:
+            conn.executescript(_SCHEMA)
+        # v2 → v3: ensure the audit-log table exists (idempotent — uses
+        # CREATE TABLE IF NOT EXISTS so safe to run on every startup).
+        conn.executescript(_AUDIT_SCHEMA)
 
     @staticmethod
     def _backfill_light_dark_and_label(conn) -> None:

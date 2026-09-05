@@ -5,6 +5,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from .base_store import rows_to_df
+
 
 class _ExceptionsMixin:
     """Exception queue operations for POStore. Requires self._conn() from BaseSQLiteStore."""
@@ -36,7 +38,7 @@ class _ExceptionsMixin:
                 ).fetchall()
         cols = ["id", "po_number", "file_name", "company", "status",
                 "reason", "raw_text_snippet", "created_at", "updated_at", "processed_by"]
-        return pd.DataFrame([dict(r) for r in rows], columns=cols) if rows else pd.DataFrame(columns=cols)
+        return rows_to_df(rows, cols)
 
     def update_exception_status(self, exc_id: int, status: str) -> None:
         """Update the status of an exception record."""

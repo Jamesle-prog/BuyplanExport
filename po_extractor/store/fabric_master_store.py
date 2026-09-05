@@ -16,7 +16,7 @@ from pathlib import Path
 
 import openpyxl
 
-from .base_store import BaseSQLiteStore
+from .base_store import BaseSQLiteStore, current_actor
 from ._fabric_master_schema import (
     _SCHEMA, _NUMERIC_FIELDS,
     _build_col_map, _v, _num, _make_display_key,
@@ -27,19 +27,7 @@ from ._fabric_version_schema import (
 )
 
 
-def _current_actor() -> str:
-    """Best-effort: return the logged-in Streamlit user, else 'system'.
-
-    Mirrors ColorTranslationStore._current_actor() -- same fallback shape,
-    kept as an independent copy per this codebase's existing convention of
-    not sharing that helper across store modules.
-    """
-    try:
-        import streamlit as st
-        from ui.session_keys import SK
-        return str(st.session_state.get(SK.USERNAME) or "system").strip() or "system"
-    except Exception:
-        return "system"
+_current_actor = current_actor
 
 
 class FabricMasterStore(BaseSQLiteStore):
@@ -52,36 +40,22 @@ class FabricMasterStore(BaseSQLiteStore):
         "shrinkage_rate", "short_rate", "notes_cn", "display_key",
     )
 
-    # Class-level set of db_paths that have already been schema-checked in
-    # this process (same pattern as ProductionTrackingStore._checked_paths).
-    # The store is constructed fresh on every Streamlit render, so without
-    # the guard the two executescripts + ALTER-throw-catch probes ran per
-    # construction.  Keyed by db_path: an admin-changed FABRIC_DB_PATH gets
-    # its own first-time ensure.
-    _checked_paths: set[str] = set()
-
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        self._ensure_schema()
+        self._init_db(db_path)
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
-    def _ensure_schema(self):
-        if self.db_path in FabricMasterStore._checked_paths:
-            return
-        with self._conn() as conn:
-            conn.executescript(_SCHEMA)
-            conn.executescript(_VERSION_SCHEMA)
-            self._migrate_swap_widths(conn)
-            self._migrate_add_spot_price_cols(conn)
-            # Peer-review columns added after versioning first shipped
-            for col, col_def in (("approved_by", "TEXT"),
-                                 ("review_comment", "TEXT")):
-                self._add_column_if_missing(conn, "fabric_versions", col, col_def)
-            for col, col_def in (("fields_json", "TEXT NOT NULL DEFAULT '[]'"),
-                                 ("col_map_json", "TEXT NOT NULL DEFAULT '{}'")):
-                self._add_column_if_missing(conn, "fabric_pending_import", col, col_def)
-        FabricMasterStore._checked_paths.add(self.db_path)
+    def _setup_schema(self, conn) -> None:
+        conn.executescript(_SCHEMA)
+        conn.executescript(_VERSION_SCHEMA)
+        self._migrate_swap_widths(conn)
+        self._migrate_add_spot_price_cols(conn)
+        # Peer-review columns added after versioning first shipped
+        self._ensure_columns(conn, "fabric_versions",
+                             (("approved_by", "TEXT"), ("review_comment", "TEXT")))
+        self._ensure_columns(conn, "fabric_pending_import",
+                             (("fields_json", "TEXT NOT NULL DEFAULT '[]'"),
+                              ("col_map_json", "TEXT NOT NULL DEFAULT '{}'")))
 
     @staticmethod
     def _migrate_add_spot_price_cols(conn: sqlite3.Connection) -> None:

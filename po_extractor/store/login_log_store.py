@@ -38,14 +38,11 @@ CREATE INDEX IF NOT EXISTS idx_login_log_outcome ON login_log(outcome);
 class LoginLogStore(BaseSQLiteStore):
     """Append-only sign-in log with admin-side reads."""
 
-    _checked_paths: set[str] = set()
-
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        if db_path not in LoginLogStore._checked_paths:
-            with self._conn() as conn:
-                conn.executescript(_SCHEMA)
-            LoginLogStore._checked_paths.add(db_path)
+        self._init_db(db_path)
+
+    def _setup_schema(self, conn) -> None:
+        conn.executescript(_SCHEMA)
 
     # ── Write ────────────────────────────────────────────────────────────────
 

@@ -23,7 +23,7 @@ import io
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .base_store import BaseSQLiteStore
+from .base_store import BaseSQLiteStore, current_actor
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -2025,13 +2025,7 @@ _SEED: list[tuple[str, str, str, str]] = [
 # fmt: on
 
 
-def _current_actor() -> str:
-    try:
-        import streamlit as st
-        from ui.session_keys import SK
-        return str(st.session_state.get(SK.USERNAME) or "system").strip() or "system"
-    except Exception:
-        return "system"
+_current_actor = current_actor
 
 
 class UITranslationStore(BaseSQLiteStore):
@@ -2044,15 +2038,12 @@ class UITranslationStore(BaseSQLiteStore):
     """
 
     def __init__(self, db_path: str | Path):
-        self.db_path = str(db_path)
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
+        self._init_db(db_path, mkdir=True)
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
-    def _ensure_schema(self) -> None:
-        with self._conn() as conn:
-            conn.executescript(_SCHEMA)
+    def _setup_schema(self, conn) -> None:
+        conn.executescript(_SCHEMA)
 
     # ── Seed ──────────────────────────────────────────────────────────────────
 

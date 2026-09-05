@@ -39,14 +39,12 @@ class BoatSampleStore(BaseSQLiteStore):
     """Read/write access to the boat_sample_req table."""
 
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        self._ensure_schema()
+        self._init_db(db_path)
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
-    def _ensure_schema(self) -> None:
-        with self._conn() as conn:
-            conn.executescript(_SCHEMA)
+    def _setup_schema(self, conn) -> None:
+        conn.executescript(_SCHEMA)
 
     # ── Reads ─────────────────────────────────────────────────────────────────
 

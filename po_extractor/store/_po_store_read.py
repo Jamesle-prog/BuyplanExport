@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from .base_store import rows_to_df
+
 
 class _ReadsMixin:
     """Read operations for POStore. Requires self._conn() from BaseSQLiteStore."""
@@ -58,7 +60,7 @@ class _ReadsMixin:
             "msrp", "cpo", "fabric",
             "total_units",
         ]
-        return pd.DataFrame([dict(r) for r in rows], columns=cols) if rows else pd.DataFrame(columns=cols)
+        return rows_to_df(rows, cols)
 
     def list_history(self, po_number: str) -> pd.DataFrame:
         """All archived versions of a single PO, newest first."""
@@ -69,7 +71,7 @@ class _ReadsMixin:
                    ORDER BY archived_at DESC""",
                 (po_number,),
             ).fetchall()
-        return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+        return rows_to_df(rows)
 
     def load_size_rows(self, po_numbers: list[str]) -> pd.DataFrame:
         if not po_numbers:
@@ -82,7 +84,7 @@ class _ReadsMixin:
             ).fetchall()
         if not rows:
             return pd.DataFrame(columns=["PO Number", "Style", "Color", "Size", "Units", "UPC"])
-        df = pd.DataFrame([dict(r) for r in rows])
+        df = rows_to_df(rows)
         df.columns = ["PO Number", "Style", "Color", "Size", "Units", "UPC"]
         return df
 
@@ -99,7 +101,7 @@ class _ReadsMixin:
                     FROM po_metadata WHERE po_number IN ({ph})""",
                 po_numbers,
             ).fetchall()
-        return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+        return rows_to_df(rows)
 
     def list_companies(self) -> list[str]:
         """All distinct company names stored in the DB."""

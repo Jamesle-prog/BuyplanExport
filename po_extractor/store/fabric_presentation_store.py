@@ -37,17 +37,11 @@ _LINE_COLS = (
 class FabricPresentationStore(BaseSQLiteStore):
     """Read/write access to the fabric_presentation* tables."""
 
-    _checked_paths: set[str] = set()
-
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        if db_path not in FabricPresentationStore._checked_paths:
-            self._ensure_schema()
-            FabricPresentationStore._checked_paths.add(db_path)
+        self._init_db(db_path)
 
-    def _ensure_schema(self) -> None:
-        with self._conn() as conn:
-            conn.executescript(_FABRIC_PRESENTATION_SCHEMA)
+    def _setup_schema(self, conn) -> None:
+        conn.executescript(_FABRIC_PRESENTATION_SCHEMA)
 
     # ── create ──────────────────────────────────────────────────────────────
 

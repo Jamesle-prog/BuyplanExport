@@ -77,8 +77,8 @@ def get_sky_east_store() -> SkyEastStore:
     """Return a fresh SkyEastStore.
 
     Deliberately uncached: construction is cheap because the class-level
-    ``SkyEastStore._checked_paths`` guard runs schema-ensure only once per
-    db_path per process (see the store).  Do NOT ``functools.cache`` this
+    ``BaseSQLiteStore._init_db`` guard runs schema setup only once per
+    (class, db_path) per process.  Do NOT ``functools.cache`` this
     wrapper — a fresh instance per call avoids the stale-class hot-reload
     issue entirely.
     """
@@ -89,8 +89,8 @@ def get_fabric_master_store() -> FabricMasterStore:
     """Return a fresh FabricMasterStore.
 
     Deliberately uncached: the fabric DB path is admin-changeable at
-    runtime, and the class-level ``FabricMasterStore._checked_paths`` guard
-    already makes repeated construction cheap (schema-ensure once per
+    runtime, and the ``BaseSQLiteStore._init_db`` guard
+    already makes repeated construction cheap (schema setup once per
     db_path per process, so a newly configured path still gets its ensure).
     """
     return _get_fabric_master_store()
@@ -101,8 +101,8 @@ def get_color_translation_store() -> ColorTranslationStore:
     """Return the cached ColorTranslationStore.
 
     Cached with ``functools.cache`` (not ``st.cache_resource``) on purpose:
-    ``__init__`` opens a SQLite connection and runs ``_ensure_schema()``, so
-    repeated construction on every Streamlit render is genuinely expensive.
+    ``__init__`` opens a SQLite connection and runs ``_setup_schema()`` on
+    first use, and the instance also carries per-process state worth keeping.
 
     ``functools.cache`` ties the cached instance to *this function object*.
     When Streamlit hot-reloads the module after a code change, the function
@@ -143,7 +143,7 @@ def get_production_tracking_store() -> ProductionTrackingStore:
     """Return the cached ProductionTrackingStore.
 
     Cached with ``functools.cache`` (same rationale as ColorTranslationStore /
-    AppSettingsStore): construction calls ``_ensure_schema()`` which opens a
+    AppSettingsStore): construction calls ``_setup_schema()`` which opens a
     SQLite connection and runs ``PRAGMA table_info`` — doing this on every
     Streamlit render adds unnecessary latency.
 

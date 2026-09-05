@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.125.3",
+        "date": "2026-09-05",
+        "entries": [
+            {"type": "refactor", "text": "**Codebase refactor, phase 4 — every store built the same way.** `BaseSQLiteStore` gained `_init_db(db_path, mkdir=)` (sets the path, creates the folder when asked, and runs the store's `_setup_schema(conn)` **once per class + path per process**), `_forget_schema()` for tests, `_table_columns()` / `_ensure_columns()` (one PRAGMA, ADD COLUMN for whatever is missing), plus module-level `rows_to_df()` and `current_actor()`. All 17 stores now construct through it: ten private `_checked_paths` guard copies are gone, and the seven stores that had **no** guard (PO history, app settings, colour translation, UI translation, boat sample, CMPT contract, factory progress) no longer re-run their CREATE TABLE scripts and column probes on every construction — the PO store's four migration passes ran on every non-cached instantiation before. 25 hand-written `pd.DataFrame([dict(r) for r in rows]) if rows else …` sites and three identical `_current_actor()` copies replaced. 6 new tests in `tests/test_base_store_shared.py`; 1469 passing"},
+        ],
+    },
+    {
         "version": "2.125.2",
         "date": "2026-09-05",
         "entries": [

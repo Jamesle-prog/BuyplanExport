@@ -5,6 +5,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from .base_store import rows_to_df
+
 
 class _FabricMixin:
     """Fabric parts and HHN cache operations for POStore.
@@ -167,7 +169,7 @@ class _FabricMixin:
                 f"SELECT * FROM style_fabric_parts {where} ORDER BY style, combo_idx, seq",
                 params,
             ).fetchall()
-        return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+        return rows_to_df(rows)
 
     def load_fabric_parts_for_styles(
         self,
@@ -531,10 +533,7 @@ class _FabricMixin:
                 "FROM fabric_hhn_cache ORDER BY hhn_no"
             ).fetchall()
         cols = ["hhn_no", "composition", "weight_gsm", "width_cm", "updated_at"]
-        return (
-            pd.DataFrame([dict(r) for r in rows], columns=cols)
-            if rows else pd.DataFrame(columns=cols)
-        )
+        return rows_to_df(rows, cols)
 
     def fabric_hhn_cache_count(self) -> int:
         """Return the number of HHN codes in the cache."""

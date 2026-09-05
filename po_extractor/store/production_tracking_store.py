@@ -45,18 +45,12 @@ from ._production_tracking_schema import (
 class ProductionTrackingStore(BaseSQLiteStore):
     """Read/write access to the ``production_tracking`` table."""
 
-    # Class-level set of db_paths that have already been schema-checked in
-    # this process.  Lets _ensure_schema() be a fast no-op on repeated
-    # construction (e.g. when the store is not cached by the caller).
-    _checked_paths: set[str] = set()
-
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        self._ensure_schema()
+        self._init_db(db_path)
 
     # ── Schema / migration ───────────────────────────────────────────────────
 
-    def _ensure_schema(self) -> None:
+    def _setup_schema(self, conn) -> None:
         """Create the base table on a fresh DB, then ADD COLUMN for every
         non-base column that's missing.  Safe on:
         - a brand-new database (full table built)
@@ -68,24 +62,11 @@ class ProductionTrackingStore(BaseSQLiteStore):
         ``DROP COLUMN`` in a migration; the application code simply ignores
         them.
 
-        The class-level ``_checked_paths`` set makes this a fast no-op after
-        the first call per db_path within a process lifetime — the PRAGMA +
-        connection-open overhead is paid once, not on every render.
+        Runs once per db_path per process (``BaseSQLiteStore._init_db``) —
+        the PRAGMA + connection-open overhead is paid once, not per render.
         """
-        if self.db_path in ProductionTrackingStore._checked_paths:
-            return
-        with self._conn() as conn:
-            conn.executescript(base_schema_sql())
-            existing = {
-                row[1]
-                for row in conn.execute("PRAGMA table_info(production_tracking)")
-            }
-            for col_name, col_def in COLUMN_SPEC:
-                if col_name not in existing:
-                    self._add_column_if_missing(
-                        conn, "production_tracking", col_name, col_def
-                    )
-        ProductionTrackingStore._checked_paths.add(self.db_path)
+        conn.executescript(base_schema_sql())
+        self._ensure_columns(conn, "production_tracking", COLUMN_SPEC)
 
     # ── Writes ──────────────────────────────────────────────────────────────
 

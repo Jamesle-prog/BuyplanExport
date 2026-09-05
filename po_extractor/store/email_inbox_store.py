@@ -61,18 +61,11 @@ CREATE INDEX IF NOT EXISTS idx_ea_status ON email_attachments(status);
 class EmailInboxStore(BaseSQLiteStore):
     """Read/write access to the inbound mail queue."""
 
-    _checked_paths: set[str] = set()
-
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        self._ensure_schema()
+        self._init_db(db_path)
 
-    def _ensure_schema(self) -> None:
-        if self.db_path in EmailInboxStore._checked_paths:
-            return
-        with self._conn() as conn:
-            conn.executescript(_EMAIL_SCHEMA)
-        EmailInboxStore._checked_paths.add(self.db_path)
+    def _setup_schema(self, conn) -> None:
+        conn.executescript(_EMAIL_SCHEMA)
 
     # ── Ingest ──────────────────────────────────────────────────────────────
 

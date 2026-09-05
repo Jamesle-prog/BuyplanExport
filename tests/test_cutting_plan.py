@@ -150,7 +150,7 @@ def overcut():
 
 @pytest.fixture
 def store(tmp_path):
-    CuttingPlanStore._checked_paths.clear()
+    CuttingPlanStore._forget_schema()
     return CuttingPlanStore(str(tmp_path / "po_history.db"))
 
 
@@ -502,7 +502,7 @@ def test_links_table_migrates_from_the_pre_style_schema(tmp_path):
     conn.commit()
     conn.close()
 
-    CuttingPlanStore._checked_paths.clear()
+    CuttingPlanStore._forget_schema()
     store = CuttingPlanStore(db)
 
     with store._conn() as c:
@@ -593,7 +593,7 @@ def test_materials_are_backfilled_for_plans_saved_before_the_table(store, exact)
                      (pid,))
     assert store.list_plan_materials(pid).empty
 
-    CuttingPlanStore._checked_paths.clear()
+    CuttingPlanStore._forget_schema()
     reopened = CuttingPlanStore(store.db_path)
     assert list(reopened.list_plan_materials(pid)["material"]) == ["A"]
 

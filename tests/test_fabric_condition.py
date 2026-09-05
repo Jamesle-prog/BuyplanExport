@@ -62,7 +62,7 @@ def _row(seq=None, date=None, fabric_no="", style="", body_part="",
 
 @pytest.fixture
 def store(tmp_path):
-    FabricConditionStore._checked_paths.clear()
+    FabricConditionStore._forget_schema()
     return FabricConditionStore(str(tmp_path / "po_history.db"))
 
 

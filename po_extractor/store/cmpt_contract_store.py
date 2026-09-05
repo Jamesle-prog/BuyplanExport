@@ -18,12 +18,10 @@ class CmptContractStore(BaseSQLiteStore):
     """Read/write access to the cmpt_* tables."""
 
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        self._ensure_schema()
+        self._init_db(db_path)
 
-    def _ensure_schema(self) -> None:
-        with self._conn() as conn:
-            conn.executescript(_CMPT_SCHEMA)
+    def _setup_schema(self, conn) -> None:
+        conn.executescript(_CMPT_SCHEMA)
 
     # ── Contracts ───────────────────────────────────────────────────────────
 

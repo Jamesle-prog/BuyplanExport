@@ -7,50 +7,28 @@ from pathlib import Path
 import pandas as pd
 
 from ..models.sky_east_data import SkyEastContract, SkyEastItem
-from .base_store import BaseSQLiteStore
+from .base_store import BaseSQLiteStore, rows_to_df
 from ._sky_east_store_schema import _SCHEMA, _item_sizes_dict, _normalize_sizes, _sizes_equal
 
 DB_PATH_DEFAULT = Path(__file__).parent.parent.parent / "data" / "po_history.db"
 
 
 class SkyEastStore(BaseSQLiteStore):
-    # Class-level set of db_paths that have already been schema-checked in
-    # this process (same pattern as ProductionTrackingStore._checked_paths).
-    # This store is constructed fresh on every Streamlit render, so without
-    # the guard the executescript + PRAGMA table_info migration probes ran
-    # on each construction instead of once per db_path.
-    _checked_paths: set[str] = set()
-
     def __init__(self, db_path: str | Path = DB_PATH_DEFAULT):
-        self.db_path = str(db_path)
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
+        self._init_db(db_path, mkdir=True)
 
-    def _ensure_schema(self) -> None:
-        """Create tables / run column migrations — fast no-op after the first
-        call per db_path within a process lifetime."""
-        if self.db_path in SkyEastStore._checked_paths:
-            return
-        with self._conn() as conn:
-            conn.executescript(_SCHEMA)
-            # Migrate: add contract_no if missing (existing DBs)
-            for tbl in ("sky_east_items", "sky_east_item_history"):
-                cols = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})")}
-                if "contract_no" not in cols:
-                    self._add_column_if_missing(conn, tbl, "contract_no", "TEXT")
-            # Migrate: add progress_colors if missing (existing DBs, added after
-            # sky_east_color_misses first shipped)
-            _cm_cols = {r[1] for r in conn.execute("PRAGMA table_info(sky_east_color_misses)")}
-            if "progress_colors" not in _cm_cols:
-                self._add_column_if_missing(
-                    conn, "sky_east_color_misses", "progress_colors", "TEXT"
-                )
-            # Migrate: add return_label if missing (existing DBs)
-            for tbl in ("sky_east_items", "sky_east_item_history"):
-                cols = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})")}
-                if "return_label" not in cols:
-                    self._add_column_if_missing(conn, tbl, "return_label", "TEXT DEFAULT 'NA'")
-        SkyEastStore._checked_paths.add(self.db_path)
+    def _setup_schema(self, conn) -> None:
+        """Create tables / run column migrations — once per db_path per
+        process (``BaseSQLiteStore._init_db``)."""
+        conn.executescript(_SCHEMA)
+        # Migrate existing DBs: contract_no / return_label on the item tables,
+        # progress_colors on the colour-miss log (each added after the table
+        # first shipped).
+        for tbl in ("sky_east_items", "sky_east_item_history"):
+            self._ensure_columns(conn, tbl, (("contract_no", "TEXT"),
+                                             ("return_label", "TEXT DEFAULT 'NA'")))
+        self._ensure_columns(conn, "sky_east_color_misses",
+                             (("progress_colors", "TEXT"),))
 
     # ------------------------------------------------------------------ #
     # Internal helpers                                                     #
@@ -381,11 +359,7 @@ class SkyEastStore(BaseSQLiteStore):
             "pc_no", "pc_date", "buyer", "seller", "currency", "trade_term",
             "source_file", "extracted_at", "total_styles", "total_qty",
         ]
-        return (
-            pd.DataFrame([dict(r) for r in rows], columns=cols)
-            if rows
-            else pd.DataFrame(columns=cols)
-        )
+        return rows_to_df(rows, cols)
 
     def list_styles(self) -> list[str]:
         """Return a sorted list of distinct style names across all saved items."""
@@ -406,7 +380,7 @@ class SkyEastStore(BaseSQLiteStore):
                 f"SELECT * FROM sky_east_items WHERE style IN ({ph}) ORDER BY style, pc_no, id",
                 styles,
             ).fetchall()
-        return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+        return rows_to_df(rows)
 
     def list_items(self, pc_nos: list | None = None) -> pd.DataFrame:
         """Return all items, optionally filtered to the given pc_nos."""
@@ -421,7 +395,7 @@ class SkyEastStore(BaseSQLiteStore):
                 rows = conn.execute(
                     "SELECT * FROM sky_east_items ORDER BY pc_no, id"
                 ).fetchall()
-        return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+        return rows_to_df(rows)
 
     def list_items_missing_fields(self) -> pd.DataFrame:
         """Return items missing fabric_item_no, contract_no, composition_en, or cuttable_width_cm."""
@@ -441,11 +415,7 @@ class SkyEastStore(BaseSQLiteStore):
         cols = ["pc_no", "zalando_po", "style", "color_name", "brand",
                 "fabric_item_no", "contract_no", "ex_fty_date", "total_qty",
                 "composition_en", "cuttable_width_cm"]
-        return (
-            pd.DataFrame([dict(r) for r in rows], columns=cols)
-            if rows
-            else pd.DataFrame(columns=cols)
-        )
+        return rows_to_df(rows, cols)
 
     def update_item_fields(self, pc_no: str, style: str, color_name: str,
                            zalando_po: str, fabric_item_no: str, contract_no: str) -> bool:
@@ -494,7 +464,7 @@ class SkyEastStore(BaseSQLiteStore):
                        ORDER BY archived_at DESC""",
                     (pc_no,),
                 ).fetchall()
-        return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+        return rows_to_df(rows)
 
     def delete_contracts(self, pc_nos: list) -> int:
         """Delete contracts and all their items. Returns number of contracts deleted."""
@@ -558,7 +528,7 @@ class SkyEastStore(BaseSQLiteStore):
             ).fetchall()
         cols = ["id", "pc_no", "contract_no", "style", "po_no", "client_po_color",
                 "attempted_color", "progress_colors", "source", "logged_at"]
-        return pd.DataFrame([dict(r) for r in rows], columns=cols) if rows else pd.DataFrame(columns=cols)
+        return rows_to_df(rows, cols)
 
     def clear_color_misses(self) -> int:
         """Delete all logged colour misses. Returns the number of rows removed."""

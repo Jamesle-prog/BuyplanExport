@@ -79,27 +79,28 @@ _DEFAULTS: dict[str, str] = {
 
 class AppSettingsStore(BaseSQLiteStore):
     def __init__(self, db_path: str) -> None:
-        self.db_path = db_path
-        with self._conn() as conn:
-            conn.executescript(_SCHEMA)
-            # Run any pending one-time migrations.  Single SELECT to fetch all
-            # already-applied names — avoids one SQL call per migration entry.
-            done = {
-                row[0] for row in conn.execute(
-                    "SELECT name FROM app_settings_migrations"
-                ).fetchall()
-            }
-            for name, sql in _ONE_TIME_MIGRATIONS:
-                if name in done:
-                    continue
-                conn.execute(sql)
-                # OR IGNORE: two processes starting together both see the
-                # migration as pending; the loser's insert must be a silent
-                # no-op, not a UNIQUE-constraint crash on startup.
-                conn.execute(
-                    "INSERT OR IGNORE INTO app_settings_migrations (name) "
-                    "VALUES (?)", (name,)
-                )
+        self._init_db(db_path)
+
+    def _setup_schema(self, conn) -> None:
+        conn.executescript(_SCHEMA)
+        # Run any pending one-time migrations.  Single SELECT to fetch all
+        # already-applied names — avoids one SQL call per migration entry.
+        done = {
+            row[0] for row in conn.execute(
+                "SELECT name FROM app_settings_migrations"
+            ).fetchall()
+        }
+        for name, sql in _ONE_TIME_MIGRATIONS:
+            if name in done:
+                continue
+            conn.execute(sql)
+            # OR IGNORE: two processes starting together both see the
+            # migration as pending; the loser's insert must be a silent
+            # no-op, not a UNIQUE-constraint crash on startup.
+            conn.execute(
+                "INSERT OR IGNORE INTO app_settings_migrations (name) "
+                "VALUES (?)", (name,)
+            )
 
     # ── Read ────────────────────────────────────────────────────────────────
 

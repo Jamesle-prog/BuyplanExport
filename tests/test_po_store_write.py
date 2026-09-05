@@ -228,7 +228,10 @@ class TestPoMetadataMigrationUsesSharedHelper:
             "po_store.py must not issue a raw ALTER TABLE on po_metadata -- "
             "use self._add_column_if_missing(conn, 'po_metadata', col, type) instead"
         )
-        assert "_add_column_if_missing(conn, \"po_metadata\"" in src
+        # v2.125.3: the migration goes through _ensure_columns, which itself
+        # calls _add_column_if_missing for every missing column.
+        assert ("_add_column_if_missing(conn, \"po_metadata\"" in src
+                or "_ensure_columns(conn, \"po_metadata\"" in src)
 
     def test_legacy_db_migration_still_adds_all_columns(self, tmp_path):
         """Functional check: a legacy po_metadata table (missing every

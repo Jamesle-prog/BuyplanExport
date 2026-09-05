@@ -16,7 +16,7 @@ from typing import Any
 
 import pandas as pd
 
-from .base_store import BaseSQLiteStore
+from .base_store import BaseSQLiteStore, rows_to_df
 from ._cutting_plan_schema import _CUTTING_PLAN_SCHEMA, SOURCE_SKY_EAST
 
 
@@ -25,24 +25,18 @@ class CuttingPlanStore(BaseSQLiteStore):
 
     # Schema-ensure runs once per db_path per process (same guard the other
     # stores use) so the uncached factory stays cheap.
-    _checked_paths: set[str] = set()
-
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        if db_path not in CuttingPlanStore._checked_paths:
-            self._ensure_schema()
-            CuttingPlanStore._checked_paths.add(db_path)
+        self._init_db(db_path)
 
-    def _ensure_schema(self) -> None:
-        with self._conn() as conn:
-            # Migrate BEFORE the schema script: that script indexes
-            # cutting_plan_links(style), which fails on a pre-v2.106.0 DB
-            # where CREATE TABLE IF NOT EXISTS is a no-op and the column
-            # doesn't exist yet.  On a fresh DB the table isn't there and the
-            # migration no-ops.
-            self._migrate_links_add_style(conn)
-            conn.executescript(_CUTTING_PLAN_SCHEMA)
-            self._backfill_materials(conn)
+    def _setup_schema(self, conn) -> None:
+        # Migrate BEFORE the schema script: that script indexes
+        # cutting_plan_links(style), which fails on a pre-v2.106.0 DB
+        # where CREATE TABLE IF NOT EXISTS is a no-op and the column
+        # doesn't exist yet.  On a fresh DB the table isn't there and the
+        # migration no-ops.
+        self._migrate_links_add_style(conn)
+        conn.executescript(_CUTTING_PLAN_SCHEMA)
+        self._backfill_materials(conn)
 
     @staticmethod
     def _backfill_materials(conn) -> None:
@@ -365,7 +359,7 @@ class CuttingPlanStore(BaseSQLiteStore):
                 + ["linked_pos", "linked_styles"])
         if not rows:
             return pd.DataFrame(columns=cols)
-        df = pd.DataFrame([dict(r) for r in rows])
+        df = rows_to_df(rows)
         df["linked_styles"] = df["linked_styles"].fillna("")
         return df
 
@@ -457,7 +451,7 @@ class CuttingPlanStore(BaseSQLiteStore):
                 "m_per_unit", "efficiency_pct", "cut_length_m", "cost"]
         if not rows:
             return pd.DataFrame(columns=cols)
-        df = pd.DataFrame([dict(r) for r in rows])
+        df = rows_to_df(rows)
         df["m_per_unit"] = [consumption(m, q) for m, q in
                             zip(df["fabric_length_m"], df["unit_qty"])]
         return df[cols]
@@ -501,7 +495,7 @@ class CuttingPlanStore(BaseSQLiteStore):
                    "linked_styles", "po_qty", "diff_pct", "ex_fty"])
         if not rows:
             return pd.DataFrame(columns=cols)
-        df = pd.DataFrame([dict(r) for r in rows])
+        df = rows_to_df(rows)
         df["linked_styles"] = df["linked_styles"].fillna("")
         df["material"] = df["material"].fillna("")
         po_qty = self.po_qty_by_plan()
@@ -565,9 +559,7 @@ class CuttingPlanStore(BaseSQLiteStore):
                 "SELECT style, color, size, qty, cut_qty "
                 "FROM cutting_plan_demands WHERE plan_id=? ORDER BY id",
                 (plan_id,)).fetchall()
-        return (pd.DataFrame([dict(r) for r in rows]) if rows
-                else pd.DataFrame(columns=["style", "color", "size",
-                                           "qty", "cut_qty"]))
+        return rows_to_df(rows, ["style", "color", "size", "qty", "cut_qty"])
 
     def plans_for_pos(self, pc_nos: list[str] | None = None,
                       po_nos: list[str] | None = None,
@@ -615,8 +607,7 @@ class CuttingPlanStore(BaseSQLiteStore):
                     WHERE l.source = ? AND {where}
                     ORDER BY datetime(p.uploaded_at) DESC""",
                 params).fetchall()
-        return (pd.DataFrame([dict(r) for r in rows]) if rows
-                else pd.DataFrame(columns=cols))
+        return rows_to_df(rows, cols)
 
     def count(self) -> int:
         with self._conn() as conn:
