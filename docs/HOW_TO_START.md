@@ -142,7 +142,7 @@ Get-Content streamlit_run.log -Tail 40
 
 **Verify the running version** — the app version is shown in the UI and defined
 by `APP_VERSION` near the top of `app.py`. The release history is in the
-**Releases** tab (`ui/changelog_view.py`).
+**Releases** tab (`ui/changelog_view.py`; the entries themselves live in `ui/changelog_data.py`).
 
 ---
 

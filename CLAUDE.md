@@ -22,7 +22,7 @@
 - Always commit **before** starting the next unrelated task.
 
 ### 3. Update the in-app changelog
-- After bumping APP_VERSION, add a matching entry to `_CHANGELOG` in `ui/changelog_view.py`.
+- After bumping APP_VERSION, add a matching entry to `CHANGELOG` in `ui/changelog_data.py` (data only; `ui/changelog_view.py` renders it).
 - Insert at the **top** of the list (newest first).
 - Required fields: `version`, `date` (ISO format, today's date), `entries` (list of `{type, text}`).
 - Types mirror commit types: `feat`, `fix`, `perf`, `refactor`, `security`, `docs`.
@@ -34,7 +34,7 @@
 ## Project context
 
 - **App entry point:** `app.py` — `APP_VERSION` is near the top.
-- **Changelog:** `ui/changelog_view.py` — `_CHANGELOG` list, newest first.
+- **Changelog:** `ui/changelog_data.py` — `CHANGELOG` list, newest first.
 - **Python interpreter:** `C:/Users/Administrator/AppData/Local/Programs/Python/Python313/python.exe`
   (the default `python` on PATH is 3.14 and does **not** have the app's deps — always use the 3.13 path above).
 - **Start server:** `streamlit run app.py --server.headless true > streamlit_run.log 2>&1` (background)
