@@ -2,11 +2,7 @@
 from __future__ import annotations
 import re
 import streamlit as st
-from po_extractor.ui_helpers import (
-    live_label_for,
-    load_live_schema, schema_seed_rows,
-    enrich_cn_color as _enrich_cn_color_impl,
-)
+from po_extractor.ui_helpers import enrich_cn_color as _enrich_cn_color_impl
 from po_extractor.utils.normalize import normalize_header as _normalize_header
 from ui.shared import XLSX_MIME, CSV_MIME, ZIP_MIME, ProgressTracker
 from ui.stores import get_color_translation_store
@@ -24,19 +20,9 @@ _ZIP_MIME  = ZIP_MIME
 _ProgressTracker = ProgressTracker
 
 # ---------------------------------------------------------------------------
-# Live schema / label helpers
+# Live schema / label helpers — one app-wide cache (ui/schema_labels.py)
 # ---------------------------------------------------------------------------
-from po_extractor.config import SCHEMA_PATH as _SCHEMA_PATH, CACHE_TTL_SECONDS
-
-
-@st.cache_data(ttl=CACHE_TTL_SECONDS)
-def _cached_schema() -> list[dict]:
-    rows = load_live_schema(_SCHEMA_PATH)
-    return rows if rows else schema_seed_rows()
-
-
-def live_label(db_col: str, fallback: str | None = None) -> str:
-    return live_label_for(_cached_schema(), db_col, fallback)
+from ui.schema_labels import live_label  # noqa: F401 — re-exported to the GIII views
 
 
 # ---------------------------------------------------------------------------

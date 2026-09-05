@@ -4,8 +4,6 @@ import streamlit as st
 from ui.session_keys import SK, COLOR_SOURCE_DB, COLOR_SOURCE_PROGRESS
 from ui.i18n import t as _t
 from po_extractor.ui_helpers import (
-    live_label_for,
-    load_live_schema, schema_seed_rows,
     parse_fabric_mapping_rows as _parse_fabric_mapping_rows,
     write_wash_label_excel as _write_wash_label_excel_impl,
     write_dual_header_excel as _write_dual_header_excel_impl,
@@ -16,18 +14,8 @@ from po_extractor.ui_helpers.fabric_mapping_template import generate_fabric_mapp
 # Sky East uses the same shared template as GIII
 _generate_se_fabric_mapping_template = generate_fabric_mapping_template
 
-# Schema cache (module-local; re-uses same TTL pattern as app.py)
-from po_extractor.config import SCHEMA_PATH as _SCHEMA_PATH, CACHE_TTL_SECONDS
-
-
-@st.cache_data(ttl=CACHE_TTL_SECONDS)
-def _cached_schema() -> list[dict]:
-    rows = load_live_schema(_SCHEMA_PATH)
-    return rows if rows else schema_seed_rows()
-
-
-def live_label(db_col: str, fallback: str | None = None) -> str:
-    return live_label_for(_cached_schema(), db_col, fallback)
+# Schema cache — one app-wide cache shared with GIII and the schema editor.
+from ui.schema_labels import live_label  # noqa: F401 — re-exported to the Sky East views
 
 
 # ---------------------------------------------------------------------------

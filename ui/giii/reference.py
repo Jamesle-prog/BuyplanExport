@@ -13,6 +13,7 @@ from ui.i18n import t
 from ui.session_keys import SK
 from ui.stores import get_store, get_fabric_master_store
 from ui.giii._shared import _BODY_PART_LIST, _XLSX_MIME
+from ui.shared import df_to_xlsx_bytes
 
 
 def _generate_fabric_mapping_template() -> bytes:
@@ -304,11 +305,7 @@ def _show_giii_consumption_section(store):
 
 def _consumption_view_bytes(df, hdr_map) -> bytes:
     """The currently-filtered consumption table as .xlsx (Chinese headers)."""
-    import io as _io
-    buf = _io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
-        df.to_excel(xw, index=False, sheet_name="单耗排版")
-    return buf.getvalue()
+    return df_to_xlsx_bytes(df, sheet_name="单耗排版")
 
 
 def _run_giii_mapping_import(mapping_file, dry_run: bool = False,

@@ -10,7 +10,7 @@ import streamlit as st
 
 from ui.i18n import t
 from auth.companies import COMPANY_GIII, COMPANY_SKY_EAST
-from ui.shared import XLSX_MIME, fragment_rerun
+from ui.shared import XLSX_MIME, df_to_xlsx_bytes, fragment_rerun
 from ui.stores import get_color_translation_store
 
 # ---------------------------------------------------------------------------
@@ -104,10 +104,7 @@ def _ct_export_bytes(count: int, nonce: int) -> bytes:
     df_exp = get_color_translation_store().to_dataframe()
     if "_id" in df_exp.columns:
         df_exp = df_exp.drop(columns=["_id"])
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as w:
-        df_exp.to_excel(w, sheet_name="Color Translations", index=False)
-    return buf.getvalue()
+    return df_to_xlsx_bytes(df_exp, sheet_name="Color Translations")
 
 
 def _bump_ct_nonce() -> None:

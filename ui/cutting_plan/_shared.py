@@ -11,7 +11,8 @@ import streamlit as st
 from po_extractor.config import PDF_MIME, XLSX_MIME
 from ui.i18n import t
 from ui.shared import (
-    _th, guard_multiselect_state, recent_folders, remember_folder,
+    _th, guard_multiselect_state, multiselect_with_select_all,
+    recent_folders, remember_folder,
 )
 from ui.stores import get_sky_east_store
 
@@ -305,21 +306,9 @@ def select_pos(key_prefix: str, *,
     pc_options = [pc for pc in df_contracts["pc_no"].tolist()
                   if pc and str(pc).strip()]
     pc_key = f"{key_prefix}_pcs"
-    guard_multiselect_state(pc_key, pc_options)
-
-    col_sel, col_all = st.columns([4, 1])
-    with col_sel:
-        pc_nos = st.multiselect(
-            t("PC No.(s)"), pc_options, key=pc_key,
-            placeholder=t("Select one or more PC Nos..."),
-            help=help_text,
-        )
-    with col_all:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.button(t("Select all"), key=f"{key_prefix}_all",
-                  on_click=lambda: st.session_state.update(
-                      {pc_key: list(pc_options)}),
-                  use_container_width=True)
+    pc_nos = multiselect_with_select_all(
+        t("PC No.(s)"), pc_options, pc_key,
+        placeholder=t("Select one or more PC Nos..."), help=help_text)
 
     if not pc_nos:
         return POSelection([], [], [], pd.DataFrame())

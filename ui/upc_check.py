@@ -12,13 +12,12 @@ Three modes:
 """
 from __future__ import annotations
 
-import io
 import socket
 
 import pandas as pd
 import streamlit as st
 
-from ui.shared import XLSX_MIME as _XLSX_MIME
+from ui.shared import XLSX_MIME as _XLSX_MIME, df_to_xlsx_bytes
 
 from auth.users import get_user_companies
 from ui.i18n import t
@@ -33,10 +32,7 @@ _COLS = {
 
 
 def _xlsx(df: pd.DataFrame, sheet: str) -> bytes:
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
-        df.to_excel(xw, index=False, sheet_name=sheet)
-    return buf.getvalue()
+    return df_to_xlsx_bytes(df, sheet_name=sheet)
 
 
 def _valid_upcs(series) -> set[str]:

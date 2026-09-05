@@ -15,7 +15,8 @@ from po_extractor.ui_helpers.combined_summary import (
 )
 from ui.i18n import t
 from ui.session_keys import SK
-from ui.shared import display_dates, lazy_sections, _th, _tr, guard_multiselect_state, XLSX_MIME
+from ui.shared import (display_dates, lazy_sections, _th, _tr, guard_multiselect_state,
+                       XLSX_MIME, df_to_xlsx_bytes)
 from ui.stores import get_store, get_sky_east_store
 
 
@@ -130,10 +131,7 @@ def _build_tracker_excel(df: pd.DataFrame) -> bytes:
 def _build_all_orders_excel(df: pd.DataFrame) -> bytes:
     """Pure function (DataFrame in → xlsx bytes out) — cached like
     ``_build_tracker_excel`` so the export isn't rebuilt on every rerun."""
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as wr:
-        df.to_excel(wr, sheet_name="All Orders", index=False)
-    return buf.getvalue()
+    return df_to_xlsx_bytes(df, sheet_name="All Orders")
 
 
 @st.cache_data(max_entries=8, show_spinner=False)
@@ -143,14 +141,8 @@ def _build_overview_excel(summary_df: pd.DataFrame,
     """Pure function (DataFrames in → xlsx bytes out) — cached like
     ``_build_tracker_excel``.  ``giii_df`` / ``se_df`` are the pre-renamed
     detail sheets, or None to omit that sheet."""
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as wr:
-        summary_df.to_excel(wr, sheet_name="Summary", index=False)
-        if giii_df is not None:
-            giii_df.to_excel(wr, sheet_name="GIII POs", index=False)
-        if se_df is not None:
-            se_df.to_excel(wr, sheet_name="Sky East Items", index=False)
-    return buf.getvalue()
+    return df_to_xlsx_bytes({"Summary": summary_df, "GIII POs": giii_df,
+                             "Sky East Items": se_df})
 
 
 def _show_po_tracker(df: pd.DataFrame) -> None:

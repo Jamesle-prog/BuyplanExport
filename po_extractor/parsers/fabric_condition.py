@@ -38,6 +38,7 @@ from typing import Any
 import openpyxl
 from openpyxl.utils.datetime import from_excel
 from ..utils.normalize import cell_text, norm_header_key, to_int
+from ._sheet import cell_getter, find_header_row
 
 
 _norm = norm_header_key
@@ -142,11 +143,9 @@ def _row1_groups(ws) -> dict[int, str]:
 
 
 def _find_header_row(ws) -> int:
-    for r in range(1, min(ws.max_row, 10) + 1):
-        heads = {_norm(ws.cell(r, c).value) for c in range(1, ws.max_column + 1)}
-        if _norm("序号") in heads and _norm("颜色") in heads:
-            return r
-    return -1
+    return find_header_row(
+        ws, lambda heads: _norm("序号") in heads and _norm("颜色") in heads,
+        max_rows=10, norm=_norm)
 
 
 def _map_columns(ws, header_row: int) -> dict[str, int]:
@@ -188,9 +187,7 @@ def parse_fabric_condition(source: Any) -> dict[str, Any]:
         )
     cols = _map_columns(ws, header_row)
 
-    def cell(r: int, field: str):
-        c = cols.get(field)
-        return ws.cell(r, c).value if c else None
+    cell = cell_getter(ws, cols)
 
     records: list[dict[str, Any]] = []
     for r in range(header_row + 1, ws.max_row + 1):

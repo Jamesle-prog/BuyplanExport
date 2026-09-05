@@ -16,7 +16,7 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
 
 import streamlit as st
 
-APP_VERSION = "2.125.3"
+APP_VERSION = "2.125.4"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -27,7 +27,7 @@ from auth.users import (
     get_user_companies, get_user_modules, is_admin, user_exists,
 )
 from po_extractor.config import (
-    SCHEMA_PATH as _SCHEMA_PATH_CFG, CACHE_TTL_SECONDS, APP_NAME,
+    SCHEMA_PATH as _SCHEMA_PATH_CFG, APP_NAME,
 )
 from ui.session_keys import SK
 from ui.i18n import t
@@ -47,20 +47,10 @@ _SCHEMA_PATH = _SCHEMA_PATH_CFG
 
 # ── Live output schema (editable via Admin UI) ────────────────────────────────
 
-# Live schema helpers — implementation in po_extractor.ui_helpers.schema.
-# Imported lazily: po_extractor.ui_helpers transitively pulls pandas + numpy
-# + openpyxl + PIL (~0.7s warm, multi-second on a cold start with AV
-# scanning), and nothing pre-login needs it — a module-level import made the
-# LOGIN page pay that cost on every fresh server start.
-def _load_live_schema() -> list[dict]:
-    from po_extractor.ui_helpers import load_live_schema as _impl
-    return _impl(_SCHEMA_PATH)
-
-
-@st.cache_data(ttl=CACHE_TTL_SECONDS)
-def _cached_schema() -> list[dict]:
-    """Cached live schema — refreshes every 60 s or when cleared explicitly."""
-    return _load_live_schema()
+# Live schema cache: ui/schema_labels.py (one cache shared by every tab; the
+# schema editor clears it on save). Heavy imports stay inside its functions,
+# so the login page never pays for them.
+from ui.schema_labels import cached_schema as _cached_schema
 
 
 # ---------------------------------------------------------------------------

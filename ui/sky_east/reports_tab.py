@@ -12,6 +12,7 @@ from __future__ import annotations
 import streamlit as st
 
 from ui.i18n import t
+from ui.shared import multiselect_with_select_all
 from ui.stores import get_sky_east_store
 from ui.sky_east.history import (
     _se_hist_buyplan_section,
@@ -57,13 +58,8 @@ def _show_se_reports_tab(pin_mode: str | None = None) -> None:
             if isinstance(_old, list) and _old:
                 st.session_state["se_gen_pcs"] = [v for v in _old if v in _pc_set]
                 break
-    # Stale-value guard: drop PC Nos no longer valid (e.g. after a delete in
-    # Contract History) BEFORE the widget renders, or st.multiselect raises
-    # StreamlitAPIException. se_wl_styles holds style names, not PC Nos — it
-    # must NOT be filtered against _pc_set.
-    _cur = st.session_state.get("se_gen_pcs", [])
-    if isinstance(_cur, list) and any(v not in _pc_set for v in _cur):
-        st.session_state["se_gen_pcs"] = [v for v in _cur if v in _pc_set]
+    # (se_wl_styles holds style names, not PC Nos — it must NOT be pruned
+    # against pc_options; the picker below guards se_gen_pcs itself.)
 
     # ── Output type ───────────────────────────────────────────────────────────
     if pin_mode == PIN_BUYPLAN:
@@ -77,21 +73,9 @@ def _show_se_reports_tab(pin_mode: str | None = None) -> None:
         )
 
     # ── Shared PC selection (persists across output types) ───────────────────
-    sel_col, all_col = st.columns([4, 1])
-    with sel_col:
-        sel_pcs = st.multiselect(
-            t("PC No.(s) to include:"),
-            pc_options,
-            key="se_gen_pcs",
-            placeholder="Select one or more PC Nos...",
-        )
-    with all_col:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.button(
-            t("Select all"), key="se_gen_all",
-            on_click=lambda: st.session_state.update({"se_gen_pcs": list(pc_options)}),
-            use_container_width=True,
-        )
+    sel_pcs = multiselect_with_select_all(
+        t("PC No.(s) to include:"), pc_options, "se_gen_pcs",
+        placeholder="Select one or more PC Nos...")
 
     st.divider()
 

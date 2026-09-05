@@ -337,6 +337,55 @@ def guard_multiselect_state(key: str, options) -> None:
         st.session_state[key] = [v for v in cur if v in opts]
 
 
+def multiselect_with_select_all(label: str, options, key: str, *,
+                                placeholder: str | None = None,
+                                help: str | None = None,
+                                widths=(4, 1)) -> list:
+    """A multiselect with a **Select all** button beside it (the Sky East
+    PC-No. / style pickers).  Runs the stale-value guard first, so the widget
+    never renders with values that have left *options*.  The button's key is
+    ``f"{key}_all"``.
+    """
+    from ui.i18n import t as _t
+    options = list(options)
+    guard_multiselect_state(key, options)
+    col_sel, col_all = st.columns(list(widths))
+    with col_sel:
+        selected = st.multiselect(label, options, key=key,
+                                  placeholder=placeholder, help=help)
+    with col_all:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.button(_t("Select all"), key=f"{key}_all",
+                  on_click=lambda: st.session_state.update({key: list(options)}),
+                  use_container_width=True)
+    return selected
+
+
+def df_to_xlsx_bytes(sheets, *, sheet_name: str = "Sheet1",
+                     autofit: bool = False, max_width: int = 60) -> bytes:
+    """One or more DataFrames as an ``.xlsx`` payload for a download button.
+
+    *sheets* is a DataFrame (written to *sheet_name*) or a
+    ``{sheet_name: DataFrame}`` mapping (``None`` values are skipped).  With
+    *autofit*, column widths follow the longest cell (capped at *max_width*).
+    """
+    import pandas as pd
+    if isinstance(sheets, pd.DataFrame):
+        sheets = {sheet_name: sheets}
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        for name, df in sheets.items():
+            if df is None:
+                continue
+            df.to_excel(xw, index=False, sheet_name=name)
+            if autofit:
+                ws = xw.sheets[name]
+                for col in ws.columns:
+                    w = max(len(str(c.value or "")) for c in col)
+                    ws.column_dimensions[col[0].column_letter].width = min(w + 4, max_width)
+    return buf.getvalue()
+
+
 def persisted_download(
     state_key: str,
     *,

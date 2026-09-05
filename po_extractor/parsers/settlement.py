@@ -38,6 +38,7 @@ from typing import Any
 
 import openpyxl
 from ..utils.normalize import cell_text, norm_header_key, to_float
+from ._sheet import cell_getter, find_header_row, header_index
 
 
 _norm = norm_header_key
@@ -116,11 +117,9 @@ _KEY_FIELDS = ("invoice_no", "po_number", "style", "contract_no")
 
 def _find_header_row(ws) -> int:
     """Row of the upper header, or -1.  Identified by the headings on it."""
-    for r in range(1, min(ws.max_row, 15) + 1):
-        heads = {_norm(ws.cell(r, c).value) for c in range(1, ws.max_column + 1)}
-        if "合同号" in heads and (heads & {"款号", "invoiceno.", "po#"}):
-            return r
-    return -1
+    return find_header_row(
+        ws, lambda heads: "合同号" in heads and bool(heads & {"款号", "invoiceno.", "po#"}),
+        max_rows=15, norm=_norm)
 
 
 def _map_columns(ws, header_row: int) -> dict[str, int]:
@@ -274,9 +273,7 @@ def _parse_sheet(ws, header_row: int, title: str) -> list[dict[str, Any]]:
     inv_col = cols.get("invoice_no", 1)
     con_col = cols.get("contract_no", 0)
 
-    def cell(r: int, field: str):
-        c = cols.get(field)
-        return ws.cell(r, c).value if c else None
+    cell = cell_getter(ws, cols)
 
     out: list[dict[str, Any]] = []
     for r in range(header_row + 2, ws.max_row + 1):
@@ -323,21 +320,11 @@ def _parse_sheet(ws, header_row: int, title: str) -> list[dict[str, Any]]:
 
 def _parse_samples(ws) -> list[dict[str, Any]]:
     """样品 sheet → per-style sample cost breakdown."""
-    header_row = -1
-    for r in range(1, min(ws.max_row, 12) + 1):
-        heads = {_norm(ws.cell(r, c).value) for c in range(1, ws.max_column + 1)}
-        if "款号" in heads and "工厂" in heads:
-            header_row = r
-            break
+    header_row = find_header_row(
+        ws, lambda heads: "款号" in heads and "工厂" in heads, max_rows=12, norm=_norm)
     if header_row < 0:
         return []
-    idx = {_norm(ws.cell(header_row, c).value): c
-           for c in range(1, ws.max_column + 1)
-           if _norm(ws.cell(header_row, c).value)}
-
-    def val(r: int, head: str):
-        c = idx.get(head)
-        return ws.cell(r, c).value if c else None
+    val = cell_getter(ws, header_index(ws, header_row, _norm))
 
     out: list[dict[str, Any]] = []
     for r in range(header_row + 1, ws.max_row + 1):

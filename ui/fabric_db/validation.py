@@ -1,14 +1,13 @@
 ﻿"""Validation and cross-system consistency checks for the Fabric DB tab."""
 from __future__ import annotations
 
-import io
 
 import pandas as pd
 import streamlit as st
 
 from ui.fabric_db._shared import CSV_MIME, XLSX_MIME
 from ui.i18n import t
-from ui.shared import _th
+from ui.shared import _th, df_to_xlsx_bytes
 from ui.stores import get_store
 
 
@@ -43,11 +42,8 @@ def _fabric_db_validation_section(store) -> None:
             file_name=f"{stem}.csv", mime=CSV_MIME,
             key=f"{stem}_csv", use_container_width=True,
         )
-        buf = io.BytesIO()
-        with pd.ExcelWriter(buf, engine="openpyxl") as xw:
-            df.to_excel(xw, index=False, sheet_name="Issues")
         dl2.download_button(
-            f"⬇ {t('Download issues (.xlsx)')}", data=buf.getvalue(),
+            f"⬇ {t('Download issues (.xlsx)')}", data=df_to_xlsx_bytes(df, sheet_name="Issues"),
             file_name=f"{stem}.xlsx", mime=XLSX_MIME,
             key=f"{stem}_xlsx", use_container_width=True,
         )

@@ -14,10 +14,16 @@ def test_app_py_is_valid_python():
 
 
 def test_app_py_imports_ui_helpers():
-    """Ensure app.py wires through the new ui_helpers package."""
+    """Ensure app.py wires the live schema through the ui_helpers package —
+    since v2.125.4 via ui/schema_labels.py (the one app-wide schema cache)."""
+    import os
     with open(_APP, encoding="utf-8") as fh:
         src = fh.read()
-    assert "ui_helpers" in src, "app.py must import from po_extractor.ui_helpers"
+    assert "ui.schema_labels" in src, "app.py must use ui.schema_labels for the live schema"
+    labels = os.path.join(os.path.dirname(_APP), "ui", "schema_labels.py")
+    with open(labels, encoding="utf-8") as fh:
+        assert "po_extractor.ui_helpers" in fh.read(), \
+            "ui/schema_labels.py must load the schema via po_extractor.ui_helpers"
 
 
 def test_ui_helpers_importable_without_streamlit():

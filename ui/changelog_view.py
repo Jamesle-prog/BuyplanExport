@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.125.4",
+        "date": "2026-09-05",
+        "entries": [
+            {"type": "refactor", "text": "**Codebase refactor, phases 5 + 6 — parser scaffold and shared UI blocks.** `po_extractor/parsers/_sheet.py` (`find_header_row`, `header_index`, `cell_getter`) replaces the heading-row search and field-getter closures the settlement and fabric-condition parsers each wrote out. On the UI side: **one live-schema cache** (`ui/schema_labels.py`) instead of three separate `st.cache_data` copies in `app.py`, the GIII tab and the Sky East tab — so saving the schema editor now refreshes every tab's column labels immediately rather than after each tab's own 60 s TTL; `multiselect_with_select_all()` replaces six hand-built multiselect + **Select all** column pairs (and runs the stale-value guard for all of them — two of those pickers had no guard); `df_to_xlsx_bytes()` replaces seven `BytesIO + pd.ExcelWriter` blocks; the last three hand-rolled stale-selection guards now call `guard_multiselect_state`. 8 new tests; 1477 passing"},
+        ],
+    },
+    {
         "version": "2.125.3",
         "date": "2026-09-05",
         "entries": [

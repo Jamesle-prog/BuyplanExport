@@ -29,6 +29,7 @@ from ui.shared import (
     load_style_photo_map,
     persisted_download,
     guard_multiselect_state,
+    multiselect_with_select_all, df_to_xlsx_bytes,
 )
 from ui.stores import get_store, get_sky_east_store, get_color_translation_store, get_fabric_master_store, IMAGES_DIR_DEFAULT
 from ui.sky_east._shared import (
@@ -153,20 +154,9 @@ def _se_hist_multi_pc_download(store, pc_options: list[str],
     if sel_pcs is not None:
         sel_dl_pcs = sel_pcs
     else:
-        dl_col1, dl_col2 = st.columns([3, 1])
-        with dl_col1:
-            sel_dl_pcs = st.multiselect(
-                t("Select PC No.(s) to download:"),
-                pc_options,
-                placeholder="Choose one or more PC No.(s)...",
-                key="se_dl_pcs",
-            )
-        with dl_col2:
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.button(
-                t("Select all"), key="se_dl_all",
-                on_click=lambda: st.session_state.update({"se_dl_pcs": pc_options}),
-            )
+        sel_dl_pcs = multiselect_with_select_all(
+            t("Select PC No.(s) to download:"), pc_options, "se_dl_pcs",
+            placeholder="Choose one or more PC No.(s)...", widths=(3, 1))
 
     if not sel_dl_pcs:
         st.info(t("Select one or more PC Nos. above, then click Generate."))
@@ -370,23 +360,9 @@ def _se_hist_wash_label_download(store, pc_options: list[str],
         if sel_pcs is not None:
             sel_wl_pcs = sel_pcs
         else:
-            wl_col1, wl_col2 = st.columns([3, 1])
-            with wl_col1:
-                # Guard against options changing under a live selection (a
-                # fabric-mapping re-import) — stale values crash 1.57 / wipe 1.58.
-                guard_multiselect_state("se_wl_pcs", pc_options)
-                sel_wl_pcs = st.multiselect(
-                    t("Select PC No.(s) for wash label:"),
-                    pc_options,
-                    placeholder="Choose one or more PC No.(s)...",
-                    key="se_wl_pcs",
-                )
-            with wl_col2:
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.button(
-                    t("Select all"), key="se_wl_all",
-                    on_click=lambda: st.session_state.update({"se_wl_pcs": pc_options}),
-                )
+            sel_wl_pcs = multiselect_with_select_all(
+                t("Select PC No.(s) for wash label:"), pc_options, "se_wl_pcs",
+                placeholder="Choose one or more PC No.(s)...", widths=(3, 1))
         if not sel_wl_pcs:
             st.info(t("Select one or more PC Nos. above, then click Generate."))
         has_selection = bool(sel_wl_pcs)
@@ -405,23 +381,9 @@ def _se_hist_wash_label_download(store, pc_options: list[str],
             )
             has_selection = False
         else:
-            wl_col1, wl_col2 = st.columns([3, 1])
-            with wl_col1:
-                guard_multiselect_state("se_wl_styles", mapped_styles)
-                sel_wl_styles = st.multiselect(
-                    t("Select Style(s) for wash label:"),
-                    mapped_styles,
-                    placeholder="Choose one or more styles...",
-                    key="se_wl_styles",
-                )
-            with wl_col2:
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.button(
-                    t("Select all"), key="se_wl_styles_all",
-                    on_click=lambda: st.session_state.update(
-                        {"se_wl_styles": mapped_styles}
-                    ),
-                )
+            sel_wl_styles = multiselect_with_select_all(
+                t("Select Style(s) for wash label:"), mapped_styles, "se_wl_styles",
+                placeholder="Choose one or more styles...", widths=(3, 1))
             st.caption(
                 f"{len(mapped_styles)} style(s) available from stored fabric mapping. "
                 "Composition will be sourced from the **Fabric DB** (面料统计表)."
@@ -577,19 +539,12 @@ def _show_wl_validation_ui(pending: dict) -> None:
             "issue":       "Issue",
             "suggestion":  "Suggestion",
         })
-        import io as _io
-        _buf = _io.BytesIO()
-        with _pd.ExcelWriter(_buf, engine="openpyxl") as _xw:
-            _err_df.to_excel(_xw, index=False, sheet_name="Composition Errors")
-            # Auto-fit column widths
-            _ws = _xw.sheets["Composition Errors"]
-            for _col in _ws.columns:
-                _max_w = max(len(str(_cell.value or "")) for _cell in _col)
-                _ws.column_dimensions[_col[0].column_letter].width = min(_max_w + 4, 60)
+        _err_xlsx = df_to_xlsx_bytes(_err_df, sheet_name="Composition Errors",
+                                     autofit=True)
         st.markdown("<br>", unsafe_allow_html=True)
         st.download_button(
             "📥 Download errors (.xlsx)",
-            data=_buf.getvalue(),
+            data=_err_xlsx,
             file_name="WashLabel_CompositionErrors.xlsx",
             mime=XLSX_MIME,
             key="se_wl_err_dl",
@@ -793,13 +748,9 @@ def _se_hist_amendment_history(store, df_items, sel_pcs: list[str]) -> None:
 
 def _se_hist_item_browser(store, pc_options: list[str]) -> None:
     """Multi-PC items browser with optional photo column and amendment history."""
-    # Guard: remove any stale pc_nos from session state that no longer exist
-    # in pc_options (e.g. after a delete + rerun).  Without this Streamlit
-    # raises StreamlitAPIException: "The selection contains invalid values."
-    _pc_set = set(pc_options)
-    _current = st.session_state.get("se_hist_pc", [])
-    if isinstance(_current, list) and any(v not in _pc_set for v in _current):
-        st.session_state["se_hist_pc"] = [v for v in _current if v in _pc_set]
+    # Stale pc_nos (e.g. after a delete + rerun) would make st.multiselect
+    # raise "The selection contains invalid values" — prune them first.
+    guard_multiselect_state("se_hist_pc", pc_options)
 
     sel_pcs = st.multiselect(t("Browse items for PC No.:"), pc_options,
                              key="se_hist_pc",
@@ -897,31 +848,10 @@ def _se_hist_buyplan_section(store, pc_options: list[str],
     if sel_pcs is not None:
         _effective_sel = sel_pcs
     else:
-        # ── PC No. multiselect ────────────────────────────────────────────────
-        # Stale-value guard: drop any selected PC Nos that are no longer valid
-        # options (e.g. after a contract is deleted in the History tab) BEFORE
-        # the widget renders — otherwise st.multiselect raises
-        # StreamlitAPIException.
-        _pc_set = set(pc_options)
-        _cur = st.session_state.get("se_bp_sel", [])
-        if isinstance(_cur, list) and any(v not in _pc_set for v in _cur):
-            st.session_state["se_bp_sel"] = [v for v in _cur if v in _pc_set]
-
-        _bp_col1, _bp_col2 = st.columns([4, 1])
-        with _bp_col1:
-            _effective_sel = st.multiselect(
-                t("PC No.(s) to include:"),
-                pc_options,
-                key="se_bp_sel",
-                placeholder="Select one or more PC Nos...",
-            )
-        with _bp_col2:
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.button(
-                t("Select all"), key="se_bp_all",
-                on_click=lambda: st.session_state.update({"se_bp_sel": list(pc_options)}),
-                use_container_width=True,
-            )
+        # ── PC No. multiselect (stale values pruned before it renders) ────────
+        _effective_sel = multiselect_with_select_all(
+            t("PC No.(s) to include:"), pc_options, "se_bp_sel",
+            placeholder="Select one or more PC Nos...")
 
     if not _effective_sel:
         st.info(t("Select one or more PC Nos. above, then click Generate."))
