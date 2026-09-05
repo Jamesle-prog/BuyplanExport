@@ -39,15 +39,15 @@ from pathlib import Path
 
 import pandas as pd
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from ..utils.file_utils import versioned_path
 from ..config import EXCEL_PALETTE as _P
-from ._buyplan_helpers import _clear_data_area
 from ._excel_helpers import (
     clean_sheet_name, stable_unique, cell_value, apply_print_settings,
-    set_internal_hyperlink,
+    set_internal_hyperlink, thin_border, unique_sheet_name,
+    clear_data_area as _clear_data_area,
 )
 from ._image_inject import inject_style_photos
 from ._photo_utils import resolve_photo_pair
@@ -121,8 +121,7 @@ _HDRFILL = PatternFill(start_color=_P["hdr_blue"], end_color=_P["hdr_blue"],
 
 
 def _thin() -> Border:
-    s = Side(border_style="thin", color=_P["border_grey"])
-    return Border(left=s, right=s, top=s, bottom=s)
+    return thin_border(_P["border_grey"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -665,14 +664,7 @@ def _set_index_widths(ws_index) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _unique_sheet_name(wb, base: str) -> str:
-    existing = {s.title for s in wb.worksheets}
-    if base not in existing:
-        return base
-    stem = base[:28]
-    sfx = 2
-    while f"{stem}_{sfx}" in existing:
-        sfx += 1
-    return f"{stem}_{sfx}"
+    return unique_sheet_name(base, wb.sheetnames)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -22,8 +22,10 @@ Sources per the spec:
 from __future__ import annotations
 
 import io
+from functools import partial
 from dataclasses import dataclass, field
 from ..utils.normalize import yes_no as _yn
+from ._excel_helpers import thin_border, write_cell
 
 # Fixed left columns (before the dynamic size block).
 _LEFT = [
@@ -204,7 +206,6 @@ def export_giii_buyplan(header: BuyPlanHeader, rows: list[BuyPlanRow],
     """
     from dataclasses import asdict
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
     from ..ui_helpers.giii_requirements import resolve_requirements
 
@@ -221,21 +222,7 @@ def export_giii_buyplan(header: BuyPlanHeader, rows: list[BuyPlanRow],
     ws = wb.active
     ws.title = (rows[0].style if rows else "BuyPlan")[:31] or "BuyPlan"
 
-    thin = Side(style="thin", color="FF000000")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-    def cell(r, c, v, *, bold=False, bg=None, white=False, center=True, num=None):
-        cl = ws.cell(r, c, v)
-        cl.font = Font(name="Arial", size=10, bold=bold,
-                       color=_WHITE if white else "FF000000")
-        if bg:
-            cl.fill = PatternFill("solid", fgColor=bg)
-        cl.alignment = Alignment(horizontal="center" if center else "left",
-                                 vertical="center", wrap_text=True)
-        cl.border = border
-        if num:
-            cl.number_format = num
-        return cl
+    cell = partial(write_cell, ws, border=thin_border("FF000000"), center=True)
 
     last_col = get_column_letter(n_cols)
 

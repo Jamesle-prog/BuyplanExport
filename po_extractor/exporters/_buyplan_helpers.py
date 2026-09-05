@@ -9,12 +9,16 @@ from pathlib import Path
 
 import pandas as pd
 from openpyxl import load_workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
 from ..utils.normalize import normalize_header
 from ..utils.size_config import get_size_order  # noqa: F401 (re-exported for export_buyplan)
 from ..config import EXCEL_PALETTE as _P
+from ._excel_helpers import (
+    clear_data_area, replace_placeholders, safe_filename, style_data,
+    style_header, style_total, thin_border,
+)
 
 # ---------------------------------------------------------------------------
 # Path constants
@@ -113,7 +117,7 @@ def _auto_detect_columns(
 
 def _safe_name(company: str) -> str:
     """Sanitise a company name for use as a filename."""
-    return re.sub(r'[<>:"/\\|?*\s]+', '_', company).strip('_') or "unknown"
+    return safe_filename(company)
 
 # ---------------------------------------------------------------------------
 # Styling helpers
@@ -131,34 +135,21 @@ def _xfactory_date(xport: str | None) -> str | None:
 
 
 def _thin():
-    s = Side(border_style="thin", color=_P["black"])
-    return Border(left=s, right=s, top=s, bottom=s)
+    return thin_border(_P["black"])
 
 
 def _style_header(cell, value):
-    cell.value = value
-    cell.fill = PatternFill(start_color=_P["black"], end_color=_P["black"], fill_type="solid")
-    cell.font = Font(color=_P["white"], bold=True)
-    cell.alignment = Alignment(horizontal="center", vertical="center")
-    cell.border = _thin()
+    style_header(cell, value, fill=_P["black"], font_color=_P["white"],
+                 border_color=_P["black"])
 
 
 def _style_total(cell, value):
-    cell.value = value
-    cell.fill = PatternFill(start_color=_P["yellow"], end_color=_P["yellow"], fill_type="solid")
-    cell.font = Font(color=_P["black"], bold=True)
-    cell.alignment = Alignment(horizontal="center", vertical="center")
-    cell.border = _thin()
-    if isinstance(value, (int, float)):
-        cell.number_format = "#,##0"
+    style_total(cell, value, fill=_P["yellow"], font_color=_P["black"],
+                border_color=_P["black"])
 
 
 def _style_data(cell, value):
-    cell.value = value
-    cell.alignment = Alignment(horizontal="center", vertical="center")
-    cell.border = _thin()
-    if isinstance(value, (int, float)):
-        cell.number_format = "#,##0"
+    style_data(cell, value, border_color=_P["black"])
 
 # ---------------------------------------------------------------------------
 # Metadata helpers
@@ -270,28 +261,8 @@ def _load_template(company: str | None = None) -> tuple:
         return None, None, default_cfg
 
 
-def _replace_placeholders(ws, values: dict) -> None:
-    """Substitute ``{{key}}`` in every string cell."""
-    for row in ws.iter_rows():
-        for cell in row:
-            if not isinstance(cell.value, str):
-                continue
-            v = cell.value
-            for key, val in values.items():
-                v = v.replace(f"{{{{{key}}}}}", str(val or ""))
-            cell.value = v
-
-
-def _clear_data_area(ws, header_row: int) -> None:
-    """Remove values and unmerge merged cells at or below *header_row*."""
-    to_unmerge = [
-        str(r) for r in ws.merged_cells.ranges if r.min_row >= header_row
-    ]
-    for r in to_unmerge:
-        ws.unmerge_cells(r)
-    for row in ws.iter_rows(min_row=header_row):
-        for cell in row:
-            cell.value = None
+_replace_placeholders = replace_placeholders
+_clear_data_area = clear_data_area
 
 # ---------------------------------------------------------------------------
 # Data-table writers

@@ -26,7 +26,6 @@ Fabric-header rows (rows 2-5, above data):
 """
 from __future__ import annotations
 
-import re
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -45,7 +44,7 @@ from ._sky_east_helpers import (
     _strip_color_brackets, _style_data, _style_total, derive_main_label_color,
     _COLOR_NOT_FOUND, _color_miss_comment_text,
 )
-from ._excel_helpers import apply_print_settings
+from ._excel_helpers import apply_print_settings, safe_filename, unique_sheet_name
 from ..utils.file_utils import versioned_path
 from ..store.color_translation_store import _normalize_color_name as _nz_color
 from ..lookups.progress_lookup import _norm_key
@@ -1378,15 +1377,8 @@ def export_sky_east_buyplan(
             # fabric combos (each combo bumps the counter), so the fabric
             # code no longer needs to be in the name.
             _sheet_seq += 1
-            _base_sn = _clean_sheet_name(f"{_sheet_seq}_{style}")
-            _sn, _sfx = _base_sn, 2
-            while _sn in _used_sheet_names:
-                _suffix = f"_{_sfx}"
-                # Trim base to leave room for suffix so the clipped name is unique.
-                _trimmed = _base_sn[:31 - len(_suffix)]
-                _sn = _clean_sheet_name(f"{_trimmed}{_suffix}")
-                _sfx += 1
-            sheet_title = _sn
+            sheet_title = unique_sheet_name(
+                _clean_sheet_name(f"{_sheet_seq}_{style}"), _used_sheet_names)
             _used_sheet_names.add(sheet_title)
 
             ws = tpl_wb.copy_worksheet(tpl_ws)
@@ -1891,7 +1883,7 @@ def export_sky_east_nukuryou(
         if not tpl_wb.sheetnames:
             tpl_wb.create_sheet("Empty")
 
-        safe = re.sub(r'[<>:"/\\|?*\s]+', "_", fabric_no).strip("_") or "unknown"
+        safe = safe_filename(fabric_no)
         save_path = versioned_path(output_dir, f"Sky_East_核料_{safe}", ".xlsx")
         apply_print_settings(tpl_wb)
         tpl_wb.save(str(save_path))

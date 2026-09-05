@@ -19,10 +19,10 @@ import warnings
 
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as XLImage
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from ._excel_helpers import apply_print_settings, clean_sheet_name
+from ._excel_helpers import apply_print_settings, clean_sheet_name, thin_border
 from ..utils.qr import QRUnavailable, qr_png, scan_url
 
 # Price modes.  'usd' is the customer-facing default; 'rmb' and 'both'
@@ -63,8 +63,7 @@ _LEGEND = [
 
 
 def _thin() -> Border:
-    s = Side(border_style="thin", color="FF000000")
-    return Border(left=s, right=s, top=s, bottom=s)
+    return thin_border("FF000000")
 
 
 def _price_columns(price_mode: str) -> list[tuple[str, str, int]]:

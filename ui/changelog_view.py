@@ -10,6 +10,13 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _CHANGELOG: list[dict] = [
     {
+        "version": "2.125.2",
+        "date": "2026-09-05",
+        "entries": [
+            {"type": "refactor", "text": "**Codebase refactor, phase 3 — one Excel styling / template toolkit.** `po_extractor/exporters/_excel_helpers.py` now also holds `thin_border(color)` (one cached Border per colour instead of four `Side` objects rebuilt per cell — 14 modules each had their own `_thin`), `solid_fill`, `style_header` / `style_total` / `style_data`, `write_cell` (the GIII buy-plan and requirements documents' Arial-10 cell writer, previously two identical closures), `replace_placeholders` + `clear_data_area` (were copied in both buy-plan helper modules), `safe_filename` (the Windows-safe file-stem regex, copied twice) and `unique_sheet_name` (six hand-written `while name in sheetnames` loops, two of which could still overflow Excel's 31-character limit past 99 collisions — all six now use the safe form). The GIII fax extractors (MSG / KL / TK EU / InforNexus) share `pdf_text_lines()` for their identical PDF-to-lines + `grep` opening, and the InforNexus comparison workbook uses the common `make_excel_style_kit` (new `wrap=` option) instead of its own copy. 18 new tests in `tests/test_excel_helpers_shared.py`; every existing exporter test unchanged and passing (1463 total)"},
+        ],
+    },
+    {
         "version": "2.125.1",
         "date": "2026-09-05",
         "entries": [

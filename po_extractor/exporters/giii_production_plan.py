@@ -33,7 +33,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from ._excel_helpers import clean_sheet_name
+from ._excel_helpers import clean_sheet_name, unique_sheet_name
 from ..ui_helpers.giii_requirements import (
     brand_from_po, pack_ratio, prepack_flag, strip_ratio,
 )
@@ -516,16 +516,7 @@ def _write_style_sheet(
 
     # Safe sheet title (max 31 chars, illegal chars sanitised, unique) —
     # a bare style[:31] crashed create_sheet on styles containing / \ * ? : [ ]
-    base_title = clean_sheet_name(style)
-    sheet_title = base_title
-    suffix = 2
-    while sheet_title in wb.sheetnames:
-        # Reserve exactly enough room for "_{suffix}" so the title never
-        # exceeds Excel's 31-char sheet-name limit — a fixed base_title[:28]
-        # slice overflows once suffix reaches 2 digits ("_100" = 4 chars).
-        tail = f"_{suffix}"
-        sheet_title = f"{base_title[:31 - len(tail)]}{tail}"
-        suffix += 1
+    sheet_title = unique_sheet_name(clean_sheet_name(style), wb.sheetnames)
     ws = wb.create_sheet(title=sheet_title)
 
     # ── Column widths ──────────────────────────────────────────────────────────

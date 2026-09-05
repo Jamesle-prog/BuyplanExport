@@ -18,7 +18,9 @@ import re
 
 import streamlit as st
 
-from ui.giii._shared import _XLSX_MIME, files_signature
+from ui.giii._shared import (
+    _XLSX_MIME, files_signature, make_excel_style_kit, pdf_text_lines,
+)
 from ui.i18n import t
 from ui.session_keys import SK
 from ui.shared import _th
@@ -32,18 +34,7 @@ _SIZE_ORDER = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '1X', '2X', '3X', 'OSFM'
 
 def _parse_infornexus_pdf(pdf_bytes: bytes) -> dict:
     """Parse one InforNexus PO PDF. Returns a dict matching the KL/MSG schema."""
-    import pdfplumber
-
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        all_text   = '\n'.join(p.extract_text() or '' for p in pdf.pages)
-        text_lines = all_text.split('\n')
-
-    def grep(pat: str):
-        for l in text_lines:
-            m = re.search(pat, l)
-            if m:
-                return m
-        return None
+    text_lines, grep = pdf_text_lines(pdf_bytes)
 
     # ── PO Number + Issue Date ────────────────────────────────────────────────
     # Line format: "LSKHHN009R 2026-05-12 2026-05-14T00:36:35Z"
@@ -241,39 +232,11 @@ def _po_flat(po: dict) -> dict:
 
 def build_comparison_excel(kl_results: list[dict], in_results: list[dict]) -> bytes:
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import Font
 
-    def _side():
-        return Side(style='thin', color='FF000000')
-
-    def _border():
-        s = _side()
-        return Border(left=s, right=s, top=s, bottom=s)
-
-    def _hdr(cell, value, bg=_NAVY):
-        cell.value     = value
-        cell.font      = Font(name='Arial', bold=True, color=_WHITE, size=10)
-        cell.fill      = PatternFill('solid', fgColor=bg)
-        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-        cell.border    = _border()
-
-    def _fill(colour):
-        return PatternFill('solid', fgColor=colour) if colour else PatternFill()
-
-    def _style(cell, bold=False, bg=None, align='left', num_fmt=None):
-        cell.font      = Font(name='Arial', bold=bold, size=10)
-        cell.fill      = _fill(bg)
-        cell.alignment = Alignment(horizontal=align, vertical='center', wrap_text=True)
-        cell.border    = _border()
-        if num_fmt:
-            cell.number_format = num_fmt
-
-    def _autofit(ws, mn=8, mx=60):
-        for col in ws.columns:
-            ltr = get_column_letter(col[0].column)
-            w   = max((len(str(c.value or '')) for c in col), default=0)
-            ws.column_dimensions[ltr].width = min(max(w + 2, mn), mx)
+    _kit = make_excel_style_kit(hdr_bg=_NAVY, autofit_max=60, wrap=True)
+    _border, _fill, _hdr, _style, _autofit = (
+        _kit.border, _kit.fill, _kit.hdr, _kit.style, _kit.autofit)
 
     # Index by PO number
     kl_by_po = {po['po_number']: _po_flat(po) for po in kl_results}

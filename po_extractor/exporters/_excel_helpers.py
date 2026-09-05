@@ -6,9 +6,11 @@ value extraction).
 """
 from __future__ import annotations
 
-from typing import Any, Iterable
+from functools import lru_cache
+import re
+from typing import Any, Collection, Iterable
 
-import pandas as pd
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.properties import PageSetupProperties
 
@@ -72,6 +74,32 @@ def apply_print_settings(wb) -> None:
 # Apostrophe is technically allowed but breaks formula references
 # like 'sheet'!A1, so we strip it too (BUG-41 mitigation).
 _ILLEGAL_SHEET_CHARS = r"/\[]*?:'"
+
+
+def unique_sheet_name(base: str, taken: Collection[str]) -> str:
+    """*base* (already a clean ≤31-char sheet name) or, when it is in
+    *taken*, ``base_2``, ``base_3`` … — the suffix always fits inside
+    Excel's 31-character limit, however many digits it grows to.
+
+    The caller records the returned name in *taken* itself (a workbook's
+    ``sheetnames`` does that on ``create_sheet``).
+    """
+    name, sfx = base, 2
+    while name in taken:
+        tail = f"_{sfx}"
+        name = f"{base[:31 - len(tail)]}{tail}"
+        sfx += 1
+    return name
+
+
+_UNSAFE_FILENAME_RE = re.compile(r'[<>:"/\\|?*\s]+')
+
+
+def safe_filename(name: str | None, *, fallback: str = "unknown") -> str:
+    """A file-name-safe stem: Windows-illegal characters and whitespace runs
+    become ``_``; leading/trailing ``_`` trimmed; *fallback* when nothing is
+    left."""
+    return _UNSAFE_FILENAME_RE.sub("_", str(name or "")).strip("_") or fallback
 
 
 def clean_sheet_name(name: str | None, *, fallback: str = "Sheet") -> str:
@@ -156,3 +184,106 @@ def cell_value(row, col: str) -> str | None:
         return None
     s = str(v).strip()
     return s if s and s.lower() not in _NULLISH else None
+
+
+# ---------------------------------------------------------------------------
+# Cell styling
+# ---------------------------------------------------------------------------
+# openpyxl style objects are immutable value objects (assigning one to a cell
+# stores a proxy), so one shared Border / Fill per colour is safe and avoids
+# rebuilding four Side objects for every cell of a large export.
+
+@lru_cache(maxsize=None)
+def thin_border(color: str = "FF000000") -> Border:
+    """A thin border on all four sides in *color* (aRGB or RGB hex)."""
+    s = Side(border_style="thin", color=color)
+    return Border(left=s, right=s, top=s, bottom=s)
+
+
+@lru_cache(maxsize=None)
+def solid_fill(color: str) -> PatternFill:
+    return PatternFill(start_color=color, end_color=color, fill_type="solid")
+
+
+_ALIGN_CENTER = Alignment(horizontal="center", vertical="center")
+
+
+def style_header(cell, value, *, fill: str = "FF000000",
+                 font_color: str = "FFFFFFFF", border_color: str = "FF000000") -> None:
+    """Bold, centred, filled header cell with a thin border."""
+    cell.value = value
+    cell.fill = solid_fill(fill)
+    cell.font = Font(color=font_color, bold=True)
+    cell.alignment = _ALIGN_CENTER
+    cell.border = thin_border(border_color)
+
+
+def style_total(cell, value, *, fill: str = "FFFFFF00",
+                font_color: str = "FF000000", border_color: str = "FF000000") -> None:
+    """Bold, centred total cell (yellow by default); numbers get ``#,##0``."""
+    cell.value = value
+    cell.fill = solid_fill(fill)
+    cell.font = Font(color=font_color, bold=True)
+    cell.alignment = _ALIGN_CENTER
+    cell.border = thin_border(border_color)
+    if isinstance(value, (int, float)):
+        cell.number_format = "#,##0"
+
+
+def style_data(cell, value, *, border_color: str = "FF000000") -> None:
+    """Centred data cell with a thin border; numbers get ``#,##0``."""
+    cell.value = value
+    cell.alignment = _ALIGN_CENTER
+    cell.border = thin_border(border_color)
+    if isinstance(value, (int, float)):
+        cell.number_format = "#,##0"
+
+
+def write_cell(ws, r: int, c: int, v, *, bold: bool = False, bg: str | None = None,
+               white: bool = False, center: bool = False, wrap: bool = True,
+               num: str | None = None, border: Border | None = None,
+               font_name: str = "Arial", size: int = 10):
+    """Write *v* at (*r*, *c*) in the GIII document style (Arial 10, wrapped,
+    optional solid *bg*, white text when *white*) and return the cell.
+
+    Bind the per-workbook defaults once with ``functools.partial`` —
+    ``cell = partial(write_cell, ws, border=thin_border(), center=True)``.
+    """
+    cl = ws.cell(r, c, v)
+    cl.font = Font(name=font_name, size=size, bold=bold,
+                   color="FFFFFFFF" if white else "FF000000")
+    if bg:
+        cl.fill = PatternFill("solid", fgColor=bg)
+    cl.alignment = Alignment(horizontal="center" if center else "left",
+                             vertical="center", wrap_text=wrap)
+    if border is not None:
+        cl.border = border
+    if num:
+        cl.number_format = num
+    return cl
+
+
+# ---------------------------------------------------------------------------
+# Template sheets
+# ---------------------------------------------------------------------------
+
+def replace_placeholders(ws, values: dict) -> None:
+    """Substitute ``{{key}}`` in every string cell of *ws*."""
+    for row in ws.iter_rows():
+        for cell in row:
+            if not isinstance(cell.value, str):
+                continue
+            v = cell.value
+            for key, val in values.items():
+                v = v.replace(f"{{{{{key}}}}}", str(val or ""))
+            cell.value = v
+
+
+def clear_data_area(ws, start_row: int) -> None:
+    """Unmerge and blank every cell from *start_row* downward."""
+    to_unmerge = [str(r) for r in ws.merged_cells.ranges if r.min_row >= start_row]
+    for r in to_unmerge:
+        ws.unmerge_cells(r)
+    for row in ws.iter_rows(min_row=start_row):
+        for cell in row:
+            cell.value = None

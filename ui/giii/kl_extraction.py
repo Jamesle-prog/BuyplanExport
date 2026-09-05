@@ -18,7 +18,7 @@ import streamlit as st
 from ui.giii._shared import (
     _XLSX_MIME, _undouble, _SIZE_CODES, _FIRST_RE, _CONT_RE, files_signature,
     FAX_SIZE_ORDER, XL_NAVY, XL_WHITE, XL_YELLOW, XL_GREY, XL_LTBLUE, XL_GREEN,
-    drop_stale_results, iter_pdf_payloads, make_excel_style_kit,
+    drop_stale_results, iter_pdf_payloads, make_excel_style_kit, pdf_text_lines,
 )
 from ui.i18n import t
 from ui.session_keys import SK
@@ -29,18 +29,7 @@ from ui.shared import _th
 
 def _parse_kl_pdf(pdf_bytes: bytes) -> dict:
     """Parse a KL-format PO PDF. Returns a PO dict."""
-    import pdfplumber
-
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        all_text  = '\n'.join(p.extract_text() or '' for p in pdf.pages)
-        text_lines = all_text.split('\n')
-
-    def grep(pat: str):
-        for l in text_lines:
-            m = re.search(pat, l)
-            if m:
-                return m
-        return None
+    text_lines, grep = pdf_text_lines(pdf_bytes)
 
     # ── Standard header fields ────────────────────────────────────────────────
     m = grep(r'PO NUMBER\s+(\S+)')

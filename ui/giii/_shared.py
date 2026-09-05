@@ -93,14 +93,16 @@ XL_LTBLUE = 'FFDEEAF1'
 XL_GREEN  = 'FFE2EFDA'
 
 
-def make_excel_style_kit(hdr_bg: str = XL_NAVY, autofit_max: int = 50):
+def make_excel_style_kit(hdr_bg: str = XL_NAVY, autofit_max: int = 50,
+                         wrap: bool = False):
     """Standard cell styling for the GIII extraction Excel builders.
 
     Returns a namespace of the helpers every builder previously nested
     inline (border/fill/align/style/hdr/autofit) — Arial 10, thin black
     borders, white-on-``hdr_bg`` wrapped headers. ``hdr_bg`` sets the
     default header colour (TK EU uses its teal); ``hdr()`` still accepts a
-    per-call ``bg`` override.
+    per-call ``bg`` override; ``wrap`` makes ``style()`` wrap text too (the
+    InforNexus comparison workbook).
     """
     from types import SimpleNamespace
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -122,7 +124,8 @@ def make_excel_style_kit(hdr_bg: str = XL_NAVY, autofit_max: int = 50):
     def style(cell, bold=False, bg=None, align='left', num_fmt=None):
         cell.font      = Font(name='Arial', bold=bold, size=10)
         cell.fill      = fill(bg)
-        cell.alignment = Alignment(horizontal=align, vertical='center')
+        cell.alignment = Alignment(horizontal=align, vertical='center',
+                                   wrap_text=wrap)
         cell.border    = border()
         if num_fmt:
             cell.number_format = num_fmt
@@ -143,6 +146,27 @@ def make_excel_style_kit(hdr_bg: str = XL_NAVY, autofit_max: int = 50):
 
     return SimpleNamespace(side=side, border=border, fill=fill, align=align,
                            style=style, hdr=hdr, autofit=autofit)
+
+
+def pdf_text_lines(pdf_bytes: bytes):
+    """``(lines, grep)`` for a fax-copy PDF: every page's text joined and
+    split into lines, plus ``grep(pattern)`` — the first ``re.search`` match
+    across those lines, or None. The opening block every fax extractor
+    (MSG / KL / TK EU / InforNexus) used to repeat."""
+    import io
+    import pdfplumber
+
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        lines = '\n'.join(p.extract_text() or '' for p in pdf.pages).split('\n')
+
+    def grep(pat: str):
+        for l in lines:
+            m = re.search(pat, l)
+            if m:
+                return m
+        return None
+
+    return lines, grep
 
 
 def iter_pdf_payloads(files):

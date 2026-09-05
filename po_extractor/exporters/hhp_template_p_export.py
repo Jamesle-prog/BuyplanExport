@@ -14,11 +14,11 @@ import io
 
 import pandas as pd
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from ..utils.file_utils import versioned_path
-from ._excel_helpers import clean_sheet_name, stable_unique
+from ._excel_helpers import clean_sheet_name, stable_unique, thin_border, unique_sheet_name
 
 SIZES = ["XS", "S", "M", "L", "XL", "XXL"]
 
@@ -28,8 +28,7 @@ _ALTFILL = PatternFill(start_color="FFD9E1F2", end_color="FFD9E1F2", fill_type="
 
 
 def _thin():
-    s = Side(border_style="thin", color="FFAAAAAA")
-    return Border(left=s, right=s, top=s, bottom=s)
+    return thin_border("FFAAAAAA")
 
 
 def _hdr(cell, value):
@@ -116,15 +115,8 @@ def export_hhp_template_p(
             if sub.empty:
                 continue
 
-            sheet_name = clean_sheet_name(style)
-            existing = [s.title for s in wb.worksheets]
-            candidate = sheet_name
-            sfx = 2
-            while candidate in existing:
-                candidate = sheet_name[:28] + f"_{sfx}"
-                sfx += 1
-
-            ws = wb.create_sheet(candidate)
+            ws = wb.create_sheet(
+                unique_sheet_name(clean_sheet_name(style), wb.sheetnames))
             _write_style_sheet_p(ws, sub, sizes_present, use_color_col)
 
         if not wb.sheetnames:

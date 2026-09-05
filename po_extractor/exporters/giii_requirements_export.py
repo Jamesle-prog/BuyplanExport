@@ -11,7 +11,9 @@ Input is the ``contexts`` list from
 from __future__ import annotations
 
 import io
-import re
+from functools import partial
+
+from ._excel_helpers import clean_sheet_name, thin_border, unique_sheet_name, write_cell
 
 _NAVY = "FF1F3864"
 _WHITE = "FFFFFFFF"
@@ -55,11 +57,7 @@ def _req_text(result: dict) -> str:
 
 
 def _sheet_name(base: str, used: set[str]) -> str:
-    name = re.sub(r"[\\/*?:\[\]]", "_", base or "PO")[:28] or "PO"
-    candidate, i = name, 2
-    while candidate in used:
-        candidate = f"{name}_{i}"
-        i += 1
+    candidate = unique_sheet_name(clean_sheet_name(base, fallback="PO"), used)
     used.add(candidate)
     return candidate
 
@@ -116,24 +114,9 @@ def export_giii_requirements(contexts: list[dict],
                              warnings: list[str] | None = None) -> bytes:
     """Build the requirements workbook; return .xlsx bytes."""
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-
-    thin = Side(style="thin", color="FF000000")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     wb = Workbook()
-
-    def cell(ws, r, c, v, *, bold=False, bg=None, white=False, wrap=True,
-             center=False):
-        cl = ws.cell(r, c, v)
-        cl.font = Font(name="Arial", size=10, bold=bold,
-                       color=_WHITE if white else "FF000000")
-        if bg:
-            cl.fill = PatternFill("solid", fgColor=bg)
-        cl.alignment = Alignment(horizontal="center" if center else "left",
-                                 vertical="center", wrap_text=wrap)
-        cl.border = border
-        return cl
+    cell = partial(write_cell, border=thin_border("FF000000"))
 
     # ── Summary sheet ────────────────────────────────────────────────────────
     ws = wb.active

@@ -1,24 +1,11 @@
 """Cross-check export — verifies unit totals match across buy plan, color plan, PO summary."""
 import pandas as pd
 from openpyxl import load_workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from ..utils.file_utils import versioned_path
-from ._excel_helpers import clean_sheet_name
-
-
-def _thin():
-    s = Side(border_style="thin", color="FF000000")
-    return Border(left=s, right=s, top=s, bottom=s)
-
-
-def _header(cell, value):
-    cell.value = value
-    cell.fill = PatternFill(start_color="FF000000", end_color="FF000000", fill_type="solid")
-    cell.font = Font(color="FFFFFFFF", bold=True)
-    cell.alignment = Alignment(horizontal="center", vertical="center")
-    cell.border = _thin()
+from ._excel_helpers import clean_sheet_name, style_header as _header, thin_border as _thin
 
 
 def _buyplan_totals(path: str) -> dict:

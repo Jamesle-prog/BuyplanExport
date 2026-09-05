@@ -11,10 +11,12 @@ import functools
 import re
 from pathlib import Path
 
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill
 
 from auth.companies import COMPANY_SKY_EAST
-from ._excel_helpers import set_internal_hyperlink
+from ._excel_helpers import (
+    clear_data_area, replace_placeholders, set_internal_hyperlink, thin_border,
+)
 
 __all__ = [
     # Template paths
@@ -419,9 +421,7 @@ def _detect_fabric_rows(ws, max_row: int = 7) -> list[tuple[int, int, int, int, 
 # Module-level style constants — openpyxl copies styles on assignment, so a
 # single shared instance is safe and avoids re-constructing Border/Alignment
 # objects per cell (~19 calls per data row on large exports).
-_THIN_SIDE   = Side(border_style="thin", color="FF000000")
-_THIN_BORDER = Border(left=_THIN_SIDE, right=_THIN_SIDE,
-                      top=_THIN_SIDE, bottom=_THIN_SIDE)
+_THIN_BORDER = thin_border("FF000000")
 
 _ALIGN_CENTER_NOWRAP = Alignment(horizontal="center", vertical="center",
                                  wrapText=False)
@@ -570,26 +570,8 @@ def _style_total(cell, value) -> None:
         cell.number_format = "#,##0"
 
 
-def _replace_placeholders(ws, values: dict) -> None:
-    """Substitute {{key}} in every string cell."""
-    for row in ws.iter_rows():
-        for cell in row:
-            if not isinstance(cell.value, str):
-                continue
-            v = cell.value
-            for key, val in values.items():
-                v = v.replace(f"{{{{{key}}}}}", str(val or ""))
-            cell.value = v
-
-
-def _clear_data_area(ws, start_row: int) -> None:
-    """Unmerge and clear all cells from start_row downward."""
-    to_unmerge = [str(r) for r in ws.merged_cells.ranges if r.min_row >= start_row]
-    for r in to_unmerge:
-        ws.unmerge_cells(r)
-    for row in ws.iter_rows(min_row=start_row):
-        for cell in row:
-            cell.value = None
+_replace_placeholders = replace_placeholders
+_clear_data_area = clear_data_area
 
 
 def _clean_sheet_name(name: str) -> str:

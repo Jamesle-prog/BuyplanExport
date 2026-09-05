@@ -15,9 +15,7 @@ import argparse
 import os
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import (
-    Alignment, Border, Font, PatternFill, Side, PatternFill,
-)
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 # ---------------------------------------------------------------------------
@@ -102,8 +100,8 @@ _ALIGN_C    = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
 
 def _thin_border():
-    s = Side(border_style="thin", color="FFBBBBBB")
-    return Border(left=s, right=s, top=s, bottom=s)
+    from ..exporters._excel_helpers import thin_border
+    return thin_border("FFBBBBBB")
 
 
 # ---------------------------------------------------------------------------
